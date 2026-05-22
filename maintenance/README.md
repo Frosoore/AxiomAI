@@ -28,3 +28,4 @@ Ne pas mélanger les étapes entre elles.
 | `A2-bugs-logiques` | ✅ terminé | Phase A §2 — corriger les comportements incorrects |
 | `A3-optimisations` | ✅ terminé | Phase A §3 — optimisations chirurgicales (perf + logs) |
 | `A4-nettoyage-code-mort` | ✅ terminé | Phase A §4 — suppression code mort |
+| `A5-hotfix-import-circulaire` | ✅ terminé | Hotfix — cycle d'import introduit par A3.4 (démarrage cassé) |

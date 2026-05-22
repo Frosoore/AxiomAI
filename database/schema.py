@@ -6,10 +6,15 @@ Every universe is stored in a single .db file; this module is the sole authority
 over the schema definition.
 """
 
+import logging
 import sqlite3
 from pathlib import Path
 
-from core.logger import logger
+# NOTE: the database layer must not import `core` at module load time. Doing so
+# triggers core/__init__ (which eagerly imports the arbitrator -> event_sourcing
+# -> database.schema), creating a circular import. We grab the already-configured
+# named logger directly instead. core.logger.setup_logger() owns the handlers.
+logger = logging.getLogger("Axiom AI")
 
 
 # ---------------------------------------------------------------------------

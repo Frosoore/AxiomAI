@@ -4,10 +4,14 @@ database/backup_manager.py
 Utility for automated Axiom AI database backups before destructive operations.
 """
 
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from core.logger import logger
+
+# See database/schema.py: the database layer avoids importing `core` at module
+# load time to prevent a circular import; use the configured named logger.
+logger = logging.getLogger("Axiom AI")
 
 def create_auto_backup(db_path: str, reason: str) -> str | None:
     """Create a timestamped backup of the universe database.
