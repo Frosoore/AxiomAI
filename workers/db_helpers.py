@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-
+from core.logger import logger
 from database.schema import get_connection
 
 def apply_stat_preset(db_path: str, preset_name: str) -> int:
@@ -323,7 +323,7 @@ def get_inventory(db_path: str, save_id: str, entity_id: str) -> list[dict]:
             ).fetchall()
             inventory = [dict(r) for r in rows]
     except Exception as e:
-        print(f"[DB_HELPERS] Error fetching inventory for {entity_id}: {e}")
+        logger.error(f"[DB_HELPERS] Error fetching inventory for {entity_id}: {e}")
     return inventory
 
 def get_spatial_context(db_path: str, location_id: str) -> dict:
@@ -375,7 +375,7 @@ def get_spatial_context(db_path: str, location_id: str) -> dict:
             neighbors = [dict(r) for r in n_rows]
 
     except Exception as e:
-        print(f"[DB_HELPERS] Error fetching spatial context for {location_id}: {e}")
+        logger.error(f"[DB_HELPERS] Error fetching spatial context for {location_id}: {e}")
 
     return {
         "breadcrumb": " > ".join(breadcrumb) if breadcrumb else "Unknown",

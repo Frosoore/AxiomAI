@@ -60,8 +60,6 @@ def check_imports():
     print("[3/3] Verifying core imports...")
     core_modules = [
         ('PySide6.QtWidgets', 'pyside6'),
-        ('chromadb', 'chromadb'),
-        ('sentence_transformers', 'sentence-transformers'),
         ('google.genai', 'google-genai'),
         ('PIL', 'pillow'),
         ('core.arbitrator', 'core'),

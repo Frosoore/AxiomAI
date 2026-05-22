@@ -28,6 +28,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from core.logger import logger
 from core.rules_engine import RulesEngine
 from database.event_sourcing import EventSourcer
 from database.modifier_processor import ModifierProcessor
@@ -99,11 +100,16 @@ class ArbitratorEngine:
         self._pending_correction: str | None = None
         self._mode: str = "Normal"
         self._hero_entity_id: str | None = None
+        self._stats_cache: dict[str, dict[str, str]] | None = None
 
     def configure(self, llm: LLMBackend, vector_memory: VectorMemory) -> None:
         """Inject runtime dependencies before process_turn."""
         self._llm = llm
         self._vector_memory = vector_memory
+
+    def invalidate_stats_cache(self) -> None:
+        """Clear the in-memory stats cache (call after rewind or external DB writes)."""
+        self._stats_cache = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -151,12 +157,15 @@ class ArbitratorEngine:
         """
         self._mode = mode
         self._hero_entity_id = hero_entity_id
-        # Step 0 — Log user message event
+        # Step 0 — Log user message event (immediate — not batched)
         self._event_sourcer.append_event(
             save_id, turn_id, "user_input", player_entity_id,
             {"text": user_message}
         )
-        
+
+        # Collect remaining turn events; flushed in a single transaction at end
+        _pending_events: list[tuple] = []
+
         # Companion Mode: Log hero intent
         if hero_action:
             self._event_sourcer.append_event(
@@ -192,7 +201,7 @@ class ArbitratorEngine:
         relevant_entity_ids = self._identify_relevant_entities(
             save_id, user_message, history, rag_chunks, all_stats
         )
-        print(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
+        logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
         # Always include the player
         relevant_entity_ids.add("player") 
         
@@ -316,9 +325,7 @@ class ArbitratorEngine:
                                 )
                                 conn.commit()
 
-                self._event_sourcer.append_event(
-                    save_id, turn_id, event_type, entity_id, payload
-                )
+                _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
                 # Update local snapshot for downstream Rules evaluation
                 self._apply_local_change(entity_id, payload, all_stats)
 
@@ -341,7 +348,7 @@ class ArbitratorEngine:
             # { "entity_id": str, "item_id": str, "action": "add"|"remove", "quantity": int }
             valid, reason = self._validate_inventory_change(save_id, inv_change)
             if valid:
-                self._apply_inventory_change(save_id, turn_id, inv_change)
+                self._apply_inventory_change(save_id, turn_id, inv_change, _pending_events)
                 applied_inventory.append(inv_change)
             else:
                 self._queue_correction(f"Inventory: {reason}")
@@ -349,6 +356,7 @@ class ArbitratorEngine:
         # Step 8 — Run Rules Engine (Persistent & Chained)
         # Point 4: Rule actions now generate persistent events and update stats
         triggered_rules: list[dict[str, Any]] = []
+        _seen_rule_signatures: set[str] = set()
         mutated_entities = {c.get("entity_id") for c in applied_changes if c.get("entity_id")}
         rule_chain_warning = False
 
@@ -359,13 +367,14 @@ class ArbitratorEngine:
             for entity_id in list(mutated_entities):
                 stats = all_stats.get(entity_id, {})
                 triggered_actions = self._rules_engine.evaluate(entity_id, stats)
-                
+
                 for action in triggered_actions:
                     # Check if this rule already triggered for this entity this turn
                     # to prevent trivial infinite loops
                     action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
-                    if any(f"{entity_id}_{a.get('type')}_{a.get('stat')}_{a.get('value')}" == action_id for a in triggered_rules):
-                         continue
+                    if action_id in _seen_rule_signatures:
+                        continue
+                    _seen_rule_signatures.add(action_id)
 
                     # 1. Map rule action to a persistent event
                     payload: dict[str, Any] = {
@@ -381,29 +390,24 @@ class ArbitratorEngine:
                     else:
                         payload["value"] = action.get("value")
 
-                    self._event_sourcer.append_event(
-                        save_id, turn_id, event_type, entity_id, payload
-                    )
-                    
+                    _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
+
                     # 1b. Also record the trigger itself for tracking/history
-                    self._event_sourcer.append_event(
-                        save_id, turn_id, "rule_trigger", entity_id, action
-                    )
-                    
+                    _pending_events.append((save_id, turn_id, "rule_trigger", entity_id, action))
+
                     # 2. Update local stats for chaining/consistency
                     self._apply_local_change(entity_id, payload, all_stats)
-                    
+
                     triggered_rules.append(action)
                     new_mutations.add(entity_id)
-            
+
             if not new_mutations:
                 break
-            
+
             if i == 4: # Reached limit
                 rule_chain_warning = True
-                self._event_sourcer.append_event(
-                    save_id, turn_id, "rule_engine_warning", "system",
-                    {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."}
+                _pending_events.append((save_id, turn_id, "rule_engine_warning", "system",
+                    {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."})
                 )
             
             mutated_entities = new_mutations
@@ -417,14 +421,20 @@ class ArbitratorEngine:
 
         # Step 11 — Log narrative event (Multiverse-compatible)
         text_to_log = user_message if not narrative_text.strip() else narrative_text
-        self._event_sourcer.append_event(
+        _pending_events.append((
             save_id, turn_id, "narrative_text", "player",
-            {"active": 0, "variants": [text_to_log]}
-        )
+            {"active": 0, "variants": [text_to_log]},
+        ))
+
+        # Flush all deferred events in a single transaction
+        self._event_sourcer.append_events_batch(_pending_events)
 
         # Phase 12.1: Mark scheduled events as fired
         for ev in triggered_events:
             self._mark_event_as_fired(save_id, ev["event_id"])
+
+        # Cache the final stats for re-use next turn (avoids re-reading State_Cache)
+        self._stats_cache = all_stats
 
         return ArbitratorResult(
             narrative_text=narrative_text,
@@ -507,8 +517,8 @@ class ArbitratorEngine:
     def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
         """Fetch all active entity stats and apply modifier overlays.
 
-        Queries State_Cache for all entity IDs belonging to this save, then
-        calls ModifierProcessor to produce effective (modifier-adjusted) stats.
+        Uses two global queries (one for all stats, one for all modifiers) in a
+        single connection instead of per-entity round-trips.
 
         Args:
             save_id: The active save identifier.
@@ -516,19 +526,37 @@ class ArbitratorEngine:
         Returns:
             Dict mapping entity_id -> effective stats dict.
         """
+        if self._stats_cache is not None:
+            return self._stats_cache
+
+        from core.localization import fmt_num
         with get_connection(self._db_path) as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?;",
+            stat_rows = conn.execute(
+                "SELECT entity_id, stat_key, stat_value FROM State_Cache WHERE save_id = ?;",
                 (save_id,),
             ).fetchall()
-        entity_ids = [row[0] for row in rows]
+            mod_rows = conn.execute(
+                """
+                SELECT entity_id, stat_key, delta
+                FROM Active_Modifiers
+                WHERE entity_id IN (SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?);
+                """,
+                (save_id,),
+            ).fetchall()
 
-        effective: dict[str, dict[str, str]] = {}
-        for entity_id in entity_ids:
-            base = self._event_sourcer.get_current_stats(save_id, entity_id)
-            effective[entity_id] = self._modifier_processor.apply_modifiers(
-                save_id, entity_id, base
-            )
+        base: dict[str, dict[str, str]] = {}
+        for r in stat_rows:
+            base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
+
+        effective = {eid: dict(stats) for eid, stats in base.items()}
+        for r in mod_rows:
+            if r["entity_id"] in effective:
+                current_raw = effective[r["entity_id"]].get(r["stat_key"], "0")
+                try:
+                    current = float(current_raw)
+                    effective[r["entity_id"]][r["stat_key"]] = fmt_num(current + r["delta"])
+                except ValueError:
+                    pass
         return effective
 
     def _identify_relevant_entities(
@@ -606,7 +634,7 @@ class ArbitratorEngine:
                 ).fetchall()
                 events = [dict(r) for r in rows]
         except Exception as e:
-            print(f"[ARBITRATOR] Error fetching scheduled events: {e}")
+            logger.error(f"[ARBITRATOR] Error fetching scheduled events: {e}")
         return events
 
     def _mark_event_as_fired(self, save_id: str, event_id: str) -> None:
@@ -619,7 +647,7 @@ class ArbitratorEngine:
                 )
                 conn.commit()
         except Exception as e:
-            print(f"[ARBITRATOR] Error marking event as fired: {e}")
+            logger.error(f"[ARBITRATOR] Error marking event as fired: {e}")
 
     def _fetch_relevant_lore(self, save_id: str, user_message: str) -> list[dict]:
         """Fetch Lore Book entries relevant to the current turn.
@@ -814,7 +842,8 @@ class ArbitratorEngine:
 
         return True, ""
 
-    def _apply_inventory_change(self, save_id: str, turn_id: int, change: dict) -> None:
+    def _apply_inventory_change(self, save_id: str, turn_id: int, change: dict,
+                                 pending_events: list[tuple] | None = None) -> None:
         """Persist an inventory transaction and log the event."""
         entity_id = change["entity_id"]
         item_id = change["item_id"]
@@ -847,6 +876,8 @@ class ArbitratorEngine:
             conn.commit()
 
         # Log to event source for perfect rewindability
-        self._event_sourcer.append_event(
-            save_id, turn_id, f"inventory_{action}", entity_id, change
-        )
+        event_tuple = (save_id, turn_id, f"inventory_{action}", entity_id, change)
+        if pending_events is not None:
+            pending_events.append(event_tuple)
+        else:
+            self._event_sourcer.append_event(*event_tuple)

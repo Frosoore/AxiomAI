@@ -22,6 +22,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.logger import logger
 from database.event_sourcing import EventSourcer
 from database.schema import get_connection
 from llm_engine.base import LLMBackend, LLMMessage
@@ -235,7 +236,7 @@ class ChroniclerEngine:
                     )
                     conn.commit()
             except Exception as e:
-                print(f"[CHRONICLER] Error persisting world news: {e}")
+                logger.error(f"[CHRONICLER] Error persisting world news: {e}")
 
         return ChroniclerResult(
             updated_entities=updated_entities,

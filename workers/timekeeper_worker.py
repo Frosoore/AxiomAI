@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QThread, Signal
 
+from core.logger import logger
 from database.schema import get_connection
 from llm_engine.prompt_builder import build_timekeeper_prompt
 
@@ -81,7 +82,7 @@ class TimekeeperWorker(QThread):
                     try:
                         data = json.loads(match.group(0))
                     except json.JSONDecodeError:
-                        print(f"[DEBUG] Timekeeper LLM fallback parsing failed: {text}")
+                        logger.debug(f"[TIMEKEEPER] LLM fallback parsing failed: {text}")
                 
             # Final fallback if still empty or invalid
             if not data:

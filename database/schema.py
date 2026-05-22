@@ -9,6 +9,8 @@ over the schema definition.
 import sqlite3
 from pathlib import Path
 
+from core.logger import logger
+
 
 # ---------------------------------------------------------------------------
 # DDL statements — one constant per table for clarity and testability
@@ -478,10 +480,10 @@ def migrate_location_tables(db_path: str) -> None:
                         conn.execute(_DDL_LOCATION_CONNECTIONS)
                     
                     conn.execute("COMMIT;")
-                    print("[SCHEMA] Location tables successfully migrated/repaired.")
+                    logger.debug("[SCHEMA] Location tables successfully migrated/repaired.")
                 except Exception as e:
                     conn.execute("ROLLBACK;")
-                    print(f"[SCHEMA] Migration failed, rolled back: {e}")
+                    logger.error(f"[SCHEMA] Migration failed, rolled back: {e}")
                     # If migration fails, we don't raise here to avoid blocking app start, 
                     # but the DB task worker will likely fail again on usage.
                 finally:
@@ -533,10 +535,10 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             conn.execute("ALTER TABLE Saves_Temp RENAME TO Saves;")
             
             conn.execute("COMMIT;")
-            print("[SCHEMA] Saves table successfully migrated to support 'Companion' mode.")
+            logger.debug("[SCHEMA] Saves table successfully migrated to support 'Companion' mode.")
         except Exception as e:
             conn.execute("ROLLBACK;")
-            print(f"[SCHEMA] Saves constraint migration failed: {e}")
+            logger.error(f"[SCHEMA] Saves constraint migration failed: {e}")
         finally:
             conn.execute("PRAGMA foreign_keys=ON;")
 

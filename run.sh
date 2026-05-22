@@ -83,10 +83,17 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # ── Dependency Installation ──────────────────────────────────
-echo "Verifying Python dependencies (this may take a minute on first run)..."
-# Using 'python3 -m pip' ensures we use the venv's pip after activation
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+REQ_HASH=$(sha256sum requirements.txt | cut -d' ' -f1)
+MARKER="$VENV_DIR/.deps_hash"
+
+if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$REQ_HASH" ]; then
+    echo "Installing/updating dependencies..."
+    python3 -m pip install --upgrade pip
+    python3 -m pip install -r requirements.txt
+    echo "$REQ_HASH" > "$MARKER"
+else
+    echo "Dependencies up to date (skip)."
+fi
 
 # ── Startup Validation ───────────────────────────────────────
 # Run a quick headless check of the environment before launching the GUI

@@ -95,7 +95,7 @@ class ConnectionEdgeItem(QGraphicsLineItem):
         self.setPen(QPen(QColor("#585b70"), 2, Qt.DashLine))
         self.setZValue(-1)
         
-        self.text_item = QGraphicsTextItem(f"{distance}m")
+        self.text_item = QGraphicsTextItem(f"{distance} km")
         self.text_item.setDefaultTextColor(QColor("#a6adc8"))
         
         source.edges.append(self)
@@ -115,7 +115,7 @@ class ConnectionEdgeItem(QGraphicsLineItem):
 
     def update_distance(self, distance: int):
         self.distance = distance
-        self.text_item.setPlainText(f"{distance}m")
+        self.text_item.setPlainText(f"{distance} km")
         self.update_position()
 
 

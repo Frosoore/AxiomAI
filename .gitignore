@@ -18,5 +18,6 @@ debug_*.db*
 # IDEs
 .vscode/
 .idea/
+.directory
 
-docs
+.claude/

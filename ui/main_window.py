@@ -316,10 +316,9 @@ class MainWindow(QMainWindow):
             elif self._current_ambiance_tag:
                 self._ambiance_manager.set_enabled(True)
 
-            # Refresh volume label in status bar
-            self._status_bar.removeWidget(self._status_bar.findChild(QWidget)) # Hacky, but works if we rebuild
-            # Actually better to just store the label. Let me fix main_window to store vol_label.
-            self._setup_volume_slider() # Rebuild volume slider with new language
+            # Refresh volume label in status bar. _setup_volume_slider removes the
+            # previously stored _volume_container itself, so no manual removeWidget here.
+            self._setup_volume_slider()
 
             # Refresh current view
             if self._stack.currentIndex() == self._HUB_INDEX:

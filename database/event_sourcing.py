@@ -77,6 +77,26 @@ class EventSourcer:
 
         return event_id  # type: ignore[return-value]
 
+    def append_events_batch(
+        self,
+        events: list[tuple[str, int, str, str, dict[str, Any]]],
+    ) -> None:
+        """Insert multiple events in a single transaction.
+
+        Args:
+            events: List of (save_id, turn_id, event_type, target_entity, payload) tuples.
+        """
+        if not events:
+            return
+        rows = [(s, t, e, tg, json.dumps(p)) for s, t, e, tg, p in events]
+        with get_connection(self._db_path) as conn:
+            conn.executemany(
+                "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
+                "VALUES (?, ?, ?, ?, ?);",
+                rows,
+            )
+            conn.commit()
+
     def get_events(
         self,
         save_id: str,

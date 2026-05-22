@@ -42,7 +42,6 @@ from workers.db_helpers import get_max_turn_id, load_rules_for_session, load_sav
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
 from workers.vector_worker import VectorWorker, VectorInitWorker
-from workers.timekeeper_worker import TimekeeperWorker
 from core.config import load_config, build_llm_from_config
 from core.time_system import TimeSystem, CalendarConfig
 from core.logger import logger
@@ -297,6 +296,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._vector_init_worker.start()
 
         # Start History Load immediately
+        self._rewind_in_progress: bool = False
         self._db_worker = DbWorker(self._db_path)
         self._db_worker.history_loaded.connect(self._on_history_loaded)
         self._db_worker.universe_meta_loaded.connect(self._on_meta_loaded)
@@ -307,6 +307,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._db_worker.lore_book_loaded.connect(self._on_lore_book_loaded)
         self._db_worker.integrity_validated.connect(self._on_integrity_validated)
         self._db_worker.save_complete.connect(self._refresh_after_variant_switch)
+        self._db_worker.rewind_complete.connect(self._on_rewind_done)
         
         self._db_worker.load_session_history(save_id)
         self._db_worker.load_full_universe() # Fetch lore_book + entities
@@ -571,6 +572,7 @@ class TabletopView(HardcoreMixin, QWidget):
         """Post-turn cleanup: re-enable UI, refresh stats, check Chronicler."""
         from workers.chronicler_worker import ChroniclerWorker
         from core.chronicler import ChroniclerEngine
+        from database.event_sourcing import EventSourcer
 
         # Phase 8 Audit: Force-flush the typewriter buffer once turn logic finishes
         self._chat.flush_final_buffer()
@@ -609,12 +611,16 @@ class TabletopView(HardcoreMixin, QWidget):
         if (self._turn_id - self._main_window._last_chronicle_turn) >= cfg.chronicler_interval:
             self._main_window._last_chronicle_turn = self._turn_id
             
-            self._chronicler = ChroniclerEngine(self._db_path)
+            self._chronicler = ChroniclerEngine(
+                llm=self._llm,
+                event_sourcer=EventSourcer(self._db_path),
+                db_path=self._db_path,
+                trigger_interval=cfg.chronicler_interval,
+            )
             self._chronicler_worker = ChroniclerWorker(
-                self._chronicler, 
-                self._llm, 
-                self._save_id, 
-                self._turn_id
+                self._chronicler,
+                self._save_id,
+                self._turn_id,
             )
             self._chronicler_worker.error_occurred.connect(self._on_worker_error)
             self._chronicler_worker.status_update.connect(
@@ -722,16 +728,18 @@ class TabletopView(HardcoreMixin, QWidget):
         dialog = CheckpointDialog(turn_ids, parent=self)
         if dialog.exec() == QDialog.Accepted:
             target_id = dialog.selected_turn_id()
-            if target_id is not None:
+            if target_id is not None and not self._rewind_in_progress:
+                self._rewind_in_progress = True
                 self._chat.set_send_enabled(False)
                 self._main_window.on_status_update(f"{tr('rewind')}...")
-                self._db_worker.rewind_to_checkpoint(self._save_id, target_id)
-                self._db_worker.rewind_complete.connect(self._on_rewind_done)
+                self._db_worker.execute_rewind(self._save_id, target_id)
 
-    @Slot()
-    def _on_rewind_done(self) -> None:
+    @Slot(dict)
+    def _on_rewind_done(self, summary: dict) -> None:
         """Reload state after a successful rewind."""
-        self._db_worker.rewind_complete.disconnect(self._on_rewind_done)
+        self._rewind_in_progress = False
+        if self._arbitrator is not None:
+            self._arbitrator.invalidate_stats_cache()
         self._resume_turn_id()
         self._db_worker.load_session_history(self._save_id)
         self._db_worker.load_stats(self._save_id)

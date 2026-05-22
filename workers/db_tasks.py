@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from core.logger import logger
 from database.event_sourcing import EventSourcer
 from database.checkpoint import CheckpointManager
 from database.schema import get_connection
@@ -40,7 +41,7 @@ class BaseDbTask(QRunnable):
             result = self.execute()
             self.signals.result.emit(result)
         except Exception as exc:
-            print(f"DB Task Error: {exc}\n{traceback.format_exc()}")
+            logger.error(f"DB Task Error: {exc}\n{traceback.format_exc()}")
             self.signals.error.emit(str(exc))
         finally:
             self.signals.finished.emit()
@@ -258,7 +259,7 @@ class PopulateMetaTask(BaseDbTask):
         try:
             llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
         except Exception as e:
-            print(f"[POPULATE_META] Failed to build LLM backend: {e}")
+            logger.error(f"[POPULATE_META] Failed to build LLM backend: {e}")
             return False
             
         with get_connection(self.db_path) as conn:
@@ -681,7 +682,7 @@ class PopulateMapTask(BaseDbTask):
                     break
         
         if not isinstance(data, dict):
-            print(f"[POPULATE_MAP] Invalid response format (expected dict or list containing dict, got {type(data)}): {data}")
+            logger.error(f"[POPULATE_MAP] Invalid response format (expected dict or list containing dict, got {type(data)}): {data}")
             return {"added_locs": 0, "added_conns": 0}
 
         new_locs = data.get("locations", [])

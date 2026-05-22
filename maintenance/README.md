@@ -24,4 +24,7 @@ Ne pas mélanger les étapes entre elles.
 
 | Dossier | Statut | Description |
 |---------|--------|-------------|
-| *(aucune pour l'instant)* | — | — |
+| `A1-bugs-bloquants` | ✅ terminé | Phase A §1 — corriger les crashs latents |
+| `A2-bugs-logiques` | ✅ terminé | Phase A §2 — corriger les comportements incorrects |
+| `A3-optimisations` | ✅ terminé | Phase A §3 — optimisations chirurgicales (perf + logs) |
+| `A4-nettoyage-code-mort` | ✅ terminé | Phase A §4 — suppression code mort |
