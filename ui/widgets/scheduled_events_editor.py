@@ -15,8 +15,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QLabel, QSpinBox,
     QGroupBox, QFormLayout, QLineEdit, QSplitter
 )
-from core.time_system import CalendarConfig, TimeSystem
-from core.localization import tr
+from axiom.time_system import CalendarConfig, TimeSystem
+from axiom.localization import tr
 
 class ScheduledEventsEditorWidget(QWidget):
     """Widget for managing world events and the universe's calendar."""

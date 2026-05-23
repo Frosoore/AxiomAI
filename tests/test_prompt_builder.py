@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from llm_engine.prompt_builder import (
+from axiom.prompts import (
     HISTORY_TURN_CAP,
     MINI_DICO_SYSTEM_PROMPT,
     NARRATIVE_TOOL_CALL_SCHEMA,
@@ -150,7 +150,7 @@ class TestBuildChroniclerPrompt:
 
     def test_system_contains_base_prompt(self) -> None:
         result = build_chronicler_prompt([], 0.3)
-        from llm_engine.prompt_builder import CHRONICLER_SYSTEM_PROMPT_BASE
+        from axiom.prompts import CHRONICLER_SYSTEM_PROMPT_BASE
         assert "Chronicler" in result[0]["content"]
 
     def test_low_tension_guidance_injected(self) -> None:

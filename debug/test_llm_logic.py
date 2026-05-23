@@ -7,7 +7,7 @@ from typing import Iterator
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from llm_engine.base import LLMBackend, LLMMessage, LLMResponse
+from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 
 class MockLLM(LLMBackend):
     def complete(self, messages, stream=False, temperature=0.7, top_p=1.0, response_format=None, stop_sequences=None, max_tokens=None) -> LLMResponse:

@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.rules_engine import RulesEngine
+from axiom.rules import RulesEngine
 
 def test_rules():
     # Example rules

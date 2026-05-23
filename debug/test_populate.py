@@ -13,8 +13,8 @@ from pathlib import Path
 # Ensure project root is in path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm_engine.prompt_builder import build_populate_prompt
-from llm_engine.base import LLMBackend, LLMResponse
+from axiom.prompts import build_populate_prompt
+from axiom.backends.base import LLMBackend, LLMResponse
 
 class DummyLLM(LLMBackend):
     def complete(self, messages, stream=False, response_format=None):

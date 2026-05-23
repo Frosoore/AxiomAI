@@ -1,8 +1,8 @@
 import json
 from PySide6.QtCore import QThread, Signal
-from llm_engine.base import LLMBackend
-from llm_engine.prompt_builder import build_narrative_prompt
-from database.schema import get_connection
+from axiom.backends.base import LLMBackend
+from axiom.prompts import build_narrative_prompt
+from axiom.schema import get_connection
 
 class RegenerateWorker(QThread):
     token_received = Signal(str)

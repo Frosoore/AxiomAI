@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from core.arbitrator import ArbitratorEngine, ArbitratorResult
-from llm_engine.base import LLMConnectionError, LLMMessage, LLMBackend
-from llm_engine.vector_memory import VectorMemory
+from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.backends.base import LLMConnectionError, LLMMessage, LLMBackend
+from axiom.memory import VectorMemory
 
 
 class NarrativeWorker(QThread):
@@ -140,7 +140,7 @@ class NarrativeWorker(QThread):
 
     def _get_hero_id_from_metadata(self) -> str | None:
         """Fetch the hero ID configured in universe metadata."""
-        from workers.db_helpers import get_connection
+        from axiom.db_helpers import get_connection
         try:
             with get_connection(self._arbitrator._db_path) as conn:
                 row = conn.execute(
@@ -174,8 +174,8 @@ class NarrativeWorker(QThread):
 
     def _get_hero_decision(self, hero_ent: dict, history: list) -> str:
         """Call a local LLM to decide the Hero's action."""
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_hero_decision_prompt, format_entity_stats_block
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_hero_decision_prompt, format_entity_stats_block
         
         cfg = load_config()
         # Explicitly use local model for Hero if premium is selected globally

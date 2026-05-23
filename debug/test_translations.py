@@ -11,7 +11,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.localization import tr, SUPPORTED_LANGUAGES, get_translations_dict
+from axiom.localization import tr, SUPPORTED_LANGUAGES, get_translations_dict
 
 def test_all_translations():
     print("Axiom AI Translation Debug Tool")
@@ -38,7 +38,7 @@ def test_all_translations():
                 print(f"  {key:20} -> MISSING (Fallback to en: {translations['en'].get(key, 'N/A')})")
 
     print("\nVerifying tr() function with active config...")
-    from core.config import load_config
+    from axiom.config import load_config
     try:
         cfg = load_config()
         print(f"Current Config Language: {cfg.language}")

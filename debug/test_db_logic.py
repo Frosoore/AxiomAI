@@ -8,7 +8,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from database.schema import create_universe_db, get_connection
+from axiom.schema import create_universe_db, get_connection
 
 class TestDBLogic(unittest.TestCase):
     def setUp(self):

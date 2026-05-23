@@ -31,25 +31,25 @@ from PySide6.QtWidgets import (
 )
 
 from core.multiplayer_queue import ArbitratorWorker, PlayerAction
-from core.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
 
 from ui.checkpoint_dialog import CheckpointDialog
 from ui.constants_sidebar import ConstantsSidebar
 from ui.mini_dico_panel import MiniDicoPanel
 from ui.tabletop_hardcore import HardcoreMixin
 from ui.widgets.chat_display import ChatDisplayWidget
-from workers.db_helpers import get_max_turn_id, load_rules_for_session, load_saves, get_current_time
+from axiom.db_helpers import get_max_turn_id, load_rules_for_session, load_saves, get_current_time
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
 from workers.vector_worker import VectorWorker, VectorInitWorker
-from core.config import load_config, build_llm_from_config
-from core.time_system import TimeSystem, CalendarConfig
-from core.logger import logger
-from core.localization import tr
+from axiom.config import load_config, build_llm_from_config
+from axiom.time_system import TimeSystem, CalendarConfig
+from axiom.logger import logger
+from axiom.localization import tr
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
-    from llm_engine.vector_memory import VectorMemory
+    from axiom.memory import VectorMemory
 
 
 class TabletopView(HardcoreMixin, QWidget):
@@ -287,7 +287,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_label.setText(tr("turn_fmt", count=0))
 
         # Start Vector Memory Init
-        from core.paths import VECTOR_DIR
+        from axiom.paths import VECTOR_DIR
         vector_dir = str(VECTOR_DIR / self._save_id)
         self._vector_init_worker = VectorInitWorker(vector_dir)
         self._vector_init_worker.ready.connect(self._on_vector_ready)
@@ -571,8 +571,8 @@ class TabletopView(HardcoreMixin, QWidget):
     def _on_turn_complete(self, result: object) -> None:
         """Post-turn cleanup: re-enable UI, refresh stats, check Chronicler."""
         from workers.chronicler_worker import ChroniclerWorker
-        from core.chronicler import ChroniclerEngine
-        from database.event_sourcing import EventSourcer
+        from axiom.chronicler import ChroniclerEngine
+        from axiom.events import EventSourcer
 
         # Phase 8 Audit: Force-flush the typewriter buffer once turn logic finishes
         self._chat.flush_final_buffer()

@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from database.schema import create_universe_db
-from database.event_sourcing import EventSourcer
-from database.checkpoint import CheckpointManager
+from axiom.schema import create_universe_db
+from axiom.events import EventSourcer
+from axiom.checkpoint import CheckpointManager
 
 
 # ---------------------------------------------------------------------------

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from database.schema import create_universe_db
-from database.event_sourcing import EventSourcer
+from axiom.schema import create_universe_db
+from axiom.events import EventSourcer
 
 
 # ---------------------------------------------------------------------------

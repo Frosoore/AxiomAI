@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from llm_engine.base import LLMBackend, LLMConnectionError
-from llm_engine.prompt_builder import build_mini_dico_prompt
-from llm_engine.vector_memory import VectorMemory
+from axiom.backends.base import LLMBackend, LLMConnectionError
+from axiom.prompts import build_mini_dico_prompt
+from axiom.memory import VectorMemory
 
 
 class MiniDicoWorker(QThread):

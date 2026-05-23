@@ -42,16 +42,16 @@ from PySide6.QtWidgets import (
 )
 
 from ui.widgets.universe_card import UniverseCard
-from core.config import GLOBAL_DB_FILE
-from core.localization import tr
-from workers.db_helpers import (
+from axiom.config import GLOBAL_DB_FILE
+from axiom.localization import tr
+from axiom.db_helpers import (
     create_new_save,
     load_saves,
     provision_blank_universe,
 )
 from workers.db_worker import DbWorker
 from workers.import_export_worker import ImportExportWorker
-from core.paths import UNIVERSES_DIR
+from axiom.paths import UNIVERSES_DIR
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
@@ -377,7 +377,7 @@ class HubView(QWidget):
         Returns:
             Path to the new .db, or None on failure.
         """
-        from database.schema import create_universe_db
+        from axiom.schema import create_universe_db
 
         safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
         db_path = str(Path(self._LIBRARY_DIR) / f"{safe}.db")

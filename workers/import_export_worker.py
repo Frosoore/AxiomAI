@@ -26,7 +26,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from database.schema import create_universe_db
+from axiom.schema import create_universe_db
 
 
 _FORMAT_VERSION: str = "1.0"

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from core.localization import tr
+from axiom.localization import tr
 
 class PersonaEditorWidget(QWidget):
     """Visual editor for defining player personas."""
@@ -62,7 +62,7 @@ class PersonaEditorWidget(QWidget):
         self._desc_edit.setPlaceholderText(tr("description"))
 
         # Use localized colon
-        from core.config import load_config
+        from axiom.config import load_config
         lang = getattr(load_config(), "language", "en")
         colon = "：" if lang in ("zh", "ja") else ":"
         if lang == "fr": colon = " :"
@@ -96,7 +96,7 @@ class PersonaEditorWidget(QWidget):
         self._del_btn.setText(tr("delete"))
         
         # Use localized colon
-        from core.config import load_config
+        from axiom.config import load_config
         lang = getattr(load_config(), "language", "en")
         colon = "：" if lang in ("zh", "ja") else ":"
         if lang == "fr": colon = " :"

@@ -19,9 +19,9 @@ from pathlib import Path
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
 
-from workers.db_helpers import load_saves
+from axiom.db_helpers import load_saves
 from workers.hardcore_worker import HardcoreWorker
-from core.localization import tr
+from axiom.localization import tr
 
 
 class HardcoreMixin:
@@ -91,7 +91,7 @@ class HardcoreMixin:
         gc.collect()
 
         # Step 4: Start HardcoreWorker
-        from core.paths import VECTOR_DIR
+        from axiom.paths import VECTOR_DIR
         vector_persist_dir = str(
             VECTOR_DIR / self._save_id
         )

@@ -6,7 +6,7 @@ nesting, comparators), priority ordering, action application, and edge cases.
 """
 
 import pytest
-from core.rules_engine import RulesEngine
+from axiom.rules import RulesEngine
 
 
 # ---------------------------------------------------------------------------

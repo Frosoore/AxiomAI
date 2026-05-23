@@ -15,10 +15,10 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from core.logger import logger
-from database.event_sourcing import EventSourcer
-from database.checkpoint import CheckpointManager
-from database.schema import get_connection
+from axiom.logger import logger
+from axiom.events import EventSourcer
+from axiom.checkpoint import CheckpointManager
+from axiom.schema import get_connection
 
 
 class TaskSignals(QObject):
@@ -222,7 +222,7 @@ class DeleteSaveTask(BaseDbTask):
             conn.commit()
 
         # 2. Delete Vector Memory directory if it exists
-        from core.paths import VECTOR_DIR
+        from axiom.paths import VECTOR_DIR
         vector_dir = VECTOR_DIR / self.save_id
         if vector_dir.exists():
             shutil.rmtree(str(vector_dir))
@@ -238,7 +238,7 @@ class TickModifiersTask(BaseDbTask):
         self.elapsed_minutes = elapsed_minutes
 
     def execute(self) -> list[str]:
-        from database.modifier_processor import ModifierProcessor
+        from axiom.modifiers import ModifierProcessor
         mp = ModifierProcessor(self.db_path)
         return mp.tick_modifiers(self.save_id, self.elapsed_minutes)
 
@@ -251,8 +251,8 @@ class PopulateMetaTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> bool:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_meta_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_meta_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
@@ -297,8 +297,8 @@ class PopulateStatsTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_stats_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_stats_prompt
         
         cfg = load_config()
         llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
@@ -352,8 +352,8 @@ class PopulateRulesTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_rules_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_rules_prompt
         
         cfg = load_config()
         llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
@@ -404,8 +404,8 @@ class PopulateEventsTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_events_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_events_prompt
         
         cfg = load_config()
         llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
@@ -460,8 +460,8 @@ class PopulateEntitiesTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
@@ -602,8 +602,8 @@ class PopulateLoreTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_lore_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_lore_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
@@ -654,8 +654,8 @@ class PopulateMapTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> dict:
-        from core.config import load_config, build_llm_from_config
-        from llm_engine.prompt_builder import build_populate_map_prompt
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_populate_map_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
@@ -841,7 +841,7 @@ class LoadInventoryTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> dict:
-        from workers.db_helpers import get_inventory
+        from axiom.db_helpers import get_inventory
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT entity_id FROM Entities WHERE is_active = 1;"
@@ -893,10 +893,10 @@ class LoadStatsAndInventoryTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> tuple[list[dict], dict]:
-        from workers.db_helpers import get_inventory
-        from database.modifier_processor import ModifierProcessor
-        from database.event_sourcing import EventSourcer
-        from database.schema import get_connection
+        from axiom.db_helpers import get_inventory
+        from axiom.modifiers import ModifierProcessor
+        from axiom.events import EventSourcer
+        from axiom.schema import get_connection
 
         # 1. Load Stats (with modifiers)
         with get_connection(self.db_path) as conn:
@@ -949,10 +949,10 @@ class LoadFullGameStateTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> tuple[list[dict], dict, list[dict]]:
-        from workers.db_helpers import get_inventory
-        from database.modifier_processor import ModifierProcessor
-        from database.event_sourcing import EventSourcer
-        from database.schema import get_connection
+        from axiom.db_helpers import get_inventory
+        from axiom.modifiers import ModifierProcessor
+        from axiom.events import EventSourcer
+        from axiom.schema import get_connection
 
         # 1. Load Entities and Stats
         with get_connection(self.db_path) as conn:

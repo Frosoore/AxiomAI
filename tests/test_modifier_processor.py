@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from database.schema import create_universe_db
-from database.event_sourcing import EventSourcer
-from database.modifier_processor import ModifierProcessor
+from axiom.schema import create_universe_db
+from axiom.events import EventSourcer
+from axiom.modifiers import ModifierProcessor
 
 
 # ---------------------------------------------------------------------------

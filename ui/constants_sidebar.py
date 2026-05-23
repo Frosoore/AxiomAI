@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from core.localization import tr
+from axiom.localization import tr
 
 
 class ConstantsSidebar(QWidget):
@@ -98,7 +98,7 @@ class ConstantsSidebar(QWidget):
     @Slot(list)
     def refresh(self, entity_snapshots: list[dict]) -> None:
         """Rebuild the stats display from fresh entity snapshot data."""
-        from core.localization import tr, fmt_num
+        from axiom.localization import tr, fmt_num
         # Remove all existing widgets (except the trailing stretch)
         while self._entities_layout.count() > 1:
             item = self._entities_layout.takeAt(0)
@@ -124,7 +124,7 @@ class ConstantsSidebar(QWidget):
                 # Localize entity type
                 translated_type = tr(f"entity_{entity_type}")
                 # Use localized spacing
-                from core.config import load_config
+                from axiom.config import load_config
                 lang = getattr(load_config(), "language", "en")
                 if lang in ("zh", "ja", "ko"):
                     group_title += f"[{translated_type}]"
@@ -139,7 +139,7 @@ class ConstantsSidebar(QWidget):
                 for stat_key, stat_value in stats.items():
                     # Use stat_fmt if available
                     label_text = tr("stat_fmt", key=stat_key, val="").rstrip(":").rstrip(" :").rstrip("：")
-                    from core.config import load_config
+                    from axiom.config import load_config
                     lang = getattr(load_config(), "language", "en")
                     colon = "：" if lang in ("zh", "ja") else ":"
                     if lang == "fr": colon = " :"
@@ -219,7 +219,7 @@ class ConstantsSidebar(QWidget):
             self._time_layout.insertWidget(0, placeholder)
             return
 
-        from workers.db_helpers import get_time_of_day_context
+        from axiom.db_helpers import get_time_of_day_context
         for event in timeline_events:
             time_str = get_time_of_day_context(event.get("in_game_time", 0))
             turn_id = event.get("turn_id", 0)

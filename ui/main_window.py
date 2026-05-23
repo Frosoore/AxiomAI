@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.config import load_config
-from core.localization import tr
+from axiom.config import load_config
+from axiom.localization import tr
 
 
 class MainWindow(QMainWindow):
@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
 
     def update_audio_ambiance(self, tag: str) -> None:
         """Change background loop with cross-fading via AmbianceManager."""
-        from core.config import load_config
+        from axiom.config import load_config
         cfg = load_config()
         self._ambiance_manager.set_enabled(cfg.enable_audio)
         
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
     def _show_settings(self) -> None:
         """Open the Settings dialog and reload the LLM if settings were saved."""
         from ui.settings_dialog import SettingsDialog
-        from core.config import load_config
+        from axiom.config import load_config
         from PySide6.QtWidgets import QDialog
         
         db_path = self._active_db_path
@@ -338,7 +338,7 @@ class MainWindow(QMainWindow):
 
     def _check_first_launch(self) -> None:
         """Show a welcome message if this is the first time the app is launched."""
-        from core.paths import SETTINGS_FILE
+        from axiom.paths import SETTINGS_FILE
         if not SETTINGS_FILE.exists():
             QMessageBox.information(
                 self,

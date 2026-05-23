@@ -2,7 +2,7 @@
 import sqlite3
 import json
 import pytest
-from database.schema import create_universe_db
+from axiom.schema import create_universe_db
 from workers.db_worker import DbWorker
 
 @pytest.fixture

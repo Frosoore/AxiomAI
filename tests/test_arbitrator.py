@@ -21,13 +21,13 @@ import pytest
 
 from chromadb import EmbeddingFunction, Documents, Embeddings
 
-from core.arbitrator import ArbitratorEngine, ArbitratorResult
-from core.rules_engine import RulesEngine
-from database.event_sourcing import EventSourcer
-from database.modifier_processor import ModifierProcessor
-from database.schema import create_universe_db
-from llm_engine.base import LLMBackend, LLMMessage, LLMResponse
-from llm_engine.vector_memory import VectorMemory
+from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.rules import RulesEngine
+from axiom.events import EventSourcer
+from axiom.modifiers import ModifierProcessor
+from axiom.schema import create_universe_db
+from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
+from axiom.memory import VectorMemory
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def db_path(tmp_path: Path) -> str:
 @pytest.fixture
 def vm(tmp_path: Path) -> VectorMemory:
     with patch(
-        "llm_engine.vector_memory.SentenceTransformerEmbeddingFunction",
+        "axiom.memory.SentenceTransformerEmbeddingFunction",
         return_value=_FakeEmbeddingFn(),
     ):
         return VectorMemory(persist_dir=str(tmp_path / "chroma"))
@@ -449,10 +449,10 @@ class TestStreamingCallback:
             finish_reason="stop",
         )
         llm = self._StreamingStubLLM(response)
-        from database.event_sourcing import EventSourcer
-        from database.modifier_processor import ModifierProcessor
-        from core.rules_engine import RulesEngine
-        from core.arbitrator import ArbitratorEngine
+        from axiom.events import EventSourcer
+        from axiom.modifiers import ModifierProcessor
+        from axiom.rules import RulesEngine
+        from axiom.arbitrator import ArbitratorEngine
         arb = ArbitratorEngine(db_path, [])
         arb.configure(llm, vm)
         received: list[str] = []
@@ -476,7 +476,7 @@ class TestStreamingCallback:
         # Streaming result (different db needed to avoid turn collision)
         import tempfile
         from pathlib import Path
-        from database.schema import create_universe_db
+        from axiom.schema import create_universe_db
         import sqlite3
         tmp2 = tempfile.mkdtemp()
         db2 = str(Path(tmp2) / "u2.db")
@@ -491,18 +491,18 @@ class TestStreamingCallback:
             conn.commit()
         from unittest.mock import patch
         with patch(
-            "llm_engine.vector_memory.SentenceTransformerEmbeddingFunction",
+            "axiom.memory.SentenceTransformerEmbeddingFunction",
             return_value=_FakeEmbeddingFn(),
         ):
-            from llm_engine.vector_memory import VectorMemory
+            from axiom.memory import VectorMemory
             import os
             vm2 = VectorMemory(persist_dir=str(Path(tmp2) / "chroma"))
 
         llm_s = self._StreamingStubLLM(response)
-        from database.event_sourcing import EventSourcer
-        from database.modifier_processor import ModifierProcessor
-        from core.rules_engine import RulesEngine
-        from core.arbitrator import ArbitratorEngine
+        from axiom.events import EventSourcer
+        from axiom.modifiers import ModifierProcessor
+        from axiom.rules import RulesEngine
+        from axiom.arbitrator import ArbitratorEngine
         arb_s = ArbitratorEngine(db2, [])
         arb_s.configure(llm_s, vm2)
         tokens: list[str] = []
@@ -540,10 +540,10 @@ class TestDynamicStopSequences:
 
         llm = _SpyLLM(response)
         
-        from database.event_sourcing import EventSourcer
-        from database.modifier_processor import ModifierProcessor
-        from core.rules_engine import RulesEngine
-        from core.arbitrator import ArbitratorEngine
+        from axiom.events import EventSourcer
+        from axiom.modifiers import ModifierProcessor
+        from axiom.rules import RulesEngine
+        from axiom.arbitrator import ArbitratorEngine
         arb = ArbitratorEngine(db_path, [])
         arb.configure(llm, vm)
         
@@ -563,7 +563,7 @@ class TestDynamicStopSequences:
 class TestCompanionMode:
     def test_plot_armor_prevents_rejection(self, db_path, vm) -> None:
         # Create a Hero NPC via EventSourcer for correct State_Cache integration
-        from database.event_sourcing import EventSourcer
+        from axiom.events import EventSourcer
         es = EventSourcer(db_path)
         es.append_event("s1", 0, "entity_create", "hero1",
                         {"entity_id": "hero1", "entity_type": "npc", "name": "Legendary Hero"})

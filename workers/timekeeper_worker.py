@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QThread, Signal
 
-from core.logger import logger
-from database.schema import get_connection
-from llm_engine.prompt_builder import build_timekeeper_prompt
+from axiom.logger import logger
+from axiom.schema import get_connection
+from axiom.prompts import build_timekeeper_prompt
 
 if TYPE_CHECKING:
-    from llm_engine.base import LLMBackend
+    from axiom.backends.base import LLMBackend
 
 
 class TimekeeperWorker(QThread):

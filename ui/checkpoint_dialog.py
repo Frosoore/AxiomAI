@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QVBoxLayout,
 )
-from core.localization import tr
+from axiom.localization import tr
 
 
 class CheckpointDialog(QDialog):

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from llm_engine.vector_memory import VectorMemory
+from axiom.memory import VectorMemory
 
 
 class VectorInitWorker(QThread):

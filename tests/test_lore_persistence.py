@@ -3,7 +3,7 @@ import os
 import sqlite3
 import pytest
 from workers.db_worker import DbWorker
-from database.schema import create_universe_db
+from axiom.schema import create_universe_db
 
 @pytest.fixture
 def db_path(tmp_path):

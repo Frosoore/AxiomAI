@@ -14,8 +14,8 @@ from typing import Iterator
 import httpx
 import pytest
 
-from llm_engine.base import LLMConnectionError, LLMParseError, LLMResponse
-from llm_engine.ollama_client import OllamaClient
+from axiom.backends.base import LLMConnectionError, LLMParseError, LLMResponse
+from axiom.backends.ollama import OllamaClient
 
 
 # ---------------------------------------------------------------------------

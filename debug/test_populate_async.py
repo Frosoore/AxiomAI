@@ -8,12 +8,12 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from database.schema import create_universe_db, get_connection
+from axiom.schema import create_universe_db, get_connection
 from workers.db_tasks import PopulateEntitiesTask
 
 class MockOllama:
     def complete(self, prompt):
-        from llm_engine.base import LLMResponse
+        from axiom.backends.base import LLMResponse
         tool_call = {
             "entities": [
                 {

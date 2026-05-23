@@ -8,7 +8,7 @@ LLMBackend abstract interface.  No network calls; no mocking needed
 
 import pytest
 
-from llm_engine.base import (
+from axiom.backends.base import (
     LLMBackend,
     LLMConnectionError,
     LLMMessage,

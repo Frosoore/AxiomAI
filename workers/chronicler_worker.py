@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from core.chronicler import ChroniclerEngine, ChroniclerResult
+from axiom.chronicler import ChroniclerEngine, ChroniclerResult
 
 
 class ChroniclerWorker(QThread):

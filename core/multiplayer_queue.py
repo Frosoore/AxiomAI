@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QThread, Signal, QObject
 
 if TYPE_CHECKING:
-    from core.arbitrator import ArbitratorEngine
-    from llm_engine.base import LLMMessage
+    from axiom.arbitrator import ArbitratorEngine
+    from axiom.backends.base import LLMMessage
 
 @dataclass
 class PlayerAction:

@@ -1,7 +1,7 @@
 
 import sqlite3
 import pytest
-from database.schema import create_global_db
+from axiom.schema import create_global_db
 from workers.db_worker import DbWorker
 
 @pytest.fixture

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from workers.mini_dico_worker import MiniDicoWorker
-from core.localization import tr
+from axiom.localization import tr
 
 
 class MiniDicoPanel(QWidget):

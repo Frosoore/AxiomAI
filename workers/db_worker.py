@@ -15,7 +15,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal, QThreadPool
 
-from database.schema import (
+from axiom.schema import (
     get_connection,
     migrate_lore_book_table,
     migrate_stat_definitions_table,
@@ -303,7 +303,7 @@ class DbWorker(QObject):
     def save_full_universe(self, entities, rules, meta, lore_book, stat_definitions=None, scheduled_events=None, story_setup=None, locations=None, connections=None) -> None:
         class TempTask(LoadStatsTask):
             def execute(self) -> bool:
-                from database.schema import migrate_story_setup_table
+                from axiom.schema import migrate_story_setup_table
                 migrate_lore_book_table(self.db_path)
                 migrate_stat_definitions_table(self.db_path)
                 migrate_entities_table(self.db_path)
@@ -377,7 +377,7 @@ class DbWorker(QObject):
 
     def load_library(self, library_dir: str) -> None:
         from pathlib import Path
-        from workers.db_helpers import read_universe_card_metadata
+        from axiom.db_helpers import read_universe_card_metadata
         class TempTask(LoadStatsTask):
             def execute(self) -> list:
                 db_files = sorted(Path(library_dir).glob("*.db"))
@@ -391,7 +391,7 @@ class DbWorker(QObject):
         self._setup_task(task)
 
     def load_saves_async(self) -> None:
-        from workers.db_helpers import load_saves
+        from axiom.db_helpers import load_saves
         class TempTask(LoadStatsTask):
             def execute(self) -> list:
                 return load_saves(self.db_path)
@@ -457,7 +457,7 @@ class DbWorker(QObject):
                     scheduled_events = [{"event_id": r["event_id"], "trigger_minute": r["trigger_minute"], "title": r["title"], "description": r["description"]} for r in se_rows]
 
                     # 7. Story Setup
-                    from database.schema import migrate_story_setup_table
+                    from axiom.schema import migrate_story_setup_table
                     migrate_story_setup_table(self.db_path)
                     ss_rows = conn.execute("SELECT setup_id, question, type, options, max_selections, priority FROM Story_Setup ORDER BY priority ASC;").fetchall()
                     story_setup = [{

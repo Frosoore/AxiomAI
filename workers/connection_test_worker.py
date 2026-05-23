@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from llm_engine.base import LLMBackend
+from axiom.backends.base import LLMBackend
 
 
 class ConnectionTestWorker(QThread):

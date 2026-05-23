@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from database.schema import create_universe_db, migrate_lore_book_table
-from llm_engine.prompt_builder import (
+from axiom.schema import create_universe_db, migrate_lore_book_table
+from axiom.prompts import (
     _format_lore_book_block,
     build_mini_dico_prompt,
     build_narrative_prompt,

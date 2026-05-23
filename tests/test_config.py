@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.config import (
+from axiom.config import (
     AppConfig,
     build_llm_from_config,
     load_config,
@@ -27,8 +27,8 @@ from core.config import (
 def config_dir(tmp_path: Path):
     """Patch _CONFIG_FILE to use a temp directory."""
     config_file = tmp_path / "settings.json"
-    with patch("core.config._CONFIG_FILE", config_file), \
-         patch("core.config._CONFIG_DIR", tmp_path):
+    with patch("axiom.config._CONFIG_FILE", config_file), \
+         patch("axiom.config._CONFIG_DIR", tmp_path):
         yield tmp_path, config_file
 
 
@@ -110,8 +110,8 @@ class TestSaveConfig:
 
     def test_creates_directory(self, tmp_path: Path) -> None:
         nested = tmp_path / "a" / "b" / "settings.json"
-        with patch("core.config._CONFIG_FILE", nested), \
-             patch("core.config._CONFIG_DIR", nested.parent):
+        with patch("axiom.config._CONFIG_FILE", nested), \
+             patch("axiom.config._CONFIG_DIR", nested.parent):
             save_config(AppConfig())
         assert nested.exists()
 
@@ -128,15 +128,15 @@ class TestSaveConfig:
 
 class TestBuildLlmFromConfig:
     def test_ollama_backend_returns_universal_client(self) -> None:
-        from llm_engine.universal_client import UniversalClient
+        from axiom.backends.universal import UniversalClient
         cfg = AppConfig(llm_backend="universal", universal_model="llama3.2")
         llm = build_llm_from_config(cfg)
         assert isinstance(llm, UniversalClient)
 
     def test_gemini_backend_returns_gemini_client(self) -> None:
-        from llm_engine.gemini_client import GeminiClient
+        from axiom.backends.gemini import GeminiClient
         from unittest.mock import patch as p
-        with p("llm_engine.gemini_client.genai.Client"):
+        with p("axiom.backends.gemini.genai.Client"):
             cfg = AppConfig(llm_backend="gemini", gemini_api_key="key")
             llm = build_llm_from_config(cfg)
             assert isinstance(llm, GeminiClient)
@@ -152,7 +152,7 @@ class TestBuildLlmFromConfig:
             build_llm_from_config(cfg)
 
     def test_ollama_url_passed_to_client(self) -> None:
-        from llm_engine.universal_client import UniversalClient
+        from axiom.backends.universal import UniversalClient
         cfg = AppConfig(
             llm_backend="universal",
             universal_base_url="http://192.168.1.5:11434",

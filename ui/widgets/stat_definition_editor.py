@@ -25,10 +25,10 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
 )
-from core.localization import tr
+from axiom.localization import tr
 
 try:
-    from database.presets import STAT_PRESETS
+    from axiom.presets import STAT_PRESETS
 except ImportError:
     STAT_PRESETS = {}
 
@@ -202,7 +202,7 @@ class StatDefinitionEditorWidget(QWidget):
         
         params = stat.get("parameters", {})
         if vtype == "numeric":
-            from core.localization import fmt_num
+            from axiom.localization import fmt_num
             p_min = fmt_num(params.get('min', 0))
             p_max = fmt_num(params.get('max', 100))
             params_str = f"min:{p_min}, max:{p_max}"

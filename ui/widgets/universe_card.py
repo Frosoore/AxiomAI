@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from core.localization import tr
-from workers.db_helpers import read_universe_card_metadata
+from axiom.localization import tr
+from axiom.db_helpers import read_universe_card_metadata
 
 
 class UniverseCard(QFrame):
@@ -118,7 +118,7 @@ class UniverseCard(QFrame):
 
     def retranslate_ui(self):
         """Dynamic text update for card elements."""
-        from core.config import load_config
+        from axiom.config import load_config
         lang = getattr(load_config(), "language", "en")
         colon = "：" if lang in ("zh", "ja") else ":"
         if lang == "fr": colon = " :"

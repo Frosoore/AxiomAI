@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 
 from ui.main_window import MainWindow
-from core.logger import logger
+from axiom.logger import logger
 
 _DARK_QSS: str = """
 /* ── Global Catppuccin Mocha ───────────────────────────────── */

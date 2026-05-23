@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from database.schema import create_universe_db, EXPECTED_TABLES
+from axiom.schema import create_universe_db, EXPECTED_TABLES
 
 
 # ---------------------------------------------------------------------------

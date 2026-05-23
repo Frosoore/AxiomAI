@@ -12,8 +12,8 @@ from typing import Iterator
 
 import pytest
 
-from llm_engine.base import LLMConnectionError, LLMParseError, LLMResponse
-from llm_engine.gemini_client import GeminiClient
+from axiom.backends.base import LLMConnectionError, LLMParseError, LLMResponse
+from axiom.backends.gemini import GeminiClient
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ def _make_streaming_chunks(tokens: list[str]) -> list[MagicMock]:
 @pytest.fixture
 def mock_client_cls():
     """Patch google.genai.Client so no real HTTP client is created."""
-    with patch("llm_engine.gemini_client.genai.Client") as mock_cls:
+    with patch("axiom.backends.gemini.genai.Client") as mock_cls:
         yield mock_cls
 
 

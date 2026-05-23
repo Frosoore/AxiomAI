@@ -13,10 +13,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.chronicler import ChroniclerEngine, ChroniclerResult
-from database.event_sourcing import EventSourcer
-from database.schema import create_universe_db
-from llm_engine.base import LLMBackend, LLMMessage, LLMResponse
+from axiom.chronicler import ChroniclerEngine, ChroniclerResult
+from axiom.events import EventSourcer
+from axiom.schema import create_universe_db
+from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ class TestRunRobustness:
 
     def test_llm_exception_does_not_raise(self, db_path) -> None:
         """LLM errors must never crash the Chronicler."""
-        from llm_engine.base import LLMConnectionError
+        from axiom.backends.base import LLMConnectionError
 
         class _FailingLLM(LLMBackend):
             def complete(self, messages, stream=False):

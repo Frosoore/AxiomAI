@@ -6,7 +6,7 @@ from PySide6.QtGui import QTextCursor, QTextCharFormat, QTextBlockFormat, QColor
 from PySide6.QtCore import Signal, QUrl, Qt
 
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from core.localization import tr
+from axiom.localization import tr
 
 class _RichTextBrowser(QTextBrowser):
     def __init__(self, parent=None):
@@ -98,7 +98,7 @@ class ChatDisplayWidget(QWidget):
         self._narrative_display.setOpenLinks(False)
         self._narrative_display.anchorClicked.connect(self._on_link_clicked)
 
-        from core.config import load_config
+        from axiom.config import load_config
         cfg = load_config()
 
         font = self._narrative_display.font()

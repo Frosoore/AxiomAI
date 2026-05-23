@@ -21,7 +21,7 @@ import pytest
 import chromadb
 from chromadb import EmbeddingFunction, Documents, Embeddings
 
-from llm_engine.vector_memory import VectorMemory, _COLLECTION_NAME
+from axiom.memory import VectorMemory, _COLLECTION_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ class _FakeEmbeddingFn(EmbeddingFunction[Documents]):
 def vm(tmp_path: Path):
     """Provide a VectorMemory instance with mocked embeddings and tmp storage."""
     with patch(
-        "llm_engine.vector_memory.SentenceTransformerEmbeddingFunction",
+        "axiom.memory.SentenceTransformerEmbeddingFunction",
         return_value=_FakeEmbeddingFn(),
     ):
         memory = VectorMemory(persist_dir=str(tmp_path / "chroma"))

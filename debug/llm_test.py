@@ -6,8 +6,8 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from core.config import load_config, build_llm_from_config
-from llm_engine.base import LLMMessage
+from axiom.config import load_config, build_llm_from_config
+from axiom.backends.base import LLMMessage
 
 def test_llm():
     print("--- Axiom AI LLM Parameter Test ---")

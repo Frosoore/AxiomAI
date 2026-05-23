@@ -43,7 +43,7 @@ def check_schema():
     """Verify that the schema producing function includes the new spatial tables."""
     print("[2/3] Verifying database schema...")
     try:
-        from database.schema import EXPECTED_TABLES
+        from axiom.schema import EXPECTED_TABLES
         new_tables = ["Locations", "Location_Connections"]
         missing = [t for t in new_tables if t not in EXPECTED_TABLES]
         if missing:
@@ -62,9 +62,9 @@ def check_imports():
         ('PySide6.QtWidgets', 'pyside6'),
         ('google.genai', 'google-genai'),
         ('PIL', 'pillow'),
-        ('core.arbitrator', 'core'),
-        ('database.schema', 'database'),
-        ('llm_engine.base', 'llm_engine'),
+        ('axiom.arbitrator', 'core'),
+        ('axiom.schema', 'database'),
+        ('axiom.backends.base', 'llm_engine'),
         ('ui.main_window', 'ui')
     ]
     

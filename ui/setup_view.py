@@ -38,9 +38,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 
-from core.config import load_config, GLOBAL_DB_FILE
-from core.localization import tr
-from workers.db_helpers import create_new_save
+from axiom.config import load_config, GLOBAL_DB_FILE
+from axiom.localization import tr
+from axiom.db_helpers import create_new_save
 from workers.db_worker import DbWorker
 
 if TYPE_CHECKING:

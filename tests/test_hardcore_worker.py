@@ -32,8 +32,8 @@ def qt_app():
 @pytest.fixture
 def db_path(tmp_path: Path) -> str:
     """A fully provisioned universe db with one Hardcore save."""
-    from database.schema import create_universe_db
-    from database.event_sourcing import EventSourcer
+    from axiom.schema import create_universe_db
+    from axiom.events import EventSourcer
 
     path = str(tmp_path / "universe.db")
     create_universe_db(path)
@@ -103,8 +103,8 @@ class TestHardcoreWorker:
 
     def test_deletes_event_log_rows(self, tmp_path: Path, qt_app) -> None:
         from workers.hardcore_worker import HardcoreWorker
-        from database.schema import create_universe_db
-        from database.event_sourcing import EventSourcer
+        from axiom.schema import create_universe_db
+        from axiom.events import EventSourcer
 
         vector_dir = str(tmp_path / "vector" / "s2")
         Path(vector_dir).mkdir(parents=True)
@@ -145,7 +145,7 @@ class TestHardcoreWorker:
 
     def test_deletes_vector_directory(self, tmp_path: Path, qt_app) -> None:
         from workers.hardcore_worker import HardcoreWorker
-        from database.schema import create_universe_db
+        from axiom.schema import create_universe_db
 
         db3 = str(tmp_path / "u3.db")
         create_universe_db(db3)
@@ -173,7 +173,7 @@ class TestHardcoreWorker:
 
     def test_nonexistent_vector_dir_does_not_fail(self, tmp_path: Path, qt_app) -> None:
         from workers.hardcore_worker import HardcoreWorker
-        from database.schema import create_universe_db
+        from axiom.schema import create_universe_db
 
         db4 = str(tmp_path / "u4.db")
         create_universe_db(db4)

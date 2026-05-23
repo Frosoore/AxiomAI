@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from database.event_sourcing import EventSourcer
+from axiom.events import EventSourcer
 
 def check_integrity(db_path: str):
     if not os.path.exists(db_path):

@@ -35,8 +35,8 @@ from ui.widgets.story_setup_editor import StorySetupEditorWidget
 from ui.widgets.populate_tab import PopulateTabWidget
 from ui.widgets.map_editor import MapEditorWidget
 from workers.db_worker import DbWorker
-from core.config import load_config
-from core.localization import tr
+from axiom.config import load_config
+from axiom.localization import tr
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
