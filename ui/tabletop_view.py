@@ -287,8 +287,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_label.setText(tr("turn_fmt", count=0))
 
         # Start Vector Memory Init
-        from axiom.paths import VECTOR_DIR
-        vector_dir = str(VECTOR_DIR / self._save_id)
+        from axiom import paths
+        vector_dir = str(paths.get_vector_dir() / self._save_id)
         self._vector_init_worker = VectorInitWorker(vector_dir)
         self._vector_init_worker.ready.connect(self._on_vector_ready)
         self._vector_init_worker.error_occurred.connect(lambda msg: QMessageBox.critical(self, tr("error"), msg))

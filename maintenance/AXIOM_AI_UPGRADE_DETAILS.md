@@ -492,8 +492,14 @@ estimée : 6 à 8 semaines.**
 Aujourd'hui, le moteur (Arbitrator, Chronicler, EventSourcing, RulesEngine,
 ModifierProcessor, VectorMemory, prompt building) est mélangé avec PySide6 :
 - Les workers vivent dans `workers/` et importent Qt
-- `core/paths.py` utilise des paths Qt-friendly
 - Le tabletop_view orchestre la logique de turn directement
+
+> **Révision (TICKET-004) :** la ligne initiale « `core/paths.py` utilise des
+> paths Qt-friendly » était **fausse**. `core/paths.py` (comme `core/logger.py`)
+> est du pur stdlib (`os`/`sys`/`pathlib`), sans aucune dépendance Qt, et était
+> déjà importable headless. La vraie limite n'est pas Qt mais que les chemins
+> sont **codés en dur à l'import** (`~/.config/AxiomAI`, `~/.cache/AxiomAI`,
+> `~/AxiomAI`), donc non injectables par un embedder. Voir §5.3 Étape 3.
 
 Conséquences :
 - Impossible de jouer en CLI / scripted
@@ -520,7 +526,7 @@ axiom-engine/                 ← pip-installable, ZERO Qt dependency
     schema.py                 ← (depuis database/schema.py)
     memory.py                 ← VectorMemory abstracted (Protocol)
     time_system.py            ← (depuis core/time_system.py)
-    config.py                 ← AppConfig minimal (sans GUI fields)
+    config.py                 ← config (split EngineConfig/AppConfig abandonné, cf. §5.3 Étape 3)
     backends/
       __init__.py             ← @register_backend
       base.py                 ← LLMBackend Protocol
@@ -557,12 +563,49 @@ axiom-app/                    ← Le projet actuel, réduit à l'UI
 - `from database.schema import ...` → `from axiom.schema import ...`
 - etc.
 
-**Étape 3.** Identifier les fuites Qt dans le code engine :
-- `core/paths.py` doit devenir abstrait. L'engine reçoit un `data_dir: Path`
-  en paramètre, l'app le résout via Qt.
-- `core/config.py` : split en deux. `EngineConfig` (backends, LLM params) reste
-  dans `axiom/`. `AppConfig` (font_size, enable_audio, language) reste côté
-  app.
+**Étape 3.** *(Révisée — TICKET-004. La prémisse d'origine, reproduite plus bas,
+était erronée ; vérifiée par grep le 2026-05-23.)*
+
+Constat corrigé :
+- `axiom/paths.py` et `axiom/logger.py` sont du **pur stdlib** (`os`/`sys`/
+  `pathlib`/`logging`), **zéro Qt**, déjà importables headless. Il n'y a aucune
+  « fuite Qt » à éliminer ici.
+- `axiom/config.py` est lui aussi **100 % Python sans Qt** (son docstring le dit
+  explicitement : « pure Python with no UI dependencies »).
+- La seule vraie limite à l'embarquabilité : les chemins sont **codés en dur à
+  l'import** (`axiom/paths.py` → `~/.config/AxiomAI`, `~/.cache/AxiomAI`,
+  `~/AxiomAI`), donc non injectables par un embedder.
+
+Pourquoi le split `EngineConfig` / `AppConfig` est abandonné :
+- `AppConfig` mélange champs moteur (backends, params LLM) et champs UI
+  (`ui_font_size`, `enable_audio`, `language`) mais reste 100 % Python — le
+  split n'apporte aucun découplage Qt.
+- Le scinder **change le schéma de `settings.json`** (donc migration des configs
+  utilisateurs existantes).
+- Il casse des points d'usage déjà en place :
+  - l'app importe `axiom.config.GLOBAL_DB_FILE` comme **constante**
+    (`ui/hub_view.py`, `ui/setup_view.py`, `ui/settings_dialog.py`) ;
+  - `tests/test_config.py` patche `axiom.config._CONFIG_FILE` /
+    `axiom.config._CONFIG_DIR`.
+- Coût/risque élevés pour un gain nul à ce stade.
+
+**Décision (validée utilisateur) :**
+- L'Étape 3 **ne bloque pas** l'Étape 4.
+- L'injection des chemins est portée par l'API `Session(..., data_dir=...)`
+  (Étape 4), qui en est le point naturel ; pas besoin d'« abstraire » paths.py.
+- Le split de config est **reporté/abandonné** sauf besoin avéré.
+
+<details>
+<summary>Prémisse d'origine (conservée pour historique — incorrecte)</summary>
+
+> Identifier les fuites Qt dans le code engine :
+> - `core/paths.py` doit devenir abstrait. L'engine reçoit un `data_dir: Path`
+>   en paramètre, l'app le résout via Qt.
+> - `core/config.py` : split en deux. `EngineConfig` (backends, LLM params) reste
+>   dans `axiom/`. `AppConfig` (font_size, enable_audio, language) reste côté
+>   app.
+
+</details>
 
 **Étape 4.** Définir l'API publique de `axiom-engine` :
 
@@ -603,6 +646,96 @@ class Session:
 L'app construit une `Session` au démarrage de tabletop, et appelle
 `session.take_turn()` depuis un QThread worker (le worker actuel `NarrativeWorker`
 devient un simple wrapper de threading + signal/slot autour de la `Session`).
+
+> **Statut réel de l'Étape 4 (vérifié par lecture du code, 2026-05-23) :** l'API
+> `Session`/`Universe` **existe et tourne headless** (`axiom/session.py`,
+> `axiom/universe.py`), elle est testée à vide (`tests/test_session.py`, faux LLM).
+> MAIS elle n'est **adoptée nulle part** (l'app passe par `NarrativeWorker` →
+> `ArbitratorEngine.process_turn` en direct) et il lui **manque des fonctions**
+> que le jeu réel possède. Le « simple wrapper » décrit ci-dessus est donc encore
+> à faire — et ce n'est pas « simple ». La suite (Étapes 5→8) le détaille.
+
+### 5.3-bis Plan révisé : finir le Pilier 1 sans dette (TICKET-005)
+
+*(Ajouté le 2026-05-23. Vérifié par lecture intégrale de `axiom/session.py`,
+`axiom/arbitrator.py`, `axiom/memory.py`, `axiom/config.py`, `axiom/paths.py`,
+`axiom/logger.py`, `workers/narrative_worker.py`, `ui/tabletop_view.py`,
+`tests/test_session.py`.)*
+
+**Constat — deux problèmes distincts étaient fusionnés dans « rendre le moteur autonome » :**
+
+- **Problème P — rangement des fichiers.** Les chemins sont **gelés à l'import**
+  (`axiom/paths.py` calcule `CONFIG_DIR`/`CACHE_DIR`/`DATA_DIR` une fois ;
+  `axiom/config.py:23-25` et `axiom/logger.py:12-14` les capturent par valeur, le
+  logger crée même son singleton à l'import, `logger.py:53`). `Session(data_dir=)`
+  ne redirige aujourd'hui **que** la VectorMemory par défaut (`session.py:71-73`),
+  et l'app lit `VECTOR_DIR` en direct (`ui/tabletop_view.py:290-291`,
+  `ui/tabletop_hardcore.py:94-96`, `workers/db_tasks.py:225-226`) — `data_dir`
+  n'est donc **jamais exercé**.
+
+- **Problème U — deux « machines à jouer un tour » en parallèle.**
+  1. Celle de l'app : `tabletop_view._on_send_message` + `NarrativeWorker.run()`
+     (décision du héros Companion via `_get_hero_decision`, historique pris dans
+     la liste UI `self._history`, signaux Qt, déclenchement Chronicler côté UI).
+  2. Celle du moteur : `Session.take_turn()`, **non branchée** et **plus pauvre**.
+     Écarts vérifiés : (a) **pas de décision héros Companion** — `take_turn`
+     reçoit `hero_action`/`hero_entity_id` déjà calculés (`session.py:100-101`)
+     mais ne les décide pas, alors que le worker le fait (`narrative_worker.py:97-111,
+     175`) ; (b) **source d'historique différente** — le worker mappe la liste UI,
+     `Session._load_history()` reconstruit depuis l'`Event_Log`.
+     *(Le streaming n'est PAS un écart : les deux passent un callback `on_token`/
+     `stream_token_callback`.)*
+
+  Tant que ces deux machines coexistent, tout correctif/feature doit être fait
+  deux fois et elles divergent → **dette architecturale**. Cible : une seule
+  machine (`Session`), dont le worker GUI n'est qu'une coquille de threading.
+
+**Étape 5 — Injection des chemins (Problème P).** *Risque bas.*
+Rendre la racine de données injectable proprement : `data_dir` doit couvrir au
+minimum la VectorMemory **et** les logs. Point délicat : les chemins étant gelés
+à l'import, prévoir une résolution paresseuse ou un point de configuration appelé
+**très tôt** (avant la capture par `config`/`logger`). Brancher l'app et `Session`
+dessus. **Test** prouvant que `Session(data_dir=tmp)` fait bien atterrir les
+données (vector + logs couverts) sous `tmp`.
+
+> **Décision actée (validée utilisateur, 2026-05-23) — hybride sur `settings.json` + `global.db`.**
+> Ces deux fichiers sont **transversaux** (préférences d'app + clé API ;
+> personas réutilisables), pas liés à une partie.
+> - **Par défaut**, ils restent **machine-globaux** (`~/.config/AxiomAI`) : la GUI
+>   ne change pas, la clé API est saisie une fois et partagée par tous les univers.
+> - **Surcharge explicite** disponible pour les cas qui veulent l'isolement total
+>   (tests, embedders, install portable) : ils peuvent pointer aussi la config sous
+>   leur propre racine.
+>
+> Implication API : ne PAS faire emporter la config par `data_dir` d'office.
+> Prévoir un chemin de config résolu **séparément** (p. ex. param `config_dir`
+> optionnel distinct de `data_dir`, défaut = machine-global). À noter pour les
+> embedders : **sandboxer ≠ éphémère** — la persistance (clés API conservées d'une
+> session à l'autre) dépend uniquement de pointer vers le **même** dossier au
+> lancement suivant, pas du fait d'isoler ou non. Le seul cas non-persistant est un
+> dossier temporaire neuf à chaque démarrage (= tests).
+
+**Étape 6 — Parité de `Session` (pré-requis du Problème U).** *Risque moyen, pas de bascule.*
+Faire absorber par `Session` ce qui manque vs le worker : décision du héros
+(Companion), source d'historique unifiée (choisir Event_Log vs liste UI et
+documenter), hooks de progression headless (remplacent les signaux Qt). Tests de
+parité contre le comportement actuel du worker (cf. `tests/test_arbitrator.py`).
+
+**Étape 7 — Adoption par le worker (Problème U).** *Risque réel, isolé, run-testé.*
+`NarrativeWorker` devient une coquille de threading autour de `Session`. L'app
+construit la `Session` au load de tabletop. Validation en **run réel** (pas
+seulement imports/tests) : zéro perte de fonctionnalité ni de perf, Companion
+intact, historique cohérent.
+
+**Étape 8 — CLI sur `Session`** (`axiom play universe.axiom`). *Preuve d'embarquabilité.*
+Livre l'argument n°1 du pilier (§5.4) et valide que le moteur tourne réellement
+sans Qt via la même API que la GUI.
+
+> TICKET-005 est **absorbé** par ce plan : trou « logs » → Étape 5 ; trou
+> « `Session` débranchée + appauvrie » → Étapes 6-7 ; trou « pas de test
+> `data_dir` » → Étape 5. Chaque étape suit la méthodo habituelle (dossier
+> `maintenance/<etape>/` avec TODO + CHANGELOG, refs vérifiées par grep avant
+> de coder, pas de hors-scope).
 
 ### 5.4 Ce que ça débloque
 
@@ -2814,7 +2947,7 @@ release en l'état.
 | `core/arbitrator.py` | Per-perspective embedding | C | 9 |
 | `core/chronicler.py` | Remplacement par NPCAgent manager | C | 9 |
 | `core/chronicler.py` | Déplacer vers `axiom/chronicler.py` | B | 5 |
-| `core/config.py` | Split EngineConfig / AppConfig | B | 5 |
+| `core/config.py` | ~~Split EngineConfig / AppConfig~~ — abandonné (TICKET-004, cf. §5.3 Étape 3) | B | 5 |
 | `core/localization.py` | Ajouter `get_translations_dict()` | A | 1.7 |
 | `core/time_system.py` | Déplacer vers `axiom/time_system.py` | B | 5 |
 | `database/event_sourcing.py` | `append_events_batch` | A | 3.2 |

@@ -68,9 +68,21 @@ class Session:
         self.universe = Universe.load(self._db_path)
         self._system_prompt = self.universe.system_prompt or _DEFAULT_SYSTEM_PROMPT
 
+        # Path injection (Étape 5): an explicit data_dir sandboxes this session's
+        # per-game data (vector store + logs) under it. Logs are process-global
+        # (singleton logger) so we re-point the file handler here. Without
+        # data_dir, fall back to the lazily-resolved roots (which honour the
+        # AXIOM_DATA_DIR env var). Cross-cutting config stays machine-global.
+        if data_dir is not None:
+            data_root = Path(data_dir)
+            vector_base = data_root / "vector"
+            from axiom import logger as _logger
+            _logger.reconfigure(log_dir=data_root / "logs")
+        else:
+            vector_base = paths.get_vector_dir()
+
         if vector_memory is None:
-            base = Path(data_dir) / "vector" if data_dir is not None else paths.VECTOR_DIR
-            vector_memory = VectorMemory(persist_dir=str(Path(base) / save_id))
+            vector_memory = VectorMemory(persist_dir=str(vector_base / save_id))
         self._vector_memory = vector_memory
 
         rules = load_rules_for_session(self._db_path)

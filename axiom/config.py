@@ -16,6 +16,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from axiom import paths
 from axiom.backends.base import LLMBackend
 from axiom.paths import CONFIG_DIR, SETTINGS_FILE, GLOBAL_DB_FILE
 
@@ -23,6 +24,21 @@ from axiom.paths import CONFIG_DIR, SETTINGS_FILE, GLOBAL_DB_FILE
 _CONFIG_DIR: Path = CONFIG_DIR
 _CONFIG_FILE: Path = SETTINGS_FILE
 GLOBAL_DB_FILE: Path = GLOBAL_DB_FILE
+
+
+# Resolution honours an injected config_dir (Étape 5) when set; otherwise falls
+# back to the module-level globals above — which tests patch directly, and which
+# default to the machine-global location (GUI behaviour unchanged).
+def _resolve_config_dir() -> Path:
+    return paths.get_config_dir() if paths.has_config_override() else _CONFIG_DIR
+
+
+def _resolve_config_file() -> Path:
+    return paths.get_settings_file() if paths.has_config_override() else _CONFIG_FILE
+
+
+def _resolve_global_db_file() -> Path:
+    return paths.get_global_db_file() if paths.has_config_override() else GLOBAL_DB_FILE
 
 
 @dataclass
@@ -67,16 +83,17 @@ def load_config() -> AppConfig:
         AppConfig populated from disk, or a default AppConfig on any error.
     """
     from axiom.schema import create_global_db
+    config_file = _resolve_config_file()
     try:
-        create_global_db(str(GLOBAL_DB_FILE))
+        create_global_db(str(_resolve_global_db_file()))
     except Exception:
         pass
 
-    if not _CONFIG_FILE.exists():
+    if not config_file.exists():
         return AppConfig()
 
     try:
-        raw = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(config_file.read_text(encoding="utf-8"))
         # Migrate old ollama settings if universal is missing
         if "ollama_base_url" in raw and "universal_base_url" not in raw:
             old_url = raw.pop("ollama_base_url")
@@ -110,8 +127,8 @@ def save_config(config: AppConfig) -> None:
     Raises:
         OSError: If the file cannot be written (propagated to the caller).
     """
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    _CONFIG_FILE.write_text(
+    _resolve_config_dir().mkdir(parents=True, exist_ok=True)
+    _resolve_config_file().write_text(
         json.dumps(asdict(config), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )

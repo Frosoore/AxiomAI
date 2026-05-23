@@ -222,8 +222,8 @@ class DeleteSaveTask(BaseDbTask):
             conn.commit()
 
         # 2. Delete Vector Memory directory if it exists
-        from axiom.paths import VECTOR_DIR
-        vector_dir = VECTOR_DIR / self.save_id
+        from axiom import paths
+        vector_dir = paths.get_vector_dir() / self.save_id
         if vector_dir.exists():
             shutil.rmtree(str(vector_dir))
 

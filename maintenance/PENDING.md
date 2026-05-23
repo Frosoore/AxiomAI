@@ -1,24 +1,14 @@
 # PENDING — tickets à étudier
 
-## TICKET-004 — Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths)
+## Index des tickets
 
-**Contexte :** En attaquant le Pilier 1, le constat justifiant l'Étape 3 s'est révélé erroné.
-
-**Corrections à apporter au doc `AXIOM_AI_UPGRADE_DETAILS.md` §5.3 :**
-- « `core/paths.py` doit devenir abstrait [...] paths Qt-friendly » → **FAUX** : `core/paths.py` est
-  du pur stdlib (os/sys/pathlib), aucune dépendance Qt, déjà importable headless. Idem `core/logger.py`.
-- La vraie limite n'est pas Qt mais que les chemins sont **codés en dur à l'import** (`~/.config/AxiomAI`,
-  `~/AxiomAI`), donc non injectables par un embedder.
-- Le split `EngineConfig` / `AppConfig` est plus coûteux/risqué que présenté : `AppConfig` est déjà
-  100 % Python sans Qt ; le scinder **change le schéma de `settings.json`** (migration) et casse des
-  points existants (l'app importe `axiom.config.GLOBAL_DB_FILE` en constante ; `test_config.py` patche
-  `axiom.config._CONFIG_FILE`/`_CONFIG_DIR`).
-
-**Décision prise (validée utilisateur) :** l'Étape 3 ne bloque pas l'Étape 4. L'injection des chemins
-sera portée par l'API `Session(..., data_dir=...)` (Étape 4), qui en est le point naturel. Le split de
-config est reporté/abandonné sauf besoin avéré. → On passe directement à l'Étape 4.
-
-**Priorité :** basse (révision documentaire).
+| N°        | Titre                                                          | Statut    |
+|-----------|----------------------------------------------------------------|-----------|
+| TICKET-001| Rework tests : lisibilité, couverture et organisation          | ouvert    |
+| TICKET-002| State_Cache jamais mis à jour entre les tours                  | ouvert    |
+| TICKET-003| Supprimer les modules engine dépréciés (post-Pilier 1)        | ouvert    |
+| TICKET-004| Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths) | ✅ clos → voir `DONE.md` |
+| TICKET-005| Finir l'injection de chemins (`data_dir`) du Pilier 1                | ✅ clos (absorbé) → voir `DONE.md` |
 
 ---
 

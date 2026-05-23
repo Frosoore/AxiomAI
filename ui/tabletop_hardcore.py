@@ -91,9 +91,9 @@ class HardcoreMixin:
         gc.collect()
 
         # Step 4: Start HardcoreWorker
-        from axiom.paths import VECTOR_DIR
+        from axiom import paths
         vector_persist_dir = str(
-            VECTOR_DIR / self._save_id
+            paths.get_vector_dir() / self._save_id
         )
         self._hardcore_worker = HardcoreWorker(
             db_path=self._db_path,

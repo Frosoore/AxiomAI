@@ -68,3 +68,37 @@ non modifiés), sans rapport avec la bascule.
 Note : l'app pilote encore l'engine en direct (ArbitratorEngine + NarrativeWorker), ce qui marche.
 Faire adopter `Session` par le worker est une refacto applicative à risque de régression → reportée
 (hors « no refacto hors scope »), à traiter en étape dédiée quand on voudra le mode CLI.
+
+## Étape 5 — Injection des chemins (Problème P) — cf. doc §5.3-bis
+Objectif : que la racine de données soit injectable (vector + logs), sans geler les
+chemins à l'import. Hybride config acté : `settings.json`/`global.db` machine-globaux
+par défaut, surcharge explicite (`config_dir`) pour isolement total. App GUI inchangée.
+
+Constat vérifié (grep/lecture, 2026-05-23) :
+- `paths.py` calcule CONFIG_DIR/CACHE_DIR/DATA_DIR + dérivés une fois à l'import.
+- `config.py:20-25` capture CONFIG_DIR/SETTINGS_FILE/GLOBAL_DB_FILE à l'import ; `logger.py:12-14`
+  capture CACHE_DIR et crée le singleton à l'import (`logger.py:53`).
+- `logger.py` écrit en fait à la RACINE de CACHE_DIR (`_LOG_DIR = CACHE_DIR`), pas dans `LOG_DIR`.
+- Lecteurs directs de VECTOR_DIR (à router) : `ui/tabletop_view.py:290-291`,
+  `ui/tabletop_hardcore.py:94-96`, `workers/db_tasks.py:225-226`.
+- `tests/test_config.py` patche `axiom.config._CONFIG_FILE`/`_CONFIG_DIR` → NE PAS casser.
+
+- [x] `paths.py` : `configure(data_dir=, config_dir=)` + getters paresseux (`get_vector_dir`,
+      `get_log_dir`, `get_config_dir`, `get_settings_file`, `get_global_db_file`, `has_config_override`)
+      + vars d'env `AXIOM_DATA_DIR`/`AXIOM_CONFIG_DIR` + `reset()`. Constantes conservées (défauts).
+- [x] `logger.py` : résolution paresseuse via `get_log_dir()` + `reconfigure(log_dir=None)`
+      (re-pointe le file handler). Défaut inchangé (CACHE_DIR).
+- [x] `config.py` : load/save passent par `_resolve_config_file/dir/global_db` (honorent l'override
+      config, sinon les globals `_CONFIG_FILE`/`_CONFIG_DIR` patchés par les tests). Comportement défaut intact.
+- [x] `session.py` : si `data_dir` → logs sous `<data_dir>/logs` (reconfigure logger) + vector sous
+      `<data_dir>/vector/<save_id>` ; sinon getters (honorent env). Plus de recalcul ad hoc.
+- [x] App : router les 3 lecteurs VECTOR_DIR vers `paths.get_vector_dir()` (honore env override).
+- [x] `tests/test_session.py` : 2 tests (sandbox vector+logs sous data_dir ; config reste
+      machine-globale sans override). Verts. Non-régression : test_config (21) + engine subset (54) OK.
+
+Limites connues (notées pour la suite) :
+- `paths.configure(data_dir=)` est un override **process-global** ; deux Sessions avec data_dir
+  différents dans le même process partageraient les logs (le logger est un singleton). Session
+  calcule son vector localement (pas d'état global), seul le logger est re-pointé. OK pour GUI/CLI/tests.
+- `UNIVERSES_DIR` (bibliothèque d'univers, `ui/hub_view.py`) NON routé : c'est la source d'univers
+  côté utilisateur (analogue à `universe_path`), hors périmètre « données par-partie ».

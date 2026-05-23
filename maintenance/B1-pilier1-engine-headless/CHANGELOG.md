@@ -44,3 +44,26 @@
   - Smoke test hors-pytest : Session/Universe OK contre vraie base SQLite, `PySide6 chargé: False`.
   - Non régression : sous-ensemble engine (test_arbitrator/event_sourcing/checkpoint/config) = 68 passés.
   - REPORTÉ : réécriture de `NarrativeWorker` en wrapper de `Session` (refacto app à risque) + CLI `axiom/cli/`.
+
+- **Étape 5 (injection des chemins, Problème P) terminée** — cf. doc §5.3-bis :
+  - `axiom/paths.py` : ajout de `configure(data_dir=, config_dir=)`, `reset()`, getters paresseux
+    (`get_vector_dir`, `get_log_dir`, `get_config_dir`, `get_settings_file`, `get_global_db_file`,
+    `has_config_override`) + support des vars d'env `AXIOM_DATA_DIR` / `AXIOM_CONFIG_DIR`. Les
+    constantes existantes restent les défauts machine-globaux ; la résolution n'est plus gelée.
+  - `axiom/logger.py` : file handler résolu paresseusement via `paths.get_log_dir()` + nouvelle
+    fonction `reconfigure(log_dir=None)` qui re-pointe le handler. Emplacement par défaut inchangé
+    (racine CACHE_DIR, comportement legacy).
+  - `axiom/config.py` : `load_config`/`save_config` passent par `_resolve_config_file/dir/global_db`
+    qui honorent un override config si présent, sinon les globals `_CONFIG_FILE`/`_CONFIG_DIR`
+    (patchés par les tests). Hybride acté : config machine-globale par défaut.
+  - `axiom/session.py` : avec `data_dir`, logs → `<data_dir>/logs` (reconfigure) et vector →
+    `<data_dir>/vector/<save_id>` ; sans, getters (honorent env). Plus de recalcul ad hoc.
+  - App : `ui/tabletop_view.py`, `ui/tabletop_hardcore.py`, `workers/db_tasks.py` routés vers
+    `paths.get_vector_dir()` (honorent l'override/env). GUI inchangée en l'absence d'override.
+  - Tests : `tests/test_session.py` +2 (sandbox vector+logs sous data_dir ; config machine-globale
+    sans override). Résultats : test_session 7/7, test_config 14/14, engine subset 54/54.
+  - Smoke headless : défaut inchangé, env overrides effectifs, `PySide6 chargé: False`.
+  - Limites notées (TODO) : override `data_dir` process-global (logger singleton) ; `UNIVERSES_DIR`
+    non routé (source d'univers, hors périmètre données par-partie).
+  - **Reste du Pilier 1** : Étape 6 (parité `Session` : héros Companion + historique), Étape 7
+    (adoption worker, run-testé), Étape 8 (CLI).
