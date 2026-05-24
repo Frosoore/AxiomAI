@@ -106,30 +106,33 @@ def _make_chronicler(
 
 class TestShouldTrigger:
     def test_fires_at_exactly_interval(self) -> None:
-        engine, _ = _make_chronicler.__wrapped__ if hasattr(_make_chronicler, '__wrapped__') else (_make_chronicler, None)
-        # Use directly
+        """should_trigger is True when turns-since-last equals the interval."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         es = MagicMock()
         engine = ChroniclerEngine(llm=llm, event_sourcer=es, db_path="", trigger_interval=50)
         assert engine.should_trigger(50, 0) is True
 
     def test_does_not_fire_below_interval(self) -> None:
+        """should_trigger is False when fewer than `interval` turns have passed."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=50)
         assert engine.should_trigger(49, 0) is False
 
     def test_fires_well_above_interval(self) -> None:
+        """should_trigger is True once the interval has been comfortably exceeded."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=50)
         assert engine.should_trigger(200, 0) is True
 
     def test_custom_trigger_interval(self) -> None:
+        """A custom interval shifts the firing boundary accordingly."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=10)
         assert engine.should_trigger(10, 0) is True
         assert engine.should_trigger(9, 0) is False
 
     def test_trigger_relative_to_last_chronicle(self) -> None:
+        """The interval is measured from the last chronicle turn, not turn 0."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=50)
         assert engine.should_trigger(100, 50) is True
@@ -142,6 +145,8 @@ class TestShouldTrigger:
 
 class TestRunValid:
     def test_entity_stat_updated_in_event_log(self, db_path) -> None:
+        """A valid state change is written to Event_Log as a 'chronicler_update'
+        event carrying the stat_key and delta."""
         response = LLMResponse(
             narrative_text="",
             tool_call={"state_changes": [
@@ -163,6 +168,8 @@ class TestRunValid:
         assert chronicle_events[0]["payload"]["delta"] == -500.0
 
     def test_multiple_entity_updates(self, db_path) -> None:
+        """Several state changes in one response produce one event per change
+        across all affected entities."""
         response = LLMResponse(
             narrative_text="",
             tool_call={"state_changes": [
@@ -179,6 +186,7 @@ class TestRunValid:
         assert "guild1" in result.updated_entities
 
     def test_stat_set_value_persisted(self, db_path) -> None:
+        """A change carrying 'value' (not 'delta') is persisted as a set value."""
         response = LLMResponse(
             narrative_text="",
             tool_call={"state_changes": [
@@ -214,6 +222,7 @@ class TestRunValid:
         assert "high" in combined or "dramatic" in combined
 
     def test_default_tension_when_key_absent(self, db_path) -> None:
+        """When World_Tension_Level is unset, the default tension (0.3) is used."""
         response = LLMResponse("", None, "stop")
         engine, _ = _make_chronicler(db_path, response)
         result = engine.run("s1", 55)
@@ -237,6 +246,7 @@ class TestRunValid:
 
 class TestRunRobustness:
     def test_no_tool_call_returns_empty_result(self, db_path) -> None:
+        """A response with no tool-call JSON appends no events."""
         response = LLMResponse("some prose but no json", None, "stop")
         engine, _ = _make_chronicler(db_path, response)
         result = engine.run("s1", 55)
@@ -245,6 +255,7 @@ class TestRunRobustness:
         assert result.updated_entities == []
 
     def test_malformed_state_changes_not_list(self, db_path) -> None:
+        """A non-list state_changes value is ignored rather than crashing."""
         response = LLMResponse(
             "",
             {"state_changes": "not a list"},
@@ -255,6 +266,7 @@ class TestRunRobustness:
         assert result.events_appended == 0
 
     def test_unknown_entity_silently_skipped(self, db_path) -> None:
+        """A change targeting an entity that doesn't exist is skipped silently."""
         response = LLMResponse(
             "",
             {"state_changes": [
@@ -285,6 +297,7 @@ class TestRunRobustness:
         assert result.events_appended == 0  # no crash, empty result
 
     def test_change_missing_stat_key_skipped(self, db_path) -> None:
+        """A change with no stat_key is skipped."""
         response = LLMResponse(
             "",
             {"state_changes": [
@@ -303,6 +316,7 @@ class TestRunRobustness:
 
 class TestForceTrigger:
     def test_force_trigger_produces_same_result_as_run(self, db_path) -> None:
+        """force_trigger applies state changes just like a normal run."""
         response = LLMResponse(
             "",
             {"state_changes": [

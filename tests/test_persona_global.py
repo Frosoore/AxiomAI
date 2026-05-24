@@ -1,3 +1,10 @@
+"""
+tests/test_persona_global.py
+
+Round-trip test for global personas (stored in the shared global.db, not a
+per-universe db): save personas via DbWorker, confirm they reach
+Global_Personas, then load them back through the personas_loaded signal.
+"""
 
 import sqlite3
 import pytest
@@ -10,7 +17,9 @@ def global_db_path(tmp_path):
     create_global_db(path)
     return path
 
-def test_global_persona_persistence(global_db_path):
+def test_global_personas_survive_save_then_load_round_trip(global_db_path):
+    """Personas saved via save_global_personas are persisted to Global_Personas
+    and returned unchanged by a subsequent load_global_personas."""
     # 1. Setup personas to save
     personas = [
         {"persona_id": "p1", "name": "Mercenary", "description": "A battle-hardened soldier."},

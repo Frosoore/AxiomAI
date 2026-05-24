@@ -65,6 +65,8 @@ def _make_gemini_client(mock_client_cls) -> tuple[GeminiClient, MagicMock]:
 
 class TestTranslateMessages:
     def test_system_becomes_instruction(self) -> None:
+        """A leading system message is lifted into Gemini's system_instruction,
+        leaving the user turn in contents."""
         msgs = [
             {"role": "system", "content": "You are a dungeon master."},
             {"role": "user", "content": "I enter the cave."},
@@ -74,6 +76,7 @@ class TestTranslateMessages:
         assert contents[0]["role"] == "user"
 
     def test_assistant_maps_to_model(self) -> None:
+        """The 'assistant' role is translated to Gemini's 'model' role."""
         msgs = [
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": "hello"},
@@ -82,12 +85,16 @@ class TestTranslateMessages:
         assert contents[1]["role"] == "model"
 
     def test_no_system_message(self) -> None:
+        """With no system message, the instruction is None and contents holds
+        only the user turn."""
         msgs = [{"role": "user", "content": "hello"}]
         instruction, contents = GeminiClient._translate_messages(msgs)
         assert instruction is None
         assert len(contents) == 1
 
     def test_subsequent_system_message_prepended_to_next_user(self) -> None:
+        """Only the first system message becomes the instruction; a later system
+        message is folded into the following user turn's text."""
         msgs = [
             {"role": "system", "content": "Base system."},
             {"role": "user", "content": "Turn 1"},
@@ -103,6 +110,7 @@ class TestTranslateMessages:
         assert "Turn 2" in last_user["parts"][0]["text"]
 
     def test_empty_messages(self) -> None:
+        """Translating an empty message list yields (None, [])."""
         instruction, contents = GeminiClient._translate_messages([])
         assert instruction is None
         assert contents == []
@@ -114,16 +122,19 @@ class TestTranslateMessages:
 
 class TestIsAvailable:
     def test_returns_true_when_list_models_succeeds(self, mock_client_cls) -> None:
+        """is_available is True when the SDK's models.list call succeeds."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.list.return_value = [MagicMock()]
         assert client.is_available() is True
 
     def test_returns_false_on_exception(self, mock_client_cls) -> None:
+        """is_available is False when models.list raises (e.g. bad auth)."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.list.side_effect = Exception("auth error")
         assert client.is_available() is False
 
     def test_never_raises(self, mock_client_cls) -> None:
+        """is_available swallows unexpected errors and returns False."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.list.side_effect = RuntimeError("unexpected")
         assert client.is_available() is False
@@ -135,6 +146,7 @@ class TestIsAvailable:
 
 class TestComplete:
     def test_returns_llm_response(self, mock_client_cls) -> None:
+        """complete returns an LLMResponse with the model's prose and stop reason."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.return_value = _make_response("The castle falls.")
         result = client.complete([{"role": "user", "content": "attack"}])
@@ -143,6 +155,7 @@ class TestComplete:
         assert result.finish_reason == "stop"
 
     def test_extracts_tool_call(self, mock_client_cls) -> None:
+        """complete parses a fenced JSON tool-call out of the model content."""
         content = (
             "The goblin dies.\n"
             "~~~json\n"
@@ -157,18 +170,21 @@ class TestComplete:
         assert "~~~json" not in result.narrative_text
 
     def test_finish_reason_length_on_max_tokens(self, mock_client_cls) -> None:
+        """A MAX_TOKENS finish reason maps to LLMResponse.finish_reason 'length'."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.return_value = _make_response("ok", "MAX_TOKENS")
         result = client.complete([])
         assert result.finish_reason == "length"
 
     def test_finish_reason_stop(self, mock_client_cls) -> None:
+        """A STOP finish reason maps to LLMResponse.finish_reason 'stop'."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.return_value = _make_response("ok", "STOP")
         result = client.complete([])
         assert result.finish_reason == "stop"
 
     def test_system_instruction_passed_in_config(self, mock_client_cls) -> None:
+        """complete forwards a leading system message as config.system_instruction."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.return_value = _make_response("ok")
         messages = [
@@ -180,12 +196,14 @@ class TestComplete:
         assert call_kwargs["config"].system_instruction == "You are a GM."
 
     def test_raises_connection_error_on_sdk_exception(self, mock_client_cls) -> None:
+        """complete wraps an SDK exception as LLMConnectionError."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.side_effect = Exception("network failure")
         with pytest.raises(LLMConnectionError):
             client.complete([])
 
     def test_raises_parse_error_when_text_is_none(self, mock_client_cls) -> None:
+        """complete raises LLMParseError when the response carries no text."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_resp = _make_response("ok")
         mock_resp.text = None
@@ -194,6 +212,8 @@ class TestComplete:
             client.complete([])
 
     def test_no_system_message_sends_defaults_in_config(self, mock_client_cls) -> None:
+        """Even without a system message, a config carrying default temperature/
+        top_p (and a None system_instruction) is always sent."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content.return_value = _make_response("ok")
         client.complete([{"role": "user", "content": "hi"}])
@@ -211,6 +231,7 @@ class TestComplete:
 
 class TestStreamTokens:
     def test_yields_tokens(self, mock_client_cls) -> None:
+        """stream_tokens yields each streamed chunk's text in order."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         chunks = _make_streaming_chunks(["Once ", "upon ", "a time."])
         mock_inner.models.generate_content_stream.return_value = iter(chunks)
@@ -218,6 +239,7 @@ class TestStreamTokens:
         assert tokens == ["Once ", "upon ", "a time."]
 
     def test_skips_empty_chunks(self, mock_client_cls) -> None:
+        """stream_tokens drops chunks with empty text."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         empty_chunk = MagicMock()
         empty_chunk.text = ""
@@ -228,6 +250,7 @@ class TestStreamTokens:
         assert tokens == ["Hello"]
 
     def test_raises_connection_error_on_sdk_exception(self, mock_client_cls) -> None:
+        """stream_tokens wraps a streaming SDK exception as LLMConnectionError."""
         client, mock_inner = _make_gemini_client(mock_client_cls)
         mock_inner.models.generate_content_stream.side_effect = Exception("stream error")
         with pytest.raises(LLMConnectionError):

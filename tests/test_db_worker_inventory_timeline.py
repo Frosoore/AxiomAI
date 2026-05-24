@@ -1,3 +1,10 @@
+"""
+tests/test_db_worker_inventory_timeline.py
+
+Verifies DbWorker's inventory/timeline loaders: that load_inventory and
+load_timeline each emit their signal with the seeded rows, and that
+load_full_game_state fans out into stats + inventory + timeline signals.
+"""
 
 import sqlite3
 import json
@@ -12,7 +19,9 @@ def db_path(tmp_path):
     create_universe_db(path)
     return path
 
-def test_load_inventory_and_timeline_signals(db_path):
+def test_load_inventory_and_timeline_each_emit_seeded_rows(db_path):
+    """load_inventory and load_timeline emit their respective signals carrying
+    the inventory item and timeline entry seeded for the save."""
     save_id = "test_save"
     # 1. Seed DB
     with sqlite3.connect(db_path) as conn:
@@ -50,7 +59,9 @@ def test_load_inventory_and_timeline_signals(db_path):
     assert len(results["timeline"]) == 1
     assert results["timeline"][0]["description"] == "Adventure begins"
 
-def test_load_full_game_state_signals(db_path):
+def test_load_full_game_state_emits_stats_inventory_and_timeline(db_path):
+    """load_full_game_state fans out into the stats, inventory and timeline
+    signals, each populated from the seeded save in a single call."""
     save_id = "test_save"
     # 1. Seed DB
     with sqlite3.connect(db_path) as conn:

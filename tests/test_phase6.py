@@ -101,9 +101,11 @@ class TestLoreBookSchema:
 
 class TestFormatLoreBookBlock:
     def test_empty_returns_empty_string(self) -> None:
+        """An empty lore list formats to an empty string (no header)."""
         assert _format_lore_book_block([]) == ""
 
     def test_single_entry_formatted(self) -> None:
+        """A single entry renders its category, name and content headings."""
         entries = [
             {"entry_id": "e1", "category": "Magic", "name": "Arcane Flame", "content": "Burns eternally."}
         ]
@@ -113,6 +115,7 @@ class TestFormatLoreBookBlock:
         assert "Burns eternally." in result
 
     def test_multiple_entries_grouped_by_category(self) -> None:
+        """Entries sharing a category are grouped under a single category heading."""
         entries = [
             {"entry_id": "e1", "category": "Faction", "name": "Red Guard", "content": "Soldiers."},
             {"entry_id": "e2", "category": "Faction", "name": "Blue Fleet", "content": "Sailors."},
@@ -125,11 +128,13 @@ class TestFormatLoreBookBlock:
         assert "### Category: Location" in result
 
     def test_missing_category_defaults_to_general(self) -> None:
+        """An entry with a blank category is filed under 'General'."""
         entries = [{"entry_id": "e1", "category": "", "name": "Mystery", "content": "Unknown."}]
         result = _format_lore_book_block(entries)
         assert "### Category: General" in result
 
     def test_lore_book_section_header_present(self) -> None:
+        """A non-empty block starts with the '=== LORE BOOK ===' header."""
         entries = [{"entry_id": "e1", "category": "X", "name": "Y", "content": "Z"}]
         result = _format_lore_book_block(entries)
         assert result.startswith("=== LORE BOOK ===")
@@ -137,6 +142,7 @@ class TestFormatLoreBookBlock:
 
 class TestBuildNarrativePromptLoreBook:
     def test_lore_book_injected_into_system_message(self) -> None:
+        """A supplied lore_book is rendered into the narrative system message."""
         entries = [{"entry_id": "e1", "category": "Faction", "name": "Guard", "content": "Soldiers."}]
         msgs = build_narrative_prompt(
             universe_system_prompt="You are narrator.",
@@ -151,6 +157,7 @@ class TestBuildNarrativePromptLoreBook:
         assert "Faction" in system_content
 
     def test_empty_lore_book_not_injected(self) -> None:
+        """An empty lore_book adds no LORE BOOK section."""
         msgs = build_narrative_prompt(
             universe_system_prompt="Narrator.",
             entity_stats_block="(no entities)",
@@ -162,6 +169,7 @@ class TestBuildNarrativePromptLoreBook:
         assert "=== LORE BOOK ===" not in msgs[0]["content"]
 
     def test_none_lore_book_not_injected(self) -> None:
+        """A None lore_book adds no LORE BOOK section."""
         msgs = build_narrative_prompt(
             universe_system_prompt="Narrator.",
             entity_stats_block="(no entities)",
@@ -175,6 +183,7 @@ class TestBuildNarrativePromptLoreBook:
 
 class TestBuildMiniDicoPromptLoreBook:
     def test_lore_book_included_in_user_message(self) -> None:
+        """A supplied lore_book is rendered into the mini-dico user message."""
         entries = [{"entry_id": "e1", "category": "Magic", "name": "Fireball", "content": "Hot."}]
         msgs = build_mini_dico_prompt("What is Fireball?", [], lore_book=entries)
         user_content = msgs[1]["content"]
@@ -182,6 +191,7 @@ class TestBuildMiniDicoPromptLoreBook:
         assert "Fireball" in user_content
 
     def test_no_lore_book_still_works(self) -> None:
+        """Omitting lore_book still produces a valid two-message prompt."""
         msgs = build_mini_dico_prompt("What is magic?", ["Magic is power."])
         assert len(msgs) == 2
         assert "Magic is power." in msgs[1]["content"]
@@ -297,6 +307,7 @@ class TestJsonFenceFiltering:
         assert "Hello" in result
 
     def test_json_block_fully_suppressed(self) -> None:
+        """A complete ~~~json block is fully removed from the streamed output."""
         f = self._make()
         text = "Narrative text.\n~~~json\n{\"foo\":1}\n~~~\nMore text. Extra suffix here."
         result = ""
@@ -318,6 +329,7 @@ class TestJsonFenceFiltering:
         assert "{}" not in result
 
     def test_no_fence_text_unchanged(self) -> None:
+        """Text with no JSON fence streams through unchanged."""
         f = self._make()
         result = ""
         for ch in "Pure narrative, no JSON here at all!":
@@ -470,6 +482,7 @@ class TestRuleEditorSync:
         )
 
     def test_selected_row_advances_after_selection(self) -> None:
+        """Selecting a rule row updates _selected_row to the new index."""
         from ui.widgets.rule_editor import RuleEditorWidget
 
         w = RuleEditorWidget.__new__(RuleEditorWidget)
@@ -495,6 +508,8 @@ class TestRuleEditorSync:
         assert w._selected_row == 1
 
     def test_collect_data_calls_sync(self) -> None:
+        """collect_data flushes the visible rule form via _sync_current_form
+        before returning."""
         from ui.widgets.rule_editor import RuleEditorWidget
 
         w = RuleEditorWidget.__new__(RuleEditorWidget)

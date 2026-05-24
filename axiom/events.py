@@ -193,6 +193,84 @@ class EventSourcer:
                 )
             conn.commit()
 
+    def update_state_cache(
+        self,
+        save_id: str,
+        events: list[tuple[str, int, str, str, dict[str, Any]]],
+    ) -> None:
+        """Incrementally apply a just-appended batch of events to State_Cache.
+
+        State_Cache is a materialised view of the base stats derived from
+        Event_Log.  rebuild_state_cache() replays the entire history (or from
+        the nearest snapshot); this method instead applies *only* the given
+        batch on top of the affected entities' current cached values, keeping
+        the cache fresh after each turn without an O(history) replay.
+
+        This is what keeps DB reads (the sidebar's load_full_game_state /
+        load_stats tasks, which read State_Cache) in sync with the changes a
+        turn just produced — see TICKET-002.
+
+        Args:
+            save_id: The save whose cache is being updated.
+            events:  List of (save_id, turn_id, event_type, target_entity,
+                     payload) tuples, in the same shape as
+                     append_events_batch().  Only entity_create / stat_change /
+                     stat_set events mutate the cache; all others are ignored.
+        """
+        # Normalise to the dict shape _apply_event expects, keeping only the
+        # cache-relevant events.
+        relevant = [
+            {"event_type": etype, "target_entity": target, "payload": payload}
+            for (_sid, _tid, etype, target, payload) in events
+            if etype in ("entity_create", "stat_change", "stat_set")
+        ]
+        if not relevant:
+            return
+
+        entity_ids = {
+            e["payload"].get("entity_id", e["target_entity"]) for e in relevant
+        }
+        entity_ids.discard("")
+        if not entity_ids:
+            return
+
+        # Seed an in-memory cache with the affected entities' current base
+        # stats, then replay the batch on top (handles intra-batch chained
+        # deltas, e.g. rule-engine cascades touching the same stat twice).
+        cache: dict[str, dict[str, str]] = {}
+        placeholders = ",".join("?" * len(entity_ids))
+        with get_connection(self._db_path) as conn:
+            rows = conn.execute(
+                f"SELECT entity_id, stat_key, stat_value FROM State_Cache "
+                f"WHERE save_id = ? AND entity_id IN ({placeholders});",
+                (save_id, *entity_ids),
+            ).fetchall()
+            for r in rows:
+                cache.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
+
+        for event in relevant:
+            cache = self._apply_event(event, cache)
+
+        upsert_data = [
+            (save_id, eid, sk, sv)
+            for eid, stats in cache.items()
+            for sk, sv in stats.items()
+        ]
+        if not upsert_data:
+            return
+
+        with get_connection(self._db_path) as conn:
+            conn.executemany(
+                """
+                INSERT INTO State_Cache (save_id, entity_id, stat_key, stat_value)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(save_id, entity_id, stat_key)
+                DO UPDATE SET stat_value = excluded.stat_value;
+                """,
+                upsert_data,
+            )
+            conn.commit()
+
     def validate_integrity(self, save_id: str) -> tuple[bool, dict[str, Any]]:
         """Verify that the current State_Cache matches a fresh replay of history.
 

@@ -72,6 +72,8 @@ def _run_worker_sync(worker, timeout_ms: int = 5000):
 
 class TestHardcoreWorker:
     def test_deletes_save_row(self, db_path: str, tmp_path: Path, qt_app) -> None:
+        """When other saves remain, deleting one removes only its Saves row and
+        emits deletion_complete (the db file is kept)."""
         from workers.hardcore_worker import HardcoreWorker
 
         # Add a second save so the .db is NOT deleted (only the save row is removed)
@@ -102,6 +104,7 @@ class TestHardcoreWorker:
         assert row is None, "Save row should have been deleted"
 
     def test_deletes_event_log_rows(self, tmp_path: Path, qt_app) -> None:
+        """Deleting a save cascades to remove its Event_Log rows."""
         from workers.hardcore_worker import HardcoreWorker
         from axiom.schema import create_universe_db
         from axiom.events import EventSourcer
@@ -144,6 +147,7 @@ class TestHardcoreWorker:
         assert count == 0
 
     def test_deletes_vector_directory(self, tmp_path: Path, qt_app) -> None:
+        """Deleting a save also removes its on-disk vector-memory directory."""
         from workers.hardcore_worker import HardcoreWorker
         from axiom.schema import create_universe_db
 
@@ -172,6 +176,7 @@ class TestHardcoreWorker:
         assert not vector_dir.exists(), "Vector directory should have been deleted"
 
     def test_nonexistent_vector_dir_does_not_fail(self, tmp_path: Path, qt_app) -> None:
+        """A missing vector directory is tolerated — deletion still completes."""
         from workers.hardcore_worker import HardcoreWorker
         from axiom.schema import create_universe_db
 
@@ -198,6 +203,8 @@ class TestHardcoreWorker:
         assert completed, f"Should complete; failed: {failed}"
 
     def test_deletion_failed_on_nonexistent_db(self, tmp_path: Path, qt_app) -> None:
+        """Pointing the worker at a missing db fails gracefully — it emits a
+        terminal signal rather than raising an unhandled exception."""
         from workers.hardcore_worker import HardcoreWorker
 
         worker = HardcoreWorker(
@@ -223,11 +230,13 @@ class TestHardcoreWorker:
 
 class TestProbeLock:
     def test_returns_true_for_unlocked_file(self, tmp_path: Path) -> None:
+        """_probe_lock returns True for a file no other process holds open."""
         from workers.hardcore_worker import HardcoreWorker
         f = tmp_path / "test.db"
         f.write_text("data")
         assert HardcoreWorker._probe_lock(str(f)) is True
 
     def test_returns_true_for_nonexistent_file(self, tmp_path: Path) -> None:
+        """_probe_lock returns True (not lockable-as-busy) for a missing file."""
         from workers.hardcore_worker import HardcoreWorker
         assert HardcoreWorker._probe_lock(str(tmp_path / "ghost.db")) is True

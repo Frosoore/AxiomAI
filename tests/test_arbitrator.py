@@ -131,6 +131,7 @@ def _make_arbitrator(
 
 class TestArbitratorResult:
     def test_fields_accessible(self) -> None:
+        """ArbitratorResult exposes narrative_text and applied_changes."""
         r = ArbitratorResult(
             narrative_text="prose",
             applied_changes=[{"x": 1}],
@@ -141,6 +142,7 @@ class TestArbitratorResult:
         assert r.applied_changes == [{"x": 1}]
 
     def test_defaults_are_empty_lists(self) -> None:
+        """Omitted change lists default to empty lists, not None."""
         r = ArbitratorResult(narrative_text="hello")
         assert r.applied_changes == []
         assert r.rejected_changes == []
@@ -153,6 +155,8 @@ class TestArbitratorResult:
 
 class TestProcessTurnValidChange:
     def test_valid_change_appears_in_applied_changes(self, db_path, vm) -> None:
+        """A valid LLM-proposed stat change is accepted and listed in
+        applied_changes."""
         response = LLMResponse(
             narrative_text="The goblin hits you.",
             tool_call={"state_changes": [
@@ -166,6 +170,7 @@ class TestProcessTurnValidChange:
         assert result.applied_changes[0]["stat_key"] == "HP"
 
     def test_valid_change_persisted_in_event_log(self, db_path, vm) -> None:
+        """An accepted change is written to Event_Log as a stat_change event."""
         response = LLMResponse(
             narrative_text="You spend 10 gold.",
             tool_call={"state_changes": [
@@ -185,6 +190,7 @@ class TestProcessTurnValidChange:
         assert -10 in deltas
 
     def test_narrative_returned_always(self, db_path, vm) -> None:
+        """The narrative text is returned even when there is no tool-call."""
         response = LLMResponse(
             narrative_text="Nothing happens.",
             tool_call=None,
@@ -195,6 +201,7 @@ class TestProcessTurnValidChange:
         assert result.narrative_text == "Nothing happens."
 
     def test_stat_set_value_change_applied(self, db_path, vm) -> None:
+        """A value (string) change, not just a delta, is accepted and applied."""
         response = LLMResponse(
             narrative_text="Your title changes.",
             tool_call={"state_changes": [
@@ -213,6 +220,8 @@ class TestProcessTurnValidChange:
 
 class TestCorrectionLoop:
     def test_insufficient_resource_rejected(self, db_path, vm) -> None:
+        """A change that would drive a resource below zero (spend 200 of 50 Gold)
+        is rejected with a reason."""
         # player1 has Gold=50; try to deduct 200
         response = LLMResponse(
             narrative_text="You try to buy a castle.",
@@ -228,6 +237,7 @@ class TestCorrectionLoop:
         assert "Gold" in result.rejected_changes[0]["reason"]
 
     def test_rejected_change_not_in_event_log(self, db_path, vm) -> None:
+        """A rejected change is never persisted to Event_Log."""
         response = LLMResponse(
             narrative_text="Attempted theft.",
             tool_call={"state_changes": [
@@ -249,6 +259,7 @@ class TestCorrectionLoop:
         assert len(turn1_stat_changes) == 0
 
     def test_pending_correction_set_after_rejection(self, db_path, vm) -> None:
+        """A rejection queues a pending narrator-hint correction for next turn."""
         response = LLMResponse(
             narrative_text="Bad action.",
             tool_call={"state_changes": [
@@ -262,6 +273,7 @@ class TestCorrectionLoop:
         assert "[NARRATOR HINT:" in arb._pending_correction
 
     def test_pending_correction_injected_in_next_turn(self, db_path, vm) -> None:
+        """The queued correction is injected into the next turn's system prompt."""
         # Turn 1: reject a change
         response1 = LLMResponse(
             narrative_text="Fail.",
@@ -295,6 +307,7 @@ class TestCorrectionLoop:
         assert correction_injected
 
     def test_pending_correction_cleared_after_use(self, db_path, vm) -> None:
+        """Once injected, the pending correction is cleared so it fires only once."""
         response1 = LLMResponse(
             narrative_text="Fail.",
             tool_call={"state_changes": [
@@ -313,6 +326,7 @@ class TestCorrectionLoop:
         assert arb._pending_correction is None
 
     def test_unknown_entity_rejected(self, db_path, vm) -> None:
+        """A change targeting a non-existent entity is rejected as 'Unknown entity'."""
         response = LLMResponse(
             narrative_text="ghost action",
             tool_call={"state_changes": [
@@ -332,6 +346,8 @@ class TestCorrectionLoop:
 
 class TestRulesTrigger:
     def test_rule_triggered_action_in_triggered_rules(self, db_path, vm) -> None:
+        """When a change crosses a rule's threshold, the rule's action is reported
+        in triggered_rules."""
         # Rule: if player1 HP <= 50, set Status = "wounded"
         rule = {
             "rule_id": "wound_rule",
@@ -359,6 +375,7 @@ class TestRulesTrigger:
         assert result.triggered_rules[0]["type"] == "stat_set"
 
     def test_rule_trigger_persisted_in_event_log(self, db_path, vm) -> None:
+        """A fired rule writes a rule_trigger event to Event_Log."""
         rule = {
             "rule_id": "death_rule",
             "priority": 0,
@@ -392,6 +409,7 @@ class TestRulesTrigger:
 
 class TestVectorMemoryIntegration:
     def test_narrative_embedded_after_turn(self, db_path, vm) -> None:
+        """The turn's narrative is embedded into VectorMemory and is retrievable."""
         response = LLMResponse(
             narrative_text="The ancient ruins loom before you.",
             tool_call=None,
@@ -404,6 +422,7 @@ class TestVectorMemoryIntegration:
         assert any("ruins" in r["text"] for r in results)
 
     def test_embedded_chunk_has_correct_turn_id(self, db_path, vm) -> None:
+        """The embedded narrative chunk is tagged with the turn it came from."""
         response = LLMResponse(
             narrative_text="Turn 5 narrative content.",
             tool_call=None,
@@ -443,6 +462,7 @@ class TestStreamingCallback:
                 yield char
 
     def test_callback_called_for_each_token(self, db_path, vm) -> None:
+        """With a stream callback, every streamed token is delivered to it."""
         response = LLMResponse(
             narrative_text="Stream test.",
             tool_call=None,
@@ -464,6 +484,8 @@ class TestStreamingCallback:
         assert "".join(received) == "Stream test."
 
     def test_callback_result_matches_non_streaming(self, db_path, vm) -> None:
+        """The assembled streaming result equals the non-streaming result for the
+        same response."""
         response = LLMResponse(
             narrative_text="Consistent result.",
             tool_call=None,
@@ -527,8 +549,10 @@ class TestStreamingCallback:
 
 class TestDynamicStopSequences:
     def test_dynamic_stop_sequences_passed_to_llm(self, db_path, vm) -> None:
+        """Per-player stop sequences (e.g. '\\nplayer1:') are passed to the LLM to
+        prevent it impersonating the player."""
         response = LLMResponse("OK", None, "stop")
-        
+
         class _SpyLLM(_StubLLM):
             def __init__(self, res):
                 super().__init__(res)
@@ -562,6 +586,8 @@ class TestDynamicStopSequences:
 
 class TestCompanionMode:
     def test_plot_armor_prevents_rejection(self, db_path, vm) -> None:
+        """In Companion mode, a change that would normally be rejected for the
+        Hero is allowed (plot armor)."""
         # Create a Hero NPC via EventSourcer for correct State_Cache integration
         from axiom.events import EventSourcer
         es = EventSourcer(db_path)
@@ -593,9 +619,11 @@ class TestCompanionMode:
         assert len(result.rejected_changes) == 0
 
     def test_hero_action_included_in_prompt_and_logged(self, db_path, vm) -> None:
+        """A Companion hero_action is injected into the prompt as [HERO INTENT]
+        and logged as a hero_intent event."""
         response = LLMResponse("OK", None, "stop")
         arb, llm = _make_arbitrator(db_path, vm, response)
-        
+
         arb.process_turn(
             "s1", 1, "companion action", "sys", [], 
             hero_action="Hero charges forward!",

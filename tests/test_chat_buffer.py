@@ -1,3 +1,10 @@
+"""
+tests/test_chat_buffer.py
+
+Verifies ChatDisplayWidget's streaming token buffer: it must hold back text
+that could be the start of a ``~~~json`` tool-call fence, hide completed fences
+entirely, and flush any leftover partial fence on demand.
+"""
 
 import os
 import pytest
@@ -14,9 +21,11 @@ def qapp():
         app = QApplication([])
     yield app
 
-def test_chat_buffer_flushing(qapp):
+def test_partial_json_fence_is_buffered_until_flushed(qapp):
+    """A token that is only a prefix of '~~~json' stays hidden in the buffer;
+    flush_final_buffer then reveals it once no real fence ever completed."""
     widget = ChatDisplayWidget()
-    
+
     # 1. Test partial JSON fence suppression
     # The string "~~~j" should stay in buffer because it's a prefix of "~~~json"
     widget.append_token("Hello ")
@@ -34,9 +43,11 @@ def test_chat_buffer_flushing(qapp):
     assert "Hello ~~~j" in widget._narrative_display.toPlainText()
     assert widget._token_buf == ""
 
-def test_json_fence_filtering(qapp):
+def test_completed_json_fence_is_stripped_from_narrative(qapp):
+    """A fully-formed '~~~json ... ~~~' block is removed from the visible
+    narrative while the surrounding prose stays intact."""
     widget = ChatDisplayWidget()
-    
+
     # Send tokens including a full JSON block
     widget.append_token("Narrative start. ")
     widget.append_token("~~~json\n{\"key\": \"val\"}\n~~~")

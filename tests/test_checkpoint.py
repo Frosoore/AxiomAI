@@ -60,6 +60,7 @@ def ctx(tmp_path: Path) -> tuple[str, EventSourcer, CheckpointManager]:
 
 class TestRewind:
     def test_events_after_target_deleted(self, ctx: tuple) -> None:
+        """Rewinding to turn N deletes every event with turn_id > N."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=10)
 
@@ -71,6 +72,7 @@ class TestRewind:
         )
 
     def test_events_at_target_preserved(self, ctx: tuple) -> None:
+        """Rewinding to turn N keeps all events with turn_id <= N."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=10)
 
@@ -80,6 +82,8 @@ class TestRewind:
         assert len(remaining) == 5
 
     def test_state_cache_reflects_rewound_state(self, ctx: tuple) -> None:
+        """After a rewind the State_Cache is rebuilt to the target turn's values
+        (HP=50 at turn 5)."""
         db_path, es, cm = ctx
         # Each turn adds 10 HP → after turn 5 HP=50, after turn 10 HP=100
         _append_hp_events(es, "save1", turns=10, delta=10)
@@ -92,6 +96,7 @@ class TestRewind:
         assert stats.get("HP") == "50"
 
     def test_summary_dict_structure(self, ctx: tuple) -> None:
+        """rewind returns a summary with deleted_events and rebuilt_to_turn."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=10)
 
@@ -101,6 +106,7 @@ class TestRewind:
         assert result["rebuilt_to_turn"] == 3
 
     def test_rewind_to_zero_clears_cache(self, ctx: tuple) -> None:
+        """Rewinding to turn 0 removes all events and empties the State_Cache."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=5)
 
@@ -111,6 +117,7 @@ class TestRewind:
         assert stats == {}
 
     def test_rewind_beyond_last_turn_is_noop(self, ctx: tuple) -> None:
+        """Rewinding past the latest turn deletes nothing and keeps all events."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=5)
 
@@ -126,6 +133,7 @@ class TestRewind:
 
 class TestListCheckpoints:
     def test_returns_sorted_unique_turns(self, ctx: tuple) -> None:
+        """list_checkpoints returns the distinct turn ids in ascending order."""
         db_path, es, cm = ctx
         for turn in [3, 1, 2, 3, 1]:  # duplicates intentional
             es.append_event("save1", turn, "dialogue", "player1", {"text": "hi"})
@@ -134,14 +142,17 @@ class TestListCheckpoints:
         assert checkpoints == [1, 2, 3]
 
     def test_empty_for_no_events(self, ctx: tuple) -> None:
+        """A save with no events has no checkpoints."""
         db_path, es, cm = ctx
         assert cm.list_checkpoints("save1") == []
 
     def test_empty_for_unknown_save(self, ctx: tuple) -> None:
+        """An unknown save id yields an empty checkpoint list."""
         db_path, es, cm = ctx
         assert cm.list_checkpoints("ghost_save") == []
 
     def test_list_after_rewind_reflects_deletion(self, ctx: tuple) -> None:
+        """After a rewind, checkpoints beyond the target turn are gone."""
         db_path, es, cm = ctx
         _append_hp_events(es, "save1", turns=10)
 
@@ -158,6 +169,7 @@ class TestListCheckpoints:
 
 class TestDeleteSave:
     def test_deletes_directory(self, ctx: tuple, tmp_path: Path) -> None:
+        """delete_save removes the save's universe directory from disk."""
         db_path, es, cm = ctx
         universe_dir = tmp_path / "my_universe"
         universe_dir.mkdir()
@@ -168,6 +180,7 @@ class TestDeleteSave:
         assert not universe_dir.exists()
 
     def test_removes_save_from_db(self, ctx: tuple, tmp_path: Path) -> None:
+        """delete_save removes the save row from the database."""
         db_path, es, cm = ctx
         universe_dir = tmp_path / "my_universe"
         universe_dir.mkdir()
@@ -179,6 +192,7 @@ class TestDeleteSave:
         assert row is None
 
     def test_succeeds_even_if_dir_not_found(self, ctx: tuple) -> None:
+        """A missing universe directory doesn't raise; the DB row is still removed."""
         db_path, es, cm = ctx
         # Should not raise FileNotFoundError, but should still delete from DB
         cm.delete_save("save1", "/nonexistent/path/universe")

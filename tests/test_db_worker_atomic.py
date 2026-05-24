@@ -1,3 +1,10 @@
+"""
+tests/test_db_worker_atomic.py
+
+Verifies DbWorker.load_full_universe() emits every per-table signal
+(entities+stats, rules, lore book, universe meta) with the seeded data,
+exercising the async worker end-to-end via the Qt event loop.
+"""
 
 import sqlite3
 import json
@@ -11,7 +18,9 @@ def db_path(tmp_path):
     create_universe_db(path)
     return path
 
-def test_load_full_universe_signals(db_path):
+def test_load_full_universe_emits_every_table_signal_with_data(db_path):
+    """Given a fully-seeded universe, load_full_universe fires the entities,
+    rules, lore and meta signals, each carrying the expected rows."""
     # 1. Seed DB with complete data
     with sqlite3.connect(db_path) as conn:
         conn.execute("INSERT INTO Entities (entity_id, entity_type, name) VALUES ('e1', 'npc', 'Guard')")

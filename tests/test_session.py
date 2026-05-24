@@ -36,6 +36,8 @@ def universe_db(tmp_path):
 
 
 def test_universe_load_exposes_name_and_saves(universe_db):
+    """Universe.load surfaces the db path, a non-empty name, and lists the
+    save that was created in the fixture."""
     db, save_id = universe_db
     universe = Universe.load(db)
     assert universe.path == db
@@ -45,6 +47,8 @@ def test_universe_load_exposes_name_and_saves(universe_db):
 
 
 def test_session_constructs_against_real_db(universe_db):
+    """Session wires up against a real SQLite universe and exposes it via
+    .universe.path (façade construction smoke test)."""
     # NB : l'absence de Qt est prouvée hors-pytest (conftest charge QApplication
     # pour toute la suite). Ici on valide juste le câblage de la façade.
     db, save_id = universe_db
@@ -53,6 +57,8 @@ def test_session_constructs_against_real_db(universe_db):
 
 
 def test_new_save_starts_at_turn_zero_with_no_checkpoints(universe_db):
+    """A freshly-created save reports turn 0, no checkpoints, empty stats and
+    empty history."""
     db, save_id = universe_db
     sess = Session(db, save_id, llm=_DummyLLM(), vector_memory=_DummyVectorMemory())
     assert sess.turn_id == 0
@@ -62,6 +68,8 @@ def test_new_save_starts_at_turn_zero_with_no_checkpoints(universe_db):
 
 
 def test_load_history_maps_events_to_roles(universe_db):
+    """_load_history maps user_input events to the 'user' role and
+    narrative_text events to the 'assistant' role, in order."""
     db, save_id = universe_db
     # Injecte un échange (user_input -> user, narrative_text -> assistant).
     events = EventSourcer(db)
@@ -77,6 +85,8 @@ def test_load_history_maps_events_to_roles(universe_db):
 
 
 def test_load_history_uses_active_variant(universe_db):
+    """When a narrative_text event carries multiple variants, _load_history
+    returns the one pointed to by the 'active' index."""
     db, save_id = universe_db
     events = EventSourcer(db)
     events.append_event(

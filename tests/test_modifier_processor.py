@@ -61,12 +61,14 @@ def ctx(tmp_path: Path) -> tuple[str, ModifierProcessor]:
 
 class TestAddModifier:
     def test_returns_uuid_string(self, ctx: tuple) -> None:
+        """add_modifier returns the new modifier's id as a 36-char UUID string."""
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "HP", -10.0, 3)
         assert isinstance(mod_id, str)
         assert len(mod_id) == 36  # UUID format
 
     def test_modifier_persisted_in_db(self, ctx: tuple) -> None:
+        """add_modifier writes the stat_key, delta and duration to Active_Modifiers."""
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "Strength", 5.0, 2)
         with sqlite3.connect(db_path) as conn:
@@ -79,16 +81,19 @@ class TestAddModifier:
         assert row[4] == 2           # minutes_remaining
 
     def test_zero_turns_raises(self, ctx: tuple) -> None:
+        """A zero-minute duration is rejected with ValueError."""
         db_path, mp = ctx
         with pytest.raises(ValueError, match="Modifier minutes must be >= 1"):
             mp.add_modifier("save1", "player1", "HP", -5.0, 0)
 
     def test_negative_turns_raises(self, ctx: tuple) -> None:
+        """A negative duration is rejected with ValueError."""
         db_path, mp = ctx
         with pytest.raises(ValueError):
             mp.add_modifier("save1", "player1", "HP", -5.0, -3)
 
     def test_multiple_modifiers_same_stat(self, ctx: tuple) -> None:
+        """Two modifiers on the same stat coexist with distinct ids."""
         db_path, mp = ctx
         id1 = mp.add_modifier("save1", "player1", "HP", -10.0, 3)
         id2 = mp.add_modifier("save1", "player1", "HP", -5.0, 1)
@@ -101,18 +106,21 @@ class TestAddModifier:
 
 class TestApplyModifiers:
     def test_single_buff_applied(self, ctx: tuple) -> None:
+        """A positive modifier is added to the base stat at read time (20 + 10 = 30)."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "Strength", 10.0, 5)
         result = mp.apply_modifiers("save1", "player1", {"Strength": "20"})
         assert result["Strength"] == "30"
 
     def test_single_debuff_applied(self, ctx: tuple) -> None:
+        """A negative modifier is subtracted from the base stat (100 - 25 = 75)."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "HP", -25.0, 2)
         result = mp.apply_modifiers("save1", "player1", {"HP": "100"})
         assert result["HP"] == "75"
 
     def test_multiple_modifiers_stacked(self, ctx: tuple) -> None:
+        """Several modifiers on one stat sum their deltas (100 - 10 - 15 = 75)."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "HP", -10.0, 3)
         mp.add_modifier("save1", "player1", "HP", -15.0, 3)
@@ -120,12 +128,14 @@ class TestApplyModifiers:
         assert result["HP"] == "75"
 
     def test_no_modifiers_returns_base_stats(self, ctx: tuple) -> None:
+        """With no active modifiers, apply_modifiers returns the base stats as-is."""
         db_path, mp = ctx
         base = {"HP": "100", "Gold": "50"}
         result = mp.apply_modifiers("save1", "player1", base)
         assert result == base
 
     def test_unaffected_stats_copied_verbatim(self, ctx: tuple) -> None:
+        """Stats with no modifier pass through unchanged."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "HP", -10.0, 1)
         result = mp.apply_modifiers("save1", "player1", {"HP": "100", "Name": "Aria"})
@@ -139,6 +149,7 @@ class TestApplyModifiers:
         assert result["Status"] == "alive"
 
     def test_base_stats_not_mutated(self, ctx: tuple) -> None:
+        """apply_modifiers returns a new dict and leaves the base stats unmodified."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "HP", -10.0, 1)
         base = {"HP": "100"}
@@ -146,6 +157,7 @@ class TestApplyModifiers:
         assert base["HP"] == "100"
 
     def test_float_delta_result(self, ctx: tuple) -> None:
+        """A fractional modifier delta yields a fractional result (10 + 0.5 = 10.5)."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "Speed", 0.5, 1)
         result = mp.apply_modifiers("save1", "player1", {"Speed": "10"})
@@ -158,6 +170,7 @@ class TestApplyModifiers:
 
 class TestTickModifiers:
     def test_turns_decremented(self, ctx: tuple) -> None:
+        """One tick reduces a modifier's minutes_remaining by one (3 → 2)."""
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "HP", -5.0, 3)
         mp.tick_modifiers("save1")
@@ -170,6 +183,7 @@ class TestTickModifiers:
         assert row[0] == 2
 
     def test_modifier_expires_after_n_ticks(self, ctx: tuple) -> None:
+        """A modifier is deleted once its minutes_remaining reaches zero."""
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "HP", -5.0, 2)
         mp.tick_modifiers("save1")
@@ -181,12 +195,14 @@ class TestTickModifiers:
         assert row is None
 
     def test_returns_expired_ids(self, ctx: tuple) -> None:
+        """tick_modifiers returns the ids of modifiers that expired on this tick."""
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "HP", -5.0, 1)
         expired = mp.tick_modifiers("save1")
         assert mod_id in expired
 
     def test_non_expired_not_in_returned_list(self, ctx: tuple) -> None:
+        """Only modifiers that hit zero this tick are returned; longer ones aren't."""
         db_path, mp = ctx
         long_mod = mp.add_modifier("save1", "player1", "HP", -5.0, 5)
         short_mod = mp.add_modifier("save1", "player1", "Mana", -2.0, 1)
@@ -195,6 +211,8 @@ class TestTickModifiers:
         assert long_mod not in expired
 
     def test_multiple_ticks_partial_expiry(self, ctx: tuple) -> None:
+        """Across successive ticks each modifier expires on its own schedule
+        (1-min on tick 1, 3-min on tick 3)."""
         db_path, mp = ctx
         mod3 = mp.add_modifier("save1", "player1", "HP", -5.0, 3)
         mod1 = mp.add_modifier("save1", "player1", "Mana", -2.0, 1)
@@ -210,10 +228,12 @@ class TestTickModifiers:
         assert mod3 in tick3
 
     def test_no_modifiers_returns_empty_list(self, ctx: tuple) -> None:
+        """Ticking with no active modifiers returns an empty list."""
         db_path, mp = ctx
         assert mp.tick_modifiers("save1") == []
 
     def test_expired_modifier_no_longer_applied(self, ctx: tuple) -> None:
+        """Once a modifier expires it no longer affects apply_modifiers output."""
         db_path, mp = ctx
         mp.add_modifier("save1", "player1", "HP", -20.0, 1)
         mp.tick_modifiers("save1")  # modifier expires

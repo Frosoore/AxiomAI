@@ -429,6 +429,11 @@ class ArbitratorEngine:
         # Flush all deferred events in a single transaction
         self._event_sourcer.append_events_batch(_pending_events)
 
+        # Keep the materialised State_Cache in sync with this turn's changes so
+        # DB reads (sidebar load tasks) don't show stats frozen at session load.
+        # _stats_cache fixes the Arbitrator side; this fixes the DB side. (TICKET-002)
+        self._event_sourcer.update_state_cache(save_id, _pending_events)
+
         # Phase 12.1: Mark scheduled events as fired
         for ev in triggered_events:
             self._mark_event_as_fired(save_id, ev["event_id"])

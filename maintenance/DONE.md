@@ -68,3 +68,49 @@ explicite (`config_dir` distinct de `data_dir`) pour l'isolement total (tests,
 embedders). Note : sandboxer ≠ éphémère.
 
 → Le travail concret se poursuit donc dans `B1-pilier1-engine-headless/` (Étape 5).
+
+---
+
+## TICKET-002 — State_Cache jamais mis à jour entre les tours
+
+**Statut :** résolu (code) le 2026-05-23 — attente feu vert pour commit.
+Détail complet : `maintenance/TICKET-002-state-cache-sync/`.
+
+**Diagnostic :** l'`ArbitratorEngine` écrit les events dans `Event_Log` mais jamais
+dans la table `State_Cache`, qui n'est rafraîchie que par `rebuild_state_cache`
+(load de session / rewind). La sidebar lit `State_Cache` → stats figées au load.
+Snapshots jamais pris dans l'app (`take_snapshot_async` sans site d'appel) → un
+rebuild par tour serait O(historique²).
+
+**Fix :** `EventSourcer.update_state_cache(save_id, events)` — UPSERT incrémental des
+events stat du tour sur les entités touchées (sémantique identique à un rebuild,
+modifiers toujours appliqués à la lecture). Appelé dans l'arbitrator juste après
+`append_events_batch`. Tests : `tests/test_event_sourcing.py::TestUpdateStateCache`
+(4 cas dont parité avec `rebuild_state_cache(force_full=True)`). 55 tests verts
+(event_sourcing + arbitrator + checkpoint + modifier).
+
+**Découverte connexe → TICKET-006 :** les events `chronicler_update` ne sont pas
+matérialisés par `_apply_event` (bug distinct).
+
+---
+
+## TICKET-001 — Rework tests : lisibilité, couverture, organisation
+
+**Statut :** résolu (code, SANS suppression) le 2026-05-23 — attente feu vert commit.
+Détail complet : `maintenance/TICKET-001-rework-tests/`.
+
+**Décision utilisateur :** option 1 sans suppression — docstrings + noms
+auto-documentants sur `tests/`, migration des `debug/test_*.py` utiles (copie),
+DEPRECATED.md sur les doublons, **rien supprimé** (suppression → TICKET-003).
+
+**Lot A :** docstrings (condition → résultat) ajoutées sur les 22 fichiers de
+`tests/` (~330 tests), quelques renommages ciblés, 1 ligne morte retirée dans
+`test_chronicler.py`. Noms déjà majoritairement auto-documentants.
+
+**Lot B :** audit des 8 `debug/test_*.py` (→ `debug/DEPRECATED.md`). Couverture
+unique migrée en pytest : `tests/test_localization.py` (la localisation n'avait
+aucune couverture) et `tests/test_universe_meta.py` (round-trip params LLM).
+
+**Vérif :** `pytest tests/` → **347 passed**, 7 failed + 5 errors **tous
+pré-existants connus** (persona_global ; 6× phase6 `_sync_current_form` ; 5×
+ambiance pytest-qt absent). Zéro régression.

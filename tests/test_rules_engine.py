@@ -55,6 +55,7 @@ def _stat_set(target: str, stat: str, value) -> dict:
 
 class TestEvaluateConditions:
     def test_and_fires_when_all_true(self) -> None:
+        """An AND rule fires only when every clause is satisfied."""
         rule = _make_rule(
             "r1", 0,
             conditions=_and(_clause("HP", "<=", 10), _clause("Poisoned", "==", "true")),
@@ -65,6 +66,7 @@ class TestEvaluateConditions:
         assert engine.evaluate("player1", stats) == rule["actions"]
 
     def test_and_does_not_fire_if_one_false(self) -> None:
+        """An AND rule stays silent if any single clause is false."""
         rule = _make_rule(
             "r1", 0,
             conditions=_and(_clause("HP", "<=", 10), _clause("Poisoned", "==", "true")),
@@ -75,6 +77,7 @@ class TestEvaluateConditions:
         assert engine.evaluate("player1", stats) == []
 
     def test_or_fires_on_first_branch(self) -> None:
+        """An OR rule fires when its first clause is satisfied."""
         rule = _make_rule(
             "r1", 0,
             conditions=_or(_clause("Gold", "==", 0), _clause("Reputation", "<", -100)),
@@ -84,6 +87,7 @@ class TestEvaluateConditions:
         assert engine.evaluate("player1", {"Gold": "0", "Reputation": "50"}) == rule["actions"]
 
     def test_or_fires_on_second_branch(self) -> None:
+        """An OR rule fires when only its second clause is satisfied."""
         rule = _make_rule(
             "r1", 0,
             conditions=_or(_clause("Gold", "==", 0), _clause("Reputation", "<", -100)),
@@ -93,6 +97,7 @@ class TestEvaluateConditions:
         assert engine.evaluate("player1", {"Gold": "500", "Reputation": "-200"}) == rule["actions"]
 
     def test_or_does_not_fire_if_both_false(self) -> None:
+        """An OR rule stays silent when no clause is satisfied."""
         rule = _make_rule(
             "r1", 0,
             conditions=_or(_clause("Gold", "==", 0), _clause("Reputation", "<", -100)),
@@ -121,6 +126,7 @@ class TestEvaluateConditions:
 
 class TestTargetEntityFiltering:
     def test_wildcard_fires_for_any_entity(self) -> None:
+        """A rule with target_entity '*' evaluates against any entity."""
         rule = _make_rule("r1", 0, _and(_clause("HP", "<=", 0)), [_stat_set("*", "Status", "dead")],
                           target_entity="*")
         engine = RulesEngine([rule])
@@ -128,6 +134,7 @@ class TestTargetEntityFiltering:
         assert engine.evaluate("npc42", {"HP": "-5"})
 
     def test_specific_entity_only_fires_for_that_entity(self) -> None:
+        """A rule scoped to a named entity ignores all other entities."""
         rule = _make_rule("r1", 0, _and(_clause("HP", "<=", 0)), [_stat_set("boss", "Status", "dead")],
                           target_entity="boss")
         engine = RulesEngine([rule])
@@ -141,6 +148,8 @@ class TestTargetEntityFiltering:
 
 class TestPriorityOrdering:
     def test_higher_priority_actions_appear_first(self) -> None:
+        """Actions are ordered by priority (lower number = higher priority),
+        regardless of the rules' input order."""
         low_priority = _make_rule("low", 10, _and(_clause("HP", "<", 100)),
                                   [_stat_set("p", "X", "low")])
         high_priority = _make_rule("high", 1, _and(_clause("HP", "<", 100)),
@@ -152,6 +161,7 @@ class TestPriorityOrdering:
         assert actions[1]["value"] == "low"
 
     def test_zero_priority_fires_first(self) -> None:
+        """Priority 0 is treated as the highest priority and is applied first."""
         r0 = _make_rule("r0", 0, _and(_clause("HP", "<", 100)), [_stat_set("p", "A", "first")])
         r5 = _make_rule("r5", 5, _and(_clause("HP", "<", 100)), [_stat_set("p", "A", "second")])
         engine = RulesEngine([r5, r0])
@@ -186,25 +196,32 @@ class TestCompare:
         ("10.5", ">",  10.4, True),
     ])
     def test_numeric_comparisons(self, stat_val, comparator, threshold, expected) -> None:
+        """_compare evaluates each comparator correctly across the numeric
+        cases above (boundaries, zero, negatives and floats)."""
         assert RulesEngine._compare(stat_val, comparator, threshold) == expected
 
     def test_string_equality(self) -> None:
+        """_compare supports '==' on non-numeric string values."""
         assert RulesEngine._compare("alive", "==", "alive") is True
         assert RulesEngine._compare("alive", "==", "dead") is False
 
     def test_string_inequality(self) -> None:
+        """_compare supports '!=' on non-numeric string values."""
         assert RulesEngine._compare("alive", "!=", "dead") is True
         assert RulesEngine._compare("dead", "!=", "dead") is False
 
     def test_invalid_string_comparator_raises(self) -> None:
+        """Ordering comparators (>=) on non-numeric strings raise ValueError."""
         with pytest.raises(ValueError, match="not supported for non-numeric"):
             RulesEngine._compare("alive", ">=", "dead")
 
     def test_invalid_comparator_raises(self) -> None:
+        """An unrecognised comparator symbol raises ValueError('Unknown comparator')."""
         with pytest.raises(ValueError, match="Unknown comparator"):
             RulesEngine._compare("10", "~=", 10)
 
     def test_invalid_operator_raises(self) -> None:
+        """An unrecognised logical operator (e.g. XOR) raises ValueError."""
         rule = _make_rule("r1", 0,
                           {"operator": "XOR", "clauses": [_clause("HP", "==", 0)]},
                           [])
@@ -227,6 +244,7 @@ class TestCompare:
 
 class TestApplyActions:
     def test_stat_change_positive(self) -> None:
+        """A positive stat_change adds its delta to the current value."""
         engine = RulesEngine([])
         result = engine.apply_actions(
             [_stat_change("p", "HP", 20)],
@@ -235,6 +253,7 @@ class TestApplyActions:
         assert result["HP"] == "100"
 
     def test_stat_change_negative(self) -> None:
+        """A negative stat_change subtracts its delta from the current value."""
         engine = RulesEngine([])
         result = engine.apply_actions(
             [_stat_change("p", "HP", -30)],
@@ -243,11 +262,13 @@ class TestApplyActions:
         assert result["HP"] == "70"
 
     def test_stat_change_from_zero_when_missing(self) -> None:
+        """A stat_change on an absent stat treats the prior value as 0."""
         engine = RulesEngine([])
         result = engine.apply_actions([_stat_change("p", "XP", 50)], {})
         assert result["XP"] == "50"
 
     def test_stat_set_overrides_existing(self) -> None:
+        """A stat_set replaces the existing value outright."""
         engine = RulesEngine([])
         result = engine.apply_actions(
             [_stat_set("p", "Status", "dead")],
@@ -256,6 +277,8 @@ class TestApplyActions:
         assert result["Status"] == "dead"
 
     def test_multiple_actions_applied_sequentially(self) -> None:
+        """Multiple actions in one batch are applied in order, each seeing the
+        previous result."""
         engine = RulesEngine([])
         actions = [
             _stat_change("p", "HP", -50),
@@ -268,18 +291,21 @@ class TestApplyActions:
         assert result["XP"] == "100"
 
     def test_original_stats_not_mutated(self) -> None:
+        """apply_actions returns a new dict and leaves the input stats unchanged."""
         engine = RulesEngine([])
         original = {"HP": "100"}
         engine.apply_actions([_stat_change("p", "HP", -10)], original)
         assert original["HP"] == "100"
 
     def test_trigger_event_does_not_mutate_stats(self) -> None:
+        """A trigger_event action carries no stat delta, so stats are unchanged."""
         engine = RulesEngine([])
         actions = [{"type": "trigger_event", "target": "p", "event": "death"}]
         result = engine.apply_actions(actions, {"HP": "0"})
         assert result == {"HP": "0"}
 
     def test_integer_display_no_decimal(self) -> None:
+        """A whole-number result is stored without a trailing decimal."""
         engine = RulesEngine([])
         result = engine.apply_actions([_stat_change("p", "Gold", 5)], {"Gold": "10"})
         assert "." not in result["Gold"]

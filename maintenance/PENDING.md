@@ -4,11 +4,12 @@
 
 | N°        | Titre                                                          | Statut    |
 |-----------|----------------------------------------------------------------|-----------|
-| TICKET-001| Rework tests : lisibilité, couverture et organisation          | ouvert    |
-| TICKET-002| State_Cache jamais mis à jour entre les tours                  | ouvert    |
+| TICKET-001| Rework tests : lisibilité, couverture et organisation          | ✅ résolu (code, sans suppression) → voir `DONE.md`, attente feu vert commit |
+| TICKET-002| State_Cache jamais mis à jour entre les tours                  | ✅ résolu (code) → voir `DONE.md`, attente feu vert commit |
 | TICKET-003| Supprimer les modules engine dépréciés (post-Pilier 1)        | ouvert    |
 | TICKET-004| Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths) | ✅ clos → voir `DONE.md` |
 | TICKET-005| Finir l'injection de chemins (`data_dir`) du Pilier 1                | ✅ clos (absorbé) → voir `DONE.md` |
+| TICKET-006| Chronicler : `chronicler_update` ignoré par `_apply_event`     | ouvert    |
 
 ---
 
@@ -38,16 +39,24 @@ pour validation. Marqueurs : `core/DEPRECATED.md`, `database/DEPRECATED.md`, `ll
 
 ---
 
-## TICKET-002 — State_Cache jamais mis à jour entre les tours
+## TICKET-006 — Chronicler : `chronicler_update` ignoré par `_apply_event`
 
-**Contexte :** Découvert en A3. `State_Cache` est construit une fois au load de la session (`rebuild_state_cache`), puis JAMAIS mis à jour après les tours. Le `_stats_cache` (3.3) corrige le problème CÔTÉ ARBITRATOR (états corrects d'un tour à l'autre). Mais `LoadFullGameStateTask` / `LoadStatsTask` lisent toujours depuis `State_Cache` → la sidebar montre des stats figées au moment du load, pas les stats réelles.
+**Contexte :** Découvert en traitant TICKET-002. Le Chronicler (simulation du monde)
+écrit ses changements de stats via `EventSourcer.append_event(..., "chronicler_update", ...)`
+avec un payload `{entity_id, stat_key, delta|value}` (`axiom/chronicler.py:198-218`).
+Or `EventSourcer._apply_event` ne gère que `entity_create` / `stat_change` / `stat_set` :
+les events `chronicler_update` sont donc **silencieusement ignorés** et ne matérialisent
+jamais dans `State_Cache`, **même sur `rebuild_state_cache`**. Les changements de monde
+du Chronicler n'ont donc aucun effet sur les stats réelles.
 
-**Ce qui serait à faire :**
-- Ajouter un UPSERT sur `State_Cache` après chaque event `stat_change`/`stat_set` dans `append_event` ou `append_events_batch`, OU
-- Appeler `rebuild_state_cache` (léger si Snapshot récent) avant chaque `load_full_game_state`, OU
-- Alimenter la sidebar depuis `_stats_cache` de l'Arbitrator plutôt que la DB.
+**Ce qui serait à faire (à valider) :**
+- Soit faire émettre au Chronicler des `stat_change`/`stat_set` standards (en gardant
+  une trace « chronicler » dans le payload, ex. `source: "chronicler"`),
+- Soit ajouter `chronicler_update` à la liste traitée par `_apply_event`.
+- Vérifier qu'aucun autre `event_type` porteur de stats n'est dans le même cas.
 
-**Priorité :** haute — la sidebar affiche probablement des stats en retard depuis le début du projet.
+**Priorité :** à confirmer — potentiellement haute (perte de fonctionnalité Chronicler),
+mais vérifier d'abord si c'était intentionnel (events purement narratifs ?).
 
 ---
 

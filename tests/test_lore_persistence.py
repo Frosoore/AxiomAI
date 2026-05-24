@@ -1,3 +1,10 @@
+"""
+tests/test_lore_persistence.py
+
+Round-trip test for Lore_Book through DbWorker: save a universe with lore
+entries, confirm they land in the table, then load them back and confirm the
+lore_book_loaded signal returns them intact.
+"""
 
 import os
 import sqlite3
@@ -11,7 +18,9 @@ def db_path(tmp_path):
     create_universe_db(path)
     return path
 
-def test_lore_book_persistence_cycle(db_path):
+def test_lore_book_survives_save_then_load_round_trip(db_path):
+    """Lore entries saved via save_full_universe are persisted to Lore_Book and
+    returned unchanged by a subsequent load_entities_and_rules."""
     # 1. Prepare data
     entities = [{"entity_id": "e1", "entity_type": "npc", "name": "Npc 1", "stats": {"hp": "10"}}]
     rules = []

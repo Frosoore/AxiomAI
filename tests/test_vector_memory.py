@@ -67,36 +67,43 @@ def vm(tmp_path: Path):
 
 class TestEmbedChunk:
     def test_returns_string_id(self, vm: VectorMemory) -> None:
+        """embed_chunk returns the new chunk's id as a 36-char UUID string."""
         doc_id = vm.embed_chunk("save1", 1, "The knight enters the dungeon.")
         assert isinstance(doc_id, str)
         assert len(doc_id) == 36  # UUID format
 
     def test_returns_unique_ids(self, vm: VectorMemory) -> None:
+        """Distinct chunks get distinct ids."""
         id1 = vm.embed_chunk("save1", 1, "chunk one")
         id2 = vm.embed_chunk("save1", 2, "chunk two")
         assert id1 != id2
 
     def test_empty_text_raises_value_error(self, vm: VectorMemory) -> None:
+        """Embedding an empty string raises ValueError."""
         with pytest.raises(ValueError, match="empty"):
             vm.embed_chunk("save1", 1, "")
 
     def test_whitespace_only_raises_value_error(self, vm: VectorMemory) -> None:
+        """Embedding whitespace-only text raises ValueError."""
         with pytest.raises(ValueError):
             vm.embed_chunk("save1", 1, "   \n  ")
 
     def test_chunk_retrievable_after_embed(self, vm: VectorMemory) -> None:
+        """A just-embedded chunk is returned by a semantic query."""
         vm.embed_chunk("save1", 1, "The dragon breathes fire.")
         results = vm.query("save1", "dragon fire", k=1)
         assert len(results) == 1
         assert "dragon" in results[0]["text"]
 
     def test_metadata_stored_correctly(self, vm: VectorMemory) -> None:
+        """The turn_id and chunk_type passed at embed time are returned on query."""
         vm.embed_chunk("save1", 5, "Important event.", chunk_type="dialogue")
         results = vm.query("save1", "important event", k=1)
         assert results[0]["turn_id"] == 5
         assert results[0]["chunk_type"] == "dialogue"
 
     def test_default_chunk_type_is_narrative(self, vm: VectorMemory) -> None:
+        """When chunk_type is omitted it defaults to 'narrative'."""
         vm.embed_chunk("save1", 1, "Some narrative text.")
         results = vm.query("save1", "narrative", k=1)
         assert results[0]["chunk_type"] == "narrative"
@@ -108,11 +115,13 @@ class TestEmbedChunk:
 
 class TestQuery:
     def test_returns_empty_for_unknown_save(self, vm: VectorMemory) -> None:
+        """Querying a save with no chunks returns an empty list."""
         vm.embed_chunk("save1", 1, "text for save1")
         results = vm.query("save999", "text", k=5)
         assert results == []
 
     def test_does_not_return_other_saves_chunks(self, vm: VectorMemory) -> None:
+        """A query is scoped to its save and never leaks another save's chunks."""
         vm.embed_chunk("save1", 1, "secret of save one")
         vm.embed_chunk("save2", 1, "secret of save two")
         results = vm.query("save1", "secret", k=5)
@@ -121,12 +130,14 @@ class TestQuery:
             assert "save one" in r["text"]
 
     def test_returns_at_most_k_results(self, vm: VectorMemory) -> None:
+        """A query returns no more than k results."""
         for i in range(10):
             vm.embed_chunk("save1", i, f"chunk number {i}")
         results = vm.query("save1", "chunk", k=3)
         assert len(results) <= 3
 
     def test_result_contains_required_keys(self, vm: VectorMemory) -> None:
+        """Each result carries text, turn_id, chunk_type and distance keys."""
         vm.embed_chunk("save1", 1, "the hero slays the beast")
         results = vm.query("save1", "hero", k=1)
         assert len(results) == 1
@@ -137,24 +148,29 @@ class TestQuery:
         assert "distance" in r
 
     def test_distance_is_float(self, vm: VectorMemory) -> None:
+        """The similarity distance on each result is a float."""
         vm.embed_chunk("save1", 1, "some text")
         results = vm.query("save1", "some text", k=1)
         assert isinstance(results[0]["distance"], float)
 
     def test_empty_collection_returns_empty(self, vm: VectorMemory) -> None:
+        """Querying before anything is embedded returns an empty list."""
         results = vm.query("save1", "anything", k=5)
         assert results == []
 
     def test_empty_query_text_raises(self, vm: VectorMemory) -> None:
+        """An empty query string raises ValueError."""
         with pytest.raises(ValueError):
             vm.query("save1", "")
 
     def test_k_larger_than_available_does_not_crash(self, vm: VectorMemory) -> None:
+        """Requesting more results than exist returns all of them without error."""
         vm.embed_chunk("save1", 1, "only chunk")
         results = vm.query("save1", "only chunk", k=100)
         assert len(results) == 1
 
     def test_query_filters_by_max_turn_id(self, vm: VectorMemory) -> None:
+        """query(max_turn_id=N) excludes chunks from turns later than N."""
         # Arrange: create chunks across different turns
         vm.embed_chunk("save1", 5, "Old memory")
         vm.embed_chunk("save1", 10, "Recent memory")
@@ -178,6 +194,7 @@ class TestQuery:
 
 class TestRollback:
     def test_deletes_chunks_after_target_turn(self, vm: VectorMemory) -> None:
+        """rollback(target) removes every chunk from turns after the target."""
         vm.embed_chunk("save1", 3, "Turn 3 event")
         vm.embed_chunk("save1", 6, "Turn 6 event")
         vm.embed_chunk("save1", 9, "Turn 9 event")
@@ -189,6 +206,7 @@ class TestRollback:
         assert all(r["turn_id"] <= 5 for r in remaining)
 
     def test_preserves_chunks_at_or_before_target(self, vm: VectorMemory) -> None:
+        """rollback keeps chunks from turns at or before the target."""
         vm.embed_chunk("save1", 1, "Turn 1 story")
         vm.embed_chunk("save1", 5, "Turn 5 story")
         vm.embed_chunk("save1", 10, "Turn 10 story")
@@ -202,6 +220,7 @@ class TestRollback:
         assert 10 not in turn_ids
 
     def test_rollback_to_zero_deletes_all(self, vm: VectorMemory) -> None:
+        """rollback(0) removes every chunk for the save."""
         for i in range(1, 6):
             vm.embed_chunk("save1", i, f"event at turn {i}")
 
@@ -211,6 +230,7 @@ class TestRollback:
         assert vm.query("save1", "event", k=10) == []
 
     def test_rollback_does_not_affect_other_saves(self, vm: VectorMemory) -> None:
+        """A rollback on one save leaves other saves' chunks untouched."""
         vm.embed_chunk("save1", 10, "save1 future event")
         vm.embed_chunk("save2", 10, "save2 future event")
 
@@ -220,15 +240,18 @@ class TestRollback:
         assert len(save2_results) == 1
 
     def test_rollback_beyond_all_turns_deletes_nothing(self, vm: VectorMemory) -> None:
+        """Rolling back past the latest turn deletes nothing (count 0)."""
         vm.embed_chunk("save1", 3, "event")
         deleted = vm.rollback("save1", target_turn_id=100)
         assert deleted == 0
 
     def test_rollback_empty_collection_returns_zero(self, vm: VectorMemory) -> None:
+        """Rolling back an empty collection returns a deleted count of 0."""
         deleted = vm.rollback("save1", target_turn_id=5)
         assert deleted == 0
 
     def test_returns_correct_count(self, vm: VectorMemory) -> None:
+        """rollback returns the exact number of chunks it deleted."""
         for i in range(1, 8):
             vm.embed_chunk("save1", i, f"chunk {i}")
 

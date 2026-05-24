@@ -55,26 +55,31 @@ def _ndjson_lines(tokens: list[str]) -> list[str]:
 
 class TestIsAvailable:
     def test_returns_true_on_200(self) -> None:
+        """is_available is True when /api/tags responds 200."""
         with patch("httpx.get", return_value=_make_tags_response(200)):
             client = OllamaClient("llama3.2")
             assert client.is_available() is True
 
     def test_returns_false_on_non_200(self) -> None:
+        """is_available is False on a non-200 status (e.g. 404)."""
         with patch("httpx.get", return_value=_make_tags_response(404)):
             client = OllamaClient("llama3.2")
             assert client.is_available() is False
 
     def test_returns_false_on_connection_error(self) -> None:
+        """is_available is False when the server refuses the connection."""
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
             client = OllamaClient("llama3.2")
             assert client.is_available() is False
 
     def test_returns_false_on_timeout(self) -> None:
+        """is_available is False when the availability probe times out."""
         with patch("httpx.get", side_effect=httpx.TimeoutException("timeout")):
             client = OllamaClient("llama3.2")
             assert client.is_available() is False
 
     def test_never_raises(self) -> None:
+        """is_available swallows even unexpected errors and returns False."""
         with patch("httpx.get", side_effect=RuntimeError("unexpected")):
             client = OllamaClient("llama3.2")
             # Must not propagate
@@ -88,6 +93,7 @@ class TestIsAvailable:
 
 class TestComplete:
     def test_returns_llm_response(self) -> None:
+        """complete returns an LLMResponse with the model's prose and stop reason."""
         mock_resp = _make_chat_response("The dragon attacks.")
         with patch("httpx.post", return_value=mock_resp):
             client = OllamaClient("llama3.2")
@@ -98,6 +104,8 @@ class TestComplete:
         assert result.finish_reason == "stop"
 
     def test_correct_request_body(self) -> None:
+        """complete posts the model, stream=False, messages and sampling
+        options (temperature/top_p) in the request body."""
         mock_resp = _make_chat_response("ok")
         with patch("httpx.post", return_value=mock_resp) as mock_post:
             client = OllamaClient("mistral", base_url="http://localhost:11434")
@@ -111,6 +119,7 @@ class TestComplete:
         assert sent_payload["options"]["top_p"] == 0.9
 
     def test_extracts_tool_call(self) -> None:
+        """complete parses a fenced JSON tool-call out of the model content."""
         content = (
             "The knight falls.\n"
             "~~~json\n"
@@ -126,6 +135,7 @@ class TestComplete:
         assert "~~~json" not in result.narrative_text
 
     def test_finish_reason_length_when_not_done(self) -> None:
+        """A response with done=False maps to finish_reason 'length' (truncated)."""
         mock_resp = _make_chat_response("truncated", done=False)
         with patch("httpx.post", return_value=mock_resp):
             client = OllamaClient("llama3.2")
@@ -133,18 +143,21 @@ class TestComplete:
         assert result.finish_reason == "length"
 
     def test_raises_connection_error_on_connect_refused(self) -> None:
+        """complete raises LLMConnectionError when the connection is refused."""
         with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             client = OllamaClient("llama3.2")
             with pytest.raises(LLMConnectionError, match="Cannot connect"):
                 client.complete([])
 
     def test_raises_connection_error_on_timeout(self) -> None:
+        """complete raises LLMConnectionError when the request times out."""
         with patch("httpx.post", side_effect=httpx.TimeoutException("timed out")):
             client = OllamaClient("llama3.2")
             with pytest.raises(LLMConnectionError, match="timed out"):
                 client.complete([])
 
     def test_raises_connection_error_on_server_500(self) -> None:
+        """complete raises LLMConnectionError on a 500 server error."""
         mock_resp = _make_chat_response("err", status=500)
         with patch("httpx.post", return_value=mock_resp):
             client = OllamaClient("llama3.2")
@@ -152,6 +165,7 @@ class TestComplete:
                 client.complete([])
 
     def test_raises_parse_error_on_invalid_json_response(self) -> None:
+        """complete raises LLMParseError when the response body isn't valid JSON."""
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 200
         mock_resp.json.side_effect = ValueError("not json")
@@ -161,6 +175,7 @@ class TestComplete:
                 client.complete([])
 
     def test_raises_parse_error_on_missing_message_key(self) -> None:
+        """complete raises LLMParseError when the JSON lacks the 'message' key."""
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"done": True}  # no "message" key
@@ -170,6 +185,7 @@ class TestComplete:
                 client.complete([])
 
     def test_custom_base_url_used(self) -> None:
+        """A custom base_url is used as the target host for the request."""
         mock_resp = _make_chat_response("ok")
         with patch("httpx.post", return_value=mock_resp) as mock_post:
             client = OllamaClient("llama3.2", base_url="http://192.168.1.5:11434")
@@ -196,6 +212,7 @@ class TestStreamTokens:
         return mock_context
 
     def test_yields_tokens_in_order(self) -> None:
+        """stream_tokens yields each NDJSON content chunk in arrival order."""
         lines = _ndjson_lines(["Hello", " world", "!"])
         with patch("httpx.stream", return_value=self._mock_stream_context(lines)):
             client = OllamaClient("llama3.2")
@@ -203,6 +220,8 @@ class TestStreamTokens:
         assert tokens == ["Hello", " world", "!"]
 
     def test_stops_at_done_true(self) -> None:
+        """stream_tokens stops emitting once a chunk with done=True arrives,
+        ignoring any trailing lines."""
         # Provide extra lines after done=True — they must be ignored
         lines = [
             json.dumps({"message": {"content": "A"}, "done": False}),
@@ -215,6 +234,7 @@ class TestStreamTokens:
         assert tokens == ["A", "B"]
 
     def test_skips_empty_lines(self) -> None:
+        """stream_tokens ignores blank lines in the NDJSON stream."""
         lines = ["", _ndjson_lines(["X"])[0]]
         with patch("httpx.stream", return_value=self._mock_stream_context(lines)):
             client = OllamaClient("llama3.2")
@@ -222,12 +242,14 @@ class TestStreamTokens:
         assert "X" in tokens
 
     def test_raises_connection_error_on_connect_refused(self) -> None:
+        """stream_tokens raises LLMConnectionError when the connection is refused."""
         with patch("httpx.stream", side_effect=httpx.ConnectError("refused")):
             client = OllamaClient("llama3.2")
             with pytest.raises(LLMConnectionError):
                 list(client.stream_tokens([]))
 
     def test_raises_connection_error_on_server_500(self) -> None:
+        """stream_tokens raises LLMConnectionError when streaming returns a 500."""
         with patch("httpx.stream", return_value=self._mock_stream_context([], status=500)):
             client = OllamaClient("llama3.2")
             with pytest.raises(LLMConnectionError, match="server error"):
