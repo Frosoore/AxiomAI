@@ -25,3 +25,11 @@ Contraintes découvertes qui rendent une injection naïve cassante :
 
 Conséquence : l'Étape 3 « complète » du doc est plus invasive/risquée que les bugfixes Phase A.
 Voir TICKET-004 (révision du doc) et la question de cadrage posée à l'utilisateur.
+
+## Décision Étape 6 — source d'historique canonique = Event_Log
+
+Le worker mappait la liste d'historique tenue par l'UI ; `Session` reconstruit depuis l'`Event_Log`.
+Choix acté : **l'Event_Log est la source canonique** (déjà persistée, indépendante de toute UI,
+identique pour GUI/CLI/serveur). À l'Étape 7, le `NarrativeWorker` déléguera à `Session` et héritera
+donc de cette source — la liste UI ne sert plus qu'à l'affichage. La décision du héros Companion est
+portée dans `Session` (backend héros injectable, défaut = modèle local `extraction_model`, parité worker).

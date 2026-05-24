@@ -67,3 +67,23 @@
     non routé (source d'univers, hors périmètre données par-partie).
   - **Reste du Pilier 1** : Étape 6 (parité `Session` : héros Companion + historique), Étape 7
     (adoption worker, run-testé), Étape 8 (CLI).
+
+## Session 2026-05-24
+- **Étape 6 (parité `Session`, Problème U pré-requis) terminée** — sans bascule (app inchangée) :
+  - `axiom/db_helpers.py` : `load_active_entities(db_path)` — entités actives + stats, forme identique
+    à `db_worker.load_entities_and_rules`. `Session` charge donc les entités lui-même (l'UI les
+    fournissait au worker).
+  - `axiom/session.py` : décision du héros Companion portée depuis `NarrativeWorker`
+    (`_get_hero_id_from_metadata`, `_find_hero_entity` avec replis id→'hero'→nom→NPC, `_get_hero_decision`).
+    Backend héros injectable (`hero_llm=`), défaut = build local `extraction_model` (parité worker).
+    `take_turn` calcule `hero_action` en mode Companion s'il n'est pas fourni explicitement.
+  - Hooks de progression headless `on_status` / `on_hero_decision` sur `take_turn` (remplacent les
+    signaux Qt) + helper `_emit`. Ordre des statuts aligné sur le worker (Generating→Consulting→Hero→Ready).
+  - Source d'historique : **Event_Log retenu comme canonique** (cf. DOC.md) ; le worker s'y ralliera
+    en Étape 7.
+  - Tests : `tests/test_session.py` +5 de parité (forme entités, résolution héros méta + 3 replis,
+    décision via hero_llm injecté/strip/prompt, None si pas de héros). **12/12 verts.**
+  - Non-régression : arbitrator + event_sourcing + checkpoint + config = **72/72**. Smoke headless
+    `PySide6 chargé: False`.
+  - **Reste** : Étape 7 (NarrativeWorker → coquille de threading autour de `Session`, run-testé),
+    Étape 8 (CLI).

@@ -128,6 +128,140 @@ def test_data_dir_sandboxes_vector_and_logs_under_injected_root(universe_db, tmp
         axiom_logger.reconfigure()  # restaure le handler de logs par défaut
 
 
+# ---------------------------------------------------------------------------
+# Étape 6 — Parité de Session vs NarrativeWorker (décision du héros Companion)
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedLLM:
+    """Backend héros factice : renvoie une décision fixe et capte le prompt reçu."""
+
+    def __init__(self, decision: str = "  Hero draws sword.  ") -> None:
+        self._decision = decision
+        self.last_prompt = None
+
+    def complete(self, prompt, max_tokens=None):
+        self.last_prompt = prompt
+
+        class _Resp:
+            narrative_text = self._decision
+
+        return _Resp()
+
+
+def _add_entity(db, entity_id, entity_type, name, description="", stats=None):
+    """Insère une entité active (+ stats) dans la base de l'univers."""
+    from axiom.schema import get_connection
+
+    with get_connection(db) as conn:
+        conn.execute(
+            "INSERT INTO Entities (entity_id, entity_type, name, description, is_active) "
+            "VALUES (?, ?, ?, ?, 1);",
+            (entity_id, entity_type, name, description),
+        )
+        for k, v in (stats or {}).items():
+            conn.execute(
+                "INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);",
+                (entity_id, k, v),
+            )
+
+
+def _set_meta(db, key, value):
+    from axiom.schema import get_connection
+
+    with get_connection(db) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",
+            (key, value),
+        )
+
+
+def _companion_session(db, save_id, hero_llm=None):
+    return Session(
+        db, save_id, llm=_DummyLLM(), vector_memory=_DummyVectorMemory(),
+        mode="Companion", hero_llm=hero_llm,
+    )
+
+
+def test_load_active_entities_returns_worker_shape(universe_db):
+    """load_active_entities renvoie les entités actives avec leurs stats, dans
+    la forme attendue par la logique héros (parité avec le db_worker)."""
+    from axiom.db_helpers import load_active_entities
+
+    db, _ = universe_db
+    _add_entity(db, "kael", "npc", "Kael the Brave", "A bold knight", {"HP": "10"})
+    ents = load_active_entities(db)
+    kael = next(e for e in ents if e["entity_id"] == "kael")
+    assert kael == {
+        "entity_id": "kael",
+        "entity_type": "npc",
+        "name": "Kael the Brave",
+        "description": "A bold knight",
+        "stats": {"HP": "10"},
+    }
+
+
+def test_find_hero_entity_prefers_metadata_id(universe_db):
+    """En mode Companion, _find_hero_entity privilégie l'ID configuré dans
+    Universe_Meta (companion_hero_id) sur les heuristiques de repli."""
+    db, save_id = universe_db
+    _add_entity(db, "kael", "npc", "Kael")
+    _add_entity(db, "hero", "npc", "Default Hero")  # piège du repli 'hero'
+    _set_meta(db, "companion_hero_id", "kael")
+
+    sess = _companion_session(db, save_id)
+    assert sess._get_hero_id_from_metadata() == "kael"
+    hero = sess._find_hero_entity(sess._get_hero_id_from_metadata())
+    assert hero["entity_id"] == "kael"
+
+
+def test_find_hero_entity_falls_back_to_id_then_name_then_npc(universe_db):
+    """Sans métadonnée, _find_hero_entity retombe sur l'ID 'hero', puis un nom
+    contenant 'hero', puis le premier NPC (mêmes replis que le worker)."""
+    db, save_id = universe_db
+    sess = _companion_session(db, save_id)
+
+    # Repli 3 : premier NPC.
+    _add_entity(db, "guard", "npc", "Town Guard")
+    sess._entities = None
+    assert sess._find_hero_entity()["entity_id"] == "guard"
+
+    # Repli 2 : nom contenant 'hero'.
+    _add_entity(db, "champ", "npc", "The Hero of Time")
+    sess._entities = None
+    assert sess._find_hero_entity()["entity_id"] == "champ"
+
+    # Repli 1 : ID explicite 'hero'.
+    _add_entity(db, "hero", "npc", "Anon")
+    sess._entities = None
+    assert sess._find_hero_entity()["entity_id"] == "hero"
+
+
+def test_get_hero_decision_uses_injected_llm_and_strips(universe_db):
+    """_get_hero_decision passe par le hero_llm injecté, construit le prompt avec
+    nom/persona du héros, et renvoie la décision nettoyée (strip)."""
+    db, save_id = universe_db
+    _add_entity(db, "kael", "npc", "Kael", "A bold knight")
+    hero_llm = _ScriptedLLM("  Hero draws sword.  ")
+    sess = _companion_session(db, save_id, hero_llm=hero_llm)
+    hero_ent = sess._find_hero_entity("kael")
+
+    decision = sess._get_hero_decision(hero_ent, [], "Attack the dragon")
+    assert decision == "Hero draws sword."
+    # Le prompt contient bien le contexte du héros et le message du joueur.
+    blob = " ".join(m["content"] for m in hero_llm.last_prompt)
+    assert "Kael" in blob and "A bold knight" in blob
+    assert "Attack the dragon" in blob
+
+
+def test_find_hero_entity_none_when_no_entities(universe_db):
+    """Sans entité héros résoluble, _find_hero_entity renvoie None (take_turn
+    n'engagera donc pas de décision héros — parité avec le worker)."""
+    db, save_id = universe_db
+    sess = _companion_session(db, save_id)
+    assert sess._find_hero_entity() is None
+
+
 def test_config_stays_machine_global_without_override(tmp_path, monkeypatch):
     """Hybride (Étape 5) : sans surcharge, la config reste machine-globale.
 

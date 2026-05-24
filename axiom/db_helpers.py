@@ -235,6 +235,51 @@ def load_rules_for_session(db_path: str) -> list[dict]:
         return []
 
 
+def load_active_entities(db_path: str) -> list[dict]:
+    """Read all active entities (with their stats) for session initialisation.
+
+    Mirrors the shape produced by `workers/db_worker.load_entities_and_rules`
+    (the list the GUI feeds to `NarrativeWorker`), so a headless `Session` can
+    resolve the Companion Hero entity itself instead of relying on the UI.
+
+    Args:
+        db_path: Path to the universe .db file.
+
+    Returns:
+        List of entity dicts: `{entity_id, entity_type, name, description, stats}`.
+        Empty list if the database cannot be read.
+    """
+    try:
+        with get_connection(db_path) as conn:
+            e_rows = conn.execute(
+                "SELECT entity_id, entity_type, name, description "
+                "FROM Entities WHERE is_active = 1;"
+            ).fetchall()
+            entities = []
+            for r in e_rows:
+                eid = r["entity_id"]
+                stats = {
+                    s["stat_key"]: s["stat_value"]
+                    for s in conn.execute(
+                        "SELECT stat_key, stat_value FROM Entity_Stats "
+                        "WHERE entity_id = ?;",
+                        (eid,),
+                    )
+                }
+                entities.append(
+                    {
+                        "entity_id": eid,
+                        "entity_type": r["entity_type"],
+                        "name": r["name"],
+                        "description": r["description"],
+                        "stats": stats,
+                    }
+                )
+        return entities
+    except (sqlite3.Error, FileNotFoundError):
+        return []
+
+
 def get_max_turn_id(db_path: str, save_id: str) -> int:
     """Read the highest turn_id from Event_Log for a save (session resume).
 

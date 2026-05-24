@@ -29,4 +29,4 @@ Ne pas mélanger les étapes entre elles.
 | `A3-optimisations` | ✅ terminé | Phase A §3 — optimisations chirurgicales (perf + logs) |
 | `A4-nettoyage-code-mort` | ✅ terminé | Phase A §4 — suppression code mort |
 | `A5-hotfix-import-circulaire` | ✅ terminé | Hotfix — cycle d'import introduit par A3.4 (démarrage cassé) |
-| `B1-pilier1-engine-headless` | 🚧 en cours | Phase B §5 — Pilier 1 : moteur extrait dans `axiom/` (zéro Qt). Étapes 1 (copie) ✅, 2 (bascule app+tests) ✅, 3 (paths/config) révisée→TICKET-004, 4 (API `Session`/`Universe`) ✅ mais non adoptée+incomplète. Plan révisé §5.3-bis : Étapes 5 (injection chemins), 6 (parité `Session`), 7 (adoption worker), 8 (CLI). Cf. TICKET-005 absorbé. |
+| `B1-pilier1-engine-headless` | 🚧 en cours | Phase B §5 — Pilier 1 : moteur extrait dans `axiom/` (zéro Qt). Étapes 1 (copie) ✅, 2 (bascule app+tests) ✅, 3 (paths/config) révisée→TICKET-004, 4 (API `Session`/`Universe`) ✅ mais non adoptée+incomplète. Plan révisé §5.3-bis : Étapes 5 (injection chemins) ✅, 6 (parité `Session` : héros Companion + hooks headless) ✅. Restent 7 (adoption worker, run-testé), 8 (CLI). Cf. TICKET-005 absorbé. |

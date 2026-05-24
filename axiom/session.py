@@ -29,10 +29,20 @@ from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
 from axiom.memory import VectorMemory
 from axiom.universe import Universe
-from axiom.db_helpers import load_rules_for_session, get_max_turn_id
+from axiom.db_helpers import (
+    load_rules_for_session,
+    get_max_turn_id,
+    load_active_entities,
+)
 from axiom import paths
 
 _DEFAULT_SYSTEM_PROMPT = "You are the narrator of this world."
+
+
+def _emit(callback: Callable[[str], None] | None, message: str) -> None:
+    """Invoke an optional progress callback, ignoring None."""
+    if callback is not None:
+        callback(message)
 
 
 class Session:
@@ -48,6 +58,9 @@ class Session:
         data_dir:       Racine de données optionnelle pour l'injection de chemins
                         (utilisée seulement pour la VectorMemory par défaut).
         mode:           Mode de jeu ('Normal', 'Hardcore', 'Companion').
+        hero_llm:       Backend optionnel pour la décision du héros (mode
+                        Companion). Si None, construit paresseusement depuis la
+                        config (modèle local `extraction_model`), comme le worker.
     """
 
     def __init__(
@@ -59,11 +72,14 @@ class Session:
         vector_memory: VectorMemory | None = None,
         data_dir: str | Path | None = None,
         mode: str = "Normal",
+        hero_llm: LLMBackend | None = None,
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
         self._llm = llm
         self._mode = mode
+        self._hero_llm = hero_llm
+        self._entities: list[dict] | None = None
 
         self.universe = Universe.load(self._db_path)
         self._system_prompt = self.universe.system_prompt or _DEFAULT_SYSTEM_PROMPT
@@ -106,6 +122,8 @@ class Session:
         *,
         player_id: str = "player",
         on_token: Callable[[str], None] | None = None,
+        on_status: Callable[[str], None] | None = None,
+        on_hero_decision: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
         verbosity_level: str = "balanced",
@@ -116,11 +134,32 @@ class Session:
 
         L'historique est reconstruit depuis l'Event_Log à chaque tour. Les
         tokens narratifs sont streamés via `on_token` au fur et à mesure.
+
+        Hooks de progression headless (remplacent les signaux Qt du worker) :
+            on_status:        message court d'étape (≈ `status_update`).
+            on_hero_decision: action décidée par le héros (≈ `hero_decision_received`).
+
+        En mode Companion, si `hero_action` n'est pas fourni, la décision du
+        héros est calculée ici (parité avec `NarrativeWorker`) ; passer un
+        `hero_action` explicite court-circuite ce calcul.
         """
         self._arbitrator.configure(self._llm, self._vector_memory)
+        _emit(on_status, "Generating narrative…")
         history = self._load_history()
+
+        # --- Décision du héros (mode Companion) — parité NarrativeWorker ---
+        if self._mode == "Companion" and hero_action is None:
+            _emit(on_status, "Consulting Hero IA…")
+            hero_id = self._get_hero_id_from_metadata()
+            hero_ent = self._find_hero_entity(hero_id)
+            if hero_ent:
+                hero_entity_id = hero_ent["entity_id"]
+                hero_action = self._get_hero_decision(hero_ent, history, player_input)
+                _emit(on_hero_decision, hero_action)
+                _emit(on_status, f"Hero decides: {hero_action[:30]}…")
+
         self._turn_id += 1
-        return self._arbitrator.process_turn(
+        result = self._arbitrator.process_turn(
             save_id=self._save_id,
             turn_id=self._turn_id,
             user_message=player_input,
@@ -135,6 +174,8 @@ class Session:
             hero_entity_id=hero_entity_id,
             mode=self._mode,
         )
+        _emit(on_status, "Ready.")
+        return result
 
     def rewind(self, target_turn_id: int) -> dict[str, int]:
         """Ramène la sauvegarde à son état au tour `target_turn_id`.
@@ -199,3 +240,71 @@ class Session:
                     text = str(payload)
                 history.append({"role": "assistant", "content": text or ""})
         return history
+
+    # ------------------------------------------------------------------
+    # Décision du héros (mode Companion) — porté depuis NarrativeWorker
+    # ------------------------------------------------------------------
+
+    def _get_entities(self) -> list[dict]:
+        """Charge (et met en cache) les entités actives de l'univers."""
+        if self._entities is None:
+            self._entities = load_active_entities(self._db_path)
+        return self._entities
+
+    def _get_hero_id_from_metadata(self) -> str | None:
+        """Lit l'ID du héros configuré dans `Universe_Meta` (clé companion_hero_id)."""
+        from axiom.schema import get_connection
+
+        try:
+            with get_connection(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT value FROM Universe_Meta WHERE key = 'companion_hero_id';"
+                ).fetchone()
+                return row[0] if row and row[0] else None
+        except Exception:
+            return None
+
+    def _find_hero_entity(self, target_id: str | None = None) -> dict | None:
+        """Localise l'entité Héros principale (par ID, puis heuristiques de repli)."""
+        entities = self._get_entities()
+        if target_id:
+            for e in entities:
+                if e["entity_id"] == target_id:
+                    return e
+        # Repli 1 : ID explicite 'hero'
+        for e in entities:
+            if e["entity_id"].lower() == "hero":
+                return e
+        # Repli 2 : nom contenant 'hero'
+        for e in entities:
+            if "hero" in e.get("name", "").lower():
+                return e
+        # Repli 3 : premier NPC
+        for e in entities:
+            if e.get("entity_type") == "npc":
+                return e
+        return None
+
+    def _get_hero_decision(
+        self, hero_ent: dict, history: list[LLMMessage], user_message: str
+    ) -> str:
+        """Appelle le LLM héros pour décider de son action (modèle local par défaut)."""
+        from axiom.config import load_config, build_llm_from_config
+        from axiom.prompts import build_hero_decision_prompt, format_entity_stats_block
+
+        hero_llm = self._hero_llm
+        if hero_llm is None:
+            cfg = load_config()
+            # Force le modèle local pour le héros même si un modèle premium est global.
+            hero_llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+
+        hero_stats = format_entity_stats_block([hero_ent])
+        prompt = build_hero_decision_prompt(
+            hero_name=hero_ent.get("name", "Hero"),
+            hero_persona=hero_ent.get("description", ""),
+            hero_stats=hero_stats,
+            history=history,
+            user_message=user_message,
+        )
+        resp = hero_llm.complete(prompt, max_tokens=100)
+        return resp.narrative_text.strip()

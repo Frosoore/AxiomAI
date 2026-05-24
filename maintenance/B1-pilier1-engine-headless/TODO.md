@@ -102,3 +102,30 @@ Limites connues (notées pour la suite) :
   calcule son vector localement (pas d'état global), seul le logger est re-pointé. OK pour GUI/CLI/tests.
 - `UNIVERSES_DIR` (bibliothèque d'univers, `ui/hub_view.py`) NON routé : c'est la source d'univers
   côté utilisateur (analogue à `universe_path`), hors périmètre « données par-partie ».
+
+## Étape 6 — Parité de `Session` (pré-requis Problème U) — cf. doc §5.3-bis ✅
+Objectif : faire absorber par `Session` ce qui lui manquait vs `NarrativeWorker`, SANS bascule
+(l'app pilote toujours l'engine en direct). Risque moyen, isolé aux tests.
+
+Constat vérifié (lecture, 2026-05-24) :
+- Écart héros Companion : `take_turn` recevait `hero_action`/`hero_entity_id` déjà calculés sans
+  jamais les décider, alors que le worker fait `_get_hero_id_from_metadata`/`_find_hero_entity`/
+  `_get_hero_decision` (`narrative_worker.py:97-194`) à partir de `self._entities` (fourni par l'UI).
+- Source d'historique : worker mappe la liste UI ; `Session._load_history` reconstruit depuis l'Event_Log.
+- `build_llm_from_config(cfg, model_override=cfg.extraction_model)` = modèle local forcé pour le héros.
+
+- [x] `axiom/db_helpers.py` : `load_active_entities(db_path)` (mêmes colonnes + stats que
+      `db_worker.load_entities_and_rules`) → `Session` charge les entités lui-même (plus de dépendance UI).
+- [x] `axiom/session.py` : décision héros portée — `_get_entities` (cache), `_get_hero_id_from_metadata`,
+      `_find_hero_entity` (id méta → repli 'hero' → nom → premier NPC), `_get_hero_decision`
+      (hero_llm injectable, défaut = build local via `extraction_model`). En mode Companion, `take_turn`
+      calcule `hero_action` si non fourni (override explicite court-circuite).
+- [x] Hooks de progression headless : `on_status` / `on_hero_decision` sur `take_turn` (remplacent les
+      signaux Qt `status_update` / `hero_decision_received`). Helper module `_emit`.
+- [x] Source d'historique : **Event_Log canonique** (décision actée, cf. DOC.md) — `Session` y reste ;
+      à l'adoption (Étape 7) le worker déléguera et héritera de cette source.
+- [x] `tests/test_session.py` +5 tests de parité (shape entités, résolution héros par méta + 3 replis,
+      décision via hero_llm injecté + strip + contenu prompt, None si pas de héros). 12/12 verts.
+- [x] Non-régression : arbitrator+event_sourcing+checkpoint+config = 72/72. Smoke headless `PySide6=False`.
+
+Reste du Pilier 1 : Étape 7 (adoption worker, run-testé), Étape 8 (CLI).
