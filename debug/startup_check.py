@@ -62,9 +62,9 @@ def check_imports():
         ('PySide6.QtWidgets', 'pyside6'),
         ('google.genai', 'google-genai'),
         ('PIL', 'pillow'),
-        ('axiom.arbitrator', 'core'),
-        ('axiom.schema', 'database'),
-        ('axiom.backends.base', 'llm_engine'),
+        ('axiom.arbitrator', 'axiom'),
+        ('axiom.schema', 'axiom'),
+        ('axiom.backends.base', 'axiom'),
         ('ui.main_window', 'ui')
     ]
     

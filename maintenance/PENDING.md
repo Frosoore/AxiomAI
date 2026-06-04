@@ -6,17 +6,27 @@
 |-----------|----------------------------------------------------------------|-----------|
 | TICKET-001| Rework tests : lisibilité, couverture et organisation          | ✅ résolu (code, sans suppression) → voir `DONE.md`, attente feu vert commit |
 | TICKET-002| State_Cache jamais mis à jour entre les tours                  | ✅ résolu (code) → voir `DONE.md`, attente feu vert commit |
-| TICKET-003| Supprimer les modules engine dépréciés (post-Pilier 1)        | ouvert    |
+| TICKET-003| Supprimer les modules engine dépréciés (post-Pilier 1)        | ✅ résolu (2026-06-04) — 21 modules + 3 DEPRECATED.md supprimés, 236 tests verts |
 | TICKET-004| Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths) | ✅ clos → voir `DONE.md` |
 | TICKET-005| Finir l'injection de chemins (`data_dir`) du Pilier 1                | ✅ clos (absorbé) → voir `DONE.md` |
 | TICKET-006| Chronicler : `chronicler_update` ignoré par `_apply_event`     | ouvert    |
 | TICKET-007| Bugs backend Gemini (extraction_model 404 + >5 stop_sequences) | ✅ résolu (code) → attente feu vert commit |
 | TICKET-008| Segfault torch+Qt au 1er tour (dlopen libtriton.so hors thread principal) | ✅ résolu (code) → attente feu vert commit |
-| TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ouvert    |
+| TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ⏸ différé (handover + dev parallèle) |
 
 ---
 
 ## TICKET-009 — Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)
+
+**⏸ DIFFÉRÉ (décision 2026-06-04).** Le code va être rendu au possesseur originel, qui ajoute des
+features côté GUI (via Gemini CLI) sans se soucier de l'archi, en **parallèle** du travail moteur.
+Dans ce contexte, le split physique sert le mauvais besoin (distribution, pas coordination) et
+aggrave les risques : il n'empêche pas l'éparpillement de logique côté app, ajoute une frontière
+deux-packages + install editable qu'un dev non-archi (et Gemini CLI) cassera, et crée un churn de
+merge maximal pendant le dev parallèle. **Décision : rester en mono-repo** avec la séparation
+*logique* `axiom/` (déjà en place) — 90 % du bénéfice, zéro du danger. Le split (et le `pip install`)
+se fera **plus tard**, quand le repo sera repris en solo et que les features auront été migrées dans
+l'engine. La migration des features app→engine est un chantier à part (piliers), cf. ci-dessous.
 
 **Contexte :** le Pilier 1 a extrait le moteur dans `axiom/` (zéro Qt) et l'a rendu pilotable hors
 GUI (API `Session`, CLI `axiom play`, étapes 1-8). C'est l'extraction **fonctionnelle**. Reste
@@ -74,7 +84,16 @@ paresseusement par le worker.
 
 ## TICKET-003 — Supprimer les modules engine dépréciés (post-Pilier 1)
 
-**Contexte :** Pilier 1 (étape B1) a extrait le moteur dans le package `axiom/`. Les anciens
+**✅ RÉSOLU (2026-06-04).** Conditions remplies (parité + run réel GUI validé + 236 tests verts).
+Vérifié par grep que le sous-graphe déprécié n'était référencé QUE par lui-même (aucun code vivant).
+Supprimés : `core/{arbitrator,chronicler,config,localization,logger,paths,rules_engine,time_system}.py`,
+`database/{checkpoint,event_sourcing,modifier_processor,presets,schema}.py`, tout `llm_engine/`,
+`workers/db_helpers.py`, + les 3 `DEPRECATED.md`. **Conservés** (vivants, non dépréciés) :
+`core/{__init__,st_parser,multiplayer_queue}.py`, `database/{__init__,backup_manager}.py`.
+Label d'affichage obsolète corrigé dans `debug/startup_check.py`. Restent quelques en-têtes de
+docstrings dans `axiom/` mentionnant l'ancien chemin (provenance, cosmétique — laissés tels quels).
+
+**Contexte (historique) :** Pilier 1 (étape B1) a extrait le moteur dans le package `axiom/`. Les anciens
 modules ont été copiés, et tous les imports (app + tests + debug) basculés vers `axiom.*`.
 Les anciennes copies ne sont donc plus importées nulle part, mais **conservées volontairement**
 pour validation. Marqueurs : `core/DEPRECATED.md`, `database/DEPRECATED.md`, `llm_engine/DEPRECATED.md`.

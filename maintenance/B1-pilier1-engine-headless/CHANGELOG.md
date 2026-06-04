@@ -164,3 +164,18 @@
 - **Pilier 1 terminé côté fonctionnel** : moteur entièrement pilotable hors Qt (GUI = un frontend
   parmi GUI/CLI). Reste le **packaging** (split physique en `axiom-engine/` + `pyproject.toml`
   pip-installable) — non ordonnancé : **TICKET-009** ouvert (dépend de TICKET-003).
+
+## Session 2026-06-04 (ter) — TICKET-003 : suppression des modules dépréciés
+- Conditions de TICKET-003 remplies (run réel GUI validé). Vérifié par grep que le sous-graphe
+  déprécié (`core`/`database`/`llm_engine` copies + `workers/db_helpers`) n'était référencé QUE
+  par lui-même — **aucun code vivant**. Supprimés : 21 modules + les 3 `DEPRECATED.md`.
+- Conservés (vivants) : `core/{__init__,st_parser,multiplayer_queue}.py`,
+  `database/{__init__,backup_manager}.py` — vérifiés sans dépendance vers les modules supprimés.
+- `debug/startup_check.py` : labels d'affichage obsolètes (`core`/`database`/`llm_engine`) → `axiom`.
+- Non-régression : import headless `PySide6 chargé: False`, `startup_check` OK, **236 tests verts**
+  (dont test_llm_base/vector_memory/prompt_builder/ollama_client/gemini, qui exercent les ex-modules
+  désormais sous `axiom/`).
+- **Décision archi (handover + dev parallèle) : pas de split physique pour l'instant** (TICKET-009
+  différé). On reste en mono-repo avec la séparation logique `axiom/`. Le `pip install` viendra plus
+  tard. La migration des features encore côté app (`workers/` : Populate, regenerate, mini-dico,
+  timekeeper, chronicler ; `core/multiplayer_queue`) reste un chantier étalé sur les piliers.
