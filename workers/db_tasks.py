@@ -251,13 +251,13 @@ class PopulateMetaTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> bool:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_meta_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
         try:
-            llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+            llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
         except Exception as e:
             logger.error(f"[POPULATE_META] Failed to build LLM backend: {e}")
             return False
@@ -297,11 +297,11 @@ class PopulateStatsTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_stats_prompt
         
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
             
         with get_connection(self.db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
@@ -352,11 +352,11 @@ class PopulateRulesTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_rules_prompt
         
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
             
         with get_connection(self.db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
@@ -404,11 +404,11 @@ class PopulateEventsTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_events_prompt
         
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
             
         with get_connection(self.db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
@@ -460,12 +460,12 @@ class PopulateEntitiesTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
         
         # 1. Gather context
         self.signals.status.emit("Gathering context...")
@@ -602,12 +602,12 @@ class PopulateLoreTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_lore_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
             
         with get_connection(self.db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
@@ -654,12 +654,12 @@ class PopulateMapTask(BaseDbTask):
         self.custom_text = custom_text
 
     def execute(self) -> dict:
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_populate_map_prompt
         
         self.signals.status.emit("Initializing AI backend...")
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
             
         with get_connection(self.db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()

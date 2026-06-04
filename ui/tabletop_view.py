@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from core.multiplayer_queue import ArbitratorWorker, PlayerAction
 from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.session import Session
 
 from ui.checkpoint_dialog import CheckpointDialog
 from ui.constants_sidebar import ConstantsSidebar
@@ -330,10 +331,8 @@ class TabletopView(HardcoreMixin, QWidget):
             temperature=self._llm_temperature,
             top_p=self._llm_top_p
         )
-        
-        # Update NarrativeWorker if it exists
-        if self._narrative_worker:
-            self._narrative_worker.llm = self._llm
+        # NB: the NarrativeWorker no longer holds an LLM — each turn rebuilds a
+        # Session from the current self._llm, so an in-flight worker is left as-is.
 
     def reload_ui_settings(self) -> None:
         """Update font size and other UI preferences without a full reload."""
@@ -525,13 +524,22 @@ class TabletopView(HardcoreMixin, QWidget):
         self._current_time += 15
         self._time_label.setText(self._format_time(self._current_time))
 
-        # 1. Arbitrator Phase
-        rules = load_rules_for_session(self._db_path)
-        self._arbitrator = ArbitratorEngine(self._db_path, rules)
+        # 1. Build the engine Session for this turn (Pilier 1, Étape 7).
+        # Session is the single turn machine: it owns the Arbitrator, rebuilds
+        # history from the Event_Log, and decides the Companion hero action. It
+        # is rebuilt each turn (like the previous per-turn ArbitratorEngine), so
+        # its internal turn_id re-anchors on the Event_Log — no desync to track.
+        session = Session(
+            self._db_path,
+            self._save_id,
+            llm=self._llm,
+            vector_memory=self._vector_memory,
+            mode=self._mode,
+        )
 
         player_id = self._player_selector.currentData() or "player_1"
         action = PlayerAction(
-            player_id=player_id, 
+            player_id=player_id,
             text=text,
             save_id=self._save_id,
             turn_id=self._turn_id,
@@ -544,21 +552,11 @@ class TabletopView(HardcoreMixin, QWidget):
 
         from workers.narrative_worker import NarrativeWorker
         self._narrative_worker = NarrativeWorker(
-            llm=self._llm,
-            arbitrator=self._arbitrator,
-            vector_memory=self._vector_memory,
-            save_id=self._save_id,
-            turn_id=self._turn_id,
-            action=action,
-            history=self._history,
-            system_prompt=self._universe_system_prompt,
-            global_lore=self._global_lore,
+            session,
+            action,
             temperature=self._llm_temperature,
             top_p=self._llm_top_p,
             verbosity=self._llm_verbosity,
-            current_time=self._current_time,
-            mode=self._mode,
-            entities=self._entities
         )
         self._narrative_worker.hero_decision_received.connect(self._chat.append_hero_intent)
         self._narrative_worker.token_received.connect(self._chat.append_token)

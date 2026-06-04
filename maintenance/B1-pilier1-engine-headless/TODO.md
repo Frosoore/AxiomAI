@@ -129,3 +129,74 @@ Constat vérifié (lecture, 2026-05-24) :
 - [x] Non-régression : arbitrator+event_sourcing+checkpoint+config = 72/72. Smoke headless `PySide6=False`.
 
 Reste du Pilier 1 : Étape 7 (adoption worker, run-testé), Étape 8 (CLI).
+
+## Étape 7 — Adoption par le worker (Problème U) — cf. doc §5.3-bis ✅ (code) / ⏳ run réel
+Objectif : `NarrativeWorker` devient une coquille de threading autour de `Session`.
+Une seule « machine à jouer un tour » (`Session`), plus de double pipeline.
+
+Constat vérifié (lecture, 2026-05-24) :
+- Un seul site construit `NarrativeWorker` (`tabletop_view._on_send_message`) ; `HardcoreMixin`
+  réutilise `self._narrative_worker` (cleanup HardcoreWorker), ne le reconstruit pas.
+- `turn_id` : l'app fait `_resume_turn_id()` = `get_max_turn_id` au load ET après rewind, puis +1
+  par envoi. `process_turn` écrit `user_input` immédiatement (même sur échec LLM) → `get_max_turn_id`
+  avance d'exactement 1 par envoi. Donc `Session` reconstruite par tour calcule le même `turn_id`
+  que l'app, sans désync ni resync sur rewind.
+- `global_lore`/`current_time` passés au worker = MORTS (l'arbitrator ne les passe pas au prompt).
+- `reload_llm` faisait `self._narrative_worker.llm = ...` sur un attribut `.llm` JAMAIS lu (no-op).
+- Régénération = `RegenerateWorker` séparé (appel LLM direct), HORS périmètre Étape 7.
+
+- [x] `workers/narrative_worker.py` réécrit en coquille : `__init__(session, action, *, temperature,
+      top_p, verbosity)` ; `run()` appelle `session.take_turn(...)` en mappant on_token/on_status/
+      on_hero_decision → signaux Qt (contrat de signaux INCHANGÉ). Gestion d'erreur identique.
+- [x] `tabletop_view._on_send_message` : construit la `Session` (db_path, save_id, llm, vector_memory,
+      mode) à la place de `ArbitratorEngine` + worker « gros constructeur ». UI/time/history inchangés.
+- [x] `reload_llm` : suppression de la ligne morte `_narrative_worker.llm` (Session reconstruite chaque
+      tour avec `self._llm` à jour).
+- [x] `tests/test_narrative_worker.py` (3) : délégation des args+callbacks→signaux, erreurs
+      LLMConnectionError/générique. `tests/test_session.py` couvre le chemin moteur réel.
+- [x] Non-régression : suite complète **355 passed**, 7 failed + 5 errors = set pré-existant connu
+      (persona_global ; 6× phase6 `_sync_current_form` ; 5× ambiance pytest-qt). `tabletop_view` importe OK.
+
+✅ Validation live headless faite (2026-05-24 bis) via `debug/run_step7_live.py` : câblage
+   worker→Session→arbitrator→backend OK, historique Event_Log OK, turn_id OK, gestion d'erreur OK.
+   A révélé+corrigé 2 bugs Gemini pré-existants (TICKET-007). Reste bloqué uniquement par le quota
+   Gemini free-tier (429, côté compte) → génération narrative effective à confirmer par l'utilisateur.
+
+⏳ Reste à valider par l'UTILISATEUR en GUI quand le quota Gemini le permet (le run réel GUI n'est pas
+   faisable ici : pas de display, segfault torch+Qt connu). Checklist run réel :
+- [ ] Tour normal : narration streamée, stats sidebar à jour, turn label cohérent.
+- [ ] Mode Companion : décision héros affichée (signal hero_decision), héros intact.
+- [ ] Historique cohérent (le message courant n'apparaît plus en double dans le prompt — voir DOC.md).
+- [ ] Rewind puis nouveau tour : turn_id correct, pas de désync.
+- [ ] Changement de modèle (reload_llm) en cours de partie pris en compte au tour suivant.
+- [ ] Pas de régression de perf perceptible.
+
+## Étape 8 — CLI sur `Session` (`axiom play`) — cf. doc §5.3-bis / §5.4 ✅
+Objectif : preuve d'embarquabilité — le moteur tourne intégralement sans Qt via la même
+API publique `Session` que le GUI. Périmètre Pilier 1 = sous-commande `play` uniquement
+(`compile`/`test` = Piliers 2/10, hors scope).
+
+Constat vérifié (lecture, 2026-06-04) :
+- `Session` expose tout le nécessaire (take_turn/current_stats/list_checkpoints/rewind/turn_id) ;
+  le CLI ne touche QUE l'API publique (zéro dépendance à `prompts`/`memory` internes → le split
+  physique à venir ne le réécrira pas).
+- Helpers existants réutilisés : `Universe.load`, `db_helpers.create_new_save/load_saves/
+  load_active_entities`, `config.load_config/build_llm_from_config`.
+- `first_message` (carte authored) = clé `Universe_Meta`, affiché à l'entrée d'une partie neuve
+  (parité GUI `tabletop_view`), non écrit dans l'Event_Log.
+
+- [x] `axiom/cli/__init__.py` + `__main__.py` (`python -m axiom.cli`) + `main.py` (dispatch argparse,
+      forward-compatible avec le futur console_script `axiom` = `axiom.cli:main`).
+- [x] `axiom/cli/play.py` : `add_play_arguments`/`run_play` (câblage : univers, choix de save
+      [`--save`/`--new`/reprise auto], LLM, mode) + `play_loop` (REPL injectable : read/out/err)
+      + `_handle_command` (`/help` `/stats` `/checkpoints` `/rewind <n>` `/quit`). Streaming via
+      `on_token`, statuts via `on_status`→stderr, erreurs de tour (LLMConnectionError/générique)
+      n'interrompent pas la boucle.
+- [x] `tests/test_cli_play.py` (14) : streaming, first_message (neuf vs repris), EOF, survie aux
+      erreurs LLM/génériques, toutes les commandes slash, parseur, résolution de chemin. Verts.
+- [x] Vérif headless : `import axiom.cli` → `PySide6 chargé: False`. `--help` OK. Univers introuvable → 2.
+- [x] Smoke e2e contre copie jetable d'un univers réel (sans toucher les données, sans appel LLM) :
+      Universe.load → create_new_save → Session (vraie VectorMemory) → play_loop, exit 0, commandes OK.
+
+Reste du Pilier 1 (fonctionnel) : ✅ terminé. Reste packaging : split physique + `pyproject.toml`
+(pip-installable) — non ordonnancé, cf. TICKET-009 + TICKET-003 (suppression modules dépréciés).

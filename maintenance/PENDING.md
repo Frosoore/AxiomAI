@@ -10,6 +10,65 @@
 | TICKET-004| Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths) | ✅ clos → voir `DONE.md` |
 | TICKET-005| Finir l'injection de chemins (`data_dir`) du Pilier 1                | ✅ clos (absorbé) → voir `DONE.md` |
 | TICKET-006| Chronicler : `chronicler_update` ignoré par `_apply_event`     | ouvert    |
+| TICKET-007| Bugs backend Gemini (extraction_model 404 + >5 stop_sequences) | ✅ résolu (code) → attente feu vert commit |
+| TICKET-008| Segfault torch+Qt au 1er tour (dlopen libtriton.so hors thread principal) | ✅ résolu (code) → attente feu vert commit |
+| TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ouvert    |
+
+---
+
+## TICKET-009 — Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)
+
+**Contexte :** le Pilier 1 a extrait le moteur dans `axiom/` (zéro Qt) et l'a rendu pilotable hors
+GUI (API `Session`, CLI `axiom play`, étapes 1-8). C'est l'extraction **fonctionnelle**. Reste
+l'objectif **packaging** du plan (§5.2, §5.4) : faire de `axiom-engine` un package **pip-installable**
+distinct de l'app UI. Le `pyproject.toml` était reporté dès l'étape 1 (« étape de split physique »).
+
+**Ce qui resterait à faire (à ordonnancer, non planifié dans les étapes 1-8) :**
+- Déplacer `axiom/` sous un dossier racine dédié `axiom-engine/axiom/` (le nom de package reste
+  `axiom` → les imports `from axiom...` ne changent pas, CLI inclus puisqu'il vit dans `axiom/cli/`).
+- Écrire `axiom-engine/pyproject.toml` (deps moteur : chromadb, sentence-transformers, google-genai,
+  etc. ; **zéro Qt**) + `console_script` `axiom = axiom.cli:main`. README package.
+- `axiom-app/pyproject.toml` (l'app actuelle réduite à l'UI) **dépend de** `axiom-engine`.
+- Pré-requis : **TICKET-003** (supprimer les anciens modules `core/`/`database/`/`llm_engine/`
+  dépréciés, sinon doublons à l'install). Conditions de TICKET-003 désormais réunies côté run réel.
+
+**Finitions de propreté §5.2 (non bloquantes, regroupables ici ou à part) :**
+- Splitter `axiom/prompts.py` en sous-modules (`prompts/narrative.py`, `chronicler.py`, `mini_dico.py`,
+  `populate.py`). N'impacte que les consommateurs internes (arbitrator/session/chronicler/db_tasks),
+  **pas** le CLI ni l'API publique.
+- Passer `VectorMemory` en `Protocol` (abstraction d'embedding injectable). Additif.
+
+**Priorité :** moyenne — c'est le dernier cran du Pilier 1, mais l'extraction fonctionnelle (le gros
+de la valeur : moteur headless + CLI) est déjà acquise. À faire avant tout projet voulant
+`pip install axiom-engine` (mods, UI web, notebooks).
+
+---
+
+## TICKET-008 — Segfault torch+Qt au premier tour narratif
+
+**Contexte :** remonté par l'utilisateur en run réel GUI (import carte SillyTavern → envoi
+message → `Erreur de segmentation`). Reproduit en headless avec Qt (`QT_QPA_PLATFORM=offscreen`),
+backtrace `faulthandler` à l'appui. **Pré-existant**, indépendant de l'étape 7 (l'ancien et le
+nouveau worker font tourner les ops vectorielles sur un QThread à l'identique).
+
+**Cause racine :** le premier *encode* du modèle d'embedding (sentence-transformers) tourne sur un
+QThread (VectorInitWorker puis NarrativeWorker). Il importe paresseusement `torch._dynamo` → `triton`,
+qui `dlopen()` `libtriton.so`. Ce `dlopen` **depuis un thread secondaire**, Qt actif, segfault
+(crash natif, pas de traceback Python). C-stack sans ambiguïté : `dlopen → libtriton.so → SIGSEGV`.
+Explique le timing : le modèle se charge à l'entrée (OK), mais le 1er encode (donc le dlopen triton)
+n'arrive qu'au 1er tour, au clic Envoyer.
+
+**Fix :** `axiom/memory.py::preload_embedding_runtime()` (import `torch` + `torch._dynamo` sur le
+thread courant) appelé sur le **thread principal** au démarrage (`main.py`, avant tout worker) →
+le `dlopen` triton a lieu sur le thread principal, l'usage cross-thread ensuite est sûr.
+
+**Test :** `tests/test_vector_threading.py` (+ payload `tests/_vector_qthread_scenario.py`) — rejoue
+en sous-process le threading exact d'un tour GUI sous Qt offscreen ; `nopreload` → segfault (139),
+`preload` → exit 0. À dents (vérifié).
+
+**Reste :** validation en GUI réelle par l'utilisateur (le run headless prouve le câblage ; ne couvre
+pas le rendu Qt). Léger surcoût au démarrage : torch est front-loadé (qq s), au lieu d'être chargé
+paresseusement par le worker.
 
 ---
 
@@ -57,6 +116,33 @@ du Chronicler n'ont donc aucun effet sur les stats réelles.
 
 **Priorité :** à confirmer — potentiellement haute (perte de fonctionnalité Chronicler),
 mais vérifier d'abord si c'était intentionnel (events purement narratifs ?).
+
+---
+
+## TICKET-007 — Bugs backend Gemini (découverts en validant B1 Étape 7)
+
+**Contexte :** la validation live headless de l'Étape 7 (`debug/run_step7_live.py`) sur un setup
+Gemini-only (carte AMD, pas de LLM local) a fait remonter deux bugs **pré-existants** du backend
+Gemini, indépendants de l'extraction du moteur — l'app était de fait inutilisable en Gemini.
+
+**Bug 1 — `extraction_model` envoyé à Gemini → 404.** `extraction_model` ("llama3.1:8b") est un nom
+de modèle Ollama local, passé en `model_override` à `build_llm_from_config` pour les appels
+auxiliaires (décision héros Companion + 7 tâches d'extraction/Populate dans `workers/db_tasks.py`).
+Sur le backend Gemini, ce nom est inconnu → `404 NOT_FOUND`.
+**Fix :** `axiom/config.py::resolve_extraction_model(cfg)` (gemini → `gemini_model`, sinon
+`extraction_model`). Adopté par `axiom/session.py::_get_hero_decision` et les 7 sites de `db_tasks.py`.
+
+**Bug 2 — >5 `stop_sequences` → 400 INVALID_ARGUMENT.** L'arbitrator construit 6 stop sequences
+(backend-agnostique) ; l'API Gemini en plafonne 5. Cassait **tout** tour narratif en Gemini.
+**Fix :** `axiom/backends/gemini.py::_clamp_stop_sequences` (plafond 5) appliqué dans `complete()`
+et `stream_tokens()`. C'est au backend de respecter sa propre limite (l'arbitrator reste agnostique).
+
+**Tests :** `tests/test_config.py::TestResolveExtractionModel` (2), `tests/test_gemini_client.py`
+(clamp, 2). Suite complète 359 passed (set d'échecs pré-existant inchangé).
+
+**Reste / non couvert :** après ces fix, la requête Gemini est bien formée mais le **quota free-tier**
+du compte est épuisé (429, `limit: 0`) → la génération narrative réelle n'a pas pu être observée ici.
+À confirmer par l'utilisateur (quota régénéré, facturation, ou Ollama). Priorité : haute (bloquant Gemini).
 
 ---
 

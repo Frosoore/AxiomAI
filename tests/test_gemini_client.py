@@ -195,6 +195,24 @@ class TestComplete:
         call_kwargs = mock_inner.models.generate_content.call_args.kwargs
         assert call_kwargs["config"].system_instruction == "You are a GM."
 
+    def test_clamps_stop_sequences_to_five(self, mock_client_cls) -> None:
+        """The Gemini API caps stop_sequences at 5; complete must truncate a
+        longer engine-built list (else the API returns 400 INVALID_ARGUMENT)."""
+        client, mock_inner = _make_gemini_client(mock_client_cls)
+        mock_inner.models.generate_content.return_value = _make_response("ok")
+        six_stops = ["a", "b", "c", "d", "e", "f"]
+        client.complete([{"role": "user", "content": "hi"}], stop_sequences=six_stops)
+        call_kwargs = mock_inner.models.generate_content.call_args.kwargs
+        assert call_kwargs["config"].stop_sequences == ["a", "b", "c", "d", "e"]
+
+    def test_keeps_stop_sequences_when_within_limit(self, mock_client_cls) -> None:
+        """A list of ≤5 stop sequences is passed through unchanged."""
+        client, mock_inner = _make_gemini_client(mock_client_cls)
+        mock_inner.models.generate_content.return_value = _make_response("ok")
+        client.complete([{"role": "user", "content": "hi"}], stop_sequences=["x", "y"])
+        call_kwargs = mock_inner.models.generate_content.call_args.kwargs
+        assert call_kwargs["config"].stop_sequences == ["x", "y"]
+
     def test_raises_connection_error_on_sdk_exception(self, mock_client_cls) -> None:
         """complete wraps an SDK exception as LLMConnectionError."""
         client, mock_inner = _make_gemini_client(mock_client_cls)

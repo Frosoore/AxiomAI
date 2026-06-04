@@ -15,6 +15,7 @@ from axiom.config import (
     AppConfig,
     build_llm_from_config,
     load_config,
+    resolve_extraction_model,
     save_config,
 )
 
@@ -181,3 +182,25 @@ class TestBuildLlmFromConfig:
         assert isinstance(llm, UniversalClient)
         assert llm.base_url == "http://192.168.1.5:11434"
         assert llm.model_name == "mistral"
+
+
+class TestResolveExtractionModel:
+    """resolve_extraction_model picks a backend-appropriate auxiliary model.
+
+    `extraction_model` is an Ollama-style name; sending it to Gemini → 404.
+    """
+
+    def test_universal_backend_uses_extraction_model(self) -> None:
+        """On the universal/Ollama backend the local extraction_model is used."""
+        cfg = AppConfig(llm_backend="universal", extraction_model="llama3.1:8b")
+        assert resolve_extraction_model(cfg) == "llama3.1:8b"
+
+    def test_gemini_backend_falls_back_to_gemini_model(self) -> None:
+        """On the Gemini backend the Ollama extraction_model is ignored in favour
+        of gemini_model (avoids a 404 from an unknown model name)."""
+        cfg = AppConfig(
+            llm_backend="gemini",
+            gemini_model="gemini-2.0-flash",
+            extraction_model="llama3.1:8b",
+        )
+        assert resolve_extraction_model(cfg) == "gemini-2.0-flash"

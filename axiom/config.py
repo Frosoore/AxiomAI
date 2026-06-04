@@ -134,6 +134,19 @@ def save_config(config: AppConfig) -> None:
     )
 
 
+def resolve_extraction_model(config: AppConfig) -> str:
+    """Pick the model name for auxiliary LLM calls (hero decision, extraction).
+
+    `extraction_model` is an Ollama-style local model name; it only makes sense
+    for the universal/Ollama backend. On the Gemini backend there is no separate
+    local model, so sending `extraction_model` ("llama3.1:8b") to the Gemini API
+    yields a 404. Fall back to the configured `gemini_model` in that case.
+    """
+    if config.llm_backend.lower().strip() == "gemini":
+        return config.gemini_model
+    return config.extraction_model
+
+
 def build_llm_from_config(config: AppConfig, model_override: str | None = None) -> LLMBackend:
     """Instantiate and return the correct LLMBackend for the given config.
 

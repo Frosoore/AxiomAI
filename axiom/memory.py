@@ -32,6 +32,31 @@ except ImportError:
 _COLLECTION_NAME: str = "narrative_memory"
 _EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
+
+def preload_embedding_runtime() -> bool:
+    """Force torch's native runtime to load on the *calling* (main) thread.
+
+    The sentence-transformers embedding model is loaded and used on worker
+    threads (VectorInitWorker / NarrativeWorker). The first encode lazily pulls
+    in ``torch._dynamo`` → ``triton``, which ``dlopen()``s ``libtriton.so``.
+    Doing that ``dlopen`` from a secondary thread while Qt is running segfaults
+    (native crash, no Python traceback). Importing it once here, on the main
+    thread at startup, makes the later cross-thread use safe.
+
+    Call this from the GUI/CLI entry point *before* any worker thread touches
+    VectorMemory. Idempotent, never raises. Returns True if the runtime was
+    pre-loaded, False if torch is unavailable (e.g. headless test stubs).
+    """
+    try:
+        import torch  # noqa: F401  — heavy import, front-loaded on purpose
+        import torch._dynamo  # noqa: F401  — triggers the libtriton.so dlopen here
+        return True
+    except Exception:
+        # torch absent or its internal layout changed: the worst case is the
+        # pre-fix behaviour, so we degrade silently rather than block startup.
+        return False
+
+
 class _EmbeddingSingleton:
     """Ensures we only load the heavy transformer model once per session."""
     _instance = None

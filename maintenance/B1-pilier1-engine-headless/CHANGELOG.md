@@ -87,3 +87,80 @@
     `PySide6 chargé: False`.
   - **Reste** : Étape 7 (NarrativeWorker → coquille de threading autour de `Session`, run-testé),
     Étape 8 (CLI).
+
+- **Étape 7 (adoption worker, Problème U) — code terminé, run réel à valider par l'utilisateur** :
+  - `workers/narrative_worker.py` réécrit en pure coquille de threading : `__init__(session, action,
+    *, temperature, top_p, verbosity)`, `run()` délègue à `Session.take_turn` et mappe
+    on_token/on_status/on_hero_decision → signaux Qt. **Contrat de signaux inchangé** (la GUI garde
+    ses connexions). Gestion d'erreur (LLMConnectionError / générique) identique.
+  - `ui/tabletop_view.py` : `_on_send_message` construit une `Session` (db_path, save_id, llm,
+    vector_memory, mode) au lieu de `ArbitratorEngine` + worker à gros constructeur ; `reload_llm`
+    perd la ligne morte `_narrative_worker.llm`. Compteur de tour / temps / liste UI inchangés.
+  - Décisions vérifiées (pas de supposition) : `turn_id` reste cohérent (Session reconstruite par tour
+    s'ancre sur `get_max_turn_id`, qui avance d'1/envoi car `user_input` est écrit même sur échec) ;
+    `global_lore`/`current_time` du worker étaient déjà morts ; un seul site construit le worker ;
+    régénération = `RegenerateWorker` distinct, hors scope.
+  - Changement de comportement assumé (Event_Log canonique) : le message courant n'apparaît plus en
+    double dans le prompt (l'ancien worker mappait la liste UI qui le contenait déjà). Documenté DOC.md.
+  - Tests : `tests/test_narrative_worker.py` (3, délégation + erreurs). Suite complète **355 passed**,
+    7 failed + 5 errors = set pré-existant connu. `tabletop_view` importe OK.
+  - **⏳ Run réel GUI+LLM** non faisable dans cet env (pas de display, segfault torch+Qt connu) →
+    checklist de validation utilisateur dans TODO.md.
+  - **Reste** : Étape 8 (CLI sur `Session`).
+
+## Session 2026-05-24 (bis) — validation live headless de l'Étape 7
+- Ajout d'un harnais `debug/run_step7_live.py` : reproduit le chemin de tour de l'app SANS Qt
+  (construit une `Session` comme `tabletop_view._on_send_message`, exécute le vrai
+  `NarrativeWorker.run()` synchrone en capturant les signaux), tape sur le backend réel (Gemini),
+  VectorMemory remplacée par un stub léger.
+- Le harnais a **validé le câblage Étape 7** (worker→Session→arbitrator→prompt→backend, reconstruction
+  d'historique Event_Log, avance du `turn_id`, gestion d'erreur sans crash) et **révélé 2 bugs Gemini
+  PRÉ-EXISTANTS** (indépendants des étapes 6/7) → corrigés, cf. **TICKET-007** :
+  1. `extraction_model` ("llama3.1:8b") envoyé tel quel à l'API Gemini → 404. Fix : helper
+     `config.resolve_extraction_model(cfg)` (gemini→`gemini_model`, sinon `extraction_model`), adopté
+     par `session._get_hero_decision` + les 7 appels de `workers/db_tasks.py`.
+  2. >5 `stop_sequences` envoyés à Gemini (l'arbitrator en construit 6) → 400 INVALID_ARGUMENT.
+     Fix : `gemini._clamp_stop_sequences` (plafond API = 5) dans `complete()` et `stream_tokens()`.
+- Après fix : la requête est bien formée (400/404 disparus) ; reste un **429 RESOURCE_EXHAUSTED**
+  (quota free-tier épuisé côté compte Gemini, `limit: 0`) — **pas un bug de code**. Le pipeline est
+  donc prouvé correct jusqu'à l'appel LLM réel ; la génération narrative effective reste à confirmer
+  par l'utilisateur quand son quota Gemini le permettra (ou via Ollama, indispo ici : carte AMD).
+- Tests ajoutés (vérifiables sans quota) : `test_gemini_client` +2 (clamp), `test_config` +2
+  (resolve_extraction_model). Suite complète **359 passed**, 7 failed + 5 errors = set pré-existant connu.
+- Nettoyage : sauvegardes de test créées dans `~/AxiomAI/universes/Myria.db` supprimées (univers
+  restauré à 0 save / 0 event, son état d'origine).
+
+## Session 2026-06-04 — segfault torch+Qt au 1er tour (TICKET-008)
+- Run réel GUI utilisateur (import carte SillyTavern → envoi message) → `Erreur de segmentation`.
+- Reproduit en **headless avec Qt** (`QT_QPA_PLATFORM=offscreen`) ; backtrace `faulthandler` :
+  le 1er encode du modèle d'embedding, exécuté sur un QThread, importe `torch._dynamo` → `triton`
+  qui `dlopen()` `libtriton.so` **hors thread principal** sous Qt → SIGSEGV natif. **Pré-existant**
+  (threading vectoriel identique avant/après l'étape 7 ; vérifié sur l'ancien worker à HEAD).
+- Le cross-thread torch/chromadb **sans** Qt ne crashe pas (prouvé) → c'est bien l'interaction Qt.
+- Fix : `axiom/memory.py::preload_embedding_runtime()` appelé sur le **thread principal** au
+  démarrage (`main.py`), force le `dlopen` triton sur le main thread ; usage cross-thread ensuite OK.
+- Test : `tests/test_vector_threading.py` (+ `tests/_vector_qthread_scenario.py`) rejoue le threading
+  d'un tour GUI en sous-process ; `nopreload`→139 (segfault), `preload`→0. À dents, vérifié.
+- ⏳ Reste : confirmation en **GUI réelle** par l'utilisateur (le headless ne couvre pas le rendu Qt).
+  Détail complet : **TICKET-008** (PENDING.md).
+- **Validé par l'utilisateur** : après bascule du modèle Gemini sur `gemini-2.5-flash-lite` (le seul
+  avec du quota free-tier sur sa clé ; `gemini-2.0-flash` = `limit: 0`, cf. notes), le tour GUI génère
+  bien la narration. Plus de crash, plus d'erreur LLM. **L'étape 7 est confirmée en run réel.**
+
+## Session 2026-06-04 (bis) — Étape 8 : CLI `axiom play` ✅
+- Package `axiom/cli/` créé : `main.py` (dispatch argparse, point d'entrée `axiom.cli:main` prêt pour
+  le futur console_script `axiom`), `__main__.py` (`python -m axiom.cli`), `play.py` (commande `play`).
+- `play.py` : boucle de jeu terminal posée sur l'API publique `Session` (zéro Qt). Découpé en
+  `run_play` (câblage : résolution univers [chemin direct ou ~/AxiomAI/universes, extension optionnelle],
+  choix de save `--save`/`--new`/reprise auto de la plus récente, LLM, mode), `play_loop` (REPL,
+  read/out/err injectables → testable sans stdin/LLM) et `_handle_command` (`/help` `/stats`
+  `/checkpoints` `/rewind` `/quit`). Streaming via `on_token`, statuts via `on_status`→stderr, et les
+  erreurs de tour (LLMConnectionError/générique) sont rattrapées sans casser la boucle.
+- Pas de couplage aux internes : le CLI n'importe ni `prompts` ni `memory` directement → le split
+  physique / le split de `prompts.py` / le passage de `memory` en Protocol ne le réécriront pas.
+- Tests : `tests/test_cli_play.py` (14, fausse `Session`, zéro Qt/LLM/stdin). Import headless
+  `PySide6 chargé: False`. Smoke e2e contre copie jetable d'un univers réel (Universe.load →
+  create_new_save → Session avec vraie VectorMemory → play_loop, exit 0).
+- **Pilier 1 terminé côté fonctionnel** : moteur entièrement pilotable hors Qt (GUI = un frontend
+  parmi GUI/CLI). Reste le **packaging** (split physique en `axiom-engine/` + `pyproject.toml`
+  pip-installable) — non ordonnancé : **TICKET-009** ouvert (dépend de TICKET-003).

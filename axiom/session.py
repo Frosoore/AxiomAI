@@ -289,14 +289,14 @@ class Session:
         self, hero_ent: dict, history: list[LLMMessage], user_message: str
     ) -> str:
         """Appelle le LLM héros pour décider de son action (modèle local par défaut)."""
-        from axiom.config import load_config, build_llm_from_config
+        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_hero_decision_prompt, format_entity_stats_block
 
         hero_llm = self._hero_llm
         if hero_llm is None:
             cfg = load_config()
-            # Force le modèle local pour le héros même si un modèle premium est global.
-            hero_llm = build_llm_from_config(cfg, model_override=cfg.extraction_model)
+            # Modèle auxiliaire pour le héros (local si Ollama, gemini_model si Gemini).
+            hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
 
         hero_stats = format_entity_stats_block([hero_ent])
         prompt = build_hero_decision_prompt(

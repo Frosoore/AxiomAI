@@ -33,3 +33,26 @@ Choix acté : **l'Event_Log est la source canonique** (déjà persistée, indép
 identique pour GUI/CLI/serveur). À l'Étape 7, le `NarrativeWorker` déléguera à `Session` et héritera
 donc de cette source — la liste UI ne sert plus qu'à l'affichage. La décision du héros Companion est
 portée dans `Session` (backend héros injectable, défaut = modèle local `extraction_model`, parité worker).
+
+## Conséquence Étape 7 — déduplication du message courant dans le prompt
+
+L'ancien `NarrativeWorker` mappait la liste d'historique de l'UI, qui contenait **déjà** le message
+du joueur du tour courant (ajouté avant le lancement du worker). `build_narrative_prompt` ajoute par
+ailleurs ce message comme `user_message` final → il apparaissait potentiellement **deux fois**.
+`Session._load_history` lit l'Event_Log **avant** que `process_turn` n'y écrive le `user_input` du
+tour ; le message courant n'y figure donc pas et n'est présent qu'une fois (param `user_message`).
+Le passage worker→`Session` supprime ainsi ce doublon (comportement plus correct, à confirmer en run réel).
+
+## Étape 8 — CLI `axiom play`
+
+Le moteur se joue hors Qt via la même API `Session` que le GUI :
+
+    python -m axiom.cli play <univers.axiom>        # ou un nom sous ~/AxiomAI/universes
+    python -m axiom.cli play Monde --new --name Hero --difficulty Companion
+    python -m axiom.cli play Monde --save <save_id>  # reprendre une partie
+
+Sans `--save`/`--new`, la sauvegarde la plus récente est reprise (sinon une partie neuve est créée).
+En jeu : toute saisie = action du joueur (narration streamée) ; `/help`, `/stats`, `/checkpoints`,
+`/rewind <turn_id>`, `/quit`. Point d'entrée `axiom.cli:main` prêt pour le futur console_script `axiom`.
+Le CLI ne dépend que de l'API publique (`Session`/`Universe` + helpers config/db) : les
+réorganisations internes à venir (`prompts.py` splitté, `memory` en Protocol) ne l'impactent pas.

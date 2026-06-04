@@ -320,6 +320,16 @@ def main() -> None:
     _install_exception_hook()
     logger.info("Application starting...")
 
+    # Front-load torch's native runtime on the main thread. The embedding model
+    # runs on worker threads, and its first encode dlopen()s libtriton.so —
+    # which segfaults if that dlopen happens off the main thread under Qt. Doing
+    # it here (once, on the main thread) makes the later cross-thread use safe.
+    from axiom.memory import preload_embedding_runtime
+    if preload_embedding_runtime():
+        logger.info("Embedding runtime pre-loaded on main thread.")
+    else:
+        logger.warning("Embedding runtime not pre-loaded (torch unavailable).")
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("Axiom AI")

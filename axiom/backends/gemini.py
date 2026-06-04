@@ -33,6 +33,18 @@ from axiom.backends.base import (
 
 _DEFAULT_MODEL: str = "gemini-2.0-flash"
 
+# The Gemini API rejects requests with more than 5 stop sequences
+# (GenerateContentRequest.generation_config.stop_sequences). The engine builds
+# a backend-agnostic list that can exceed this, so we clamp it here.
+_GEMINI_MAX_STOP_SEQUENCES: int = 5
+
+
+def _clamp_stop_sequences(stop_sequences: list[str] | None) -> list[str] | None:
+    """Truncate stop sequences to the Gemini API limit (max 5)."""
+    if stop_sequences and len(stop_sequences) > _GEMINI_MAX_STOP_SEQUENCES:
+        return stop_sequences[:_GEMINI_MAX_STOP_SEQUENCES]
+    return stop_sequences
+
 
 class GeminiClient(LLMBackend):
     """LLM backend targeting Google Gemini via the google-genai SDK.
@@ -111,7 +123,7 @@ class GeminiClient(LLMBackend):
             temperature=temperature,
             top_p=top_p,
             max_output_tokens=max_tokens if max_tokens else 1024,
-            stop_sequences=stop_sequences,
+            stop_sequences=_clamp_stop_sequences(stop_sequences),
         )
 
         try:
@@ -176,7 +188,7 @@ class GeminiClient(LLMBackend):
             temperature=temperature,
             top_p=top_p,
             max_output_tokens=max_tokens if max_tokens else 1024,
-            stop_sequences=stop_sequences,
+            stop_sequences=_clamp_stop_sequences(stop_sequences),
         )
 
         try:
