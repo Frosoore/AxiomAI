@@ -573,9 +573,9 @@ class TabletopView(HardcoreMixin, QWidget):
 
         narrative_text = getattr(result, "narrative_text", "")
 
-        # Phase 11: Advance game time based on LLM decision
-        elapsed_minutes = getattr(result, "elapsed_minutes", 15)
-        self._current_time += elapsed_minutes
+        # Phase 11: Advance game time based on LLM decision (now handled in engine)
+        from axiom.db_helpers import get_current_time
+        self._current_time = get_current_time(self._db_path, self._save_id)
         self._time_label.setText(self._format_time(self._current_time))
 
         payload = {
@@ -605,28 +605,6 @@ class TabletopView(HardcoreMixin, QWidget):
 
         self._check_for_player_death(result)
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
-
-        # 2. Chronicler Phase (World Simulation)
-        cfg = load_config()
-        self._chronicler = ChroniclerEngine(
-            llm=self._llm,
-            event_sourcer=EventSourcer(self._db_path),
-            db_path=self._db_path,
-            trigger_interval=cfg.chronicler_interval,
-        )
-        if self._chronicler.should_trigger(self._current_time, self._last_chronicle_time):
-            self._last_chronicle_time = self._current_time
-            
-            self._chronicler_worker = ChroniclerWorker(
-                self._chronicler,
-                self._save_id,
-                self._turn_id,
-            )
-            self._chronicler_worker.error_occurred.connect(self._on_worker_error)
-            self._chronicler_worker.status_update.connect(
-                self._main_window.on_status_update
-            )
-            self._chronicler_worker.start()
 
         self._chat.set_send_enabled(True)
         

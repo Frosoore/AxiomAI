@@ -73,10 +73,12 @@ class Session:
         data_dir: str | Path | None = None,
         mode: str = "Normal",
         hero_llm: LLMBackend | None = None,
+        time_llm: LLMBackend | None = None,
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
         self._llm = llm
+        self._time_llm = time_llm if time_llm else llm
         self._mode = mode
         self._hero_llm = hero_llm
         self._entities: list[dict] | None = None
@@ -143,7 +145,7 @@ class Session:
         héros est calculée ici (parité avec `NarrativeWorker`) ; passer un
         `hero_action` explicite court-circuite ce calcul.
         """
-        self._arbitrator.configure(self._llm, self._vector_memory)
+        self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
         history = self._load_history()
 
@@ -174,6 +176,27 @@ class Session:
             hero_entity_id=hero_entity_id,
             mode=self._mode,
         )
+        # Phase 5: Trigger Chronicler if needed
+        from axiom.db_helpers import get_current_time
+        from axiom.config import load_config
+        from axiom.chronicler import ChroniclerEngine
+        cfg = load_config()
+        
+        # We need the last_chronicle_time to compare, but wait, 
+        # TICKET-013 says we should trigger on turn_id, not minutes!
+        # The engine should instantiate ChroniclerEngine and check if we should trigger based on turn_id
+        chronicler = ChroniclerEngine(
+            llm=self._llm,
+            event_sourcer=self._events,
+            db_path=self._db_path,
+            trigger_interval=cfg.chronicler_interval
+        )
+        
+        # Use turn_id for intervals. We can just check turn_id % interval == 0
+        if chronicler.should_trigger(self._turn_id):
+            _emit(on_status, "Simulating off-screen world...")
+            chronicler.run(self._save_id, self._turn_id)
+
         _emit(on_status, "Ready.")
         return result
 

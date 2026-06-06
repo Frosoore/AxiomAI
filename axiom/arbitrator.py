@@ -104,10 +104,11 @@ class ArbitratorEngine:
         self._hero_entity_id: str | None = None
         self._stats_cache: dict[str, dict[str, str]] | None = None
 
-    def configure(self, llm: LLMBackend, vector_memory: VectorMemory) -> None:
+    def configure(self, llm: LLMBackend, vector_memory: VectorMemory, time_llm: LLMBackend | None = None) -> None:
         """Inject runtime dependencies before process_turn."""
         self._llm = llm
         self._vector_memory = vector_memory
+        self._time_llm = time_llm if time_llm is not None else llm
 
     def invalidate_stats_cache(self) -> None:
         """Clear the in-memory stats cache (call after rewind or external DB writes)."""
@@ -294,7 +295,8 @@ class ArbitratorEngine:
         from axiom.prompts import build_timekeeper_prompt
         prompt = build_timekeeper_prompt(user_message, narrative_text)
         try:
-            tk_resp = self._llm.complete(prompt, max_tokens=150, temperature=0.1)
+            time_llm = getattr(self, "_time_llm", self._llm)
+            tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
             tk_data = getattr(tk_resp, "tool_call", {}) or {}
             if not tk_data:
                 import re, json
@@ -315,12 +317,26 @@ class ArbitratorEngine:
             pace_defaults = {
                 "combat": 2,
                 "dialogue": 5,
+                "conversation": 5,
                 "exploration": 15,
                 "travel": 60,
                 "deliberate": 15,
+                "montage": 60,
                 "tension": 10
             }
             elapsed_minutes = pace_defaults.get(scene_pace, 15)
+
+        # Update in-game time (TICKET-010)
+        new_time = total_mins + elapsed_minutes
+        try:
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
+                    (save_id, turn_id, new_time, f"Turn advanced by {elapsed_minutes} mins")
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
 
         # Step 7 — Validate and apply each state change
         applied_changes: list[dict[str, Any]] = []
@@ -358,7 +374,7 @@ class ArbitratorEngine:
                             with get_connection(self._db_path) as conn:
                                 conn.execute(
                                     "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
-                                    (save_id, turn_id, total_mins, f"Traveled to {value} ({travel_dist} km)")
+                                    (save_id, turn_id, new_time, f"Traveled to {value} ({travel_dist} km)")
                                 )
                                 conn.commit()
 

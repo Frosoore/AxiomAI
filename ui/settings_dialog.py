@@ -92,6 +92,9 @@ class SettingsDialog(QDialog):
         self._extraction_model = QLineEdit()
         self._extraction_model.setPlaceholderText("e.g. llama3.1:8b")
         self._extraction_model.setToolTip("Model used strictly for JSON data extraction (e.g. Populate).")
+        self._time_model = QLineEdit()
+        self._time_model.setPlaceholderText("e.g. llama3.2:1b")
+        self._time_model.setToolTip("Model used strictly for time estimation (Timekeeper).")
         
         self._univ_test_btn = QPushButton(tr("test_connection"))
         
@@ -101,11 +104,13 @@ class SettingsDialog(QDialog):
         self._univ_key_label = QLabel(tr("api_key"))
         self._univ_model_label = QLabel(tr("main_model"))
         self._univ_extraction_label = QLabel(tr("extraction_model"))
+        self._univ_time_label = QLabel(tr("time_model"))
 
         univ_form.addRow(self._univ_url_label, self._univ_url)
         univ_form.addRow(self._univ_key_label, self._univ_key)
         univ_form.addRow(self._univ_model_label, self._univ_model)
         univ_form.addRow(self._univ_extraction_label, self._extraction_model)
+        univ_form.addRow(self._univ_time_label, self._time_model)
         
         test_row = QHBoxLayout()
         test_row.addWidget(self._univ_test_btn)
@@ -238,6 +243,7 @@ class SettingsDialog(QDialog):
         self._univ_key_label.setText(tr("api_key"))
         self._univ_model_label.setText(tr("main_model"))
         self._univ_extraction_label.setText(tr("extraction_model"))
+        self._univ_time_label.setText(tr("time_model"))
         self._univ_key.setPlaceholderText(tr("optional_key"))
         self._univ_test_btn.setText(tr("test_connection"))
         
@@ -273,6 +279,7 @@ class SettingsDialog(QDialog):
         self._univ_key.setText(config.universal_api_key)
         self._univ_model.setText(config.universal_model)
         self._extraction_model.setText(config.extraction_model)
+        self._time_model.setText(config.time_model)
         self._gemini_key.setText(config.gemini_api_key)
         self._gemini_model.setText(config.gemini_model)
         self._chronicler_spin.setValue(config.chronicler_interval)
@@ -303,6 +310,7 @@ class SettingsDialog(QDialog):
             gemini_api_key=self._gemini_key.text().strip(),
             gemini_model=self._gemini_model.text().strip() or "gemini-2.0-flash",
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
+            time_model=self._time_model.text().strip() or "llama3.2:1b",
             chronicler_interval=self._chronicler_spin.value(),
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),

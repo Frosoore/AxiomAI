@@ -114,3 +114,91 @@ aucune couverture) et `tests/test_universe_meta.py` (round-trip params LLM).
 **Vérif :** `pytest tests/` → **347 passed**, 7 failed + 5 errors **tous
 pré-existants connus** (persona_global ; 6× phase6 `_sync_current_form` ; 5×
 ambiance pytest-qt absent). Zéro régression.
+
+---
+
+## TICKET-010 — UI/UX Save Management (Multisélection, Raccourcis, Menu Contextuel)
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- **Multisélection :** Activation de `QAbstractItemView.ExtendedSelection` sur la liste des sauvegardes dans `setup_view.py`.
+- **Raccourcis clavier :** Ajout de la gestion de Ctrl+A (sélection de tout), des touches directionnelles (Ctrl+Up/Down) pour l'extension de la sélection, et de la touche "Delete" pour la suppression multiple.
+- **Correction du bug de suppression multiple :** La suppression nécessitait auparavant deux confirmations car la liste était modifiée de manière asynchrone sans attendre la fin des tâches de base de données. Corrigé en s'assurant de la synchronisation via les signaux.
+- **Interaction Souris :** Double-clic pour lancer une sauvegarde ("Play"), et ajout d'un menu contextuel (clic droit) offrant les actions "Play", "Rename" et "Delete".
+
+---
+
+## TICKET-011 — Bug persistance des variantes & Condition de course LoadFullUniverseTask
+
+**Statut :** clos le 2026-06-06.
+
+**Problème :** Le jeu générait des choix de premiers messages aléatoires ou affichait le même message sur toutes les sauvegardes après une tentative de rustine via `Universe_Meta`. Le problème racine était une condition de course lors du chargement d'une sauvegarde :
+- `TabletopView` appelait en parallèle `load_session_history(save_id)` et `load_full_universe()`.
+- L'ancienne tâche `LoadFullUniverseTask` sélectionnait *automatiquement* la sauvegarde la plus récente si `save_id` n'était pas fourni.
+- Cela écrasait l'historique correct chargé par `load_session_history` avec l'historique d'une potentielle autre sauvegarde (ou un historique vide), forçant `TabletopView` à recréer et réinsérer un nouveau premier message à chaque rechargement.
+
+**Fix :** `load_full_universe` accepte désormais le `save_id` explicite et ne tente plus de deviner la sauvegarde la plus récente quand l'identifiant est fourni. L'historique n'est plus écrasé à tort, le premier message n'est pas réécrit, et les choix de variantes de l'utilisateur sont persistés nativement dans l'Event Log pour chaque sauvegarde individuellement.
+
+---
+
+## TICKET-012 — Bug d'enregistrement de la réponse de l'IA (AttributeError)
+
+**Statut :** clos le 2026-06-06.
+
+**Problème :** Les messages générés par l'IA s'affichaient bien à l'écran grâce au streaming, mais disparaissaient définitivement après un rechargement de la sauvegarde.
+L'erreur provenait d'un crash silencieux (intercepté mais entravant la logique) lors de l'enregistrement dans la base de données au sein de `process_turn`. 
+L'arbitrator tentait d'accéder à `user_message.content` alors que `user_message` est transmis sous forme de chaîne de caractères (`str`). Ce crash empêchait l'appel à `append_events_batch()`.
+
+**Fix :** Remplacement de `user_message.content` par `user_message` lors de l'appel au `Timekeeper` dans `axiom/arbitrator.py`. L'historique complet, incluant la réponse générée, est maintenant enregistré correctement dans la base de données.
+
+---
+
+## TICKET-010 — Temps causal : Persistance de l'horloge in-game
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- L'arbitrator enregistre désormais l'heure avancée dans la table `Timeline` immédiatement après avoir calculé les `elapsed_minutes` via le modèle de temps ou le fallback (`scene_pace`).
+- Les insertions liées aux voyages spatiaux utilisent désormais cette heure actualisée pour enregistrer l'entrée dans la chronologie.
+
+---
+
+## TICKET-011 — Temps causal : Avancement + Chronicler dans le Moteur
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- La vue `TabletopView` ne maintient plus un compteur de temps factice local (`self._current_time += elapsed_minutes`).
+- Elle relit simplement l'heure depuis la base de données.
+- L'instanciation et le déclenchement du `ChroniclerEngine` ont été déplacés de l'interface graphique (`_on_turn_complete`) vers le moteur headless, directement à la fin de `Session.take_turn`.
+
+---
+
+## TICKET-012 — Temps causal : Modèle Temps Spécifique (Time Model)
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- Ajout de l'option `Time Model` dans les paramètres (sous `Extraction Model`) via `config.py` et `settings_dialog.py`.
+- L'appel spécifique au `Timekeeper` dans l'arbitrator utilise dorénavant ce modèle, ce qui permet de conserver la fiabilité du double appel LLM sans surcharger le modèle principal de narration avec des requêtes chronophages.
+
+---
+
+## TICKET-013 — Temps causal : Rythme du Chronicler (Tours)
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- Changement de la logique interne du `ChroniclerEngine`.
+- Au lieu de comparer l'heure locale (minutes) avec un seuil en tours (provoquant un déclenchement quasi à chaque tour), il s'appuie désormais directement sur le numéro du tour (`turn_id % interval`).
+
+---
+
+## TICKET-014 — Temps causal : Nettoyage et Cohérence
+
+**Statut :** clos le 2026-06-06.
+
+**Réalisations :**
+- Le fichier mort `workers/timekeeper_worker.py` a été définitivement supprimé.
+- Alignement du `scene_pace` du Timekeeper fallback dans `arbitrator.py` avec la spec (ajout de `conversation` et `montage`).

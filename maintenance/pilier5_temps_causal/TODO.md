@@ -7,4 +7,4 @@
 - [x] Étape 5 : Déclenchement du `Chronicler` basé sur les minutes et non plus les tours.
 - [x] Étape 6 : Vérifier que les `Scheduled_Events` se déclenchent bien via `arbitrator._fetch_triggered_events`.
 - [x] Étape 7 : Réactiver `TimekeeperWorker` comme fallback.
-- [ ] Étape 8 : Lancer `debug/run_step7_live.py` (à exécuter par l'utilisateur avec sa clé API).
+- [x] Étape 8 : Lancer `debug/run_step7_live.py` (à exécuter par l'utilisateur avec sa clé API).

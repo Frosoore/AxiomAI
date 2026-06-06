@@ -89,21 +89,21 @@ class ChroniclerEngine:
 
     def should_trigger(
         self,
-        current_time: int,
-        last_chronicle_time: int,
+        turn_id: int,
     ) -> bool:
-        """Return True if the Chronicler should run now based on in-game time.
+        """Return True if the Chronicler should run now based on turn_id.
 
         Pure function — no I/O.
 
         Args:
-            current_time:        The current cumulative in-game minutes.
-            last_chronicle_time: The time in minutes at which the Chronicler last ran.
+            turn_id: The current player turn number.
 
         Returns:
-            True when (current_time - last_chronicle_time) >= trigger_interval.
+            True when turn_id is a multiple of trigger_interval (and > 0).
         """
-        return (current_time - last_chronicle_time) >= self._trigger_interval
+        if turn_id <= 0 or self._trigger_interval <= 0:
+            return False
+        return (turn_id % self._trigger_interval) == 0
 
     def run(
         self,

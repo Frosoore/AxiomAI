@@ -66,6 +66,7 @@ class AppConfig:
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
     extraction_model: str = "llama3.1:8b"
+    time_model: str = "llama3.2:1b"
     chronicler_interval: int = 50
     ui_font_size: int = 14
     enable_audio: bool = True
@@ -145,6 +146,17 @@ def resolve_extraction_model(config: AppConfig) -> str:
     if config.llm_backend.lower().strip() == "gemini":
         return config.gemini_model
     return config.extraction_model
+
+
+def resolve_time_model(config: AppConfig) -> str:
+    """Return the correct time model identifier based on the active backend.
+    
+    If the backend is Gemini, the local time_model identifier cannot be used,
+    so we fall back to the gemini_model.
+    """
+    if config.llm_backend.lower().strip() == "gemini":
+        return config.gemini_model
+    return config.time_model
 
 
 def build_llm_from_config(config: AppConfig, model_override: str | None = None) -> LLMBackend:
