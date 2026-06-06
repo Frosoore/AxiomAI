@@ -20,6 +20,13 @@ Avant de commencer à coder une étape, créer son dossier avec les trois fichie
 Mettre à jour TODO.md et CHANGELOG.md au fil du travail.
 Ne pas mélanger les étapes entre elles.
 
+## Dev parallèle à deux
+
+Le repo est développé **en parallèle sur deux branches** (Claude Code / Gemini CLI). La coordination
+— règles de merge, fichiers chauds, qui-touche-quoi-en-ce-moment — vit dans
+[`collab/`](collab/README.md). **Chaque agent lit `collab/README.md` + le `EN_COURS.md` de l'autre
+dev avant de modifier `axiom/` ou un fichier partagé.**
+
 ## Étapes
 
 | Dossier | Statut | Description |

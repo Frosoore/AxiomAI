@@ -5,12 +5,40 @@ metadata:
   type: project
 ---
 
-**Situation.** Le code va être **rendu au possesseur originel**, qui va continuer à développer **en
-parallèle** de l'utilisateur (mon interlocuteur). Répartition :
-- **Possesseur** : ajoute des **features côté GUI**, via **Gemini CLI**, sans se soucier de comment
-  c'est fait — il regarde seulement le comportement côté interface.
-- **Utilisateur (moi/lui)** : le **fonctionnel** — porter le moteur, changer le format `.axiom`, les
-  piliers. Travaille dans `axiom/`.
+**Situation (révisée 2026-06-05).** On passe d'une simple passation à un **dev parallèle à deux sur
+branches Git séparées du même mono-repo**, tout le code écrit **exclusivement par des agents CLI**.
+Répartition réelle désormais :
+- **Utilisateur (Claude Code)** : **Pilier 2 — Universe-as-Code** (doc §7) → `axiom/compile.py`,
+  migration `Populate*`, **changement du format `.axiom` / schéma** (annexe C.1).
+- **Pote (Gemini CLI)** : **Pilier 5 — Le Temps comme substrat causal** (doc §6) → `axiom/time_system.py`,
+  `workers/timekeeper_worker.py`, **migration des saves** (annexe C.2). C'est du **moteur**, pas du GUI
+  (≠ ancien modèle « possesseur = features GUI » ci-dessous, qui peut redevenir vrai plus tard).
+
+**🔴 Zone de collision des deux chantiers** (le reste des fichiers est disjoint) : `axiom/schema.py`,
+le **numéro de version du format `.axiom`**, et **`Session` / la boucle de tour**. Conseil donné :
+désigner **un propriétaire explicite** de ces 3 points et **séquencer** les changements de schéma
+(jamais deux bumps concurrents). Un dossier de coordination ne protège PAS le code, juste les docs.
+
+**Convention de coordination — CRÉÉE (2026-06-05) dans `maintenance/collab/` :**
+- `collab/README.md` = rulebook canonique (règles de merge + snippet de prompt de départ). Stable,
+  lu par les deux.
+- `collab/claude/EN_COURS.md` (écrit seulement par Claude) + `collab/gemini/EN_COURS.md` (écrit
+  seulement par Gemini) = « qui touche quels modules en ce moment ». **Chaque agent n'écrit que dans
+  SON sous-dossier et lit celui de l'autre** → zéro conflit sur la coordination.
+- Référencé depuis `maintenance/README.md` (section « Dev parallèle à deux »).
+- **Pas de table de propriété des fichiers chauds** : l'utilisateur l'a retirée (2026-06-05) —
+  « on verra après si besoin ». Seule règle gardée : pas deux refontes de format/schéma concurrentes.
+  La zone de collision (`schema.py`/format `.axiom`, `Session`) reste réelle si jamais besoin d'arbitrer.
+
+**Hygiène Git conseillée :** branches courtes, merge fréquent de `main` dans sa branche (petits
+conflits réguliers plutôt qu'un gros), **`main` toujours vert** = ne merger que si
+`pytest tests/test_engine_headless.py tests/test_cli_play.py` + `debug/startup_check.py` passent
+(c'est le contrat partagé qui détecte qu'un casse l'autre), PR même à deux. [[feedback-user-handles-git]]
+reste vrai : c'est l'utilisateur qui exécute les commits/branches/merges, pas moi.
+
+---
+**Ancien modèle (passation, peut redevenir d'actualité) :** le possesseur ajoute des **features GUI**
+via Gemini CLI sans se soucier de l'archi ; l'utilisateur fait le fonctionnel dans `axiom/`.
 
 **Risques de cette config :**
 - Le possesseur va naturellement **éparpiller de la logique dans `ui/`/`workers/`** (c'est ce qu'il

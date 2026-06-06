@@ -5,4 +5,5 @@
 - [Environnement de test](project_test_env.md) — Gemini only (carte AMD, pas de LLM local), venv `.venv/`, harnais `debug/run_step7_live.py`
 - [L'utilisateur gère git lui-même](feedback_user_handles_git.md) — ne pas commit/stage/brancher, juste implémenter+tester+documenter
 - [Stratégie moteur/app](project_engine_split_strategy.md) — mono-repo, pas de split physique avant reprise solo ; migration features app→engine = chantier des piliers
-- [Dev parallèle + handover](project_parallel_dev_handover.md) — possesseur fait les features GUI via Gemini CLI, utilisateur fait le moteur ; garde-fous ARCHITECTURE.md + test headless
+- [Dev parallèle à deux](project_parallel_dev_handover.md) — branches séparées : user (Claude) = Pilier 2 Universe-as-Code, pote (Gemini) = Pilier 5 Temps ; collision = schema/format/Session ; coordination dans `maintenance/collab/` (rulebook + EN_COURS.md scindés Claude/Gemini)
+- [Édition chirurgicale sans bridage](feedback_surgical_edits.md) — interdire le reformatage gratuit hors-scope, mais autoriser les grosses refontes justifiées
