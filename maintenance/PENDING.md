@@ -13,6 +13,11 @@
 | TICKET-007| Bugs backend Gemini (extraction_model 404 + >5 stop_sequences) | ✅ résolu (code) → attente feu vert commit |
 | TICKET-008| Segfault torch+Qt au 1er tour (dlopen libtriton.so hors thread principal) | ✅ résolu (code) → attente feu vert commit |
 | TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ⏸ différé (handover + dev parallèle) |
+| TICKET-010| Temps causal : l'horloge in-game persistée n'avance JAMAIS                 | 🔴 ouvert (critique) — review Pilier 5 |
+| TICKET-011| Temps causal : avancement temps + trigger Chronicler bloqués dans la GUI (headless time-blind) | 🟠 ouvert (majeur) — review Pilier 5 |
+| TICKET-012| Temps causal : design inversé vs spec §6.2/6.3 (double appel LLM/tour)     | 🟠 ouvert (majeur, à arbitrer) — review Pilier 5 |
+| TICKET-013| Temps causal : `chronicler_interval` interprété en minutes mais libellé/défaut en tours | 🟠 ouvert (majeur) — review Pilier 5 |
+| TICKET-014| Temps causal : `TimekeeperWorker` mort + signature cassée + écarts spec (TODO faux) | 🟡 ouvert (mineur/ménage) — review Pilier 5 |
 
 ---
 
@@ -176,3 +181,160 @@ du compte est épuisé (429, `limit: 0`) → la génération narrative réelle n
 - Évaluer pytest `--verbose` / `--tb=short` comme standard de run pour lisibilité output
 
 **Priorité :** basse — à faire après stabilisation Phase A/B.
+
+---
+
+# Review Pilier 5 (Temps causal) — 2026-06-06
+
+Revue de code demandée : la partie « temps causal » est marquée terminée mais a été implémentée par
+un autre dev. Constat : la mécanique de base **ne fonctionne pas de bout en bout**. Cinq tickets
+ci-dessous, du plus grave au plus mineur. Tous vérifiés par lecture du code (refs `fichier:ligne`),
+aucun fix appliqué (review only).
+
+**Cause commune** : la « Étape finale (Optimisation) » mentionnée dans
+`maintenance/pilier5_temps_causal/CHANGELOG.md` a (a) retiré `elapsed_minutes` du schéma du LLM
+principal et (b) désactivé le `TimekeeperWorker`. Or **c'est ce worker qui écrivait l'avancée du
+temps en base** (`INSERT Timeline ... new_time`). Son remplacement inline dans l'arbitrator calcule
+bien `elapsed_minutes`, mais **ne persiste plus l'horloge**. Le reste en découle.
+
+---
+
+## TICKET-010 — Temps causal : l'horloge in-game persistée n'avance jamais 🔴 CRITIQUE
+
+**Constat.** L'horloge de jeu = `get_current_time()` = `SELECT MAX(in_game_time) FROM Timeline`
+(`axiom/db_helpers.py:306-324`). **Aucun code n'insère de ligne `Timeline` avec l'heure avancée**
+(`total_mins + elapsed_minutes`). Conséquence : la valeur retournée par `get_current_time` est
+**figée** pour toute la partie.
+
+Détail des chemins d'écriture `Timeline` (tous les INSERT recensés) :
+- `axiom/arbitrator.py:358-363` (voyage) : insère `in_game_time = total_mins` — **l'ANCIENNE** valeur,
+  inchangée. N'avance pas l'horloge.
+- `axiom/chronicler.py:228-235` : insère `in_game_time = current_minute = get_current_time(...)` —
+  inchangé lui aussi.
+- `workers/timekeeper_worker.py:94-106` : **le seul** qui faisait `new_time = current_time + elapsed`
+  puis l'insérait… mais ce worker est **mort** (voir TICKET-014).
+
+L'arbitrator (`axiom/arbitrator.py:292-323`) calcule `elapsed_minutes`, s'en sert pour
+`tick_modifiers` (l.453) et le renvoie dans `ArbitratorResult` (l.490), mais **ne l'écrit jamais en
+base**. Seul `ui/tabletop_view.py:578` fait `self._current_time += elapsed_minutes` — un compteur
+**en mémoire, côté GUI uniquement**.
+
+**Conséquences (toutes vérifiées par lecture) :**
+1. **Temps réinitialisé au rechargement.** `_resume_turn_id` (`ui/tabletop_view.py:799-802`) refait
+   `self._current_time = get_current_time(db)` → relit l'horloge figée → **tout le temps écoulé dans
+   la session est perdu** au reload.
+2. **Contexte temporel figé pour le LLM.** `axiom/arbitrator.py:227-228` :
+   `total_mins = get_current_time(...)` → `get_time_of_day_context(total_mins)` envoyé au LLM est
+   bloqué à la valeur initiale (« Day 1 » à vie). Casse la promesse §6.5 « Topbar affichage cohérent »
+   et le feed temps→LLM.
+3. **`Scheduled_Events` ne se déclenchent jamais.** `_fetch_triggered_events(save_id, total_mins)`
+   (l.238) compare à `total_mins` qui n'augmente pas → aucun event « Jour 7, 10h00 » ne pourra jamais
+   tomber. Casse §6.5 « Scheduled events fiables » (alors que la TODO étape 6 est cochée).
+4. Seuls les **modifiers** ticquent correctement (ils reçoivent `elapsed_minutes` en direct, l.453) —
+   d'où une incohérence : les buffs expirent mais l'horloge globale, elle, ne bouge pas.
+
+**Piste de fix.** L'arbitrator (source de vérité headless) doit, après calcul d'`elapsed_minutes`,
+insérer/maj une ligne `Timeline` avec `in_game_time = total_mins + elapsed_minutes` (et corriger
+l'INSERT voyage l.360 pour utiliser l'heure avancée). À coordonner avec TICKET-011 (déplacer
+l'avancement hors GUI) — c'est le même chantier.
+
+**Priorité : critique.** C'est le cœur du Pilier 5 ; en l'état la feature est non fonctionnelle
+au-delà des modifiers.
+
+---
+
+## TICKET-011 — Temps causal : avancement + Chronicler bloqués dans la GUI 🟠 MAJEUR
+
+**Constat.** Toute la logique « avancer l'horloge + décider de déclencher le Chronicler » vit dans
+`ui/tabletop_view.py:577-629` (`_on_turn_complete`). Le moteur headless ne la fait **pas** :
+- `axiom/session.py::take_turn` (l.162-178) appelle `process_turn` et renvoie le résultat **sans
+  rien faire** d'`elapsed_minutes` ni du Chronicler.
+- `axiom/cli/play.py` (boucle via `session.take_turn`) : **zéro** référence à `elapsed`,
+  `current_time`, `Timeline` ou `chronicler` (grep à blanc).
+
+Donc `axiom play` (et tout consommateur de l'API `Session`) est **aveugle au temps** : pas
+d'avancement, pas de Chronicler, pas de Scheduled_Events. Cela viole directement la stratégie
+moteur/app (`memory/project_engine_split_strategy.md` : la logique de simulation doit être dans
+`axiom/`, le worker/GUI = coquille fine). Ici une brique de simulation centrale est **restée dans la
+GUI** — exactement le « churn » redouté par `memory/project_parallel_dev_handover.md` (le possesseur
+a câblé côté `ui/` via Gemini CLI).
+
+**Piste de fix.** Remonter l'avancement du temps + le `should_trigger`/run du Chronicler dans le
+moteur (arbitrator ou Session), la GUI ne faisant que lire l'horloge pour l'afficher. Recouvre
+TICKET-010 (la persistance de l'horloge est la première étape de ce déplacement).
+
+**Priorité : majeure** — conditionne la cohérence headless et corrige TICKET-010 par construction.
+
+---
+
+## TICKET-012 — Temps causal : design inversé vs spec §6.2/6.3 (double appel LLM/tour) 🟠 À ARBITRER
+
+**Constat.** La spec (§6.2, §6.3 Étape 7) veut que **le LLM narratif déclare `elapsed_minutes`** dans
+son tool_call, le `TimekeeperWorker` n'étant qu'un **fallback** quand le champ est absent. L'implémentation
+fait l'**inverse** :
+- `elapsed_minutes` a été **retiré** du schéma narratif (`axiom/prompts.py:48-67`,
+  `NARRATIVE_TOOL_CALL_SCHEMA` ne contient plus que `scene_pace`/`game_state_tag`).
+- L'arbitrator fait **systématiquement** un **second appel LLM** par tour (le Timekeeper inline,
+  `axiom/arbitrator.py:292-309`, commentaire « Always use Timekeeper logic »).
+
+**Impact.** Chaque tour = **2 round-trips LLM** au lieu d'1 (latence + coût ~×2). La justification
+notée au CHANGELOG (« alléger le prompt et améliorer la fiabilité ») est discutable : on allège le
+prompt principal mais on ajoute un appel réseau complet. C'est une **déviation d'une spec validée**,
+décidée par un autre dev sans arbitrage.
+
+**À décider (toi).** Soit (a) revenir à la spec : `elapsed_minutes` dans le schéma narratif +
+Timekeeper en fallback only (1 appel/tour nominal, conforme §6.3) ; soit (b) assumer le double appel
+et acter la déviation (mettre à jour la spec §6.2/6.3 en conséquence). Je n'ai rien changé.
+
+**Priorité : majeure** mais c'est un **choix d'archi**, pas un bug pur — d'où « à arbitrer ».
+
+---
+
+## TICKET-013 — Temps causal : `chronicler_interval` minutes vs tours 🟠 MAJEUR
+
+**Constat.** `ChroniclerEngine.should_trigger` compare désormais des **minutes** :
+`(current_time - last_chronicle_time) >= self._trigger_interval` (`axiom/chronicler.py:106`). Or
+`trigger_interval = cfg.chronicler_interval` (`ui/tabletop_view.py:615`), dont la sémantique est
+restée « **tours** » partout :
+- `axiom/config.py:56` docstring « Player turns between Chronicler runs », défaut **50** (l.69).
+- Libellé UI « Chronicler interval (turns): » dans toutes les langues (`axiom/localization.py:219,455,…`).
+
+**Impact.** Avec le défaut 50, le Chronicler se déclenche tous les **50 minutes in-game** au lieu de
+tous les **50 tours**. Comme un tour avance souvent de 15–60 min, le Chronicler **sur-déclenche**
+(toutes les ~1–4 tours) → coût LLM et bruit de simulation très supérieurs à l'intention, + libellé UI
+désormais mensonger. (NB : effet masqué tant que TICKET-010 fige l'horloge côté DB ; mais côté GUI le
+compteur `_current_time` avance, donc le sur-déclenchement est réel en GUI.)
+
+**Piste de fix.** Choisir une unité et la rendre cohérente : soit reconvertir le réglage en minutes
+(et corriger libellés + défaut + migration de `settings.json`), soit garder un trigger en tours.
+La spec §6.3 Étape 5 supposait « minutes » — mais alors le défaut/libellé doivent suivre.
+
+**Priorité : majeure** (comportement + coût), fix simple une fois l'unité tranchée.
+
+---
+
+## TICKET-014 — Temps causal : `TimekeeperWorker` mort + signature cassée + écarts spec 🟡 MÉNAGE
+
+Résidus et petits écarts relevés pendant la review (regroupés, faible criticité) :
+
+1. **`TimekeeperWorker` mort et cassé.** `workers/timekeeper_worker.py` n'est instancié **nulle part**
+   (grep : seule sa propre définition). De plus il appelle `build_timekeeper_prompt(self.narrative_text)`
+   (l.67) avec **1 argument**, alors que la fonction en exige **2** désormais
+   (`build_timekeeper_prompt(player_action, narrative_text)`, `axiom/prompts.py:883`) → `TypeError`
+   s'il était jamais lancé. ⇒ La TODO **étape 7 « Réactiver TimekeeperWorker comme fallback » est
+   cochée à tort** (`maintenance/pilier5_temps_causal/TODO.md:9`) : le worker n'est ni réactivé ni
+   fonctionnel. À décider : supprimer le worker (logique inline dans l'arbitrator) ou le réparer si on
+   reveut un vrai fallback Qt (cf. TICKET-012).
+2. **Vocabulaire `scene_pace` incohérent.** Spec §6.2 : `combat|conversation|travel|deliberate|montage`.
+   Code : `pace_defaults` = `combat|dialogue|exploration|travel|deliberate|tension`
+   (`axiom/arbitrator.py:315-322`) ; et le schéma narratif ne liste **aucune** énumération pour
+   `scene_pace` (`axiom/prompts.py:62`, juste un exemple). `conversation`/`montage` de la spec ne
+   mappent sur rien → défaut 15. Impact faible (le fallback pace n'est quasi jamais atteint puisque le
+   Timekeeper tourne toujours), mais à aligner.
+3. **Edge cases §6.4 non implémentés.** (a) Validation voyage : cohérence `elapsed_minutes` vs
+   `Location_Connections.distance_km` — non fait (l'INSERT voyage `axiom/arbitrator.py:355-362` logge
+   la distance avec un commentaire « le LLM/Rules interprétera », mais rien ne l'interprète).
+   (b) Time-skip narratif : `elapsed_minutes > 480` → déclencher le Chronicler **avant** de retourner —
+   non fait. À acter comme « différé » ou à planifier.
+
+**Priorité : mineure** — ménage + alignement spec ; à traiter après 010/011.
