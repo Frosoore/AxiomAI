@@ -221,24 +221,35 @@ class Session:
 
         `user_input` -> rôle "user" ; `narrative_text` -> rôle "assistant"
         (variante active si l'event en contient plusieurs).
+        Fusionne les messages consécutifs du même rôle pour ne pas casser le format LLM.
         """
         history: list[LLMMessage] = []
         for ev in self._events.get_events(self._save_id):
             event_type = ev["event_type"]
             payload = ev["payload"]
+            
+            role = None
+            content = ""
+            
             if event_type == "user_input":
-                text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
-                history.append({"role": "user", "content": text})
+                content = payload.get("text", "") if isinstance(payload, dict) else str(payload)
+                role = "user"
             elif event_type == "narrative_text":
                 if isinstance(payload, dict):
                     if "variants" in payload:
                         variants = payload.get("variants") or [""]
-                        text = variants[payload.get("active", 0)]
+                        content = variants[payload.get("active", 0)]
                     else:
-                        text = payload.get("text", "")
+                        content = payload.get("text", "")
                 else:
-                    text = str(payload)
-                history.append({"role": "assistant", "content": text or ""})
+                    content = str(payload)
+                role = "assistant"
+                
+            if role and content:
+                if history and history[-1]["role"] == role:
+                    history[-1]["content"] += f"\n\n{content}"
+                else:
+                    history.append({"role": role, "content": content})
         return history
 
     # ------------------------------------------------------------------

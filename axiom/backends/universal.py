@@ -54,7 +54,7 @@ class UniversalClient(LLMBackend):
         }
         
         # Merge stop sequences
-        stops = ["~~~", "</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
+        stops = ["</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
         if stop_sequences:
             stops.extend(stop_sequences)
         payload["stop"] = list(dict.fromkeys(stops))

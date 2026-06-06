@@ -70,6 +70,8 @@ class ArbitratorResult:
     rule_chain_warning: bool = False
     game_state_tag: str = "exploration"
     player_entity_id: str = "player"
+    elapsed_minutes: int = 1
+    scene_pace: str = "deliberate"
 
 
 # ---------------------------------------------------------------------------
@@ -280,10 +282,45 @@ class ArbitratorEngine:
         state_changes: list[dict[str, Any]] = []
         inventory_changes: list[dict[str, Any]] = []
         game_state_tag: str = "exploration"
+        scene_pace: str = "deliberate"
         if llm_response.tool_call:
             state_changes = llm_response.tool_call.get("state_changes", [])
             inventory_changes = llm_response.tool_call.get("inventory_changes", [])
             game_state_tag = str(llm_response.tool_call.get("game_state_tag", "exploration")).strip().lower()
+            scene_pace = str(llm_response.tool_call.get("scene_pace", "deliberate")).strip().lower()
+
+        # Always use Timekeeper logic for elapsed_minutes
+        elapsed_minutes: int | None = None
+        from axiom.prompts import build_timekeeper_prompt
+        prompt = build_timekeeper_prompt(user_message, narrative_text)
+        try:
+            tk_resp = self._llm.complete(prompt, max_tokens=150, temperature=0.1)
+            tk_data = getattr(tk_resp, "tool_call", {}) or {}
+            if not tk_data:
+                import re, json
+                tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
+                match = re.search(r'\{.*\}', tk_text, re.DOTALL)
+                if match:
+                    try:
+                        tk_data = json.loads(match.group(0))
+                    except json.JSONDecodeError:
+                        pass
+            if tk_data and "elapsed_minutes" in tk_data:
+                elapsed_minutes = int(tk_data["elapsed_minutes"])
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
+
+        # Final fallback based on scene pace
+        if elapsed_minutes is None:
+            pace_defaults = {
+                "combat": 2,
+                "dialogue": 5,
+                "exploration": 15,
+                "travel": 60,
+                "deliberate": 15,
+                "tension": 10
+            }
+            elapsed_minutes = pace_defaults.get(scene_pace, 15)
 
         # Step 7 — Validate and apply each state change
         applied_changes: list[dict[str, Any]] = []
@@ -413,7 +450,7 @@ class ArbitratorEngine:
             mutated_entities = new_mutations
 
         # Step 9 — Tick modifiers
-        self._modifier_processor.tick_modifiers(save_id)
+        self._modifier_processor.tick_modifiers(save_id, elapsed_minutes=elapsed_minutes)
 
         # Step 10 — Embed narrative chunk
         if narrative_text.strip():
@@ -450,6 +487,8 @@ class ArbitratorEngine:
             rule_chain_warning=rule_chain_warning,
             game_state_tag=game_state_tag,
             player_entity_id=player_entity_id,
+            elapsed_minutes=elapsed_minutes,
+            scene_pace=scene_pace,
         )
 
     # ------------------------------------------------------------------
@@ -500,7 +539,10 @@ class ArbitratorEngine:
             )
 
         # Streaming path
+        import re
         raw_tokens: list[str] = []
+        is_json_block = False
+        buffer = ""
         for token in self._llm.stream_tokens(
             messages, 
             temperature=temperature, 
@@ -508,8 +550,21 @@ class ArbitratorEngine:
             stop_sequences=stop_sequences,
             max_tokens=max_tokens
         ):
-            stream_token_callback(token)
             raw_tokens.append(token)
+            if not is_json_block:
+                buffer += token
+                match = re.search(r'(~~+json|~~~|```json|```)', buffer)
+                if match:
+                    is_json_block = True
+                    idx = match.start()
+                    if idx > 0:
+                        stream_token_callback(buffer[:idx])
+                elif len(buffer) > 15:
+                    stream_token_callback(buffer[:-15])
+                    buffer = buffer[-15:]
+
+        if not is_json_block and buffer:
+            stream_token_callback(buffer)
 
         full_raw = "".join(raw_tokens)
         narrative, tool_call = self._llm.parse_tool_call(full_raw)

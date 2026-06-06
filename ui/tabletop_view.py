@@ -311,7 +311,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._db_worker.rewind_complete.connect(self._on_rewind_done)
         
         self._db_worker.load_session_history(save_id)
-        self._db_worker.load_full_universe() # Fetch lore_book + entities
+        self._db_worker.load_full_universe(save_id) # Fetch lore_book + entities + etc
         
     def reload_llm(self) -> None:
         """Construct a fresh LLM instance from the latest settings.json."""
@@ -357,6 +357,7 @@ class TabletopView(HardcoreMixin, QWidget):
     @Slot(dict)
     def _on_meta_loaded(self, meta: dict) -> None:
         """Metadata fetch finished; store rules and prompts."""
+        self._universe_data = meta
         self._universe_system_prompt = meta.get("system_prompt", "")
         self._global_lore = meta.get("global_lore", "")
         self._first_message = meta.get("first_message", "")
@@ -450,8 +451,7 @@ class TabletopView(HardcoreMixin, QWidget):
             self.session_loaded.emit()
 
     def _show_initial_narrative(self) -> None:
-        """Display a random variant of the universe's first message."""
-        import random
+        """Display the first variant of the universe's first message."""
         import re
         
         # Handle variants separated by ---VARIANT--- (case-insensitive, optional spaces)
@@ -473,7 +473,7 @@ class TabletopView(HardcoreMixin, QWidget):
                     v = pattern.sub(val, v)
                 variants[i] = v
 
-        active_idx = random.randint(0, len(variants) - 1)
+        active_idx = 0
         chosen = variants[active_idx]
         
         payload = {
@@ -519,10 +519,6 @@ class TabletopView(HardcoreMixin, QWidget):
         # Advance turn count
         self._turn_id += 1
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
-
-        # Advance game time (base 15 min per action)
-        self._current_time += 15
-        self._time_label.setText(self._format_time(self._current_time))
 
         # 1. Build the engine Session for this turn (Pilier 1, Étape 7).
         # Session is the single turn machine: it owns the Arbitrator, rebuilds
@@ -576,6 +572,12 @@ class TabletopView(HardcoreMixin, QWidget):
         self._chat.flush_final_buffer()
 
         narrative_text = getattr(result, "narrative_text", "")
+
+        # Phase 11: Advance game time based on LLM decision
+        elapsed_minutes = getattr(result, "elapsed_minutes", 15)
+        self._current_time += elapsed_minutes
+        self._time_label.setText(self._format_time(self._current_time))
+
         payload = {
             "active": 0,
             "variants": [narrative_text]
@@ -606,15 +608,15 @@ class TabletopView(HardcoreMixin, QWidget):
 
         # 2. Chronicler Phase (World Simulation)
         cfg = load_config()
-        if (self._turn_id - self._main_window._last_chronicle_turn) >= cfg.chronicler_interval:
-            self._main_window._last_chronicle_turn = self._turn_id
+        self._chronicler = ChroniclerEngine(
+            llm=self._llm,
+            event_sourcer=EventSourcer(self._db_path),
+            db_path=self._db_path,
+            trigger_interval=cfg.chronicler_interval,
+        )
+        if self._chronicler.should_trigger(self._current_time, self._last_chronicle_time):
+            self._last_chronicle_time = self._current_time
             
-            self._chronicler = ChroniclerEngine(
-                llm=self._llm,
-                event_sourcer=EventSourcer(self._db_path),
-                db_path=self._db_path,
-                trigger_interval=cfg.chronicler_interval,
-            )
             self._chronicler_worker = ChroniclerWorker(
                 self._chronicler,
                 self._save_id,

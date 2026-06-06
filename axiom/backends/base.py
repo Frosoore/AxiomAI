@@ -220,8 +220,8 @@ class LLMBackend(ABC):
                 try:
                     data = json.loads(json_str)
                     return narrative, cls._normalize_json(data)
-                except json.JSONDecodeError as exc:
-                    raise LLMParseError(f"Failed to parse tool-call JSON block: {exc}") from exc
+                except json.JSONDecodeError:
+                    continue
 
         # 2. Fallback: Heuristic search for largest JSON-looking block
         # Support both objects {...} and arrays [...]
@@ -234,6 +234,7 @@ class LLMBackend(ABC):
             narrative = (raw_response[:start_idx] + raw_response[end_idx:]).strip()
             try:
                 data = json.loads(json_str)
+                narrative = re.sub(r'[\s\*]*(?:~~+json|~~~|```json|```)[\s\*~`]*$', '', narrative).strip()
                 return narrative, cls._normalize_json(data)
             except json.JSONDecodeError:
                 pass

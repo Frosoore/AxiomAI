@@ -137,12 +137,51 @@ class SetupView(QWidget):
         layout = QVBoxLayout(self._saves_tab)
         self._saves_list = QListWidget()
         self._saves_list.setStyleSheet("font-size: 14px;")
+        self._saves_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self._saves_list.itemDoubleClicked.connect(lambda _: self._on_launch_clicked())
+        self._saves_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._saves_list.customContextMenuRequested.connect(self._on_saves_context_menu)
         layout.addWidget(self._saves_list)
         
         self._del_save_btn = QPushButton(tr("delete_save"))
         self._del_save_btn.setStyleSheet("color: #FF4B4B;")
         self._del_save_btn.clicked.connect(self._on_delete_save_clicked)
         layout.addWidget(self._del_save_btn, 0, Qt.AlignRight)
+
+        # Raccourcis clavier
+        from PySide6.QtGui import QShortcut, QKeySequence
+        
+        self._shortcut_select_all = QShortcut(QKeySequence("Ctrl+A"), self._saves_list)
+        self._shortcut_select_all.setContext(Qt.WidgetShortcut)
+        self._shortcut_select_all.activated.connect(self._saves_list.selectAll)
+        
+        self._shortcut_delete = QShortcut(QKeySequence("Delete"), self._saves_list)
+        self._shortcut_delete.setContext(Qt.WidgetShortcut)
+        self._shortcut_delete.activated.connect(self._on_delete_save_clicked)
+        
+        self._shortcut_ctrl_down = QShortcut(QKeySequence("Ctrl+Down"), self._saves_list)
+        self._shortcut_ctrl_down.setContext(Qt.WidgetShortcut)
+        self._shortcut_ctrl_down.activated.connect(self._select_next_save)
+        
+        self._shortcut_ctrl_up = QShortcut(QKeySequence("Ctrl+Up"), self._saves_list)
+        self._shortcut_ctrl_up.setContext(Qt.WidgetShortcut)
+        self._shortcut_ctrl_up.activated.connect(self._select_prev_save)
+
+    @Slot()
+    def _select_next_save(self) -> None:
+        row = self._saves_list.currentRow()
+        if row < self._saves_list.count() - 1:
+            item = self._saves_list.item(row + 1)
+            item.setSelected(True)
+            self._saves_list.setCurrentRow(row + 1)
+
+    @Slot()
+    def _select_prev_save(self) -> None:
+        row = self._saves_list.currentRow()
+        if row > 0:
+            item = self._saves_list.item(row - 1)
+            item.setSelected(True)
+            self._saves_list.setCurrentRow(row - 1)
 
     def _setup_persona_tab(self) -> None:
         layout = QVBoxLayout(self._persona_tab)
@@ -320,16 +359,73 @@ class SetupView(QWidget):
 
     @Slot()
     def _on_delete_save_clicked(self) -> None:
-        item = self._saves_list.currentItem()
-        if not item: return
-        save = item.data(Qt.UserRole)
+        items = self._saves_list.selectedItems()
+        if not items: return
+        
+        if len(items) == 1:
+            msg = tr("confirm_delete")
+        else:
+            msg = f"Are you sure you want to delete {len(items)} saves?"
+            
         reply = QMessageBox.warning(
-            self, tr("warning"), tr("confirm_delete"),
+            self, tr("warning"), msg,
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            self._db_worker.delete_save(save["save_id"])
-            self._db_worker.load_saves_async()
+            for item in items:
+                save = item.data(Qt.UserRole)
+                self._db_worker.delete_save(save["save_id"])
+                row = self._saves_list.row(item)
+                self._saves_list.takeItem(row)
+
+    @Slot(object)
+    def _on_saves_context_menu(self, position) -> None:
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+        
+        items = self._saves_list.selectedItems()
+        if not items:
+            return
+            
+        menu = QMenu()
+        
+        play_action = QAction("Play", self)
+        play_action.triggered.connect(self._on_launch_clicked)
+        menu.addAction(play_action)
+        
+        if len(items) == 1:
+            rename_action = QAction("Rename", self)
+            rename_action.triggered.connect(self._on_rename_save_clicked)
+            menu.addAction(rename_action)
+            
+        delete_action = QAction(tr("delete_save"), self)
+        delete_action.triggered.connect(self._on_delete_save_clicked)
+        menu.addAction(delete_action)
+        
+        menu.exec(self._saves_list.viewport().mapToGlobal(position))
+
+    @Slot()
+    def _on_rename_save_clicked(self) -> None:
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+        items = self._saves_list.selectedItems()
+        if len(items) != 1:
+            return
+            
+        item = items[0]
+        save = item.data(Qt.UserRole)
+        current_name = save.get("player_name", "")
+        
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Save", "New Name:", QLineEdit.Normal, current_name
+        )
+        if ok and new_name.strip() and new_name.strip() != current_name:
+            new_name = new_name.strip()
+            self._db_worker.rename_save(save["save_id"], new_name)
+            
+            # Update the item text dynamically
+            save["player_name"] = new_name
+            item.setData(Qt.UserRole, save)
+            item.setText(f"{new_name} ({save['difficulty']}) - {save['last_updated'][:10]}")
 
     @Slot()
     def _on_back_clicked(self) -> None:
@@ -338,9 +434,12 @@ class SetupView(QWidget):
     @Slot()
     def _on_launch_clicked(self) -> None:
         # 1. Check if we are resuming
-        item = self._saves_list.currentItem()
-        if item and self._tabs.currentIndex() == 0:
-            save = item.data(Qt.UserRole)
+        items = self._saves_list.selectedItems()
+        if items and self._tabs.currentIndex() == 0:
+            if len(items) > 1:
+                QMessageBox.warning(self, "Setup", "Please select only one save to launch.")
+                return
+            save = items[0].data(Qt.UserRole)
             self._main_window.show_tabletop(
                 self._db_path, save["save_id"], player_persona=save.get("player_persona", "")
             )
