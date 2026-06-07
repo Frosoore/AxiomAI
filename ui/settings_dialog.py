@@ -184,20 +184,27 @@ class SettingsDialog(QDialog):
         for code, name in SUPPORTED_LANGUAGES.items():
             self._lang_combo.addItem(name, code)
             
+        # Chronicler interval is expressed in in-game minutes (the world clock),
+        # not player turns (Pilier 5 / TICKET-018).
         self._chronicler_spin = QSpinBox()
-        self._chronicler_spin.setRange(1, 500)
-        
+        self._chronicler_spin.setRange(5, 100000)
+        self._chronicler_spin.setSuffix(" min")
+
         self._font_size_spin = QSpinBox()
         self._font_size_spin.setRange(8, 36)
-        
+
         self._rag_chunk_spin = QSpinBox()
         self._rag_chunk_spin.setRange(1, 20)
-        
+
         from PySide6.QtWidgets import QCheckBox
         self._audio_cb = QCheckBox(tr("enable_audio"))
-        
+
+        # Toggle for the extra Timekeeper LLM call (Pilier 5 / TICKET-015).
+        self._timekeeper_cb = QCheckBox(tr("timekeeper_enabled"))
+        self._timekeeper_cb.setToolTip(tr("timekeeper_enabled_tooltip"))
+
         self._lang_label = QLabel(tr("language"))
-        self._chronicler_label = QLabel(tr("chronicler_interval_label"))
+        self._chronicler_label = QLabel(tr("chronicler_minutes_label"))
         self._font_size_label = QLabel(tr("ui_font_size"))
         self._rag_chunks_label = QLabel(tr("rag_chunks"))
 
@@ -206,6 +213,7 @@ class SettingsDialog(QDialog):
         general_form.addRow(self._font_size_label, self._font_size_spin)
         general_form.addRow(self._rag_chunks_label, self._rag_chunk_spin)
         general_form.addRow("", self._audio_cb)
+        general_form.addRow("", self._timekeeper_cb)
         
         layout.addWidget(self._general_group)
 
@@ -261,10 +269,12 @@ class SettingsDialog(QDialog):
         # General section
         self._general_group.setTitle(tr("tab_general"))
         self._lang_label.setText(tr("language"))
-        self._chronicler_label.setText(tr("chronicler_interval_label"))
+        self._chronicler_label.setText(tr("chronicler_minutes_label"))
         self._font_size_label.setText(tr("ui_font_size"))
         self._rag_chunks_label.setText(tr("rag_chunks"))
         self._audio_cb.setText(tr("enable_audio"))
+        self._timekeeper_cb.setText(tr("timekeeper_enabled"))
+        self._timekeeper_cb.setToolTip(tr("timekeeper_enabled_tooltip"))
         
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()
@@ -275,6 +285,9 @@ class SettingsDialog(QDialog):
 
     def load_from_config(self, config: AppConfig) -> None:
         """Populate all form fields from an AppConfig."""
+        # Keep a reference so collect_config can preserve fields not exposed in
+        # the UI (e.g. the legacy chronicler_interval).
+        self._loaded_config = config
         self._univ_url.setText(config.universal_base_url)
         self._univ_key.setText(config.universal_api_key)
         self._univ_model.setText(config.universal_model)
@@ -282,10 +295,11 @@ class SettingsDialog(QDialog):
         self._time_model.setText(config.time_model)
         self._gemini_key.setText(config.gemini_api_key)
         self._gemini_model.setText(config.gemini_model)
-        self._chronicler_spin.setValue(config.chronicler_interval)
+        self._chronicler_spin.setValue(config.chronicler_minutes_interval)
         self._font_size_spin.setValue(config.ui_font_size)
         self._rag_chunk_spin.setValue(config.rag_chunk_count)
         self._audio_cb.setChecked(config.enable_audio)
+        self._timekeeper_cb.setChecked(config.timekeeper_enabled)
         
         idx = self._lang_combo.findData(config.language)
         if idx >= 0:
@@ -311,7 +325,13 @@ class SettingsDialog(QDialog):
             gemini_model=self._gemini_model.text().strip() or "gemini-2.0-flash",
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
             time_model=self._time_model.text().strip() or "llama3.2:1b",
-            chronicler_interval=self._chronicler_spin.value(),
+            timekeeper_enabled=self._timekeeper_cb.isChecked(),
+            # Legacy field, no longer surfaced in the UI — preserve whatever was
+            # loaded so we don't silently reset it on save.
+            chronicler_interval=getattr(
+                self, "_loaded_config", AppConfig()
+            ).chronicler_interval,
+            chronicler_minutes_interval=self._chronicler_spin.value(),
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),
             rag_chunk_count=self._rag_chunk_spin.value(),

@@ -563,11 +563,11 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(object)
     def _on_turn_complete(self, result: object) -> None:
-        """Post-turn cleanup: re-enable UI, refresh stats, check Chronicler."""
-        from workers.chronicler_worker import ChroniclerWorker
-        from axiom.chronicler import ChroniclerEngine
-        from axiom.events import EventSourcer
+        """Post-turn cleanup: re-enable UI, refresh stats, refresh the clock.
 
+        The Chronicler is now triggered inside the engine (Session.take_turn),
+        not here — this slot only reflects the turn's outcome in the UI.
+        """
         # Phase 8 Audit: Force-flush the typewriter buffer once turn logic finishes
         self._chat.flush_final_buffer()
 

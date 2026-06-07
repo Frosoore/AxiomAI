@@ -78,7 +78,11 @@ class Session:
         self._db_path = str(universe_path)
         self._save_id = save_id
         self._llm = llm
-        self._time_llm = time_llm if time_llm else llm
+        # Timekeeper backend: an explicit one wins; otherwise build it from the
+        # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
+        # mirroring how the Companion hero backend is resolved. Falls back to the
+        # main narration backend if config/backend construction fails (TICKET-016).
+        self._time_llm = time_llm if time_llm else self._resolve_time_llm(llm)
         self._mode = mode
         self._hero_llm = hero_llm
         self._entities: list[dict] | None = None
@@ -108,6 +112,22 @@ class Session:
         self._events = EventSourcer(self._db_path)
         self._checkpoints = CheckpointManager(self._db_path)
         self._turn_id = get_max_turn_id(self._db_path, save_id)
+
+    @staticmethod
+    def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
+        """Construit le backend du Timekeeper depuis la config (réglage « Time
+        Model »). Replie sur le backend principal en cas d'erreur (clé Gemini
+        absente, config illisible…) pour ne jamais casser la construction."""
+        try:
+            from axiom.config import (
+                load_config,
+                build_llm_from_config,
+                resolve_time_model,
+            )
+            cfg = load_config()
+            return build_llm_from_config(cfg, model_override=resolve_time_model(cfg))
+        except Exception:
+            return default_llm
 
     # ------------------------------------------------------------------
     # API publique
@@ -176,24 +196,26 @@ class Session:
             hero_entity_id=hero_entity_id,
             mode=self._mode,
         )
-        # Phase 5: Trigger Chronicler if needed
+        # Trigger the Chronicler when the in-game clock crosses a configured
+        # minute interval. process_turn already advanced the world clock by
+        # result.elapsed_minutes, so the time *before* this turn is
+        # current_time - elapsed. A single long time-skip therefore fires exactly
+        # one off-screen simulation, and many short turns accumulate until they
+        # cross a boundary (Pilier 5 / TICKET-018).
         from axiom.db_helpers import get_current_time
         from axiom.config import load_config
         from axiom.chronicler import ChroniclerEngine
         cfg = load_config()
-        
-        # We need the last_chronicle_time to compare, but wait, 
-        # TICKET-013 says we should trigger on turn_id, not minutes!
-        # The engine should instantiate ChroniclerEngine and check if we should trigger based on turn_id
+
+        current_time = get_current_time(self._db_path, self._save_id)
+        previous_time = max(0, current_time - result.elapsed_minutes)
         chronicler = ChroniclerEngine(
             llm=self._llm,
             event_sourcer=self._events,
             db_path=self._db_path,
-            trigger_interval=cfg.chronicler_interval
+            trigger_interval=cfg.chronicler_minutes_interval,
         )
-        
-        # Use turn_id for intervals. We can just check turn_id % interval == 0
-        if chronicler.should_trigger(self._turn_id):
+        if chronicler.should_trigger(current_time, previous_time):
             _emit(on_status, "Simulating off-screen world...")
             chronicler.run(self._save_id, self._turn_id)
 

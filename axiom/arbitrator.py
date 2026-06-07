@@ -290,29 +290,35 @@ class ArbitratorEngine:
             game_state_tag = str(llm_response.tool_call.get("game_state_tag", "exploration")).strip().lower()
             scene_pace = str(llm_response.tool_call.get("scene_pace", "deliberate")).strip().lower()
 
-        # Always use Timekeeper logic for elapsed_minutes
+        # Deduce elapsed in-game minutes. By default a dedicated "Timekeeper" LLM
+        # call parses the action + narrative to estimate the time that passed.
+        # This second call can be disabled (cfg.timekeeper_enabled = False) to save
+        # an LLM round-trip per turn, in which case the time is derived from the
+        # scene pace alone — cheaper but coarser. See Pilier 5 / TICKET-015.
         elapsed_minutes: int | None = None
-        from axiom.prompts import build_timekeeper_prompt
-        prompt = build_timekeeper_prompt(user_message, narrative_text)
-        try:
-            time_llm = getattr(self, "_time_llm", self._llm)
-            tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
-            tk_data = getattr(tk_resp, "tool_call", {}) or {}
-            if not tk_data:
-                import re, json
-                tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
-                match = re.search(r'\{.*\}', tk_text, re.DOTALL)
-                if match:
-                    try:
-                        tk_data = json.loads(match.group(0))
-                    except json.JSONDecodeError:
-                        pass
-            if tk_data and "elapsed_minutes" in tk_data:
-                elapsed_minutes = int(tk_data["elapsed_minutes"])
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
+        if cfg.timekeeper_enabled:
+            from axiom.prompts import build_timekeeper_prompt
+            prompt = build_timekeeper_prompt(user_message, narrative_text)
+            try:
+                time_llm = getattr(self, "_time_llm", self._llm)
+                tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
+                tk_data = getattr(tk_resp, "tool_call", {}) or {}
+                if not tk_data:
+                    import re, json
+                    tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
+                    match = re.search(r'\{.*\}', tk_text, re.DOTALL)
+                    if match:
+                        try:
+                            tk_data = json.loads(match.group(0))
+                        except json.JSONDecodeError:
+                            pass
+                if tk_data and "elapsed_minutes" in tk_data:
+                    elapsed_minutes = int(tk_data["elapsed_minutes"])
+            except Exception as e:
+                logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
 
-        # Final fallback based on scene pace
+        # Fallback based on scene pace. Also the primary path when the Timekeeper
+        # is disabled or could not produce a value.
         if elapsed_minutes is None:
             pace_defaults = {
                 "combat": 2,
@@ -326,17 +332,11 @@ class ArbitratorEngine:
             }
             elapsed_minutes = pace_defaults.get(scene_pace, 15)
 
-        # Update in-game time (TICKET-010)
+        # In-game clock after this turn. Persisted to Timeline once, after the
+        # state-change loop below, so a travelling turn produces a single timeline
+        # row (with the travel note) instead of two (TICKET-019).
         new_time = total_mins + elapsed_minutes
-        try:
-            with get_connection(self._db_path) as conn:
-                conn.execute(
-                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
-                    (save_id, turn_id, new_time, f"Turn advanced by {elapsed_minutes} mins")
-                )
-                conn.commit()
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
+        travel_note: str | None = None
 
         # Step 7 — Validate and apply each state change
         applied_changes: list[dict[str, Any]] = []
@@ -362,21 +362,17 @@ class ArbitratorEngine:
                     payload["value"] = value
                     event_type = "stat_set"
 
-                # Special Case: Location Change -> Log the distance traveled
+                # Special Case: Location Change -> annotate the timeline row with
+                # the distance traveled. The actual in-game time cost is already
+                # captured in elapsed_minutes (the LLM/Timekeeper accounts for the
+                # mode of transport via the narrative); here we only enrich the
+                # single timeline entry written after this loop (TICKET-019).
                 if entity_id == player_entity_id and stat_key == "Location" and value:
                     old_loc = all_stats.get(entity_id, {}).get("Location")
                     if old_loc and old_loc != value:
                         travel_dist = self._get_travel_distance(old_loc, value)
                         if travel_dist > 0:
-                            # We log the distance in the timeline. The LLM or Rules
-                            # will interpret how much in-game time this distance takes
-                            # based on the narrative context (mode of transport).
-                            with get_connection(self._db_path) as conn:
-                                conn.execute(
-                                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
-                                    (save_id, turn_id, new_time, f"Traveled to {value} ({travel_dist} km)")
-                                )
-                                conn.commit()
+                            travel_note = f"Traveled to {value} ({travel_dist} km)"
 
                 _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
                 # Update local snapshot for downstream Rules evaluation
@@ -394,6 +390,20 @@ class ArbitratorEngine:
         # Queue a combined correction if any changes were rejected
         if rejection_messages:
             self._queue_correction("; ".join(rejection_messages))
+
+        # Persist the advanced in-game clock — exactly one Timeline row per turn
+        # (TICKET-010 / TICKET-019). The description carries the travel note when
+        # the player moved, otherwise the plain time advance.
+        timeline_desc = travel_note or f"Turn advanced by {elapsed_minutes} mins"
+        try:
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
+                    (save_id, turn_id, new_time, timeline_desc)
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
 
         # Step 7.5 — Process Inventory Changes
         applied_inventory: list[dict[str, Any]] = []

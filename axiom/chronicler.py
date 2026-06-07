@@ -30,7 +30,8 @@ from axiom.prompts import build_chronicler_prompt
 
 
 _DEFAULT_TENSION: float = 0.3
-_DEFAULT_TRIGGER_INTERVAL: int = 50
+# In-game minutes between Chronicler runs (the world clock, not player turns).
+_DEFAULT_TRIGGER_INTERVAL: int = 720
 
 # Entity types tracked by the Chronicler (player is excluded)
 _CHRONICLER_ENTITY_TYPES: tuple[str, ...] = ("npc", "faction", "world")
@@ -67,8 +68,8 @@ class ChroniclerEngine:
         llm:              The LLM backend used for world simulation calls.
         event_sourcer:    Handles Event_Log writes and State_Cache reads.
         db_path:          Path to the universe .db for entity and meta queries.
-        trigger_interval: Number of player turns between automatic Chronicler
-                          runs.  Defaults to 50.
+        trigger_interval: In-game minutes between automatic Chronicler runs.
+                          Defaults to 720 (12 in-game hours).
     """
 
     def __init__(
@@ -89,21 +90,32 @@ class ChroniclerEngine:
 
     def should_trigger(
         self,
-        turn_id: int,
+        current_time: int,
+        previous_time: int,
     ) -> bool:
-        """Return True if the Chronicler should run now based on turn_id.
+        """Return True if the in-game clock crossed a trigger_interval boundary.
+
+        The Chronicler is driven by in-game minutes, not player turns: it fires
+        once whenever the world clock moves from one `trigger_interval`-minute
+        block into a later one. This makes a single long time-skip trigger
+        exactly one off-screen simulation, while many short turns accumulate
+        until they cross the next boundary (Pilier 5 / TICKET-018).
 
         Pure function — no I/O.
 
         Args:
-            turn_id: The current player turn number.
+            current_time:  The world clock (in-game minutes) after this turn.
+            previous_time: The world clock before this turn's time advance.
 
         Returns:
-            True when turn_id is a multiple of trigger_interval (and > 0).
+            True when `previous_time` and `current_time` fall in different
+            `trigger_interval`-minute blocks (i.e. a boundary was crossed).
         """
-        if turn_id <= 0 or self._trigger_interval <= 0:
+        if self._trigger_interval <= 0:
             return False
-        return (turn_id % self._trigger_interval) == 0
+        if current_time <= previous_time:
+            return False
+        return (current_time // self._trigger_interval) > (previous_time // self._trigger_interval)
 
     def run(
         self,

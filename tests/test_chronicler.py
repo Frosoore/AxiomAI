@@ -132,11 +132,34 @@ class TestShouldTrigger:
         assert engine.should_trigger(9, 0) is False
 
     def test_trigger_relative_to_last_chronicle(self) -> None:
-        """The interval is measured from the last chronicle turn, not turn 0."""
+        """The interval is measured between the previous and current in-game time,
+        not from zero (the clock moving 50->100 across a 50-min boundary fires)."""
         llm = _StubLLM(LLMResponse("", None, "stop"))
         engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=50)
         assert engine.should_trigger(100, 50) is True
         assert engine.should_trigger(99, 50) is False
+
+    def test_long_timeskip_crossing_many_blocks_fires_once(self) -> None:
+        """A single large jump spanning several intervals reports one crossing
+        (the Chronicler runs at most once per turn — Pilier 5 / TICKET-018)."""
+        llm = _StubLLM(LLMResponse("", None, "stop"))
+        engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=720)
+        # 100 -> 2000 in-game minutes crosses the 720 and 1440 boundaries.
+        assert engine.should_trigger(2000, 100) is True
+
+    def test_no_trigger_when_clock_does_not_advance(self) -> None:
+        """No boundary is crossed when the clock did not move forward."""
+        llm = _StubLLM(LLMResponse("", None, "stop"))
+        engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=720)
+        assert engine.should_trigger(500, 500) is False
+
+    def test_short_turns_accumulate_until_a_boundary_is_crossed(self) -> None:
+        """Small advances within the same block do not trigger until one of them
+        crosses into the next block."""
+        llm = _StubLLM(LLMResponse("", None, "stop"))
+        engine = ChroniclerEngine(llm=llm, event_sourcer=MagicMock(), db_path="", trigger_interval=60)
+        assert engine.should_trigger(50, 0) is False    # 0 and 50 both in block 0
+        assert engine.should_trigger(65, 50) is True     # 50 (block 0) -> 65 (block 1)
 
 
 # ---------------------------------------------------------------------------

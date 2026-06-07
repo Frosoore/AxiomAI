@@ -53,7 +53,20 @@ class AppConfig:
         gemini_api_key:      Google Gemini API key (may be empty).
         gemini_model:        Gemini model identifier.
         extraction_model:    Model used specifically for data extraction (Populate).
-        chronicler_interval: Player turns between Chronicler runs.
+        time_model:          Model used by the Timekeeper to deduce elapsed time.
+        timekeeper_enabled:  When True, a dedicated second LLM call (the Timekeeper)
+                             deduces the in-game minutes elapsed each turn. When
+                             False, that extra call is skipped and the time is
+                             estimated from the scene pace alone (cheaper, less
+                             precise). See Pilier 5 / TICKET-015.
+        chronicler_interval: LEGACY — player turns between Chronicler runs. No
+                             longer used for triggering (the Chronicler is now
+                             driven by in-game minutes); kept for backward
+                             compatibility with older settings files.
+        chronicler_minutes_interval: In-game minutes between Chronicler runs. The
+                             Chronicler fires once whenever the world clock crosses
+                             a multiple of this value, so a single long time-skip
+                             triggers exactly one off-screen simulation.
         ui_font_size:        Font size for the chat UI.
         enable_audio:        Whether background ambiance is enabled.
         rag_chunk_count:     Number of memory chunks to retrieve for RAG.
@@ -67,7 +80,9 @@ class AppConfig:
     gemini_model: str = "gemini-2.0-flash"
     extraction_model: str = "llama3.1:8b"
     time_model: str = "llama3.2:1b"
+    timekeeper_enabled: bool = True
     chronicler_interval: int = 50
+    chronicler_minutes_interval: int = 720
     ui_font_size: int = 14
     enable_audio: bool = True
     rag_chunk_count: int = 5
