@@ -159,6 +159,7 @@ class ArbitratorEngine:
         
         # Determine the primary player ID for legacy events and UI fallback
         player_entity_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
+        self._player_entity_id = player_entity_id
         
         # Step 0 — Log intents
         _pending_events: list[tuple] = []
@@ -246,7 +247,7 @@ class ArbitratorEngine:
 
         # Spatial Context (Approach A: Hierarchical Breadcrumbs + Neighbors)
         spatial_ctx = None
-        player_loc_id = filtered_stats.get("player", {}).get("Location")
+        player_loc_id = filtered_stats.get(player_entity_id, {}).get("Location")
         if player_loc_id:
             from axiom.db_helpers import get_spatial_context
             spatial_ctx = get_spatial_context(self._db_path, player_loc_id)
@@ -258,6 +259,32 @@ class ArbitratorEngine:
         named_intents = {id_to_name.get(eid, eid): intent for eid, intent in (intents or {}).items()}
         hero_name_str = id_to_name.get(hero_entity_id, hero_entity_id) if hero_entity_id else None
 
+        # Fetch player persona from Saves table
+        player_persona = ""
+        try:
+            with get_connection(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT player_persona FROM Saves WHERE save_id = ?;",
+                    (save_id,),
+                ).fetchone()
+                if row and row["player_persona"]:
+                    player_persona = row["player_persona"]
+        except Exception:
+            pass
+
+        # Collect local character names for Group Awareness
+        local_character_names = []
+        player_loc = filtered_stats.get(player_entity_id, {}).get("Location")
+        if player_loc:
+            for eid, stats in filtered_stats.items():
+                loc = stats.get("Location")
+                if loc and str(loc).lower() == str(player_loc).lower():
+                    # Map the entity ID to name
+                    name = id_to_name.get(eid, eid)
+                    if name.lower() == "player":
+                        name = "Player"
+                    local_character_names.append(name)
+
         messages = build_narrative_prompt(
             universe_system_prompt=universe_system_prompt,
             entity_stats_block=entity_block,
@@ -265,6 +292,7 @@ class ArbitratorEngine:
             history=history,
             intents=named_intents,
             pending_correction=self._pending_correction,
+            player_persona=player_persona,
             lore_book=lore_book_subset,
             verbosity_level=verbosity_level,
             current_time_str=time_ctx,
@@ -272,6 +300,7 @@ class ArbitratorEngine:
             spatial_context=spatial_ctx,
             mode=self._mode,
             hero_entity_id=hero_name_str,
+            local_character_names=local_character_names,
         )
 
         # Step 4 — Clear pending correction immediately after prompt is built
@@ -706,7 +735,8 @@ class ArbitratorEngine:
         relevant = set(matched_ids)
         
         # Get player's location
-        player_stats = all_stats.get("player", {})
+        player_id = getattr(self, "_player_entity_id", "player")
+        player_stats = all_stats.get(player_id, {})
         player_loc = player_stats.get("Location", "").lower()
 
         npc_count_at_loc = 0

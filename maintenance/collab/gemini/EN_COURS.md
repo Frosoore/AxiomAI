@@ -13,10 +13,14 @@
 |-------------------------|----------------------|---------------|------------------|
 | _(rien en cours)_       |                      |               |                  |
 
+
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
 
 - _(rien)_
 
 ## Fini / mergé récemment (info pour Claude)
 
-- _(rien)_
+- `axiom/session.py` (contexte et historique du héros compagnon enrichis)
+- `axiom/arbitrator.py` (backstory du joueur injectée au narrateur)
+- `axiom/prompts.py` (support des informations du joueur dans build_hero_decision_prompt)
+

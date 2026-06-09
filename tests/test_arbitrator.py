@@ -747,3 +747,54 @@ class TestCausalTime:
         assert rows[0][0] == 60
         assert "city_b" in rows[0][1].lower()
 
+    def test_process_turn_injects_player_persona(self, db_path, vm) -> None:
+        """process_turn fetches player_persona from Saves and includes it in the narrative prompt."""
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE Saves SET player_persona = 'A legendary warrior' WHERE save_id = 's1';")
+            conn.commit()
+
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, llm = _make_arbitrator(db_path, vm, response)
+        
+        arb.process_turn("s1", 1, {"player1": "I draw my weapon"}, "Universe prompt", [])
+        
+        # Verify the prompt passed to the LLM contains the player persona
+        system_msg = next(m for m in llm.last_messages if m["role"] == "system")
+        assert "A legendary warrior" in system_msg["content"]
+        assert "CHARACTER BACKGROUND:" in system_msg["content"]
+
+    def test_process_turn_injects_group_awareness(self, db_path, vm) -> None:
+        """process_turn identifies local entities and injects the Group Awareness rule."""
+        es = EventSourcer(db_path)
+        # Register entities and set their location to Forest (matching player1, npc1 from db_path fixture)
+        es.append_event("s1", 0, "entity_create", "npc2", {"entity_id": "npc2"})
+        
+        es.append_event("s1", 0, "stat_set", "player1", {"entity_id": "player1", "stat_key": "Location", "value": "Forest"})
+        es.append_event("s1", 0, "stat_set", "npc1", {"entity_id": "npc1", "stat_key": "Location", "value": "Forest"})
+        es.append_event("s1", 0, "stat_set", "npc2", {"entity_id": "npc2", "stat_key": "Location", "value": "Forest"})
+        es.rebuild_state_cache("s1")
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("INSERT INTO Entities (entity_id, entity_type, name, is_active) VALUES ('npc2', 'npc', 'Aglae', 1);")
+            conn.commit()
+
+
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, llm = _make_arbitrator(db_path, vm, response)
+        
+        arb.process_turn("s1", 1, {"player1": "I walk"}, "Universe prompt", [])
+        
+        system_msg = next(m for m in llm.last_messages if m["role"] == "system")
+        assert "Group Awareness" in system_msg["content"]
+        assert "Aria" in system_msg["content"]
+        assert "Goblin" in system_msg["content"]
+        assert "Aglae" in system_msg["content"]
+        assert "are all present together in the same location" in system_msg["content"]
+
+        
+        final_msg = llm.last_messages[-1]
+        assert "are ALL present in the scene together" in final_msg["content"]
+        assert "DO NOT ignore any members or refer to them as 'you two'" in final_msg["content"]
+
+
+

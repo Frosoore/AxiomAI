@@ -283,38 +283,76 @@ class Session:
     def _load_history(self) -> list[LLMMessage]:
         """Reconstruit l'historique conversationnel depuis l'Event_Log.
 
-        `user_input` -> rôle "user" ; `narrative_text` -> rôle "assistant"
-        (variante active si l'event en contient plusieurs).
-        Fusionne les messages consécutifs du même rôle pour ne pas casser le format LLM.
+        Group events by turn_id, then build clean user/assistant messages.
+        For each turn:
+        - All 'user_input' and 'hero_intent' events form the 'user' message.
+        - 'narrative_text' forms the 'assistant' message.
         """
+        from axiom.schema import get_connection
+        
+        # Load entity name mappings to resolve IDs to names in history
+        id_to_name = {}
+        try:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute("SELECT entity_id, name FROM Entities;").fetchall()
+                id_to_name = {r["entity_id"]: r["name"] for r in rows}
+        except Exception:
+            pass
+
+        events = self._events.get_events(self._save_id, start_turn_id=-1)
+        
+        # Group events by turn_id
+        turns_map = {}
+        for ev in events:
+            t_id = ev["turn_id"]
+            turns_map.setdefault(t_id, []).append(ev)
+            
         history: list[LLMMessage] = []
-        for ev in self._events.get_events(self._save_id, start_turn_id=-1):
-            event_type = ev["event_type"]
-            payload = ev["payload"]
+        for t_id in sorted(turns_map.keys()):
+            turn_events = turns_map[t_id]
             
-            role = None
-            content = ""
+            user_parts = []
+            assistant_content = ""
             
-            if event_type == "user_input":
-                content = payload.get("text", "") if isinstance(payload, dict) else str(payload)
-                role = "user"
-            elif event_type == "narrative_text":
-                if isinstance(payload, dict):
-                    if "variants" in payload:
-                        variants = payload.get("variants") or [""]
-                        content = variants[payload.get("active", 0)]
-                    else:
-                        content = payload.get("text", "")
-                else:
-                    content = str(payload)
-                role = "assistant"
+            for ev in turn_events:
+                etype = ev["event_type"]
+                payload = ev["payload"]
+                actor_id = ev["target_entity"]
                 
-            if role and content:
-                if history and history[-1]["role"] == role:
-                    history[-1]["content"] += f"\n\n{content}"
+                if etype in ("user_input", "hero_intent"):
+                    text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
+                    if text:
+                        # Translate entity ID to name if available
+                        actor_name = id_to_name.get(actor_id, actor_id)
+                        if actor_name.lower() == "player":
+                            actor_name = "Player"
+                        user_parts.append(f"[{actor_name}] INTENT: {text}")
+                elif etype == "narrative_text":
+                    if isinstance(payload, dict):
+                        if "variants" in payload:
+                            variants = payload.get("variants") or [""]
+                            assistant_content = variants[payload.get("active", 0)]
+                        else:
+                            assistant_content = payload.get("text", "")
+                    else:
+                        assistant_content = str(payload)
+            
+            if user_parts:
+                if len(user_parts) == 1 and ("Player" in user_parts[0] or "[player]" in user_parts[0].lower()):
+                    # Find the exact original text of this single event
+                    single_ev = next(e for e in turn_events if e["event_type"] in ("user_input", "hero_intent"))
+                    raw_text = single_ev["payload"].get("text", "") if isinstance(single_ev["payload"], dict) else str(single_ev["payload"])
+                    user_content = raw_text
                 else:
-                    history.append({"role": role, "content": content})
+                    user_content = "[SIMULTANEOUS ACTIONS FOR THIS TICK]\n" + "\n".join(user_parts)
+                
+                history.append({"role": "user", "content": user_content})
+                
+            if assistant_content:
+                history.append({"role": "assistant", "content": assistant_content})
+                
         return history
+
 
     # ------------------------------------------------------------------
     # Décision du héros (mode Companion) — porté depuis NarrativeWorker
@@ -366,6 +404,7 @@ class Session:
         """Appelle le LLM héros pour décider de son action (modèle local par défaut)."""
         from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
         from axiom.prompts import build_hero_decision_prompt, format_entity_stats_block
+        from axiom.schema import get_connection
 
         hero_llm = self._hero_llm
         if hero_llm is None:
@@ -373,19 +412,80 @@ class Session:
             # Modèle auxiliaire pour le héros (local si Ollama, gemini_model si Gemini).
             hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
 
-        hero_stats = format_entity_stats_block([hero_ent])
+        player_name = "Player"
+        player_persona = ""
+        try:
+            with get_connection(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT player_name, player_persona FROM Saves WHERE save_id = ?;",
+                    (self._save_id,),
+                ).fetchone()
+                if row:
+                    player_name = row["player_name"]
+                    player_persona = row["player_persona"]
+        except Exception:
+            pass
+
+        # Get active entities and their stats
+        entities = self._get_entities()
+        all_stats = self.current_stats()
+        
+        # We always want the hero and the player
+        relevant_entity_ids = {hero_ent["entity_id"], "player"}
+        
+        # And any other NPCs that share the same location (Limit to 3 to prevent bloat)
+        player_loc = all_stats.get("player", {}).get("Location", "")
+        if player_loc:
+            npc_count = 0
+            for e in entities:
+                eid = e["entity_id"]
+                etype = e.get("entity_type")
+                if etype == "npc" and eid != hero_ent["entity_id"]:
+                    entity_loc = all_stats.get(eid, {}).get("Location", "")
+                    if entity_loc.lower() == player_loc.lower():
+                        if npc_count < 3:
+                            relevant_entity_ids.add(eid)
+                            npc_count += 1
+
+        # Map entity IDs to names & types
+        id_to_name = {}
+        id_to_type = {}
+        for e in entities:
+            id_to_name[e["entity_id"]] = e.get("name", e["entity_id"])
+            id_to_type[e["entity_id"]] = e.get("entity_type", "unknown")
+        if "player" not in id_to_name:
+            id_to_name["player"] = player_name
+            id_to_type["player"] = "player"
+
+        snapshots = []
+        for eid in relevant_entity_ids:
+            snapshots.append({
+                "entity_id": eid,
+                "name": id_to_name.get(eid, eid),
+                "entity_type": id_to_type.get(eid, "unknown"),
+                "stats": all_stats.get(eid, {})
+            })
+
+        hero_stats = format_entity_stats_block(snapshots)
         
         # Enrichissement contextuel pour le héros (RAG + Spatial)
-        player_loc_id = self.current_stats().get("player", {}).get("Location")
         spatial_ctx = None
-        if player_loc_id:
+        if player_loc:
             from axiom.db_helpers import get_spatial_context
-            spatial_ctx = get_spatial_context(self._db_path, player_loc_id)
+            spatial_ctx = get_spatial_context(self._db_path, player_loc)
             
         rag_chunks = []
         if self._vector_memory:
             rag_res = self._vector_memory.query(self._save_id, hero_ent.get("name", "Hero"), k=2)
             rag_chunks = [r["text"] for r in rag_res if r.get("metadata", {}).get("type") != "lore"]
+
+        # Map intents to names for readability in the hero prompt
+        named_intents = {}
+        for eid, intent in (current_intents or {}).items():
+            name = id_to_name.get(eid, eid)
+            if name.lower() == "player":
+                name = player_name
+            named_intents[name] = intent
 
         prompt = build_hero_decision_prompt(
             hero_name=hero_ent.get("name", "Hero"),
@@ -394,7 +494,10 @@ class Session:
             history=history,
             rag_chunks=rag_chunks,
             spatial_context=spatial_ctx,
-            current_intents=current_intents,
+            current_intents=named_intents,
+            player_name=player_name,
+            player_persona=player_persona,
         )
         resp = hero_llm.complete(prompt, max_tokens=300)
         return resp.narrative_text.strip()
+

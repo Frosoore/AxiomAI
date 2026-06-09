@@ -210,13 +210,24 @@ def build_hero_decision_prompt(
     rag_chunks: list[str] | None = None,
     spatial_context: dict | None = None,
     current_intents: dict[str, str] | None = None,
+    player_name: str | None = None,
+    player_persona: str | None = None,
 ) -> list[LLMMessage]:
     """Assemble the prompt for the Hero IA to decide its next action."""
     ctx_parts = [
         f"HERO NAME: {hero_name}",
         f"HERO PERSONA: {hero_persona}",
-        f"HERO STATS:\n{hero_stats}",
     ]
+    if player_name:
+        ctx_parts.append(f"COMPANION TO (PLAYER): {player_name}")
+    if player_persona:
+        ctx_parts.append(f"PLAYER BACKSTORY: {player_persona}")
+
+    if "id:" in hero_stats or "[" in hero_stats:
+        ctx_parts.append(f"RELEVANT ENTITIES & STATS:\n{hero_stats}")
+    else:
+        ctx_parts.append(f"HERO STATS:\n{hero_stats}")
+
     
     if spatial_context:
         sc_lines = [f"LOCATION: {spatial_context.get('breadcrumb', 'Unknown')}"]
@@ -598,6 +609,7 @@ def build_narrative_prompt(
     spatial_context: dict | None = None,
     mode: str = "Normal",
     hero_entity_id: str | None = None,
+    local_character_names: list[str] | None = None,
 ) -> list[LLMMessage]:
     """Assemble the full message list for a narrative gameplay turn.
 
@@ -626,6 +638,7 @@ def build_narrative_prompt(
         spatial_context:        Optional dict with breadcrumb, description, and neighbors.
         mode:                   Game mode ('Normal', 'Hardcore', 'Companion').
         hero_entity_id:         The entity ID of the Hero (if applicable).
+        local_character_names:  List of names of all characters present in the scene.
 
     Returns:
         list[LLMMessage] ready to pass to any LLMBackend.complete().
@@ -651,6 +664,16 @@ def build_narrative_prompt(
 
     if mode == "Companion" and hero_entity_id:
         rules.append(f"- Companion: '{hero_entity_id}' is the Player's AI Companion. They are a DISTINCT character. Because both actors may use the first person ('I') in their intents, you MUST translate the Player's intent to 'You' and the Companion's intent to their third-person name ('{hero_entity_id}'). DO NOT merge them into one person.")
+    
+    if local_character_names and len(local_character_names) >= 2:
+        formatted_names = [("You" if n.lower() == "player" else n) for n in local_character_names]
+        if len(formatted_names) >= 3:
+            names_str = ", ".join(formatted_names[:-1]) + ", and " + formatted_names[-1]
+            rules.append(f"- Group Awareness: {names_str} are all present together in the same location. When NPCs react or speak, they must address the entire group of {len(formatted_names)} characters together. DO NOT refer to them as 'you two' or ignore any members of the group.")
+        else:
+            names_str = " and ".join(formatted_names)
+            rules.append(f"- Group Awareness: {names_str} are present together. Address them as a pair, not as a single person.")
+
     
     len_map = {
         "short": "CONCISE (2 sentences).",
@@ -723,10 +746,19 @@ def build_narrative_prompt(
 
     # Phase 11: Final behavior instruction (Recency Bias)
     # This system message is appended AFTER the user message to force compliance.
+    num_actors = len(intents) if intents else 1
+    weave_word = "BOTH" if num_actors == 2 else "ALL" if num_actors > 2 else "the"
+    
+    group_reminder = ""
+    if local_character_names and len(local_character_names) >= 3:
+        formatted_names = [("You" if n.lower() == "player" else n) for n in local_character_names]
+        names_str = ", ".join(formatted_names[:-1]) + ", and " + formatted_names[-1]
+        group_reminder = f" Note that {names_str} are ALL present in the scene together; NPCs must address the entire group of {len(formatted_names)} characters (DO NOT ignore any members or refer to them as 'you two')."
+
     verbosity_map = {
-        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.",
-        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.",
-        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions."
+        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
+        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
+        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}"
     }
     final_instr = verbosity_map.get(verbosity_level.lower(), verbosity_map["balanced"])
     messages.append({"role": "system", "content": final_instr})
