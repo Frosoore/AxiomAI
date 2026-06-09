@@ -156,17 +156,17 @@ class TestParseToolCall:
 # ---------------------------------------------------------------------------
 
 class TestParseToolCallErrors:
-    def test_invalid_json_raises_parse_error(self) -> None:
-        """Malformed JSON inside the fence raises LLMParseError."""
+    def test_invalid_json_returns_none(self) -> None:
+        """Malformed JSON inside the fence returns None for tool_call."""
         raw = "Prose.\n~~~json\n{not valid json\n~~~"
-        with pytest.raises(LLMParseError, match="Failed to parse tool-call JSON block"):
-            LLMBackend.parse_tool_call(raw)
+        narrative, tool_call = LLMBackend.parse_tool_call(raw)
+        assert tool_call is None
 
-    def test_truncated_json_raises_parse_error(self) -> None:
-        """Truncated/incomplete JSON inside the fence raises LLMParseError."""
+    def test_truncated_json_returns_none(self) -> None:
+        """Truncated/incomplete JSON inside the fence returns None for tool_call."""
         raw = "Prose.\n~~~json\n{\"key\": \n~~~"
-        with pytest.raises(LLMParseError):
-            LLMBackend.parse_tool_call(raw)
+        narrative, tool_call = LLMBackend.parse_tool_call(raw)
+        assert tool_call is None
 
 
 # ---------------------------------------------------------------------------

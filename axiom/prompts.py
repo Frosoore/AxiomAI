@@ -52,7 +52,7 @@ Allowed game_state_tag values: 'exploration', 'combat', 'dialogue', 'tension'.
 CRITICAL RULES:
 1. FACTIONS: Adjust dialogue based on entity 'Reputation' or 'Alliance'.
 2. INVENTORY: Manage items via "inventory_changes" using "action": "add"|"remove".
-3. NO REPETITION: Do not repeat player actions in the narrative.
+3. CONTINUITY: Advance the scene based on the actors' intents. Do not repeat their exact words.
 
 ~~~json
 {
@@ -192,14 +192,14 @@ CRITICAL RULES:
 """
 
 HERO_SYSTEM_PROMPT = """\
-You are the Hero of this story. You are an autonomous protagonist.
-Your role is to decide your next action based on the current situation and the Companion's (user) input.
+You are an autonomous character acting as a companion in this story.
+Your ONLY role is to decide YOUR OWN next action based on the current situation.
 
-RULES:
-- Be proactive and heroic (or according to your persona).
-- Respond ONLY with your action in one or two sentences.
-- Do NOT roleplay as the Companion or the Narrator.
-- Speak in the first person if you are describing your intent, or third person for your action.
+CRITICAL RULES:
+1. You are NOT the narrator. DO NOT describe the environment, the outcome of your actions, or NPC reactions.
+2. DO NOT resolve or narrate the player's action. The narrator will handle the outcome.
+3. Respond ONLY with your intent (what you try to do or say) in 1-2 sentences.
+4. Speak in the first person ("I draw my sword", "I tell him to stop").
 """
 
 def build_hero_decision_prompt(
@@ -207,20 +207,50 @@ def build_hero_decision_prompt(
     hero_persona: str,
     hero_stats: str,
     history: list[LLMMessage],
-    user_message: str,
+    rag_chunks: list[str] | None = None,
+    spatial_context: dict | None = None,
+    current_intents: dict[str, str] | None = None,
 ) -> list[LLMMessage]:
     """Assemble the prompt for the Hero IA to decide its next action."""
-    user_content = (
-        f"HERO NAME: {hero_name}\n"
-        f"HERO PERSONA: {hero_persona}\n"
-        f"HERO STATS:\n{hero_stats}\n\n"
-        "DECIDE YOUR NEXT ACTION.\n"
-        f"COMPANION SAYS/DOES: {user_message}"
-    )
+    ctx_parts = [
+        f"HERO NAME: {hero_name}",
+        f"HERO PERSONA: {hero_persona}",
+        f"HERO STATS:\n{hero_stats}",
+    ]
     
-    # We include a few turns of history for context
+    if spatial_context:
+        sc_lines = [f"LOCATION: {spatial_context.get('breadcrumb', 'Unknown')}"]
+        desc = spatial_context.get("description")
+        if desc:
+            sc_lines.append(f"Description: {desc}")
+        neighbors = spatial_context.get("neighbors", [])
+        if neighbors:
+            sc_lines.append("Available connected routes:")
+            for n in neighbors:
+                sc_lines.append(f"- {n['name']} ({n['distance_km']} km)")
+        ctx_parts.append("\n".join(sc_lines))
+        
+    if rag_chunks:
+        rag_section = "\n".join(f"- {chunk}" for chunk in rag_chunks)
+        ctx_parts.append(f"RECENT MEMORIES:\n{rag_section}")
+
+    # Format narrative history as text to avoid role confusion
+    if history:
+        history_text = []
+        for msg in history[-4:]:
+            role_name = "Narrator" if msg["role"] == "assistant" else "Player"
+            history_text.append(f"{role_name}: {msg['content']}")
+        ctx_parts.append("RECENT NARRATIVE HISTORY:\n" + "\n".join(history_text))
+
+    if current_intents:
+        intents_str = "\n".join(f"[{a_id}] INTENT: {intent}" for a_id, intent in current_intents.items())
+        ctx_parts.append(f"CURRENT SIMULTANEOUS ACTIONS BY OTHERS:\n{intents_str}\n\nTake these into account for your own action.")
+
+    ctx_parts.append("DECIDE YOUR NEXT ACTION. Remember: DO NOT act as the narrator. Describe ONLY what you do.")
+
+    user_content = "\n\n".join(ctx_parts)
+    
     messages = [{"role": "system", "content": HERO_SYSTEM_PROMPT}]
-    messages.extend(history[-4:]) # Last 2 turns
     messages.append({"role": "user", "content": user_content})
     return messages
 
@@ -557,17 +587,17 @@ def build_narrative_prompt(
     entity_stats_block: str,
     rag_chunks: list[str],
     history: list[LLMMessage],
-    user_message: str,
+    intents: dict[str, str],
     pending_correction: str | None = None,
     global_lore: str | None = None,
     player_persona: str | None = None,
     lore_book: list[dict] | None = None,
     verbosity_level: str = "balanced",
-    player_id: str = "player",
     current_time_str: str | None = None,
     scheduled_events: list[dict] | None = None,
     spatial_context: dict | None = None,
-    hero_action: str | None = None,
+    mode: str = "Normal",
+    hero_entity_id: str | None = None,
 ) -> list[LLMMessage]:
     """Assemble the full message list for a narrative gameplay turn.
 
@@ -577,26 +607,25 @@ def build_narrative_prompt(
                    instructions + verbosity rules
       2. user/assistant pairs — capped prior history (newest HISTORY_TURN_CAP turns)
       3. system  — pending correction (only if not None)
-      4. user    — the player's current input (with optional RAG context prepended)
-      5. hero    — optional hero's intended action (only if not None)
+      4. user    — the actors' intents for this tick (with optional RAG context prepended)
 
     Args:
         universe_system_prompt: The universe's foundational system prompt.
         entity_stats_block:     Formatted current entity stats string.
         rag_chunks:             Relevant narrative memory chunks for this turn.
         history:                Prior conversation as list[LLMMessage].
-        user_message:           The player's raw input for this turn.
+        intents:                Dict mapping actor entity_id to their intent text.
         pending_correction:     Hidden correction message for the Correction Loop.
         global_lore:            Optional global lore text from Universe_Meta.
         player_persona:         Optional player background text.
         lore_book:              Optional list of Lore_Book entry dicts; formatted
                                 as a category-grouped block under global_lore.
         verbosity_level:        'short', 'balanced', or 'talkative'.
-        player_id:              The ID of the player sending the message.
         current_time_str:       Optional formatted time string (e.g. Day 1, 08:00 (Morning)).
         scheduled_events:       Optional list of triggered world events to incorporate.
         spatial_context:        Optional dict with breadcrumb, description, and neighbors.
-        hero_action:            Optional intended action for the AI Hero.
+        mode:                   Game mode ('Normal', 'Hardcore', 'Companion').
+        hero_entity_id:         The entity ID of the Hero (if applicable).
 
     Returns:
         list[LLMMessage] ready to pass to any LLMBackend.complete().
@@ -607,15 +636,21 @@ def build_narrative_prompt(
     parts = [universe_system_prompt]
     
     # Consolidate core narrative rules
+    actor_ids = list(intents.keys()) if intents else ["player"]
+    actors_str = ", ".join(actor_ids)
+    player_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
+    
     rules = [
         "NARRATOR RULES:",
         "- Formatting: Use *actions* and \"dialogue\".",
-        f"- Identity: You are the narrator. Never speak or act for {player_id}.",
-        f"- Termination: Stop immediately before {player_id} would react."
+        f"- Identity: You are the world's narrator and you control the NPCs.",
+        f"- Protagonist: '{player_id}' is the Human Player. Always address them as 'You' and center the narrative around their actions.",
+        "- Storytelling: Weave ALL the actors' intents into a cohesive, engaging narrative scene. Describe them performing their intended actions together, then describe the outcome and how the NPCs react.",
+        f"- Agency Limits: You must describe {actors_str} executing their intents, but DO NOT invent NEW actions, decisions, or dialogue for them beyond what they specified.",
     ]
 
-    if hero_action:
-        rules.append("- PLOT ARMOR: The main Hero (controlled by IA) has narrative protection. Favor their success and survival.")
+    if mode == "Companion" and hero_entity_id:
+        rules.append(f"- Companion: '{hero_entity_id}' is the Player's AI Companion. They are a DISTINCT character. Because both actors may use the first person ('I') in their intents, you MUST translate the Player's intent to 'You' and the Companion's intent to their third-person name ('{hero_entity_id}'). DO NOT merge them into one person.")
     
     len_map = {
         "short": "CONCISE (2 sentences).",
@@ -676,23 +711,22 @@ def build_narrative_prompt(
         messages.append({"role": "system", "content": pending_correction})
 
     # 4. User message with optional RAG context
+    final_user_content = ""
     if rag_chunks:
         rag_section = "\n\n".join(f"[MEMORY]: {chunk}" for chunk in rag_chunks)
-        final_user_content = f"{rag_section}\n\n---\n\n{user_message}"
-    else:
-        final_user_content = user_message
+        final_user_content += f"{rag_section}\n\n---\n\n"
 
-    if hero_action:
-        final_user_content += f"\n\n[HERO INTENT]: {hero_action}"
+    intents_str = "\n".join(f"[{actor_id}] INTENT: {intent}" for actor_id, intent in intents.items())
+    final_user_content += f"[SIMULTANEOUS ACTIONS FOR THIS TICK]\n{intents_str}"
 
     messages.append({"role": "user", "content": final_user_content})
 
     # Phase 11: Final behavior instruction (Recency Bias)
     # This system message is appended AFTER the user message to force compliance.
     verbosity_map = {
-        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Do NOT speak for {player_id}. Do NOT output meta-text or system tags.",
-        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Do NOT speak for {player_id}. Do NOT output meta-text or system tags.",
-        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Do NOT speak for {player_id}. Do NOT output meta-text or system tags."
+        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.",
+        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.",
+        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave BOTH {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions."
     }
     final_instr = verbosity_map.get(verbosity_level.lower(), verbosity_map["balanced"])
     messages.append({"role": "system", "content": final_instr})

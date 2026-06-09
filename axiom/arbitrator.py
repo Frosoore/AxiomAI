@@ -122,35 +122,31 @@ class ArbitratorEngine:
         self,
         save_id: str,
         turn_id: int,
-        user_message: str,
+        intents: dict[str, str],
         universe_system_prompt: str,
         history: list[LLMMessage],
-        player_entity_id: str = "player",
         stream_token_callback: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
         verbosity_level: str = "balanced",
-        hero_action: str | None = None,
-        hero_entity_id: str | None = None,
         mode: str = "Normal",
+        hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
         """Execute one full ArbitratorEngine turn and return the result.
 
         Args:
             save_id:                 The active save identifier.
             turn_id:                 The current turn number (monotonically increasing).
-            user_message:            The player's raw input.
+            intents:                 Dict mapping actor entity_id to their intent text.
             universe_system_prompt:  The universe's foundational system prompt.
             history:                 Prior conversation turns for context.
-            player_entity_id:        The ID of the player sending the message.
             stream_token_callback:   Optional callable invoked with each streaming
                                      token as it arrives from the LLM.
             temperature:             Sampling temperature (0.0 to 1.0).
             top_p:                   Nucleus sampling parameter (0.0 to 1.0).
             verbosity_level:         'short', 'balanced', or 'talkative'.
-            hero_action:             Optional intended action for the AI Hero.
-            hero_entity_id:          Optional ID of the AI Hero entity.
             mode:                    Game mode ('Normal', 'Hardcore', 'Companion').
+            hero_entity_id:          Optional ID of the AI Hero entity.
 
         Returns:
             ArbitratorResult containing narrative text and all change outcomes.
@@ -160,21 +156,21 @@ class ArbitratorEngine:
         """
         self._mode = mode
         self._hero_entity_id = hero_entity_id
-        # Step 0 — Log user message event (immediate — not batched)
-        self._event_sourcer.append_event(
-            save_id, turn_id, "user_input", player_entity_id,
-            {"text": user_message}
-        )
-
-        # Collect remaining turn events; flushed in a single transaction at end
+        
+        # Determine the primary player ID for legacy events and UI fallback
+        player_entity_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
+        
+        # Step 0 — Log intents
         _pending_events: list[tuple] = []
-
-        # Companion Mode: Log hero intent
-        if hero_action:
+        for actor_id, intent_text in intents.items():
+            # For backward compatibility with existing tests, the primary player gets 'user_input'
+            event_type = "hero_intent" if actor_id == hero_entity_id else "user_input"
             self._event_sourcer.append_event(
-                save_id, turn_id, "hero_intent", hero_entity_id or "hero",
-                {"text": hero_action}
+                save_id, turn_id, event_type, actor_id,
+                {"text": intent_text}
             )
+
+        combined_intents_text = " ".join(intents.values()) if intents else ""
 
         # Step 1 — Fetch and overlay stats for all active entities
         all_stats = self._fetch_effective_stats(save_id)
@@ -191,7 +187,7 @@ class ArbitratorEngine:
         
         rag_results = self._vector_memory.query(
             save_id, 
-            user_message, 
+            combined_intents_text, 
             k=cfg.rag_chunk_count, 
             current_turn_id=turn_id,
             max_turn_id=max_turn_id
@@ -202,27 +198,47 @@ class ArbitratorEngine:
         # Only send stats for entities that are "active" in the current context
         # to save tokens and reduce LLM confusion.
         relevant_entity_ids = self._identify_relevant_entities(
-            save_id, user_message, history, rag_chunks, all_stats
+            save_id, combined_intents_text, history, rag_chunks, all_stats
         )
         logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
-        # Always include the player
-        relevant_entity_ids.add("player") 
+        
+        # Always include the actors that submitted intents
+        for actor_id in intents.keys():
+            relevant_entity_ids.add(actor_id)
+        if not intents:
+            relevant_entity_ids.add("player")
         
         filtered_stats = {
             eid: stats for eid, stats in all_stats.items() 
             if eid in relevant_entity_ids
         }
 
+        # Fetch entity names and types
+        from axiom.db_helpers import get_connection
+        with get_connection(self._db_path) as conn:
+            name_rows = conn.execute("SELECT entity_id, name, entity_type FROM Entities").fetchall()
+            id_to_name = {r["entity_id"]: r["name"] for r in name_rows}
+            id_to_type = {r["entity_id"]: r["entity_type"] for r in name_rows}
+            # The player's ID is often "player", but might have a real name.
+            # If not explicitly named, default to "Player" to give it a proper noun.
+            if "player" not in id_to_name:
+                id_to_name["player"] = "Player"
+
         # Step 4 — Build prompt (with pending correction)
         entity_block = format_entity_stats_block(
             [
-                {"entity_id": eid, "name": eid, "entity_type": "unknown", "stats": stats}
+                {
+                    "entity_id": eid, 
+                    "name": id_to_name.get(eid, eid), 
+                    "entity_type": id_to_type.get(eid, "unknown"), 
+                    "stats": stats
+                }
                 for eid, stats in filtered_stats.items()
             ]
         )
         
         # Fetch actual Lore Book entries if available (subset matching the query)
-        lore_book_subset = self._fetch_relevant_lore(save_id, user_message)
+        lore_book_subset = self._fetch_relevant_lore(save_id, combined_intents_text)
 
         # Get current time context
         total_mins = get_current_time(self._db_path, save_id)
@@ -238,20 +254,24 @@ class ArbitratorEngine:
         # Phase 12.1: Fetch triggered scheduled events
         triggered_events = self._fetch_triggered_events(save_id, total_mins)
 
+        # Map intents to names
+        named_intents = {id_to_name.get(eid, eid): intent for eid, intent in (intents or {}).items()}
+        hero_name_str = id_to_name.get(hero_entity_id, hero_entity_id) if hero_entity_id else None
+
         messages = build_narrative_prompt(
             universe_system_prompt=universe_system_prompt,
             entity_stats_block=entity_block,
             rag_chunks=rag_chunks,
             history=history,
-            user_message=user_message,
+            intents=named_intents,
             pending_correction=self._pending_correction,
             lore_book=lore_book_subset,
             verbosity_level=verbosity_level,
-            player_id=player_entity_id,
             current_time_str=time_ctx,
             scheduled_events=triggered_events,
             spatial_context=spatial_ctx,
-            hero_action=hero_action,
+            mode=self._mode,
+            hero_entity_id=hero_name_str,
         )
 
         # Step 4 — Clear pending correction immediately after prompt is built
@@ -259,7 +279,9 @@ class ArbitratorEngine:
 
         # Step 5 — Call LLM (streaming or non-streaming based on callback)
         # Phase 11: Dynamic stop sequences to prevent impersonation
-        stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>", f"\n{player_entity_id}:", f"\n[{player_entity_id}]"]
+        stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>"]
+        for actor_id in intents.keys():
+            stops.extend([f"\n{actor_id}:", f"\n[{actor_id}]"])
         
         # Mapping verbosity to max_tokens to prevent runaway generation
         verbosity_to_tokens = {
@@ -298,7 +320,7 @@ class ArbitratorEngine:
         elapsed_minutes: int | None = None
         if cfg.timekeeper_enabled:
             from axiom.prompts import build_timekeeper_prompt
-            prompt = build_timekeeper_prompt(user_message, narrative_text)
+            prompt = build_timekeeper_prompt(combined_intents_text, narrative_text)
             try:
                 time_llm = getattr(self, "_time_llm", self._llm)
                 tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
@@ -483,9 +505,9 @@ class ArbitratorEngine:
             self._vector_memory.embed_chunk(save_id, turn_id, narrative_text)
 
         # Step 11 — Log narrative event (Multiverse-compatible)
-        text_to_log = user_message if not narrative_text.strip() else narrative_text
+        text_to_log = combined_intents_text if not narrative_text.strip() else narrative_text
         _pending_events.append((
-            save_id, turn_id, "narrative_text", "player",
+            save_id, turn_id, "narrative_text", "system",
             {"active": 0, "variants": [text_to_log]},
         ))
 

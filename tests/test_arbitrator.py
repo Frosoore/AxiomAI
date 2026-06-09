@@ -170,7 +170,7 @@ class TestProcessTurnValidChange:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "I attack", "Universe prompt", [])
+        result = arb.process_turn("s1", 1, {"player": "I attack"}, "Universe prompt", [])
         assert len(result.applied_changes) == 1
         assert result.applied_changes[0]["stat_key"] == "HP"
 
@@ -184,7 +184,7 @@ class TestProcessTurnValidChange:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        arb.process_turn("s1", 1, "buy item", "sys", [])
+        arb.process_turn("s1", 1, {"player": "buy item"}, "sys", [])
 
         es = EventSourcer(db_path)
         events = es.get_events("s1")
@@ -202,7 +202,7 @@ class TestProcessTurnValidChange:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "wait", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "wait"}, "sys", [])
         assert result.narrative_text == "Nothing happens."
 
     def test_stat_set_value_change_applied(self, db_path, vm) -> None:
@@ -215,7 +215,7 @@ class TestProcessTurnValidChange:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "earn title", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "earn title"}, "sys", [])
         assert len(result.applied_changes) == 1
 
 
@@ -236,7 +236,7 @@ class TestCorrectionLoop:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "buy castle", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "buy castle"}, "sys", [])
         assert len(result.rejected_changes) == 1
         assert "reason" in result.rejected_changes[0]
         assert "Gold" in result.rejected_changes[0]["reason"]
@@ -251,7 +251,7 @@ class TestCorrectionLoop:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        arb.process_turn("s1", 1, "steal", "sys", [])
+        arb.process_turn("s1", 1, {"player": "steal"}, "sys", [])
 
         es = EventSourcer(db_path)
         events = es.get_events("s1")
@@ -273,7 +273,7 @@ class TestCorrectionLoop:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        arb.process_turn("s1", 1, "bad", "sys", [])
+        arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
         assert arb._pending_correction is not None
         assert "[NARRATOR HINT:" in arb._pending_correction
 
@@ -298,12 +298,12 @@ class TestCorrectionLoop:
         arb = ArbitratorEngine(db_path, [])
         arb.configure(llm1, vm)
 
-        arb.process_turn("s1", 1, "bad", "sys", [])
+        arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
         assert arb._pending_correction is not None
 
         # Turn 2: switch LLM stub and check correction injected
         arb._llm = llm2
-        arb.process_turn("s1", 2, "continue", "sys", [])
+        arb.process_turn("s1", 2, {"player": "continue"}, "sys", [])
 
         # Correction must appear in the messages sent to turn-2 LLM
         messages = llm2.last_messages
@@ -323,10 +323,10 @@ class TestCorrectionLoop:
         response2 = LLMResponse(narrative_text="ok", tool_call=None, finish_reason="stop")
 
         arb, _ = _make_arbitrator(db_path, vm, response1)
-        arb.process_turn("s1", 1, "bad", "sys", [])
+        arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
 
         arb._llm = _StubLLM(response2)
-        arb.process_turn("s1", 2, "continue", "sys", [])
+        arb.process_turn("s1", 2, {"player": "continue"}, "sys", [])
 
         assert arb._pending_correction is None
 
@@ -340,7 +340,7 @@ class TestCorrectionLoop:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "hmm", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "hmm"}, "sys", [])
         assert len(result.rejected_changes) == 1
         assert "Unknown entity" in result.rejected_changes[0]["reason"]
 
@@ -374,7 +374,7 @@ class TestRulesTrigger:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response, rules=[rule])
-        result = arb.process_turn("s1", 1, "fight", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "fight"}, "sys", [])
 
         assert len(result.triggered_rules) == 1
         assert result.triggered_rules[0]["type"] == "stat_set"
@@ -400,7 +400,7 @@ class TestRulesTrigger:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response, rules=[rule])
-        arb.process_turn("s1", 1, "die", "sys", [])
+        arb.process_turn("s1", 1, {"player": "die"}, "sys", [])
 
         es = EventSourcer(db_path)
         events = es.get_events("s1")
@@ -421,7 +421,7 @@ class TestVectorMemoryIntegration:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        arb.process_turn("s1", 1, "explore", "sys", [])
+        arb.process_turn("s1", 1, {"player": "explore"}, "sys", [])
 
         results = vm.query("s1", "ruins ancient", k=5)
         assert any("ruins" in r["text"] for r in results)
@@ -434,7 +434,7 @@ class TestVectorMemoryIntegration:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
-        arb.process_turn("s1", 5, "action", "sys", [])
+        arb.process_turn("s1", 5, {"player": "action"}, "sys", [])
 
         results = vm.query("s1", "narrative content", k=1)
         assert results[0]["turn_id"] == 5
@@ -482,7 +482,7 @@ class TestStreamingCallback:
         arb.configure(llm, vm)
         received: list[str] = []
         arb.process_turn(
-            "s1", 1, "test", "sys", [],
+            "s1", 1, {"player": "test"}, "sys", [],
             stream_token_callback=received.append,
         )
         # Every character of "Stream test." must have been received
@@ -498,7 +498,7 @@ class TestStreamingCallback:
         )
         # Non-streaming result
         arb_ns, _ = _make_arbitrator(db_path, vm, response)
-        result_ns = arb_ns.process_turn("s1", 1, "go", "sys", [])
+        result_ns = arb_ns.process_turn("s1", 1, {"player": "go"}, "sys", [])
 
         # Streaming result (different db needed to avoid turn collision)
         import tempfile
@@ -534,7 +534,7 @@ class TestStreamingCallback:
         arb_s.configure(llm_s, vm2)
         tokens: list[str] = []
         result_s = arb_s.process_turn(
-            "s1", 1, "go", "sys", [],
+            "s1", 1, {"player": "go"}, "sys", [],
             stream_token_callback=tokens.append,
         )
         assert result_s.narrative_text == result_ns.narrative_text
@@ -543,7 +543,7 @@ class TestStreamingCallback:
         """Passing no callback must call llm.complete(), not stream_tokens."""
         response = LLMResponse("Classic path.", None, "stop")
         arb, llm = _make_arbitrator(db_path, vm, response)
-        result = arb.process_turn("s1", 1, "action", "sys", [])
+        result = arb.process_turn("s1", 1, {"player": "action"}, "sys", [])
         # complete() was called (stream_tokens would have raised on _StubLLM)
         assert result.narrative_text == "Classic path."
 
@@ -579,7 +579,7 @@ class TestDynamicStopSequences:
         time_llm = _StubLLM(LLMResponse('{"elapsed_minutes": 5}', None, "stop"))
         arb.configure(llm, vm, time_llm=time_llm)
 
-        arb.process_turn("s1", 1, "hello", "sys", [], player_entity_id="player1")
+        arb.process_turn("s1", 1, {"player1": "hello"}, "sys", [])
         
         # Verify the dynamic stop sequences contains the player entity
         assert llm.passed_stops is not None
@@ -618,7 +618,7 @@ class TestCompanionMode:
         
         # In Companion mode, this should be ALLOWED (valid=True) due to Plot Armor
         result = arb.process_turn(
-            "s1", 1, "watch", "sys", [], 
+            "s1", 1, {"player": "watch"}, "sys", [], 
             mode="Companion", 
             hero_entity_id="hero1"
         )
@@ -633,8 +633,7 @@ class TestCompanionMode:
         arb, llm = _make_arbitrator(db_path, vm, response)
 
         arb.process_turn(
-            "s1", 1, "companion action", "sys", [], 
-            hero_action="Hero charges forward!",
+            "s1", 1, {"player": "companion action", "hero1": "Hero charges forward!"}, "sys", [], 
             mode="Companion",
             hero_entity_id="hero1"
         )
@@ -642,7 +641,7 @@ class TestCompanionMode:
         # 1. Check messages sent to LLM
         found = False
         for msg in llm.last_messages:
-            if "[HERO INTENT]: Hero charges forward!" in msg["content"]:
+            if "[hero1] INTENT: Hero charges forward!" in msg["content"]:
                 found = True
         assert found
 
@@ -673,7 +672,7 @@ class TestCausalTime:
         arb.configure(narrative_llm, vm, time_llm=time_llm)
 
         with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=True)):
-            result = arb.process_turn("s1", 1, "I wait.", "sys", [], player_entity_id="player1")
+            result = arb.process_turn("s1", 1, {"player1": "I wait."}, "sys", [])
 
         assert result.elapsed_minutes == 45
         with sqlite3.connect(db_path) as conn:
@@ -708,7 +707,7 @@ class TestCausalTime:
         arb.configure(narrative_llm, vm, time_llm=time_llm)
 
         with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=False)):
-            result = arb.process_turn("s1", 1, "I strike!", "sys", [], player_entity_id="player1")
+            result = arb.process_turn("s1", 1, {"player1": "I strike!"}, "sys", [])
 
         assert time_llm.calls == 0          # Timekeeper never consulted
         assert result.elapsed_minutes == 2  # combat pace default
@@ -738,7 +737,7 @@ class TestCausalTime:
         arb.configure(narrative_llm, vm, time_llm=time_llm)
 
         with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=True)):
-            arb.process_turn("s1", 1, "Go to City B.", "sys", [], player_entity_id="player1")
+            arb.process_turn("s1", 1, {"player1": "Go to City B."}, "sys", [])
 
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(

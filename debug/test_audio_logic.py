@@ -12,6 +12,12 @@ from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
 from axiom.backends.base import LLMResponse
 
 class TestAudioLogic(unittest.TestCase):
+    def setUp(self):
+        tags = ['exploration', 'combat', 'tavern', 'dungeon']
+        for tag in tags:
+            path = Path("assets") / "audio" / tag
+            path.mkdir(parents=True, exist_ok=True)
+
     def test_arbitrator_result_tag_parsing(self):
         # Verify that ArbitratorResult stores the tag
         res = ArbitratorResult(

@@ -69,10 +69,9 @@ class ArbitratorWorker(QThread):
                 result = self._arbitrator.process_turn(
                     save_id=action.save_id,
                     turn_id=action.turn_id,
-                    user_message=action.text,
+                    intents={action.player_id: action.text},
                     universe_system_prompt=action.universe_system_prompt,
                     history=action.history,
-                    player_entity_id=action.player_id,
                     stream_token_callback=token_callback,
                     temperature=action.temperature,
                     top_p=action.top_p,
