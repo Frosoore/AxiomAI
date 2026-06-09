@@ -46,27 +46,27 @@ def _roles(messages: list[dict]) -> list[str]:
 class TestBuildNarrativePrompt:
     def test_first_message_is_system(self) -> None:
         """The narrative prompt always opens with a system message."""
-        result = build_narrative_prompt("SYS", "stats", [], [], "Hello")
+        result = build_narrative_prompt("SYS", "stats", [], [], {"player": "Hello"})
         assert result[0]["role"] == "system"
 
     def test_system_contains_universe_prompt(self) -> None:
         """The universe's system prompt is embedded in the system message."""
-        result = build_narrative_prompt("MY_UNIVERSE_PROMPT", "stats", [], [], "hi")
+        result = build_narrative_prompt("MY_UNIVERSE_PROMPT", "stats", [], [], {"player": "hi"})
         assert "MY_UNIVERSE_PROMPT" in result[0]["content"]
 
     def test_system_contains_entity_stats(self) -> None:
         """The entity stats block is embedded in the system message."""
-        result = build_narrative_prompt("sys", "ENTITY_STATS_HERE", [], [], "hi")
+        result = build_narrative_prompt("sys", "ENTITY_STATS_HERE", [], [], {"player": "hi"})
         assert "ENTITY_STATS_HERE" in result[0]["content"]
 
     def test_system_contains_tool_call_schema(self) -> None:
         """The system message documents the ~~~json tool-call schema."""
-        result = build_narrative_prompt("sys", "stats", [], [], "hi")
+        result = build_narrative_prompt("sys", "stats", [], [], {"player": "hi"})
         assert "~~~json" in result[0]["content"]
 
     def test_last_message_is_user(self) -> None:
         """The player's input is carried in the user message near the end."""
-        result = build_narrative_prompt("sys", "stats", [], [], "Player input")
+        result = build_narrative_prompt("sys", "stats", [], [], {"player": "Player input"})
         assert result[-2]["role"] == "user"
         assert "Player input" in result[-2]["content"]
 
@@ -74,7 +74,7 @@ class TestBuildNarrativePrompt:
         """Prior turns sit between the opening system message and the final
         user/system messages."""
         history = _make_history(2)
-        result = build_narrative_prompt("sys", "stats", [], history, "current")
+        result = build_narrative_prompt("sys", "stats", [], history, {"player": "current"})
         roles = _roles(result)
         # system first, user last, and both user/assistant in between
         assert roles[0] == "system"
@@ -86,7 +86,7 @@ class TestBuildNarrativePrompt:
     def test_history_capped_at_history_turn_cap(self) -> None:
         """History is truncated to at most HISTORY_TURN_CAP turns."""
         history = _make_history(HISTORY_TURN_CAP + 10)
-        result = build_narrative_prompt("sys", "stats", [], history, "now")
+        result = build_narrative_prompt("sys", "stats", [], history, {"player": "now"})
         # Count user+assistant messages (exclude first system and last user)
         middle = result[1:-2]
         history_messages = [m for m in middle if m["role"] != "system"]
@@ -97,7 +97,7 @@ class TestBuildNarrativePrompt:
         """With more than cap turns, exactly cap turns should remain."""
         extra = 5
         history = _make_history(HISTORY_TURN_CAP + extra)
-        result = build_narrative_prompt("sys", "stats", [], history, "now")
+        result = build_narrative_prompt("sys", "stats", [], history, {"player": "now"})
         middle = result[1:-2]
         history_messages = [m for m in middle if m["role"] != "system"]
         assert len(history_messages) == 2 * HISTORY_TURN_CAP
@@ -106,7 +106,7 @@ class TestBuildNarrativePrompt:
         """A pending correction is inserted as a system message just before the
         final user message."""
         correction = "CORRECTION: you failed."
-        result = build_narrative_prompt("sys", "stats", [], [], "hi", correction)
+        result = build_narrative_prompt("sys", "stats", [], [], {"player": "hi"}, correction)
         # The second-to-last message should be a system message with the correction
         assert result[-3]["role"] == "system"
         assert correction in result[-3]["content"]
@@ -114,7 +114,7 @@ class TestBuildNarrativePrompt:
 
     def test_no_pending_correction_when_none(self) -> None:
         """With no correction, no extra correction system message is added."""
-        result = build_narrative_prompt("sys", "stats", [], [], "hi", None)
+        result = build_narrative_prompt("sys", "stats", [], [], {"player": "hi"}, None)
         roles = _roles(result)
         # Only one system message (the first) — no correction
         assert roles.count("system") == 2
@@ -123,7 +123,7 @@ class TestBuildNarrativePrompt:
         """Retrieved memory chunks are folded into the user message alongside
         the player's input."""
         chunks = ["Memory A", "Memory B"]
-        result = build_narrative_prompt("sys", "stats", chunks, [], "What happened?")
+        result = build_narrative_prompt("sys", "stats", chunks, [], {"player": "What happened?"})
         user_content = result[-2]["content"]
         assert "Memory A" in user_content
         assert "Memory B" in user_content
@@ -132,14 +132,15 @@ class TestBuildNarrativePrompt:
     def test_rag_chunks_appear_before_user_message(self) -> None:
         """RAG context precedes the player's input within the user message."""
         chunks = ["Memory chunk"]
-        result = build_narrative_prompt("sys", "stats", chunks, [], "Input")
+        result = build_narrative_prompt("sys", "stats", chunks, [], {"player": "Input"})
         content = result[-2]["content"]
         assert content.index("Memory chunk") < content.index("Input")
 
     def test_no_rag_chunks_user_message_unchanged(self) -> None:
-        """Without RAG chunks, the user message is exactly the player's input."""
-        result = build_narrative_prompt("sys", "stats", [], [], "Just this.")
-        assert result[-2]["content"] == "Just this."
+        """Without RAG chunks, the user message contains the formatted intents."""
+        result = build_narrative_prompt("sys", "stats", [], [], {"player": "Just this."})
+        assert "[SIMULTANEOUS ACTIONS FOR THIS TICK]" in result[-2]["content"]
+        assert "[player] INTENT: Just this." in result[-2]["content"]
 
     def test_history_system_messages_dropped(self) -> None:
         """System messages in history should not be replayed."""
@@ -148,7 +149,7 @@ class TestBuildNarrativePrompt:
             {"role": "user", "content": "old user"},
             {"role": "assistant", "content": "old assistant"},
         ]
-        result = build_narrative_prompt("sys", "stats", [], history, "now")
+        result = build_narrative_prompt("sys", "stats", [], history, {"player": "now"})
         # The "Old system" content should not appear in middle turns
         middle_contents = [m["content"] for m in result[1:-1] if m["role"] != "system"]
         assert not any("Old system" in c for c in middle_contents)

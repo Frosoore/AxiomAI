@@ -558,3 +558,4 @@ class DbWorker(QObject):
                 return True
         task = TempTask(self._db_path, "")
         task.signals.result.connect(lambda _: self.save_complete.emit())
+        self._setup_task(task)

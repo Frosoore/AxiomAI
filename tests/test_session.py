@@ -24,6 +24,8 @@ class _DummyLLM:
 
 class _DummyVectorMemory:
     """Mémoire vectorielle factice (évite de charger chromadb)."""
+    def query(self, *args, **kwargs):
+        return []
 
 
 @pytest.fixture
@@ -246,12 +248,11 @@ def test_get_hero_decision_uses_injected_llm_and_strips(universe_db):
     sess = _companion_session(db, save_id, hero_llm=hero_llm)
     hero_ent = sess._find_hero_entity("kael")
 
-    decision = sess._get_hero_decision(hero_ent, [], "Attack the dragon")
+    decision = sess._get_hero_decision(hero_ent, [], {})
     assert decision == "Hero draws sword."
-    # Le prompt contient bien le contexte du héros et le message du joueur.
+    # Le prompt contient bien le contexte du héros.
     blob = " ".join(m["content"] for m in hero_llm.last_prompt)
     assert "Kael" in blob and "A bold knight" in blob
-    assert "Attack the dragon" in blob
 
 
 def test_find_hero_entity_none_when_no_entities(universe_db):

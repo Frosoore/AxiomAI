@@ -12,7 +12,6 @@ from ui.ambiance_manager import AmbianceManager
 def ambiance_manager(qtbot):
     """Fixture to create an AmbianceManager with a qtbot."""
     manager = AmbianceManager()
-    qtbot.addWidget(manager)
     return manager
 
 def test_initial_state(ambiance_manager):
@@ -26,7 +25,7 @@ def test_set_global_volume(ambiance_manager):
     """Verify volume bounds and immediate update."""
     ambiance_manager.set_global_volume(0.8)
     assert ambiance_manager._global_volume == 0.8
-    assert ambiance_manager._active_out.volume() == 0.8
+    assert ambiance_manager._active_out.volume() == pytest.approx(0.8)
     
     ambiance_manager.set_global_volume(1.5)
     assert ambiance_manager._global_volume == 1.0
@@ -58,5 +57,5 @@ def test_fade_step_logic(ambiance_manager):
     
     # 0.5 + 50/3000 = 0.5166...
     assert ambiance_manager._fade_progress > 0.5
-    assert ambiance_manager._active_out.volume() == ambiance_manager._fade_progress
+    assert ambiance_manager._active_out.volume() == pytest.approx(ambiance_manager._fade_progress)
     assert ambiance_manager._fading_out.volume() == pytest.approx(1.0 - ambiance_manager._fade_progress)

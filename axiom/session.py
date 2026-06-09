@@ -112,6 +112,7 @@ class Session:
         self._events = EventSourcer(self._db_path)
         self._checkpoints = CheckpointManager(self._db_path)
         self._turn_id = get_max_turn_id(self._db_path, save_id)
+        self._intent_pool: dict[str, str] = {}
 
     @staticmethod
     def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
@@ -138,70 +139,45 @@ class Session:
         """Numéro du dernier tour joué (0 si la partie n'a pas commencé)."""
         return self._turn_id
 
-    def take_turn(
+    def submit_intent(self, entity_id: str, intent_text: str) -> None:
+        """Soumet une intention d'action au Pool pour le tour courant."""
+        self._intent_pool[entity_id] = intent_text
+
+    def resolve_tick(
         self,
-        player_input: str,
         *,
-        player_id: str = "player",
         on_token: Callable[[str], None] | None = None,
         on_status: Callable[[str], None] | None = None,
-        on_hero_decision: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
         verbosity_level: str = "balanced",
-        hero_action: str | None = None,
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
-        """Exécute un tour complet (synchrone) et retourne le résultat.
-
-        L'historique est reconstruit depuis l'Event_Log à chaque tour. Les
-        tokens narratifs sont streamés via `on_token` au fur et à mesure.
-
-        Hooks de progression headless (remplacent les signaux Qt du worker) :
-            on_status:        message court d'étape (≈ `status_update`).
-            on_hero_decision: action décidée par le héros (≈ `hero_decision_received`).
-
-        En mode Companion, si `hero_action` n'est pas fourni, la décision du
-        héros est calculée ici (parité avec `NarrativeWorker`) ; passer un
-        `hero_action` explicite court-circuite ce calcul.
-        """
+        """Résout toutes les intentions actuellement dans le Pool en un seul Tick."""
         self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
         history = self._load_history()
-
-        # --- Décision du héros (mode Companion) — parité NarrativeWorker ---
-        if self._mode == "Companion" and hero_action is None:
-            _emit(on_status, "Consulting Hero IA…")
-            hero_id = self._get_hero_id_from_metadata()
-            hero_ent = self._find_hero_entity(hero_id)
-            if hero_ent:
-                hero_entity_id = hero_ent["entity_id"]
-                hero_action = self._get_hero_decision(hero_ent, history, player_input)
-                _emit(on_hero_decision, hero_action)
-                _emit(on_status, f"Hero decides: {hero_action[:30]}…")
-
+        
         self._turn_id += 1
+        
+        # Capture the current pool and clear it for the next turn
+        intents = dict(self._intent_pool)
+        self._intent_pool.clear()
+
         result = self._arbitrator.process_turn(
             save_id=self._save_id,
             turn_id=self._turn_id,
-            user_message=player_input,
+            intents=intents,
             universe_system_prompt=self._system_prompt,
             history=history,
-            player_entity_id=player_id,
             stream_token_callback=on_token,
             temperature=temperature,
             top_p=top_p,
             verbosity_level=verbosity_level,
-            hero_action=hero_action,
-            hero_entity_id=hero_entity_id,
             mode=self._mode,
+            hero_entity_id=hero_entity_id,
         )
-        # Trigger the Chronicler when the in-game clock crosses a configured
-        # minute interval. process_turn already advanced the world clock by
-        # result.elapsed_minutes, so the time *before* this turn is
-        # current_time - elapsed. A single long time-skip therefore fires exactly
-        # one off-screen simulation, and many short turns accumulate until they
-        # cross a boundary (Pilier 5 / TICKET-018).
+        
         from axiom.db_helpers import get_current_time
         from axiom.config import load_config
         from axiom.chronicler import ChroniclerEngine
@@ -221,6 +197,49 @@ class Session:
 
         _emit(on_status, "Ready.")
         return result
+
+    def take_turn(
+        self,
+        player_input: str,
+        *,
+        player_id: str = "player",
+        on_token: Callable[[str], None] | None = None,
+        on_status: Callable[[str], None] | None = None,
+        on_hero_decision: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        verbosity_level: str = "balanced",
+        hero_action: str | None = None,
+        hero_entity_id: str | None = None,
+    ) -> ArbitratorResult:
+        """Exécute un tour complet (synchrone) et retourne le résultat.
+        Wraps `submit_intent` and `resolve_tick` for backward compatibility.
+        """
+        self._intent_pool.clear()
+        self.submit_intent(player_id, player_input)
+
+        if self._mode == "Companion" and hero_action is None:
+            _emit(on_status, "Consulting Hero IA…")
+            hero_id = self._get_hero_id_from_metadata()
+            hero_ent = self._find_hero_entity(hero_id)
+            if hero_ent:
+                hero_entity_id = hero_ent["entity_id"]
+                history = self._load_history()
+                hero_action = self._get_hero_decision(hero_ent, history, self._intent_pool)
+                _emit(on_hero_decision, hero_action)
+                _emit(on_status, f"Hero decides: {hero_action[:30]}…")
+                self.submit_intent(hero_entity_id, hero_action)
+        elif hero_action and hero_entity_id:
+            self.submit_intent(hero_entity_id, hero_action)
+
+        return self.resolve_tick(
+            on_token=on_token,
+            on_status=on_status,
+            temperature=temperature,
+            top_p=top_p,
+            verbosity_level=verbosity_level,
+            hero_entity_id=hero_entity_id,
+        )
 
     def rewind(self, target_turn_id: int) -> dict[str, int]:
         """Ramène la sauvegarde à son état au tour `target_turn_id`.
@@ -269,7 +288,7 @@ class Session:
         Fusionne les messages consécutifs du même rôle pour ne pas casser le format LLM.
         """
         history: list[LLMMessage] = []
-        for ev in self._events.get_events(self._save_id):
+        for ev in self._events.get_events(self._save_id, start_turn_id=-1):
             event_type = ev["event_type"]
             payload = ev["payload"]
             
@@ -342,7 +361,7 @@ class Session:
         return None
 
     def _get_hero_decision(
-        self, hero_ent: dict, history: list[LLMMessage], user_message: str
+        self, hero_ent: dict, history: list[LLMMessage], current_intents: dict[str, str]
     ) -> str:
         """Appelle le LLM héros pour décider de son action (modèle local par défaut)."""
         from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
@@ -355,12 +374,27 @@ class Session:
             hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
 
         hero_stats = format_entity_stats_block([hero_ent])
+        
+        # Enrichissement contextuel pour le héros (RAG + Spatial)
+        player_loc_id = self.current_stats().get("player", {}).get("Location")
+        spatial_ctx = None
+        if player_loc_id:
+            from axiom.db_helpers import get_spatial_context
+            spatial_ctx = get_spatial_context(self._db_path, player_loc_id)
+            
+        rag_chunks = []
+        if self._vector_memory:
+            rag_res = self._vector_memory.query(self._save_id, hero_ent.get("name", "Hero"), k=2)
+            rag_chunks = [r["text"] for r in rag_res if r.get("metadata", {}).get("type") != "lore"]
+
         prompt = build_hero_decision_prompt(
             hero_name=hero_ent.get("name", "Hero"),
             hero_persona=hero_ent.get("description", ""),
             hero_stats=hero_stats,
             history=history,
-            user_message=user_message,
+            rag_chunks=rag_chunks,
+            spatial_context=spatial_ctx,
+            current_intents=current_intents,
         )
-        resp = hero_llm.complete(prompt, max_tokens=100)
+        resp = hero_llm.complete(prompt, max_tokens=300)
         return resp.narrative_text.strip()
