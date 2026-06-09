@@ -206,7 +206,8 @@ class ChatDisplayWidget(QWidget):
         fmt.setForeground(QColor("#4FC1FF"))
         fmt.setFontWeight(QFont.Weight.Bold)
         
-        cursor.insertText(f"{text}\n\n", fmt)
+        prefix = "" if cursor.position() == 0 else "\n\n"
+        cursor.insertText(f"{prefix}{text}\n\n", fmt)
         self._reset_states()
 
     def append_hero_intent(self, text: str):

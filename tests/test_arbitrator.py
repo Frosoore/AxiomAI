@@ -122,7 +122,12 @@ def _make_arbitrator(
 ) -> tuple[ArbitratorEngine, _StubLLM]:
     llm = _StubLLM(llm_response)
     arb = ArbitratorEngine(db_path, rules or [])
-    arb.configure(llm, vm)
+    # Give the Timekeeper its own backend so its second LLM call does not clobber
+    # assertions made against the main narrative stub (e.g. last_messages). This
+    # also mirrors the real architecture, where the time model is a separate
+    # backend from the narration model (Pilier 5 / TICKET-016).
+    time_llm = _StubLLM(LLMResponse('{"elapsed_minutes": 5}', None, "stop"))
+    arb.configure(llm, vm, time_llm=time_llm)
     return arb, llm
 
 # ---------------------------------------------------------------------------
@@ -563,14 +568,17 @@ class TestDynamicStopSequences:
                 return super().complete(messages, stream)
 
         llm = _SpyLLM(response)
-        
+
         from axiom.events import EventSourcer
         from axiom.modifiers import ModifierProcessor
         from axiom.rules import RulesEngine
         from axiom.arbitrator import ArbitratorEngine
         arb = ArbitratorEngine(db_path, [])
-        arb.configure(llm, vm)
-        
+        # Separate Timekeeper backend so its second call (no stop_sequences) does
+        # not overwrite the stops captured from the narrative call (TICKET-016).
+        time_llm = _StubLLM(LLMResponse('{"elapsed_minutes": 5}', None, "stop"))
+        arb.configure(llm, vm, time_llm=time_llm)
+
         arb.process_turn("s1", 1, "hello", "sys", [], player_entity_id="player1")
         
         # Verify the dynamic stop sequences contains the player entity
@@ -648,4 +656,95 @@ class TestCompanionMode:
             assert row[0] == "hero_intent"
             assert row[1] == "hero1"
             assert json.loads(row[2])["text"] == "Hero charges forward!"
+
+
+# ---------------------------------------------------------------------------
+# process_turn — Causal time (Pilier 5)
+# ---------------------------------------------------------------------------
+
+class TestCausalTime:
+    def test_timekeeper_elapsed_minutes_drives_clock_and_timeline(self, db_path, vm) -> None:
+        """When the Timekeeper returns elapsed_minutes, the result and the single
+        Timeline row both advance the in-game clock by exactly that amount."""
+        from axiom.config import AppConfig
+        narrative_llm = _StubLLM(LLMResponse("You wait by the fire.", None, "stop"))
+        time_llm = _StubLLM(LLMResponse("", {"elapsed_minutes": 45}, "stop"))
+        arb = ArbitratorEngine(db_path, [])
+        arb.configure(narrative_llm, vm, time_llm=time_llm)
+
+        with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=True)):
+            result = arb.process_turn("s1", 1, "I wait.", "sys", [], player_entity_id="player1")
+
+        assert result.elapsed_minutes == 45
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT in_game_time, description FROM Timeline WHERE save_id='s1' AND turn_id=1;"
+            ).fetchall()
+        assert len(rows) == 1          # exactly one timeline row per turn
+        assert rows[0][0] == 45
+        assert "45" in rows[0][1]
+
+    def test_timekeeper_disabled_uses_scene_pace_and_skips_second_call(self, db_path, vm) -> None:
+        """With the Timekeeper disabled, no second LLM call is made and the
+        elapsed time falls back to the scene-pace default (combat -> 2 min)."""
+        from axiom.config import AppConfig
+
+        class _CountingLLM(_StubLLM):
+            def __init__(self, response):
+                super().__init__(response)
+                self.calls = 0
+
+            def complete(self, messages, stream=False, **kwargs):
+                self.calls += 1
+                return super().complete(messages, stream)
+
+        narrative_llm = _StubLLM(LLMResponse(
+            "Blades clash.",
+            {"state_changes": [], "scene_pace": "combat"},
+            "stop",
+        ))
+        time_llm = _CountingLLM(LLMResponse("", {"elapsed_minutes": 999}, "stop"))
+        arb = ArbitratorEngine(db_path, [])
+        arb.configure(narrative_llm, vm, time_llm=time_llm)
+
+        with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=False)):
+            result = arb.process_turn("s1", 1, "I strike!", "sys", [], player_entity_id="player1")
+
+        assert time_llm.calls == 0          # Timekeeper never consulted
+        assert result.elapsed_minutes == 2  # combat pace default
+        assert result.scene_pace == "combat"
+
+    def test_single_timeline_row_when_player_travels(self, db_path, vm) -> None:
+        """A turn where the player changes Location writes exactly one Timeline
+        row, annotated with the destination (no duplicate row — TICKET-019)."""
+        from axiom.config import AppConfig
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("INSERT INTO Stat_Definitions (stat_id, name, value_type) VALUES ('7','Location','categorical');")
+            conn.execute("INSERT INTO Locations (location_id, name, scale) VALUES ('town_a','Town A','city'), ('city_b','City B','city');")
+            conn.execute("INSERT INTO Location_Connections (source_id, target_id, distance_km) VALUES ('town_a','city_b',12);")
+            conn.commit()
+        es = EventSourcer(db_path)
+        es.append_event("s1", 0, "stat_set", "player1",
+                        {"entity_id": "player1", "stat_key": "Location", "value": "town_a"})
+        es.rebuild_state_cache("s1")
+
+        narrative_llm = _StubLLM(LLMResponse(
+            "You journey to City B.",
+            {"state_changes": [{"entity_id": "player1", "stat_key": "Location", "value": "city_b"}]},
+            "stop",
+        ))
+        time_llm = _StubLLM(LLMResponse("", {"elapsed_minutes": 60}, "stop"))
+        arb = ArbitratorEngine(db_path, [])
+        arb.configure(narrative_llm, vm, time_llm=time_llm)
+
+        with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=True)):
+            arb.process_turn("s1", 1, "Go to City B.", "sys", [], player_entity_id="player1")
+
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT in_game_time, description FROM Timeline WHERE save_id='s1' AND turn_id=1;"
+            ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == 60
+        assert "city_b" in rows[0][1].lower()
 

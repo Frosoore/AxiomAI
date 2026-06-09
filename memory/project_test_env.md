@@ -25,3 +25,9 @@ local (`extraction_model = llama3.1:8b`) cassaient en Gemini (cf. [[—]] TICKET
 - Univers de test dispo : `~/AxiomAI/universes/Myria.db` (le restaurer à 0 save/0 event après test).
 - Ne pas supposer qu'un modèle local est disponible ; préférer Gemini ou des stubs.
 - Le venv du projet est `.venv/` (le `python` système n'a pas les deps).
+- **Tests (2026-06-07) :** `pytest` est installé dans le `.venv`. Mais lancer la **suite complète**
+  (`pytest` sans cible) **segfault** : c'est le bug pré-existant TICKET-008 (torch `dlopen`
+  `libtriton.so` sur un QThread, sans le `preload_embedding_runtime()` de `main.py` qui n'existe pas
+  sous pytest). → **lancer par sous-ensembles de fichiers** (`pytest tests/test_arbitrator.py …`).
+  Les tests moteur non-Qt passent ainsi sans souci. Éviter de regrouper avec les tests
+  vectoriels/Qt (`test_vector_*`, `test_phase6`, `test_ambiance_*`).

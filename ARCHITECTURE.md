@@ -128,7 +128,6 @@ logique dans `axiom/`** (patron coquille ci-dessus) plutôt que d'en rajouter da
 | Création entité joueur                        | `workers/db_tasks.py` (`CreatePlayerEntityTask`) | `axiom/` |
 | Régénération de réponse                       | `workers/regenerate_worker.py`       | `axiom/` (méthode `Session`) |
 | Lookups de lore (MiniDico)                    | `workers/mini_dico_worker.py`        | `axiom/` |
-| Avancée du temps par LLM                      | `workers/timekeeper_worker.py`       | `axiom/` |
 | Déclenchement du Chronicler                   | `workers/chronicler_worker.py`       | `axiom/` (le moteur `axiom/chronicler.py` existe déjà) |
 | Tours multijoueurs (encore couplé Qt)         | `core/multiplayer_queue.py`          | `axiom/` |
 

@@ -202,6 +202,7 @@ class UpdateVariantTask(BaseDbTask):
                 "WHERE save_id = ? AND turn_id = ? AND event_type = 'narrative_text';",
                 (json.dumps(payload_data), self.save_id, self.turn_id)
             )
+            
             conn.commit()
         return new_text
 
@@ -228,6 +229,23 @@ class DeleteSaveTask(BaseDbTask):
             shutil.rmtree(str(vector_dir))
 
         self.signals.status.emit("Save deleted.")
+        return True
+
+
+class RenameSaveTask(BaseDbTask):
+    def __init__(self, db_path: str, save_id: str, new_name: str):
+        super().__init__(db_path)
+        self.save_id = save_id
+        self.new_name = new_name
+
+    def execute(self) -> bool:
+        self.signals.status.emit("Renaming save...")
+        with get_connection(self.db_path) as conn:
+            conn.execute(
+                "UPDATE Saves SET player_name = ? WHERE save_id = ?;",
+                (self.new_name, self.save_id)
+            )
+            conn.commit()
         return True
 
 

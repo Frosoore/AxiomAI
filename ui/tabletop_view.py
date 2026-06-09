@@ -311,7 +311,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._db_worker.rewind_complete.connect(self._on_rewind_done)
         
         self._db_worker.load_session_history(save_id)
-        self._db_worker.load_full_universe() # Fetch lore_book + entities
+        self._db_worker.load_full_universe(save_id) # Fetch lore_book + entities + etc
         
     def reload_llm(self) -> None:
         """Construct a fresh LLM instance from the latest settings.json."""
@@ -357,6 +357,7 @@ class TabletopView(HardcoreMixin, QWidget):
     @Slot(dict)
     def _on_meta_loaded(self, meta: dict) -> None:
         """Metadata fetch finished; store rules and prompts."""
+        self._universe_data = meta
         self._universe_system_prompt = meta.get("system_prompt", "")
         self._global_lore = meta.get("global_lore", "")
         self._first_message = meta.get("first_message", "")
@@ -450,8 +451,7 @@ class TabletopView(HardcoreMixin, QWidget):
             self.session_loaded.emit()
 
     def _show_initial_narrative(self) -> None:
-        """Display a random variant of the universe's first message."""
-        import random
+        """Display the first variant of the universe's first message."""
         import re
         
         # Handle variants separated by ---VARIANT--- (case-insensitive, optional spaces)
@@ -473,7 +473,7 @@ class TabletopView(HardcoreMixin, QWidget):
                     v = pattern.sub(val, v)
                 variants[i] = v
 
-        active_idx = random.randint(0, len(variants) - 1)
+        active_idx = 0
         chosen = variants[active_idx]
         
         payload = {
@@ -520,10 +520,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_id += 1
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
 
-        # Advance game time (base 15 min per action)
-        self._current_time += 15
-        self._time_label.setText(self._format_time(self._current_time))
-
         # 1. Build the engine Session for this turn (Pilier 1, Étape 7).
         # Session is the single turn machine: it owns the Arbitrator, rebuilds
         # history from the Event_Log, and decides the Companion hero action. It
@@ -567,15 +563,21 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(object)
     def _on_turn_complete(self, result: object) -> None:
-        """Post-turn cleanup: re-enable UI, refresh stats, check Chronicler."""
-        from workers.chronicler_worker import ChroniclerWorker
-        from axiom.chronicler import ChroniclerEngine
-        from axiom.events import EventSourcer
+        """Post-turn cleanup: re-enable UI, refresh stats, refresh the clock.
 
+        The Chronicler is now triggered inside the engine (Session.take_turn),
+        not here — this slot only reflects the turn's outcome in the UI.
+        """
         # Phase 8 Audit: Force-flush the typewriter buffer once turn logic finishes
         self._chat.flush_final_buffer()
 
         narrative_text = getattr(result, "narrative_text", "")
+
+        # Phase 11: Advance game time based on LLM decision (now handled in engine)
+        from axiom.db_helpers import get_current_time
+        self._current_time = get_current_time(self._db_path, self._save_id)
+        self._time_label.setText(self._format_time(self._current_time))
+
         payload = {
             "active": 0,
             "variants": [narrative_text]
@@ -603,28 +605,6 @@ class TabletopView(HardcoreMixin, QWidget):
 
         self._check_for_player_death(result)
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
-
-        # 2. Chronicler Phase (World Simulation)
-        cfg = load_config()
-        if (self._turn_id - self._main_window._last_chronicle_turn) >= cfg.chronicler_interval:
-            self._main_window._last_chronicle_turn = self._turn_id
-            
-            self._chronicler = ChroniclerEngine(
-                llm=self._llm,
-                event_sourcer=EventSourcer(self._db_path),
-                db_path=self._db_path,
-                trigger_interval=cfg.chronicler_interval,
-            )
-            self._chronicler_worker = ChroniclerWorker(
-                self._chronicler,
-                self._save_id,
-                self._turn_id,
-            )
-            self._chronicler_worker.error_occurred.connect(self._on_worker_error)
-            self._chronicler_worker.status_update.connect(
-                self._main_window.on_status_update
-            )
-            self._chronicler_worker.start()
 
         self._chat.set_send_enabled(True)
         

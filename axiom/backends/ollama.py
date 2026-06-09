@@ -102,7 +102,7 @@ class OllamaClient(LLMBackend):
             LLMParseError: On malformed response JSON or invalid tool-call block.
         """
         # Phase 11: Mandatory stop sequences to prevent impersonation
-        mandatory_stop = ["~~~", "</s>", "<|im_end|>", "<|eot_id|>", "\nUser:", "\nPlayer:", "\n[User]", "\nAssistant:", "\n==="]
+        mandatory_stop = ["</s>", "<|im_end|>", "<|eot_id|>", "\nUser:", "\nPlayer:", "\n[User]", "\nAssistant:", "\n==="]
         if stop_sequences:
             mandatory_stop.extend(stop_sequences)
         
@@ -200,7 +200,7 @@ class OllamaClient(LLMBackend):
             LLMConnectionError: On connection failure or HTTP 5xx.
         """
         # Phase 11: Mandatory stop sequences to prevent impersonation
-        mandatory_stop = ["~~~", "</s>", "<|im_end|>", "<|eot_id|>", "\nUser:", "\nPlayer:", "\n[User]", "\nAssistant:", "\n==="]
+        mandatory_stop = ["</s>", "<|im_end|>", "<|eot_id|>", "\nUser:", "\nPlayer:", "\n[User]", "\nAssistant:", "\n==="]
         if stop_sequences:
             mandatory_stop.extend(stop_sequences)
         

@@ -20,9 +20,7 @@ from axiom.db_helpers import create_new_save, get_max_turn_id
 from axiom.session import Session
 from axiom.events import EventSourcer
 from workers.narrative_worker import NarrativeWorker
-
-DB = "/home/garen/AxiomAI/universes/Myria.db"
-
+DB = "/home/frosoore/AxiomAI/universes/Myria.db"
 
 class StubVectorMemory:
     """VectorMemory factice : RAG vide, embedding no-op (évite chromadb/embedder)."""
@@ -82,6 +80,12 @@ def run_turn_via_worker(db, save_id, llm, vm, mode, text, player_id="1"):
 
 def main():
     cfg = load_config()
+    cfg.llm_backend = "gemini"
+    cfg.gemini_model = "gemini-2.5-flash-lite"
+    import os
+    if not cfg.gemini_api_key:
+        cfg.gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
+
     banner(f"CONFIG — backend={cfg.llm_backend} model={cfg.gemini_model}")
     if cfg.llm_backend.lower() == "gemini" and not cfg.gemini_api_key:
         print("Pas de clé Gemini — abandon.", flush=True)
@@ -89,6 +93,13 @@ def main():
 
     llm = build_llm_from_config(cfg)
     vm = StubVectorMemory()
+
+    # Initialisation de la DB de test
+    import os
+    from axiom.schema import create_universe_db
+    if os.path.exists(DB):
+        os.remove(DB)
+    create_universe_db(DB)
 
     # Sauvegarde de test dédiée (n'altère pas une partie existante).
     save_id = create_new_save(DB, player_name="Troll", difficulty="Normal")

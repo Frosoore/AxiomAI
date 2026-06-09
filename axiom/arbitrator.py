@@ -70,6 +70,8 @@ class ArbitratorResult:
     rule_chain_warning: bool = False
     game_state_tag: str = "exploration"
     player_entity_id: str = "player"
+    elapsed_minutes: int = 1
+    scene_pace: str = "deliberate"
 
 
 # ---------------------------------------------------------------------------
@@ -102,10 +104,11 @@ class ArbitratorEngine:
         self._hero_entity_id: str | None = None
         self._stats_cache: dict[str, dict[str, str]] | None = None
 
-    def configure(self, llm: LLMBackend, vector_memory: VectorMemory) -> None:
+    def configure(self, llm: LLMBackend, vector_memory: VectorMemory, time_llm: LLMBackend | None = None) -> None:
         """Inject runtime dependencies before process_turn."""
         self._llm = llm
         self._vector_memory = vector_memory
+        self._time_llm = time_llm if time_llm is not None else llm
 
     def invalidate_stats_cache(self) -> None:
         """Clear the in-memory stats cache (call after rewind or external DB writes)."""
@@ -280,10 +283,60 @@ class ArbitratorEngine:
         state_changes: list[dict[str, Any]] = []
         inventory_changes: list[dict[str, Any]] = []
         game_state_tag: str = "exploration"
+        scene_pace: str = "deliberate"
         if llm_response.tool_call:
             state_changes = llm_response.tool_call.get("state_changes", [])
             inventory_changes = llm_response.tool_call.get("inventory_changes", [])
             game_state_tag = str(llm_response.tool_call.get("game_state_tag", "exploration")).strip().lower()
+            scene_pace = str(llm_response.tool_call.get("scene_pace", "deliberate")).strip().lower()
+
+        # Deduce elapsed in-game minutes. By default a dedicated "Timekeeper" LLM
+        # call parses the action + narrative to estimate the time that passed.
+        # This second call can be disabled (cfg.timekeeper_enabled = False) to save
+        # an LLM round-trip per turn, in which case the time is derived from the
+        # scene pace alone — cheaper but coarser. See Pilier 5 / TICKET-015.
+        elapsed_minutes: int | None = None
+        if cfg.timekeeper_enabled:
+            from axiom.prompts import build_timekeeper_prompt
+            prompt = build_timekeeper_prompt(user_message, narrative_text)
+            try:
+                time_llm = getattr(self, "_time_llm", self._llm)
+                tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
+                tk_data = getattr(tk_resp, "tool_call", {}) or {}
+                if not tk_data:
+                    import re, json
+                    tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
+                    match = re.search(r'\{.*\}', tk_text, re.DOTALL)
+                    if match:
+                        try:
+                            tk_data = json.loads(match.group(0))
+                        except json.JSONDecodeError:
+                            pass
+                if tk_data and "elapsed_minutes" in tk_data:
+                    elapsed_minutes = int(tk_data["elapsed_minutes"])
+            except Exception as e:
+                logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
+
+        # Fallback based on scene pace. Also the primary path when the Timekeeper
+        # is disabled or could not produce a value.
+        if elapsed_minutes is None:
+            pace_defaults = {
+                "combat": 2,
+                "dialogue": 5,
+                "conversation": 5,
+                "exploration": 15,
+                "travel": 60,
+                "deliberate": 15,
+                "montage": 60,
+                "tension": 10
+            }
+            elapsed_minutes = pace_defaults.get(scene_pace, 15)
+
+        # In-game clock after this turn. Persisted to Timeline once, after the
+        # state-change loop below, so a travelling turn produces a single timeline
+        # row (with the travel note) instead of two (TICKET-019).
+        new_time = total_mins + elapsed_minutes
+        travel_note: str | None = None
 
         # Step 7 — Validate and apply each state change
         applied_changes: list[dict[str, Any]] = []
@@ -309,21 +362,17 @@ class ArbitratorEngine:
                     payload["value"] = value
                     event_type = "stat_set"
 
-                # Special Case: Location Change -> Log the distance traveled
+                # Special Case: Location Change -> annotate the timeline row with
+                # the distance traveled. The actual in-game time cost is already
+                # captured in elapsed_minutes (the LLM/Timekeeper accounts for the
+                # mode of transport via the narrative); here we only enrich the
+                # single timeline entry written after this loop (TICKET-019).
                 if entity_id == player_entity_id and stat_key == "Location" and value:
                     old_loc = all_stats.get(entity_id, {}).get("Location")
                     if old_loc and old_loc != value:
                         travel_dist = self._get_travel_distance(old_loc, value)
                         if travel_dist > 0:
-                            # We log the distance in the timeline. The LLM or Rules
-                            # will interpret how much in-game time this distance takes
-                            # based on the narrative context (mode of transport).
-                            with get_connection(self._db_path) as conn:
-                                conn.execute(
-                                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
-                                    (save_id, turn_id, total_mins, f"Traveled to {value} ({travel_dist} km)")
-                                )
-                                conn.commit()
+                            travel_note = f"Traveled to {value} ({travel_dist} km)"
 
                 _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
                 # Update local snapshot for downstream Rules evaluation
@@ -341,6 +390,20 @@ class ArbitratorEngine:
         # Queue a combined correction if any changes were rejected
         if rejection_messages:
             self._queue_correction("; ".join(rejection_messages))
+
+        # Persist the advanced in-game clock — exactly one Timeline row per turn
+        # (TICKET-010 / TICKET-019). The description carries the travel note when
+        # the player moved, otherwise the plain time advance.
+        timeline_desc = travel_note or f"Turn advanced by {elapsed_minutes} mins"
+        try:
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
+                    (save_id, turn_id, new_time, timeline_desc)
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
 
         # Step 7.5 — Process Inventory Changes
         applied_inventory: list[dict[str, Any]] = []
@@ -413,7 +476,7 @@ class ArbitratorEngine:
             mutated_entities = new_mutations
 
         # Step 9 — Tick modifiers
-        self._modifier_processor.tick_modifiers(save_id)
+        self._modifier_processor.tick_modifiers(save_id, elapsed_minutes=elapsed_minutes)
 
         # Step 10 — Embed narrative chunk
         if narrative_text.strip():
@@ -450,6 +513,8 @@ class ArbitratorEngine:
             rule_chain_warning=rule_chain_warning,
             game_state_tag=game_state_tag,
             player_entity_id=player_entity_id,
+            elapsed_minutes=elapsed_minutes,
+            scene_pace=scene_pace,
         )
 
     # ------------------------------------------------------------------
@@ -500,7 +565,10 @@ class ArbitratorEngine:
             )
 
         # Streaming path
+        import re
         raw_tokens: list[str] = []
+        is_json_block = False
+        buffer = ""
         for token in self._llm.stream_tokens(
             messages, 
             temperature=temperature, 
@@ -508,8 +576,21 @@ class ArbitratorEngine:
             stop_sequences=stop_sequences,
             max_tokens=max_tokens
         ):
-            stream_token_callback(token)
             raw_tokens.append(token)
+            if not is_json_block:
+                buffer += token
+                match = re.search(r'(~~+json|~~~|```json|```)', buffer)
+                if match:
+                    is_json_block = True
+                    idx = match.start()
+                    if idx > 0:
+                        stream_token_callback(buffer[:idx])
+                elif len(buffer) > 15:
+                    stream_token_callback(buffer[:-15])
+                    buffer = buffer[-15:]
+
+        if not is_json_block and buffer:
+            stream_token_callback(buffer)
 
         full_raw = "".join(raw_tokens)
         narrative, tool_call = self._llm.parse_tool_call(full_raw)

@@ -73,10 +73,16 @@ class Session:
         data_dir: str | Path | None = None,
         mode: str = "Normal",
         hero_llm: LLMBackend | None = None,
+        time_llm: LLMBackend | None = None,
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
         self._llm = llm
+        # Timekeeper backend: an explicit one wins; otherwise build it from the
+        # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
+        # mirroring how the Companion hero backend is resolved. Falls back to the
+        # main narration backend if config/backend construction fails (TICKET-016).
+        self._time_llm = time_llm if time_llm else self._resolve_time_llm(llm)
         self._mode = mode
         self._hero_llm = hero_llm
         self._entities: list[dict] | None = None
@@ -106,6 +112,22 @@ class Session:
         self._events = EventSourcer(self._db_path)
         self._checkpoints = CheckpointManager(self._db_path)
         self._turn_id = get_max_turn_id(self._db_path, save_id)
+
+    @staticmethod
+    def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
+        """Construit le backend du Timekeeper depuis la config (réglage « Time
+        Model »). Replie sur le backend principal en cas d'erreur (clé Gemini
+        absente, config illisible…) pour ne jamais casser la construction."""
+        try:
+            from axiom.config import (
+                load_config,
+                build_llm_from_config,
+                resolve_time_model,
+            )
+            cfg = load_config()
+            return build_llm_from_config(cfg, model_override=resolve_time_model(cfg))
+        except Exception:
+            return default_llm
 
     # ------------------------------------------------------------------
     # API publique
@@ -143,7 +165,7 @@ class Session:
         héros est calculée ici (parité avec `NarrativeWorker`) ; passer un
         `hero_action` explicite court-circuite ce calcul.
         """
-        self._arbitrator.configure(self._llm, self._vector_memory)
+        self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
         history = self._load_history()
 
@@ -174,6 +196,29 @@ class Session:
             hero_entity_id=hero_entity_id,
             mode=self._mode,
         )
+        # Trigger the Chronicler when the in-game clock crosses a configured
+        # minute interval. process_turn already advanced the world clock by
+        # result.elapsed_minutes, so the time *before* this turn is
+        # current_time - elapsed. A single long time-skip therefore fires exactly
+        # one off-screen simulation, and many short turns accumulate until they
+        # cross a boundary (Pilier 5 / TICKET-018).
+        from axiom.db_helpers import get_current_time
+        from axiom.config import load_config
+        from axiom.chronicler import ChroniclerEngine
+        cfg = load_config()
+
+        current_time = get_current_time(self._db_path, self._save_id)
+        previous_time = max(0, current_time - result.elapsed_minutes)
+        chronicler = ChroniclerEngine(
+            llm=self._llm,
+            event_sourcer=self._events,
+            db_path=self._db_path,
+            trigger_interval=cfg.chronicler_minutes_interval,
+        )
+        if chronicler.should_trigger(current_time, previous_time):
+            _emit(on_status, "Simulating off-screen world...")
+            chronicler.run(self._save_id, self._turn_id)
+
         _emit(on_status, "Ready.")
         return result
 
@@ -221,24 +266,35 @@ class Session:
 
         `user_input` -> rôle "user" ; `narrative_text` -> rôle "assistant"
         (variante active si l'event en contient plusieurs).
+        Fusionne les messages consécutifs du même rôle pour ne pas casser le format LLM.
         """
         history: list[LLMMessage] = []
         for ev in self._events.get_events(self._save_id):
             event_type = ev["event_type"]
             payload = ev["payload"]
+            
+            role = None
+            content = ""
+            
             if event_type == "user_input":
-                text = payload.get("text", "") if isinstance(payload, dict) else str(payload)
-                history.append({"role": "user", "content": text})
+                content = payload.get("text", "") if isinstance(payload, dict) else str(payload)
+                role = "user"
             elif event_type == "narrative_text":
                 if isinstance(payload, dict):
                     if "variants" in payload:
                         variants = payload.get("variants") or [""]
-                        text = variants[payload.get("active", 0)]
+                        content = variants[payload.get("active", 0)]
                     else:
-                        text = payload.get("text", "")
+                        content = payload.get("text", "")
                 else:
-                    text = str(payload)
-                history.append({"role": "assistant", "content": text or ""})
+                    content = str(payload)
+                role = "assistant"
+                
+            if role and content:
+                if history and history[-1]["role"] == role:
+                    history[-1]["content"] += f"\n\n{content}"
+                else:
+                    history.append({"role": role, "content": content})
         return history
 
     # ------------------------------------------------------------------

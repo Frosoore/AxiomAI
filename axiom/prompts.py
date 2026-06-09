@@ -59,6 +59,7 @@ CRITICAL RULES:
   "state_changes": [{"entity_id": "...", "stat_key": "...", "delta": 0, "value": "..."}],
   "inventory_changes": [{"entity_id": "...", "item_id": "...", "action": "add", "quantity": 1}],
   "narrative_events": ["event_id"],
+  "scene_pace": "deliberate",
   "game_state_tag": "exploration"
 }
 ~~~
@@ -689,9 +690,9 @@ def build_narrative_prompt(
     # Phase 11: Final behavior instruction (Recency Bias)
     # This system message is appended AFTER the user message to force compliance.
     verbosity_map = {
-        "short": f"[SYSTEM: Response must be VERY SHORT (2 sentences). Do NOT speak for {player_id}.]",
-        "balanced": f"[SYSTEM: Response must be BALANCED (1-2 paragraphs). Do NOT speak for {player_id}.]",
-        "talkative": f"[SYSTEM: Response must be DETAILED and descriptive. Do NOT speak for {player_id}.]"
+        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Do NOT speak for {player_id}. Do NOT output meta-text or system tags.",
+        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Do NOT speak for {player_id}. Do NOT output meta-text or system tags.",
+        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Do NOT speak for {player_id}. Do NOT output meta-text or system tags."
     }
     final_instr = verbosity_map.get(verbosity_level.lower(), verbosity_map["balanced"])
     messages.append({"role": "system", "content": final_instr})
@@ -879,10 +880,11 @@ def _extract_conversation_turns(
     return turns
 
 
-def build_timekeeper_prompt(narrative_text: str) -> list[LLMMessage]:
+def build_timekeeper_prompt(player_action: str, narrative_text: str) -> list[LLMMessage]:
     """Assemble the prompt for the 'Timekeeper' chronological parser.
 
     Args:
+        player_action: The text of the user's action.
         narrative_text: The LLM's narrative response to analyze.
 
     Returns:
@@ -900,7 +902,10 @@ def build_timekeeper_prompt(narrative_text: str) -> list[LLMMessage]:
         "6. Only provide a 'major_event_description' if something highly significant to the plot happens "
         "(e.g., 'Arrived at Hemlock', 'Defeated the Goblin King'). Otherwise, return null."
     )
-    user_content = f"NARRATIVE TEXT:\n{narrative_text}"
+    user_content = (
+        f"PLAYER ACTION:\n{player_action}\n\n"
+        f"NARRATIVE TEXT:\n{narrative_text}"
+    )
 
     return [
         {"role": "system", "content": system_prompt},

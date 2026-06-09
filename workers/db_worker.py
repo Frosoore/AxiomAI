@@ -26,7 +26,7 @@ from axiom.schema import (
 )
 from workers.db_tasks import (
     LoadStatsTask, LoadCheckpointsTask, RewindTask, AppendEventTask,
-    LoadSessionHistoryTask, UpdateVariantTask, SnapshotTask, DeleteSaveTask,
+    LoadSessionHistoryTask, UpdateVariantTask, SnapshotTask, DeleteSaveTask, RenameSaveTask,
     PopulateEntitiesTask, TickModifiersTask, CreatePlayerEntityTask, DeleteEntityTask,
     LoadInventoryTask, LoadTimelineTask
 )
@@ -139,11 +139,13 @@ class DbWorker(QObject):
         self._setup_task(task)
 
     def load_session_history(self, save_id: str) -> None:
+        from workers.db_tasks import LoadSessionHistoryTask
         task = LoadSessionHistoryTask(self._db_path, save_id)
         task.signals.result.connect(lambda res: self.history_loaded.emit(res[0], res[1], res[2]))
         self._setup_task(task)
 
     def switch_narrative_variant(self, save_id: str, turn_id: int, index: int) -> None:
+        from workers.db_tasks import UpdateVariantTask
         task = UpdateVariantTask(self._db_path, save_id, turn_id, index)
         task.signals.result.connect(self.variant_updated.emit)
         task.signals.result.connect(lambda _: self.save_complete.emit())
@@ -151,6 +153,11 @@ class DbWorker(QObject):
 
     def delete_save(self, save_id: str) -> None:
         task = DeleteSaveTask(self._db_path, save_id)
+        task.signals.result.connect(lambda _: self.save_complete.emit())
+        self._setup_task(task)
+
+    def rename_save(self, save_id: str, new_name: str) -> None:
+        task = RenameSaveTask(self._db_path, save_id, new_name)
         task.signals.result.connect(lambda _: self.save_complete.emit())
         self._setup_task(task)
 
@@ -217,6 +224,12 @@ class DbWorker(QObject):
         from workers.db_tasks import PopulateEventsTask
         task = PopulateEventsTask(self._db_path, mode, custom_text)
         task.signals.result.connect(lambda _: self.load_full_universe())
+        self._setup_task(task)
+
+    def load_full_universe(self, save_id: str | None = None) -> None:
+        from workers.db_tasks import LoadFullUniverseTask
+        task = LoadFullUniverseTask(self._db_path, save_id)
+        task.signals.result.connect(self._on_load_full_universe_result)
         self._setup_task(task)
 
     # ------------------------------------------------------------------
