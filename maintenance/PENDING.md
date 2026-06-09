@@ -9,7 +9,7 @@
 | TICKET-003| Supprimer les modules engine dépréciés (post-Pilier 1)        | ✅ résolu (2026-06-04) — 21 modules + 3 DEPRECATED.md supprimés, 236 tests verts |
 | TICKET-004| Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths) | ✅ clos → voir `DONE.md` |
 | TICKET-005| Finir l'injection de chemins (`data_dir`) du Pilier 1                | ✅ clos (absorbé) → voir `DONE.md` |
-| TICKET-006| Chronicler : `chronicler_update` ignoré par `_apply_event`     | ouvert    |
+| TICKET-006| Chronicler : `chronicler_update` ignoré par `_apply_event`     | ✅ résolu (2026-06-09) — `_apply_event`/`update_state_cache` gèrent `chronicler_update` + rebuild après run chronicler |
 | TICKET-007| Bugs backend Gemini (extraction_model 404 + >5 stop_sequences) | ✅ résolu (code) → attente feu vert commit |
 | TICKET-008| Segfault torch+Qt au 1er tour (dlopen libtriton.so hors thread principal) | ✅ résolu (code) → attente feu vert commit |
 | TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ⏸ différé (handover + dev parallèle) |
@@ -21,6 +21,8 @@
 | TICKET-020| Temps causal : **scaffolding mort** retiré (commentaire brouillon + imports) | ✅ résolu (2026-06-07) → `DONE.md` |
 | TICKET-021| Temps causal : **tests réparés + couverture ajoutée** (pytest installé) | ✅ résolu (2026-06-07) → `DONE.md` |
 | TICKET-022| Doc : **collision de numérotation** corrigée (temps causal → TICKET-TC1→TC5) | ✅ résolu (2026-06-07) → `DONE.md` |
+| TICKET-023| `Universe.load` lit la clé `name` au lieu de `universe_name` (canonique) → nom = stem du fichier | ✅ résolu (2026-06-09) — `universe_name` prioritaire, repli `name`/stem |
+| TICKET-024| `Active_Modifiers` n'a pas de colonne `save_id` → table globale à l'univers, partagée entre saves (probable bug d'isolation) | ✅ résolu (2026-06-09) — colonne `save_id` + FK + migration + filtrage partout + réintégré à l'éditeur de saves |
 
 
 ---
@@ -127,6 +129,13 @@ pour validation. Marqueurs : `core/DEPRECATED.md`, `database/DEPRECATED.md`, `ll
 ---
 
 ## TICKET-006 — Chronicler : `chronicler_update` ignoré par `_apply_event`
+
+**✅ RÉSOLU (2026-06-09).** `EventSourcer._apply_event` traite désormais `chronicler_update`
+(même payload `delta|value` que `stat_change`/`stat_set`, provenance « chronicler » conservée dans
+le journal) ; ajouté aussi au filtre incrémental `update_state_cache`. `Session.take_turn`
+rematérialise `State_Cache` (+`invalidate_stats_cache`) après le run du Chronicler pour que ses
+changements de monde prennent effet en jeu. Tests : `tests/test_ticket_fixes.py` (rebuild,
+incrémental, `state_at`). Le Chronicler continue d'émettre `event_type="chronicler_update"` (provenance).
 
 **Contexte :** Découvert en traitant TICKET-002. Le Chronicler (simulation du monde)
 écrit ses changements de stats via `EventSourcer.append_event(..., "chronicler_update", ...)`
@@ -425,3 +434,58 @@ volontairement à **015** pour ne pas aggraver la collision. À trancher avec l'
 sait quelles refs externes existent).
 
 **Priorité :** basse (hygiène doc), mais utile avant que d'autres tickets ne s'empilent.
+
+---
+
+## TICKET-023 — `Universe.load` lit `name` au lieu de `universe_name`
+
+**✅ RÉSOLU (2026-06-09).** `axiom/universe.py::Universe.load` →
+`meta.get("universe_name") or meta.get("name") or Path(path).stem`. Vérifié sur `ST_Aglae.db`
+réel (« Aglae » au lieu de « ST_Aglae ») et sur univers compilé (« Drakthar » au lieu de
+« universe »). Tests : `tests/test_ticket_fixes.py`.
+
+**Constat (2026-06-09, repéré pendant le Pilier 2).** `axiom/universe.py::Universe.load`
+fait `name = meta.get("name") or Path(path).stem`. Or la clé canonique de `Universe_Meta`
+(écrite par `db_helpers.provision_blank_universe`, le Creator Studio et `axiom/compile.py`)
+est **`universe_name`**, pas `name`. Conséquence : `Universe.load` retombe toujours sur le
+**stem du fichier**. Avec Universe-as-Code, le cache compilé s'appelle toujours `universe.db`
+→ le nom affiché devient « universe ».
+
+**Fix proposé :** `name = meta.get("universe_name") or meta.get("name") or Path(path).stem`.
+Une ligne, mais touche le **chemin de chargement partagé** (`Universe`) → zone de collision
+potentielle (cf. collab). À traiter isolément, avec garde-fous (`test_engine_headless`,
+`test_cli_play`) + idéalement un test sur `Universe.load`.
+
+**Priorité :** moyenne (cosmétique mais visible dès qu'on joue un univers compilé).
+
+---
+
+## TICKET-024 — `Active_Modifiers` sans `save_id` (modifiers globaux à l'univers)
+
+**✅ RÉSOLU (2026-06-09).** Colonne `save_id` ajoutée à `Active_Modifiers` (DDL + FK `Saves`
+ON DELETE CASCADE pour les DBs neuves ; migration `migrate_active_modifiers_table` = `ALTER ADD
+COLUMN` pour les DBs existantes, branchée dans `create_new_save`/`load_saves`). Filtrage par
+`save_id` partout : `modifiers.py` (`add_modifier`/`tick_modifiers`/`apply_modifiers`/`_fetch_modifiers`),
+`arbitrator.py::_fetch_effective_stats`, `hardcore_worker.py`. Modifiers réintégrés à l'éditeur de
+saves (`axiom/saves.py`). Tests : `tests/test_ticket_fixes.py` (isolation entre saves, tick scopé,
+migration) + `tests/test_saves_editing.py` (round-trip). Les rows héritées (save_id='') sont
+orphelines et ignorées.
+
+**Constat (2026-06-09, repéré pendant le Pilier 2 / éditeur de saves).** Le schéma
+`Active_Modifiers` (`axiom/schema.py`) = `modifier_id, entity_id, stat_key, delta,
+minutes_remaining` + FK `entity_id`→`Entities`. **Pas de colonne `save_id`.** Donc les
+modifiers temporaires ne sont **pas isolés par sauvegarde** : ils sont partagés par toutes les
+parties d'un même univers. Or `_fetch_effective_stats` (arbitrator) les applique par entité, et
+`TickModifiersTask` les fait décrémenter — sans distinction de save.
+
+**Impact :** deux parties du même univers se partagent les buffs/debuffs actifs. Probable bug
+d'isolation. Conséquence pratique pour l'éditeur de saves (Phase 6) : les modifiers ont été
+**exclus** du format `save_state.toml` (les inclure suggérerait une isolation inexistante).
+
+**Fix proposé :** ajouter `save_id` à `Active_Modifiers` (+ FK `Saves` ON DELETE CASCADE, +
+migration), et filtrer par `save_id` partout (arbitrator `_fetch_effective_stats`, `modifiers.py`,
+`TickModifiersTask`). Zone sensible (touche le calcul de stats + le temps causal Pilier 5) → ticket
+dédié, à séquencer avec le pote (collision possible). Une fois fait, réintégrer les modifiers dans
+l'éditeur de saves.
+
+**Priorité :** moyenne (bug réel mais d'impact limité tant qu'on joue une partie à la fois par univers).

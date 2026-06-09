@@ -222,7 +222,7 @@ class EventSourcer:
         relevant = [
             {"event_type": etype, "target_entity": target, "payload": payload}
             for (_sid, _tid, etype, target, payload) in events
-            if etype in ("entity_create", "stat_change", "stat_set")
+            if etype in ("entity_create", "stat_change", "stat_set", "chronicler_update")
         ]
         if not relevant:
             return
@@ -314,20 +314,32 @@ class EventSourcer:
 
         return (len(mismatches) == 0, mismatches)
 
+    def state_at(
+        self,
+        save_id: str,
+        up_to_turn_id: int | None = None,
+    ) -> dict[str, dict[str, str]]:
+        """Compute the materialised state by replaying events, without touching the DB.
+
+        Pure read: replays Event_Log (optionally up to a turn) and returns the
+        resulting `entity_id -> {stat_key: stat_value}` map. Used by snapshotting
+        and by the save editor (`axiom.saves`) to materialise state at any point.
+        """
+        # start_turn_id=-1 : rejoue depuis le tout début, **tour 0 inclus** (le
+        # défaut start_turn_id=0 de get_events exclut le tour 0, réservé aux events
+        # « genesis » d'une save importée — cf. axiom.saves).
+        cache: dict[str, dict[str, str]] = {}
+        for event in self.get_events(save_id, start_turn_id=-1, up_to_turn_id=up_to_turn_id):
+            cache = self._apply_event(event, cache)
+        return cache
+
     def take_snapshot(self, save_id: str, turn_id: int) -> None:
         """Capture the current materialised state and store it in Snapshots.
-        
+
         This is an expensive operation (JSON-serialising the full state) and
         should be called sparingly.
         """
-        # We must rebuild up to turn_id to ensure the snapshot is accurate
-        # entity_id -> {stat_key: stat_value}
-        cache: dict[str, dict[str, str]] = {}
-        events = self.get_events(save_id, up_to_turn_id=turn_id)
-        for event in events:
-            cache = self._apply_event(event, cache)
-            
-        state_json = json.dumps(cache)
+        state_json = json.dumps(self.state_at(save_id, up_to_turn_id=turn_id))
         
         with get_connection(self._db_path) as conn:
             conn.execute(
@@ -379,10 +391,14 @@ class EventSourcer:
         copy of the cache is returned when modifications are made.
 
         Handled event types:
-            entity_create — registers the entity in the cache with no stats.
-            stat_change   — adjusts a numeric stat by delta, or sets a string
-                            value when a 'value' key is present instead of 'delta'.
-            stat_set      — unconditionally sets a stat to a string value.
+            entity_create     — registers the entity in the cache with no stats.
+            stat_change       — adjusts a numeric stat by delta, or sets a string
+                                value when a 'value' key is present instead of 'delta'.
+            stat_set          — unconditionally sets a stat to a string value.
+            chronicler_update — world-simulation stat change (TICKET-024 ↦ TICKET-006) :
+                                same payload shape (delta|value) ; matérialisé comme un
+                                stat_change/stat_set tout en conservant sa provenance
+                                « chronicler » dans le journal.
 
         All other event types (e.g. 'dialogue', 'combat_roll') are ignored
         because they carry no cache-relevant state.
@@ -402,7 +418,7 @@ class EventSourcer:
             if entity_id not in cache:
                 cache[entity_id] = {}
 
-        elif event_type in ("stat_change", "stat_set"):
+        elif event_type in ("stat_change", "stat_set", "chronicler_update"):
             entity_id = payload.get("entity_id", event.get("target_entity", ""))
             stat_key: str = payload["stat_key"]
 

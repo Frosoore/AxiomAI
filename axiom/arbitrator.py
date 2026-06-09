@@ -625,7 +625,7 @@ class ArbitratorEngine:
                 """
                 SELECT entity_id, stat_key, delta
                 FROM Active_Modifiers
-                WHERE entity_id IN (SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?);
+                WHERE save_id = ?;
                 """,
                 (save_id,),
             ).fetchall()

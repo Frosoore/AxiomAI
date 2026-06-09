@@ -67,7 +67,7 @@ class ModifierProcessor:
         Raises:
             sqlite3.Error: On any database failure.
         """
-        modifiers = self._fetch_modifiers(entity_id)
+        modifiers = self._fetch_modifiers(save_id, entity_id)
         result: dict[str, str] = dict(base_stats)
 
         for mod in modifiers:
@@ -108,14 +108,13 @@ class ModifierProcessor:
             sqlite3.Error: On any database failure.
         """
         with get_connection(self._db_path) as conn:
-            # Decrement all modifiers for entities belonging to this save
+            # Decrement all modifiers belonging to this save (TICKET-024: scoping
+            # par save_id, plus par State_Cache).
             conn.execute(
                 """
                 UPDATE Active_Modifiers
                 SET minutes_remaining = minutes_remaining - ?
-                WHERE entity_id IN (
-                    SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?
-                );
+                WHERE save_id = ?;
                 """,
                 (elapsed_minutes, save_id),
             )
@@ -124,10 +123,7 @@ class ModifierProcessor:
             expired_rows = conn.execute(
                 """
                 SELECT modifier_id FROM Active_Modifiers
-                WHERE minutes_remaining <= 0
-                  AND entity_id IN (
-                      SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?
-                  );
+                WHERE minutes_remaining <= 0 AND save_id = ?;
                 """,
                 (save_id,),
             ).fetchall()
@@ -177,10 +173,10 @@ class ModifierProcessor:
             conn.execute(
                 """
                 INSERT INTO Active_Modifiers
-                    (modifier_id, entity_id, stat_key, delta, minutes_remaining)
-                VALUES (?, ?, ?, ?, ?);
+                    (modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining)
+                VALUES (?, ?, ?, ?, ?, ?);
                 """,
-                (modifier_id, entity_id, stat_key, delta, minutes),
+                (modifier_id, save_id, entity_id, stat_key, delta, minutes),
             )
             conn.commit()
 
@@ -190,10 +186,11 @@ class ModifierProcessor:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _fetch_modifiers(self, entity_id: str) -> list[dict[str, object]]:
-        """Fetch all active modifiers for an entity from the database.
+    def _fetch_modifiers(self, save_id: str, entity_id: str) -> list[dict[str, object]]:
+        """Fetch all active modifiers for an entity in a given save.
 
         Args:
+            save_id:   The save whose modifiers are retrieved (TICKET-024).
             entity_id: The entity whose modifiers are retrieved.
 
         Returns:
@@ -205,9 +202,9 @@ class ModifierProcessor:
                 """
                 SELECT modifier_id, entity_id, stat_key, delta, minutes_remaining
                 FROM Active_Modifiers
-                WHERE entity_id = ?;
+                WHERE save_id = ? AND entity_id = ?;
                 """,
-                (entity_id,),
+                (save_id, entity_id),
             ).fetchall()
         return [
             {

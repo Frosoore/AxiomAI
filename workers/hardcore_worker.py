@@ -189,11 +189,9 @@ class HardcoreWorker(QThread):
         """
         with sqlite3.connect(db_path, timeout=2.0) as conn:
             conn.execute("PRAGMA foreign_keys=ON;")
-            # Step A: Delete modifiers BEFORE clearing the cache subquery source
+            # Step A: Delete this save's modifiers (TICKET-024: scoping par save_id)
             conn.execute(
-                "DELETE FROM Active_Modifiers WHERE entity_id IN ("
-                "  SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?"
-                ");",
+                "DELETE FROM Active_Modifiers WHERE save_id = ?;",
                 (save_id,),
             )
             # Step B: Delete events and cache

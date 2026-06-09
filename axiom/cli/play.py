@@ -80,6 +80,37 @@ def _resolve_universe_path(raw: str) -> Path | None:
     return None
 
 
+def _resolve_playable_db(raw: str) -> str | None:
+    """Résout n'importe quelle forme d'univers vers un `.db` jouable.
+
+    Accepte (Universe-as-Code) :
+      - un `.db` compilé → utilisé tel quel ;
+      - un **dossier source** (contient universe.toml) → compilé à la volée ;
+      - une archive `.axiom` (v1 ou v2) → dépaquetée puis compilée.
+
+    Retourne le chemin du `.db` runtime, ou None si l'univers est introuvable.
+    """
+    path = _resolve_universe_path(raw)
+    if path is None:
+        return None
+
+    if path.is_dir():
+        if (path / "universe.toml").exists():
+            from axiom.compile import compile_universe
+            return str(compile_universe(path))
+        return None
+
+    if path.suffix == ".axiom":
+        from axiom import paths
+        from axiom.package import unpack_universe
+        from axiom.compile import CACHE_DB_NAME, CACHE_DIRNAME
+
+        dest = unpack_universe(path, paths.UNIVERSES_DIR)
+        return str(dest / CACHE_DIRNAME / CACHE_DB_NAME)
+
+    return str(path)  # .db direct
+
+
 def _read_first_message(db_path: str) -> str:
     """Lit le message d'ouverture authored (clé `first_message` de Universe_Meta)."""
     from axiom.schema import get_connection
@@ -240,17 +271,22 @@ def play_loop(
 
 def run_play(args: argparse.Namespace) -> int:
     """Résout univers + save + LLM, construit la Session, lance la boucle."""
-    universe_path = _resolve_universe_path(args.universe)
-    if universe_path is None:
-        print(f"Univers introuvable : {args.universe}", file=sys.stderr)
-        return 2
-
     from axiom.universe import Universe
     from axiom.session import Session
     from axiom.config import load_config, build_llm_from_config
     from axiom.db_helpers import load_saves, create_new_save
+    from axiom.compile import CompileError
+    from axiom.package import PackageError
 
-    db_path = str(universe_path)
+    try:
+        db_path = _resolve_playable_db(args.universe)
+    except (CompileError, PackageError) as exc:
+        print(f"Impossible de préparer l'univers : {exc}", file=sys.stderr)
+        return 2
+    if db_path is None:
+        print(f"Univers introuvable : {args.universe}", file=sys.stderr)
+        return 2
+
     universe = Universe.load(db_path)
     print(f"Univers : {universe.name}  ({db_path})")
 

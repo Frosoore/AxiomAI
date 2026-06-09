@@ -218,6 +218,10 @@ class Session:
         if chronicler.should_trigger(current_time, previous_time):
             _emit(on_status, "Simulating off-screen world...")
             chronicler.run(self._save_id, self._turn_id)
+            # Le Chronicler appose des events `chronicler_update` ; on rematérialise
+            # State_Cache pour que ses changements de monde prennent effet (TICKET-006).
+            self._events.rebuild_state_cache(self._save_id)
+            self._arbitrator.invalidate_stats_cache()
 
         _emit(on_status, "Ready.")
         return result

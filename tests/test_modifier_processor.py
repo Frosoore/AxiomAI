@@ -72,13 +72,16 @@ class TestAddModifier:
         db_path, mp = ctx
         mod_id = mp.add_modifier("save1", "player1", "Strength", 5.0, 2)
         with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM Active_Modifiers WHERE modifier_id = ?;", (mod_id,)
             ).fetchone()
         assert row is not None
-        assert row[2] == "Strength"  # stat_key
-        assert row[3] == 5.0         # delta
-        assert row[4] == 2           # minutes_remaining
+        assert row["save_id"] == "save1"      # TICKET-024 : scoping par save
+        assert row["entity_id"] == "player1"
+        assert row["stat_key"] == "Strength"
+        assert row["delta"] == 5.0
+        assert row["minutes_remaining"] == 2
 
     def test_zero_turns_raises(self, ctx: tuple) -> None:
         """A zero-minute duration is rejected with ValueError."""

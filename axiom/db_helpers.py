@@ -139,16 +139,18 @@ def create_new_save(
         The newly created UUID save_id string.
     """
     from axiom.schema import (
-        migrate_saves_table, 
-        migrate_lore_book_table, 
+        migrate_saves_table,
+        migrate_lore_book_table,
         migrate_inventory_tables,
-        migrate_saves_difficulty_constraint
+        migrate_saves_difficulty_constraint,
+        migrate_active_modifiers_table,
     )
 
     migrate_saves_table(db_path)
     migrate_saves_difficulty_constraint(db_path)
     migrate_lore_book_table(db_path)
     migrate_inventory_tables(db_path)
+    migrate_active_modifiers_table(db_path)
     save_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     with get_connection(db_path) as conn:
@@ -175,10 +177,11 @@ def load_saves(db_path: str) -> list[dict]:
         last_updated, player_persona.
     """
     from axiom.schema import (
-        migrate_saves_table, 
-        migrate_lore_book_table, 
+        migrate_saves_table,
+        migrate_lore_book_table,
         migrate_inventory_tables,
-        migrate_saves_difficulty_constraint
+        migrate_saves_difficulty_constraint,
+        migrate_active_modifiers_table,
     )
 
     try:
@@ -186,6 +189,7 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_saves_difficulty_constraint(db_path)
         migrate_lore_book_table(db_path)
         migrate_inventory_tables(db_path)
+        migrate_active_modifiers_table(db_path)
         with get_connection(db_path) as conn:
             rows = conn.execute(
                 "SELECT save_id, player_name, difficulty, last_updated, player_persona "

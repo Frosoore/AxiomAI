@@ -61,10 +61,12 @@ CREATE TABLE IF NOT EXISTS Rules (
 _DDL_ACTIVE_MODIFIERS = """
 CREATE TABLE IF NOT EXISTS Active_Modifiers (
     modifier_id     TEXT PRIMARY KEY,
+    save_id         TEXT NOT NULL,
     entity_id       TEXT NOT NULL,
     stat_key        TEXT NOT NULL,
     delta           REAL NOT NULL,
     minutes_remaining INTEGER NOT NULL CHECK(minutes_remaining >= 0),
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE,
     FOREIGN KEY (entity_id) REFERENCES Entities(entity_id) ON DELETE CASCADE
 );
 """
@@ -348,6 +350,25 @@ def migrate_saves_table(db_path: str) -> None:
         try:
             conn.execute(
                 "ALTER TABLE Saves ADD COLUMN player_persona TEXT NOT NULL DEFAULT '';"
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+
+def migrate_active_modifiers_table(db_path: str) -> None:
+    """Add the save_id column to an existing Active_Modifiers table if absent (TICKET-024).
+
+    Avant ce correctif, `Active_Modifiers` n'avait pas de `save_id` : les modifiers
+    étaient partagés entre toutes les saves d'un univers. La migration ajoute la colonne
+    (les rows héritées prennent save_id='' → orphelines, ignorées par le filtrage par save).
+    Idempotent.
+    """
+    with sqlite3.connect(str(db_path)) as conn:
+        try:
+            conn.execute(
+                "ALTER TABLE Active_Modifiers ADD COLUMN save_id TEXT NOT NULL DEFAULT '';"
             )
             conn.commit()
         except sqlite3.OperationalError as exc:

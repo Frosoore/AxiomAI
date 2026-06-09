@@ -43,7 +43,9 @@ class Universe:
         with get_connection(path) as conn:
             rows = conn.execute("SELECT key, value FROM Universe_Meta;").fetchall()
         meta = {row[0]: row[1] for row in rows}
-        name = meta.get("name") or Path(path).stem
+        # `universe_name` est la clé canonique (db_helpers, Creator Studio, compile) ;
+        # `name` est un repli legacy (TICKET-023).
+        name = meta.get("universe_name") or meta.get("name") or Path(path).stem
         system_prompt = meta.get("system_prompt", "")
         return cls(path, name, system_prompt)
 
