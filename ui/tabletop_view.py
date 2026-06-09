@@ -351,7 +351,10 @@ class TabletopView(HardcoreMixin, QWidget):
         self._mode = difficulty
         self._history_loaded = True
         self._turn_label.setText(tr("turn_fmt", count=turn_id))
-        self._chat.rebuild_from_history(history)
+        
+        from axiom import paths
+        assets_dir = paths._data_root() / "assets" / self._save_id
+        self._chat.rebuild_from_history(history, assets_dir=assets_dir)
         self._check_all_loaded()
 
     @Slot(dict)
@@ -588,6 +591,11 @@ class TabletopView(HardcoreMixin, QWidget):
             "payload": payload
         })
         
+        # Show generated image if available
+        image_path = getattr(result, "image_path", None)
+        if image_path:
+            self._chat.append_image(image_path)
+
         # Show variant navigation (Regenerate button)
         self._chat.append_variants_nav(self._turn_id, 0, 1, is_latest=True)
 

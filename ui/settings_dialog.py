@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QComboBox,
+    QCheckBox,
 )
 
 from axiom.config import AppConfig, build_llm_from_config, save_config, GLOBAL_DB_FILE, load_config
@@ -36,6 +37,29 @@ from axiom.localization import tr, SUPPORTED_LANGUAGES
 from ui.widgets.persona_editor import PersonaEditorWidget
 from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker
+
+
+def _tr_img(key: str, default_en: str) -> str:
+    """Helper for localizing image settings tab."""
+    from axiom.config import load_config
+    try:
+        lang = load_config().language
+    except Exception:
+        lang = "en"
+    if lang == "fr":
+        fr_map = {
+            "tab_image": "Illustration",
+            "enable_image": "Activer la génération d'images",
+            "backend": "Moteur de rendu :",
+            "api_url": "URL de l'API :",
+            "width": "Largeur (pixels) :",
+            "height": "Hauteur (pixels) :",
+            "steps": "Étapes de débruitage :",
+            "cfg_scale": "Échelle CFG (guidage) :",
+            "workflow": "Workflow ComfyUI (JSON) :",
+        }
+        return fr_map.get(key, default_en)
+    return default_en
 
 
 class SettingsDialog(QDialog):
@@ -174,6 +198,56 @@ class SettingsDialog(QDialog):
         self._persona_editor = PersonaEditorWidget()
         self._tabs.addTab(self._persona_editor, tr("persona_template").replace(":", ""))
 
+        # ---- Image Generation tab ----
+        self._image_widget = QWidget()
+        image_form = QFormLayout(self._image_widget)
+        
+        self._image_enabled_cb = QCheckBox(_tr_img("enable_image", "Enable Image Generation"))
+        self._image_backend_combo = QComboBox()
+        self._image_backend_combo.addItem("Mock Generator", "mock")
+        self._image_backend_combo.addItem("Stable Diffusion (WebUI)", "stable_diffusion")
+        self._image_backend_combo.addItem("ComfyUI", "comfyui")
+        
+        self._image_url = QLineEdit()
+        self._image_url.setPlaceholderText("e.g. http://127.0.0.1:7860")
+        
+        self._image_width_spin = QSpinBox()
+        self._image_width_spin.setRange(64, 4096)
+        self._image_width_spin.setSingleStep(64)
+        
+        self._image_height_spin = QSpinBox()
+        self._image_height_spin.setRange(64, 4096)
+        self._image_height_spin.setSingleStep(64)
+        
+        self._image_steps_spin = QSpinBox()
+        self._image_steps_spin.setRange(1, 150)
+        
+        self._image_cfg_spin = QDoubleSpinBox()
+        self._image_cfg_spin.setRange(1.0, 30.0)
+        self._image_cfg_spin.setSingleStep(0.5)
+        
+        self._image_workflow = QLineEdit()
+        self._image_workflow.setPlaceholderText("Path to workflow JSON file or raw JSON template")
+        
+        self._image_backend_label = QLabel(_tr_img("backend", "Backend:"))
+        self._image_url_label = QLabel(_tr_img("api_url", "API URL:"))
+        self._image_width_label = QLabel(_tr_img("width", "Width:"))
+        self._image_height_label = QLabel(_tr_img("height", "Height:"))
+        self._image_steps_label = QLabel(_tr_img("steps", "Steps:"))
+        self._image_cfg_label = QLabel(_tr_img("cfg_scale", "CFG Scale:"))
+        self._image_workflow_label = QLabel(_tr_img("workflow", "ComfyUI Workflow:"))
+
+        image_form.addRow("", self._image_enabled_cb)
+        image_form.addRow(self._image_backend_label, self._image_backend_combo)
+        image_form.addRow(self._image_url_label, self._image_url)
+        image_form.addRow(self._image_width_label, self._image_width_spin)
+        image_form.addRow(self._image_height_label, self._image_height_spin)
+        image_form.addRow(self._image_steps_label, self._image_steps_spin)
+        image_form.addRow(self._image_cfg_label, self._image_cfg_spin)
+        image_form.addRow(self._image_workflow_label, self._image_workflow)
+
+        self._tabs.addTab(self._image_widget, _tr_img("tab_image", "Illustration"))
+
         layout.addWidget(self._tabs)
 
         # ---- General section ----
@@ -195,8 +269,6 @@ class SettingsDialog(QDialog):
 
         self._rag_chunk_spin = QSpinBox()
         self._rag_chunk_spin.setRange(1, 20)
-
-        from PySide6.QtWidgets import QCheckBox
         self._audio_cb = QCheckBox(tr("enable_audio"))
 
         # Toggle for the extra Timekeeper LLM call (Pilier 5 / TICKET-015).
@@ -276,6 +348,19 @@ class SettingsDialog(QDialog):
         self._timekeeper_cb.setText(tr("timekeeper_enabled"))
         self._timekeeper_cb.setToolTip(tr("timekeeper_enabled_tooltip"))
         
+        # Image Generation tab
+        img_tab_idx = self._tabs.indexOf(self._image_widget)
+        if img_tab_idx >= 0:
+            self._tabs.setTabText(img_tab_idx, _tr_img("tab_image", "Illustration"))
+        self._image_enabled_cb.setText(_tr_img("enable_image", "Enable Image Generation"))
+        self._image_backend_label.setText(_tr_img("backend", "Backend:"))
+        self._image_url_label.setText(_tr_img("api_url", "API URL:"))
+        self._image_width_label.setText(_tr_img("width", "Width:"))
+        self._image_height_label.setText(_tr_img("height", "Height:"))
+        self._image_steps_label.setText(_tr_img("steps", "Steps:"))
+        self._image_cfg_label.setText(_tr_img("cfg_scale", "CFG Scale:"))
+        self._image_workflow_label.setText(_tr_img("workflow", "ComfyUI Workflow:"))
+
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()
 
@@ -300,6 +385,18 @@ class SettingsDialog(QDialog):
         self._rag_chunk_spin.setValue(config.rag_chunk_count)
         self._audio_cb.setChecked(config.enable_audio)
         self._timekeeper_cb.setChecked(config.timekeeper_enabled)
+
+        # Image settings
+        self._image_enabled_cb.setChecked(config.image_generation_enabled)
+        idx = self._image_backend_combo.findData(config.image_backend)
+        if idx >= 0:
+            self._image_backend_combo.setCurrentIndex(idx)
+        self._image_url.setText(config.image_api_url)
+        self._image_width_spin.setValue(config.image_width)
+        self._image_height_spin.setValue(config.image_height)
+        self._image_steps_spin.setValue(config.image_steps)
+        self._image_cfg_spin.setValue(config.image_cfg_scale)
+        self._image_workflow.setText(config.image_comfyui_workflow)
         
         idx = self._lang_combo.findData(config.language)
         if idx >= 0:
@@ -336,6 +433,15 @@ class SettingsDialog(QDialog):
             enable_audio=self._audio_cb.isChecked(),
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
+            # Image generation settings
+            image_generation_enabled=self._image_enabled_cb.isChecked(),
+            image_backend=self._image_backend_combo.currentData(),
+            image_api_url=self._image_url.text().strip(),
+            image_width=self._image_width_spin.value(),
+            image_height=self._image_height_spin.value(),
+            image_steps=self._image_steps_spin.value(),
+            image_cfg_scale=self._image_cfg_spin.value(),
+            image_comfyui_workflow=self._image_workflow.text().strip(),
         )
 
     # ------------------------------------------------------------------

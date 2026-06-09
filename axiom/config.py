@@ -70,6 +70,14 @@ class AppConfig:
         ui_font_size:        Font size for the chat UI.
         enable_audio:        Whether background ambiance is enabled.
         rag_chunk_count:     Number of memory chunks to retrieve for RAG.
+        image_generation_enabled: Whether narrative image generation is enabled.
+        image_backend:       Image generation backend ("mock", "stable_diffusion", or "comfyui").
+        image_api_url:       API base URL for the local image generator.
+        image_width:         Generated image width in pixels.
+        image_height:        Generated image height in pixels.
+        image_steps:         Denoising steps for the image generation.
+        image_cfg_scale:     Classifier Free Guidance scale.
+        image_comfyui_workflow: Optional path to a ComfyUI workflow JSON file or a serialized workflow JSON string.
     """
 
     llm_backend: str = "universal"
@@ -87,6 +95,16 @@ class AppConfig:
     enable_audio: bool = True
     rag_chunk_count: int = 5
     language: str = "en"
+
+    # Image generation settings
+    image_generation_enabled: bool = False
+    image_backend: str = "mock"
+    image_api_url: str = "http://127.0.0.1:7860"
+    image_width: int = 512
+    image_height: int = 512
+    image_steps: int = 20
+    image_cfg_scale: float = 7.0
+    image_comfyui_workflow: str = ""
 
 
 def load_config() -> AppConfig:

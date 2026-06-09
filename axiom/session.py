@@ -102,6 +102,8 @@ class Session:
             _logger.reconfigure(log_dir=data_root / "logs")
         else:
             vector_base = paths.get_vector_dir()
+            data_root = paths._data_root()
+        self._data_root = data_root
 
         if vector_memory is None:
             vector_memory = VectorMemory(persist_dir=str(vector_base / save_id))
@@ -194,6 +196,57 @@ class Session:
         if chronicler.should_trigger(current_time, previous_time):
             _emit(on_status, "Simulating off-screen world...")
             chronicler.run(self._save_id, self._turn_id)
+
+        # Contextual image generation
+        if cfg.image_generation_enabled:
+            _emit(on_status, "Generating scene illustration...")
+            try:
+                from axiom.image_generator import ImageGenerator
+                img_gen = ImageGenerator(cfg, llm=self._llm)
+                
+                # Retrieve player location and contextual descriptions
+                entities = self._get_entities()
+                all_stats = self.current_stats()
+                player_loc = all_stats.get("player", {}).get("Location", "")
+                
+                spatial_ctx = None
+                if player_loc:
+                    from axiom.db_helpers import get_spatial_context
+                    spatial_ctx = get_spatial_context(self._db_path, player_loc)
+                
+                location_desc = ""
+                if player_loc and spatial_ctx:
+                    location_desc = spatial_ctx.get("description", "")
+                    
+                character_desc_list = []
+                for e in entities:
+                    eid = e["entity_id"]
+                    if eid == "player":
+                        continue
+                    entity_loc = all_stats.get(eid, {}).get("Location", "")
+                    if entity_loc and entity_loc.lower() == player_loc.lower():
+                        name = e.get("name", eid)
+                        desc = e.get("description", "")
+                        if desc:
+                            character_desc_list.append(f"{name}: {desc}")
+                character_desc = "\n".join(character_desc_list)
+                
+                # Generate visual prompt from context
+                visual_prompt = img_gen.generate_prompt(
+                    narrative_text=result.narrative_text,
+                    location_desc=location_desc,
+                    character_desc=character_desc,
+                    game_state_tag=result.game_state_tag,
+                )
+                
+                # Generate and save the image
+                assets_dir = self._data_root / "assets" / self._save_id
+                filename = f"turn_{self._turn_id}.png"
+                image_path = img_gen.generate_image(visual_prompt, assets_dir, filename)
+                result.image_path = image_path
+            except Exception as img_err:
+                from axiom import logger
+                logger.warning(f"Contextual image generation failed: {img_err}")
 
         _emit(on_status, "Ready.")
         return result

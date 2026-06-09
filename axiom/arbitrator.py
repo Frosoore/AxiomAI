@@ -61,6 +61,7 @@ class ArbitratorResult:
                             indicating a possible infinite loop in creator rules.
         game_state_tag:   The ambiance tag returned by the LLM (e.g. 'exploration').
         player_entity_id: The ID of the player who sent the message for this turn.
+        image_path:       The file path of the generated image for this turn.
     """
     narrative_text: str
     applied_changes: list[dict[str, Any]] = field(default_factory=list)
@@ -72,6 +73,7 @@ class ArbitratorResult:
     player_entity_id: str = "player"
     elapsed_minutes: int = 1
     scene_pace: str = "deliberate"
+    image_path: str | None = None
 
 
 # ---------------------------------------------------------------------------
