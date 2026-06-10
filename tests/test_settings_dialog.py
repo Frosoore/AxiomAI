@@ -1,0 +1,62 @@
+"""
+tests/test_settings_dialog.py
+
+Unit tests for the settings dialog UI.
+"""
+
+from __future__ import annotations
+
+import pytest
+from PySide6.QtCore import Qt
+
+from axiom.config import AppConfig
+from ui.settings_dialog import SettingsDialog
+
+
+def test_settings_dialog_image_fields(qtbot) -> None:
+    cfg = AppConfig(
+        image_generation_enabled=True,
+        image_backend="comfyui",
+        image_api_url="http://local-generator:8188",
+        image_width=1024,
+        image_height=1024,
+        image_steps=30,
+        image_cfg_scale=8.5,
+        image_comfyui_workflow="my_workflow.json",
+    )
+
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    # Verify fields loaded successfully
+    assert dialog._image_enabled_cb.isChecked() is True
+    assert dialog._image_backend_combo.currentData() == "comfyui"
+    assert dialog._image_url.text() == "http://local-generator:8188"
+    assert dialog._image_width_spin.value() == 1024
+    assert dialog._image_height_spin.value() == 1024
+    assert dialog._image_steps_spin.value() == 30
+    assert dialog._image_cfg_spin.value() == 8.5
+    assert dialog._image_workflow.text() == "my_workflow.json"
+
+    # Modify widget values
+    dialog._image_enabled_cb.setChecked(False)
+    dialog._image_backend_combo.setCurrentIndex(
+        dialog._image_backend_combo.findData("stable_diffusion")
+    )
+    dialog._image_url.setText("http://another-generator:7860")
+    dialog._image_width_spin.setValue(256)
+    dialog._image_height_spin.setValue(256)
+    dialog._image_steps_spin.setValue(10)
+    dialog._image_cfg_spin.setValue(6.0)
+    dialog._image_workflow.setText("another.json")
+
+    # Collect updated config and assert values
+    updated_cfg = dialog.collect_config()
+    assert updated_cfg.image_generation_enabled is False
+    assert updated_cfg.image_backend == "stable_diffusion"
+    assert updated_cfg.image_api_url == "http://another-generator:7860"
+    assert updated_cfg.image_width == 256
+    assert updated_cfg.image_height == 256
+    assert updated_cfg.image_steps == 10
+    assert updated_cfg.image_cfg_scale == 6.0
+    assert updated_cfg.image_comfyui_workflow == "another.json"

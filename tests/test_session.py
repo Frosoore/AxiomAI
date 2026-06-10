@@ -24,6 +24,8 @@ class _DummyLLM:
 
 class _DummyVectorMemory:
     """Mémoire vectorielle factice (évite de charger chromadb)."""
+    def query(self, *args, **kwargs):
+        return []
 
 
 @pytest.fixture
@@ -246,12 +248,11 @@ def test_get_hero_decision_uses_injected_llm_and_strips(universe_db):
     sess = _companion_session(db, save_id, hero_llm=hero_llm)
     hero_ent = sess._find_hero_entity("kael")
 
-    decision = sess._get_hero_decision(hero_ent, [], "Attack the dragon")
+    decision = sess._get_hero_decision(hero_ent, [], {})
     assert decision == "Hero draws sword."
-    # Le prompt contient bien le contexte du héros et le message du joueur.
+    # Le prompt contient bien le contexte du héros.
     blob = " ".join(m["content"] for m in hero_llm.last_prompt)
     assert "Kael" in blob and "A bold knight" in blob
-    assert "Attack the dragon" in blob
 
 
 def test_find_hero_entity_none_when_no_entities(universe_db):
@@ -282,3 +283,82 @@ def test_config_stays_machine_global_without_override(tmp_path, monkeypatch):
         assert paths.get_global_db_file() == tmp_path / "cfg" / "global.db"
     finally:
         paths.reset()
+
+
+def test_load_history_with_hero_intent(universe_db):
+    """_load_history correctly groups simultaneous intents when hero_intent is present."""
+    db, save_id = universe_db
+    events = EventSourcer(db)
+    
+    # Inject user input and companion intent for turn 1
+    events.append_event(save_id, 1, "user_input", "player", {"text": "I attack"})
+    events.append_event(save_id, 1, "hero_intent", "kael", {"text": "I heal the player"})
+    events.append_event(save_id, 1, "narrative_text", "narrator", {"text": "The goblin is wounded."})
+
+    # Add entities to DB to resolve names
+    _add_entity(db, "kael", "npc", "Kael the Brave")
+    _add_entity(db, "player", "player", "Aria")
+
+    sess = Session(db, save_id, llm=_DummyLLM(), vector_memory=_DummyVectorMemory())
+    history = sess._load_history()
+    
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert "[SIMULTANEOUS ACTIONS FOR THIS TICK]" in history[0]["content"]
+    assert "[Aria] INTENT: I attack" in history[0]["content"]
+    assert "[Kael the Brave] INTENT: I heal the player" in history[0]["content"]
+    assert history[1] == {"role": "assistant", "content": "The goblin is wounded."}
+
+
+def test_get_hero_decision_passes_player_context_and_stats(universe_db):
+    """_get_hero_decision retrieves player name/persona and builds a multi-entity stats block."""
+    db, save_id = universe_db
+    
+    # Update saves table with player persona
+    from axiom.schema import get_connection
+    with get_connection(db) as conn:
+        conn.execute(
+            "UPDATE Saves SET player_name = 'Aria', player_persona = 'A skilled rogue' WHERE save_id = ?;",
+            (save_id,)
+        )
+        
+    _add_entity(db, "kael", "npc", "Kael", "A bold knight", {"HP": "50", "Location": "Forest"})
+    _add_entity(db, "player", "player", "Aria", "", {"HP": "100", "Location": "Forest"})
+    _add_entity(db, "goblin", "npc", "Grum", "A nasty goblin", {"HP": "20", "Location": "Forest"})
+    # An NPC in another location, should not be included in local stats block
+    _add_entity(db, "merchant", "npc", "Bob", "A merchant", {"HP": "80", "Location": "Town"})
+
+    # Seed events so rebuild_state_cache doesn't wipe out the stats
+    events = EventSourcer(db)
+    events.append_event(save_id, 0, "entity_create", "player", {"entity_id": "player"})
+    events.append_event(save_id, 0, "entity_create", "kael", {"entity_id": "kael"})
+    events.append_event(save_id, 0, "entity_create", "goblin", {"entity_id": "goblin"})
+    events.append_event(save_id, 0, "entity_create", "merchant", {"entity_id": "merchant"})
+    
+    events.append_event(save_id, 0, "stat_set", "player", {"entity_id": "player", "stat_key": "Location", "value": "Forest"})
+    events.append_event(save_id, 0, "stat_set", "kael", {"entity_id": "kael", "stat_key": "Location", "value": "Forest"})
+    events.append_event(save_id, 0, "stat_set", "goblin", {"entity_id": "goblin", "stat_key": "Location", "value": "Forest"})
+    events.append_event(save_id, 0, "stat_set", "merchant", {"entity_id": "merchant", "stat_key": "Location", "value": "Town"})
+
+    hero_llm = _ScriptedLLM("  Hero draws sword.  ")
+    sess = _companion_session(db, save_id, hero_llm=hero_llm)
+    hero_ent = sess._find_hero_entity("kael")
+
+    decision = sess._get_hero_decision(hero_ent, [], {"player": "I attack Grum"})
+    assert decision == "Hero draws sword."
+    
+    # Verify the prompt passed to the LLM
+    blob = " ".join(m["content"] for m in hero_llm.last_prompt)
+    assert "A skilled rogue" in blob
+    assert "COMPANION TO (PLAYER): Aria" in blob
+    
+    # Should see local entities' stats in the prompt
+    assert "Kael (id: kael)" in blob
+    assert "Aria (id: player)" in blob
+    assert "Grum (id: goblin)" in blob
+    # Town merchant should not be there
+    assert "Bob (id: merchant)" not in blob
+    
+    # Verify the current intents keys were mapped from entity ID to name
+    assert "[Aria] INTENT: I attack Grum" in blob
+

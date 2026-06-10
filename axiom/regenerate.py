@@ -65,9 +65,8 @@ def regenerate_variant(
         entity_stats_block="",  # pas de stats : on ne réévalue pas les règles
         rag_chunks=[],
         history=llm_history,
-        user_message=user_message,
+        intents={player_id: user_message},
         verbosity_level=verbosity_level,
-        player_id=player_id,
     )
 
     # Pas de tool-call sur une régénération : on ne veut que du texte.
