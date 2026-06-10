@@ -28,7 +28,7 @@ class HardcoreMixin:
     """Mixin that adds Hardcore mode logic to TabletopView.
 
     Requires the host class to have:
-        _db_path, _save_id, _narrative_worker, _chronicler_worker,
+        _db_path, _save_id, _narrative_worker,
         _db_worker, _vector_worker, _arbitrator, _chronicler, _llm,
         _vector_memory, _chat, _main_window, _hardcore_worker
     """
@@ -71,13 +71,15 @@ class HardcoreMixin:
         self._main_window.on_status_update(tr("releasing_connections"))
 
         # Step 1: Stop all running workers
+        # (B4 : _chronicler_worker retiré — le Chronicler tourne dans le moteur.
+        # Garde hasattr : _db_worker est un QObject à pool, pas un QThread —
+        # l'ancien `worker.isRunning()` aurait levé AttributeError ici.)
         for worker in [
             self._narrative_worker,
-            self._chronicler_worker,
             self._db_worker,
             self._vector_worker,
         ]:
-            if worker and worker.isRunning():
+            if worker is not None and hasattr(worker, "isRunning") and worker.isRunning():
                 worker.quit()
                 worker.wait(3000)
 

@@ -241,6 +241,44 @@ class Session:
         """Liste les tours pour lesquels un checkpoint (snapshot) existe."""
         return self._checkpoints.list_checkpoints(self._save_id)
 
+    def regenerate_variant(
+        self,
+        turn_id: int,
+        history: list[dict],
+        user_message: str,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        verbosity_level: str = "balanced",
+        player_id: str = "player_1",
+        on_token: Callable[[str], None] | None = None,
+    ) -> str:
+        """Régénère une variante du texte narratif du tour `turn_id` (B4).
+
+        Rejoue le même message joueur pour produire un texte alternatif (sans
+        réévaluer règles ni stats) ; la variante est ajoutée au payload
+        multiverse du tour et devient active. Délègue à `axiom.regenerate`.
+
+        Args:
+            history: historique event-sourcé (`user_input`/`narrative_text`)
+                     jusqu'au tour précédent.
+        """
+        from axiom.regenerate import regenerate_variant
+
+        return regenerate_variant(
+            self._llm,
+            self._db_path,
+            self._save_id,
+            turn_id,
+            history,
+            system_prompt=self._system_prompt,
+            user_message=user_message,
+            temperature=temperature,
+            top_p=top_p,
+            verbosity_level=verbosity_level,
+            player_id=player_id,
+            on_token=on_token,
+        )
+
     def current_stats(self) -> dict[str, dict[str, str]]:
         """Stats matérialisées courantes par entité (reconstruit le State_Cache).
 

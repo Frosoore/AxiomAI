@@ -776,90 +776,21 @@ class PopulateMapTask(_BasePopulateTask):
 
 
 class CreatePlayerEntityTask(BaseDbTask):
-    """Creates a new entity of type 'player' with initial stats."""
+    """Crée une entité joueur (coquille fine : logique dans axiom.db_helpers, B4).
+
+    Remplace l'ancienne version Qt au corps DUPLIQUÉ (la 2e définition, active,
+    référençait `datetime` sans import → NameError latent sur nom vide/collision).
+    """
+
     def __init__(self, db_path: str, name: str, description: str = ""):
         super().__init__(db_path)
         self.name = name
         self.description = description
 
     def execute(self) -> str:
+        from axiom.db_helpers import create_player_entity
         self.signals.status.emit(f"Creating player entity '{self.name}'...")
-        import re
-        from datetime import datetime
-        from axiom.schema import migrate_entities_origin_column
-        migrate_entities_origin_column(self.db_path)
-        # 1. Generate safe ID
-        eid = re.sub(r'[^a-z0-9]', '_', self.name.lower()).strip('_')
-        if not eid:
-            eid = f"player_{int(datetime.now().timestamp())}"
-            
-        with get_connection(self.db_path) as conn:
-            # Check for collision
-            row = conn.execute("SELECT 1 FROM Entities WHERE entity_id = ?;", (eid,)).fetchone()
-            if row:
-                eid = f"{eid}_{int(datetime.now().timestamp() % 1000)}"
-
-            # Insert Entity
-            conn.execute(
-                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active, origin) "
-                "VALUES (?, ?, 'player', ?, 1, 'runtime');",
-                (eid, self.name, self.description)
-            )
-            
-            # 2. Assign default stats if definitions exist
-            stat_rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            for r in stat_rows:
-                stat_name = r[0]
-                conn.execute(
-                    "INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);",
-                    (eid, stat_name, "10") 
-                )
-            
-            conn.commit()
-            
-        self.signals.status.emit(f"Player {eid} created.")
-        return eid
-    """Creates a new entity of type 'player' with initial stats."""
-    def __init__(self, db_path: str, name: str, description: str = ""):
-        super().__init__(db_path)
-        self.name = name
-        self.description = description
-
-    def execute(self) -> str:
-        self.signals.status.emit(f"Creating player entity '{self.name}'...")
-        from axiom.schema import migrate_entities_origin_column
-        migrate_entities_origin_column(self.db_path)
-        # 1. Generate safe ID
-        eid = re.sub(r'[^a-z0-9]', '_', self.name.lower()).strip('_')
-        if not eid:
-            eid = f"player_{int(datetime.now().timestamp())}"
-            
-        with get_connection(self.db_path) as conn:
-            # Check for collision
-            row = conn.execute("SELECT 1 FROM Entities WHERE entity_id = ?;", (eid,)).fetchone()
-            if row:
-                eid = f"{eid}_{int(datetime.now().timestamp() % 1000)}"
-
-            # Insert Entity
-            conn.execute(
-                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active, origin) "
-                "VALUES (?, ?, 'player', ?, 1, 'runtime');",
-                (eid, self.name, self.description)
-            )
-            
-            # 2. Assign default stats if definitions exist
-            stat_rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            for r in stat_rows:
-                stat_name = r[0]
-                # Default numeric stats to 10, categorical to 'Normal' or similar
-                # In a more advanced version, we could use the 'parameters' field from Stat_Definitions
-                conn.execute(
-                    "INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);",
-                    (eid, stat_name, "10") 
-                )
-            
-            conn.commit()
-            
+        eid = create_player_entity(self.db_path, self.name, self.description)
         self.signals.status.emit(f"Player {eid} created.")
         return eid
 

@@ -103,6 +103,13 @@
 | `axiom/populate.py`     | + param `cancel` (annulation coopérative) | 2026-06-10 | TICKET-033 |
 | `workers/db_tasks.py`   | + signal cancelled + registre générations actives | 2026-06-10 | TICKET-033 |
 | `ui/main_window.py`     | + bouton « Annuler la génération » (barre de statut) | 2026-06-10 | TICKET-033 |
+| `axiom/db_helpers.py`   | + `create_player_entity` | 2026-06-10 | B4 — additive |
+| `axiom/regenerate.py` + `axiom/mini_dico.py` + `axiom/multiplayer.py` | création (portage workers) | 2026-06-10 | B4 — zéro Qt |
+| `axiom/session.py`      | + méthode `regenerate_variant` | 2026-06-10 | B4 — additive |
+| `workers/regenerate_worker.py` + `workers/mini_dico_worker.py` + `core/multiplayer_queue.py` | refonte en coquilles fines | 2026-06-10 | B4 — API/signaux conservés |
+| `ARCHITECTURE.md`       | table « non migré » vidée | 2026-06-10 | B4 |
+| `workers/chronicler_worker.py` | **supprimé** (mort, feu vert utilisateur) | 2026-06-10 | B4 |
+| `ui/tabletop_hardcore.py` | fix chemin de mort (worker retiré + garde isRunning) | 2026-06-10 | B4 |
 
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
 

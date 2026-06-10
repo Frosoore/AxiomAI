@@ -124,11 +124,13 @@ logique dans `axiom/`** (patron coquille ci-dessus) plutôt que d'en rajouter da
 
 | Feature (logique encore côté app)            | Fichier                              | Destination moteur visée |
 |----------------------------------------------|--------------------------------------|--------------------------|
-| Création entité joueur                        | `workers/db_tasks.py` (`CreatePlayerEntityTask`) | `axiom/` |
-| Régénération de réponse                       | `workers/regenerate_worker.py`       | `axiom/` (méthode `Session`) |
-| Lookups de lore (MiniDico)                    | `workers/mini_dico_worker.py`        | `axiom/` |
-| Déclenchement du Chronicler                   | `workers/chronicler_worker.py`       | `axiom/` (le moteur `axiom/chronicler.py` existe déjà) |
-| Tours multijoueurs (encore couplé Qt)         | `core/multiplayer_queue.py`          | `axiom/` |
+| *(vide — tout est porté au 2026-06-10, étape B4)* | | |
+
+Dernier lot porté (B4) : création entité joueur → `axiom/db_helpers.py::create_player_entity`,
+régénération de variante → `axiom/regenerate.py` (+ méthode `Session.regenerate_variant`),
+Mini-Dico → `axiom/mini_dico.py`, file multijoueur → `axiom/multiplayer.py::ActionQueue`.
+`workers/chronicler_worker.py` (coquille morte, jamais instancié — le Chronicler tourne dans
+le moteur depuis le Pilier 5) a été **supprimé** le 2026-06-10 (feu vert utilisateur).
 
 (Les autres `*Task` de `workers/db_tasks.py` qui ne font que **lire** la DB s'appuient déjà sur
 `axiom/db_helpers.py` / `axiom/events.py` — ce ne sont pas de la logique à porter.)

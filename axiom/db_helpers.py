@@ -431,3 +431,46 @@ def get_spatial_context(db_path: str, location_id: str) -> dict:
         "description": description,
         "neighbors": neighbors
     }
+
+
+def create_player_entity(db_path: str, name: str, description: str = "") -> str:
+    """Crée une entité joueur (origin='runtime') avec ses stats par défaut.
+
+    Porté de `workers/db_tasks.py::CreatePlayerEntityTask` (B4) — la version
+    Qt avait un corps dupliqué dont la définition active référençait
+    `datetime` sans import (NameError latent sur nom vide ou collision d'id).
+
+    Returns:
+        L'entity_id créé (dérivé du nom, désambiguïsé si collision).
+    """
+    import re
+
+    from axiom.schema import migrate_entities_origin_column
+
+    migrate_entities_origin_column(db_path)
+
+    eid = re.sub(r"[^a-z0-9]", "_", name.lower()).strip("_")
+    if not eid:
+        eid = f"player_{int(datetime.now().timestamp())}"
+
+    with get_connection(db_path) as conn:
+        if conn.execute("SELECT 1 FROM Entities WHERE entity_id = ?;", (eid,)).fetchone():
+            eid = f"{eid}_{int(datetime.now().timestamp() % 1000)}"
+
+        # origin='runtime' : le joueur n'appartient pas à la définition de
+        # l'univers — le hot reload / refresh ne doit jamais y toucher (§7.6).
+        conn.execute(
+            "INSERT INTO Entities (entity_id, name, entity_type, description, is_active, origin) "
+            "VALUES (?, ?, 'player', ?, 1, 'runtime');",
+            (eid, name, description),
+        )
+
+        # Stats par défaut : 10 pour chaque définition existante (la version
+        # avancée lirait `parameters` pour typer la valeur).
+        for row in conn.execute("SELECT name FROM Stat_Definitions;").fetchall():
+            conn.execute(
+                "INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);",
+                (eid, row[0], "10"),
+            )
+        conn.commit()
+    return eid

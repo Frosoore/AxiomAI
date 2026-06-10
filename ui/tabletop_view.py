@@ -101,7 +101,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._vector_memory = None
         self._llm = None
         self._narrative_worker: "NarrativeWorker | None" = None
-        self._chronicler_worker: "ChroniclerWorker | None" = None
         self._db_worker: DbWorker | None = None
         self._lore_worker: DbWorker | None = None
         self._vector_worker: VectorWorker | None = None

@@ -1,89 +1,58 @@
+"""
+core/multiplayer_queue.py
 
-import queue
-from dataclasses import dataclass
+Qt shell for the multiplayer turn queue.
+
+Coquille fine (B4) : la file FIFO et la résolution séquentielle vivent dans
+`axiom.multiplayer.ActionQueue` (pur threading) — ce module ne fait que faire
+tourner la boucle sur un QThread et traduire les callbacks en signaux Qt.
+`PlayerAction` est ré-exporté depuis le moteur (import inchangé pour le GUI).
+"""
+
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QThread, Signal, QObject
 
+from axiom.multiplayer import ActionQueue, PlayerAction  # noqa: F401 — ré-export
+
 if TYPE_CHECKING:
     from axiom.arbitrator import ArbitratorEngine
-    from axiom.backends.base import LLMMessage
 
-@dataclass
-class PlayerAction:
-    """Data structure for a queued player action."""
-    player_id: str
-    text: str
-    save_id: str
-    turn_id: int
-    universe_system_prompt: str
-    history: list["LLMMessage"]
-    temperature: float = 0.7
-    top_p: float = 1.0
-    verbosity_level: str = "balanced"
 
 class MultiplayerQueueSignals(QObject):
     """Signals for the ArbitratorWorker to communicate with the UI."""
-    token_received = Signal(str, str)  # token, player_id
-    turn_complete = Signal(object, str) # ArbitratorResult, player_id
-    error_occurred = Signal(str, str) # error_msg, player_id
+    token_received = Signal(str, str)    # token, player_id
+    turn_complete = Signal(object, str)  # ArbitratorResult, player_id
+    error_occurred = Signal(str, str)    # error_msg, player_id
     status_update = Signal(str)
 
+
 class ArbitratorWorker(QThread):
+    """Fait tourner la boucle de résolution séquentielle sur un QThread.
+
+    Une seule action est résolue à la fois (pas de course sur la DB) — la
+    garantie vit côté moteur, ce worker n'est que le véhicule de thread.
     """
-    Background worker that processes player actions sequentially from a FIFO queue.
-    Ensures that only one turn is being resolved at a time to prevent DB race conditions.
-    """
+
     def __init__(self, arbitrator: "ArbitratorEngine"):
         super().__init__()
-        self._arbitrator = arbitrator
-        self._queue: queue.Queue[PlayerAction] = queue.Queue()
+        self._engine_queue = ActionQueue(arbitrator)
         self.signals = MultiplayerQueueSignals()
-        self._is_running = True
 
     def enqueue(self, action: PlayerAction):
         """Add a new action to the processing queue."""
-        self._queue.put(action)
+        self._engine_queue.enqueue(action)
 
     def stop(self):
         """Gracefully stop the worker loop."""
-        self._is_running = False
-        # Push a None to unblock queue.get() if it's waiting
-        self._queue.put(None)
+        self._engine_queue.stop()
 
     def run(self):
-        while self._is_running:
-            # This blocks until an action is available
-            action = self._queue.get()
-            
-            if action is None or not self._is_running:
-                break
-
-            try:
-                self.signals.status_update.emit(f"Resolving action for {action.player_id}...")
-                
-                # We wrap the signal emission to include the player_id
-                def token_callback(token: str):
-                    self.signals.token_received.emit(token, action.player_id)
-
-                result = self._arbitrator.process_turn(
-                    save_id=action.save_id,
-                    turn_id=action.turn_id,
-                    user_message=action.text,
-                    universe_system_prompt=action.universe_system_prompt,
-                    history=action.history,
-                    player_entity_id=action.player_id,
-                    stream_token_callback=token_callback,
-                    temperature=action.temperature,
-                    top_p=action.top_p,
-                    verbosity_level=action.verbosity_level,
-                )
-                
-                self.signals.turn_complete.emit(result, action.player_id)
-                self.signals.status_update.emit("Ready.")
-                
-            except Exception as exc:
-                self.signals.error_occurred.emit(str(exc), action.player_id)
-                self.signals.status_update.emit("Error.")
-            finally:
-                self._queue.task_done()
+        self._engine_queue.run_loop(
+            on_token=self.signals.token_received.emit,
+            on_complete=self.signals.turn_complete.emit,
+            on_error=self.signals.error_occurred.emit,
+            on_status=self.signals.status_update.emit,
+        )

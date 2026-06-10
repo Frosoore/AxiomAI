@@ -57,6 +57,17 @@ normalement `ST_<nom>.db`) — demander le nom exact vu par l'utilisateur.
 coquilles, CLI `axiom populate`, ligne retirée d'ARCHITECTURE.md. Le chantier Pilier 2 + son UX
 est COMPLET côté code — il ne reste que les validations GUI utilisateur (028/029/030/031).
 
+**B4 (2026-06-10) : portage moteur TERMINÉ — la table « non migré » d'ARCHITECTURE.md est VIDE.**
+Portés : create_player_entity (db_helpers), regenerate_variant (axiom/regenerate.py +
+Session.regenerate_variant), mini_dico (axiom/mini_dico.py), multijoueur
+(axiom/multiplayer.py::ActionQueue). Workers = coquilles. `workers/chronicler_worker.py`
+SUPPRIMÉ (feu vert utilisateur 2026-06-10) ; au passage, chemin de mort hardcore réparé
+(référence au worker retiré + garde isRunning sur DbWorker, cf. CHANGELOG B4).
+
+Vérif GUI optionnelle (non bloquante, l'utilisateur sait) : les 4 points de contact du portage
+B4 — créer une entité joueur, bouton Régénérer, question Mini-Dico, tour multijoueur.
+
 Hors chantier : §7.8 plugins (Pilier 6), rewind en minutes (Pilier 5 = domaine Gemini),
-TICKET-009 split packaging, TICKET-017 ; et dans la table « non migré » d'ARCHITECTURE.md :
-CreatePlayerEntityTask, regenerate/mini_dico/chronicler workers, multiplayer_queue.
+TICKET-009 split packaging (plus aucun prérequis de migration), TICKET-017.
+⚠ RIEN n'est commité — tout le travail (TICKET-028→033, B3, B4, archivage PENDING→DONE) est
+dans le working tree de `dev-0` ; l'utilisateur découpe ses commits lui-même.
