@@ -18,6 +18,7 @@ from axiom.db_helpers import create_new_save
 from axiom.events import EventSourcer
 from axiom.saves import (
     SaveError,
+    apply_correction,
     export_save_state,
     fork_save,
     import_save_state,
@@ -196,6 +197,64 @@ def test_import_invalid_item_fk(universe_db: str, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# Correction en place (apply_correction)
+# ---------------------------------------------------------------------------
+
+def test_apply_correction_stats(played_save):
+    db, save_id = played_save
+    apply_correction(db, save_id, {"entities": {"player_1": {"Health": "999"}}})
+    assert materialize_state(db, save_id)["entities"]["player_1"]["Health"] == "999"
+
+
+def test_apply_correction_preserves_history(played_save):
+    """La correction est append-only : le rewind d'avant la correction reste possible."""
+    db, save_id = played_save
+    apply_correction(db, save_id, {"entities": {"player_1": {"Health": "999"}}})
+    # Rewind au tour 2 → la correction (apposée au tour 3) disparaît, on retrouve 80.
+    from axiom.checkpoint import CheckpointManager
+    CheckpointManager(db).rewind(save_id, 2)
+    assert materialize_state(db, save_id)["entities"]["player_1"]["Health"] == "80"
+
+
+def test_apply_correction_inventory_and_modifiers(universe_db: str):
+    save_id = create_new_save(universe_db, "Hero", "Normal")
+    apply_correction(universe_db, save_id, {
+        "entities": {"player_1": {"Health": "100"}},
+        "inventory": [{"entity_id": "player_1", "item_id": "sword", "quantity": 2}],
+        "modifiers": [{"entity_id": "player_1", "stat_key": "Health", "delta": 3.0, "minutes_remaining": 10}],
+    })
+    state = materialize_state(universe_db, save_id)
+    assert state["inventory"] == [{"entity_id": "player_1", "item_id": "sword", "quantity": 2}]
+    assert state["modifiers"][0]["delta"] == 3.0
+
+
+def test_apply_correction_removes_inventory(universe_db: str):
+    save_id = create_new_save(universe_db, "Hero", "Normal")
+    apply_correction(universe_db, save_id, {
+        "inventory": [{"entity_id": "player_1", "item_id": "sword", "quantity": 1}]})
+    apply_correction(universe_db, save_id, {
+        "inventory": [{"entity_id": "player_1", "item_id": "sword", "quantity": 0}]})
+    assert materialize_state(universe_db, save_id)["inventory"] == []
+
+
+def test_apply_correction_missing_save(universe_db: str):
+    with pytest.raises(SaveError):
+        apply_correction(universe_db, "ghost", {"entities": {"player_1": {"Health": "1"}}})
+
+
+def test_cli_save_edit(played_save, tmp_path: Path):
+    from axiom.cli.main import build_parser
+
+    db, save_id = played_save
+    patch = tmp_path / "patch.toml"
+    patch.write_text('[state.player_1]\nHealth = "123"\n', encoding="utf-8")
+    parser = build_parser()
+    args = parser.parse_args(["save-edit", db, save_id, str(patch)])
+    assert args.func(args) == 0
+    assert materialize_state(db, save_id)["entities"]["player_1"]["Health"] == "123"
+
+
+# ---------------------------------------------------------------------------
 # Fork
 # ---------------------------------------------------------------------------
 
@@ -259,3 +318,73 @@ def test_cli_save_export_import_fork(played_save, tmp_path: Path):
     # save-fork
     args = parser.parse_args(["save-fork", db, save_id, "--minute", "30"])
     assert args.func(args) == 0
+
+
+# ---------------------------------------------------------------------------
+# diff_save_states (TICKET-028 : flux GUI « éditer la save »)
+# ---------------------------------------------------------------------------
+
+def test_diff_stats_changees_seulement():
+    from axiom.saves import diff_save_states
+
+    before = {"state": {"alice": {"Health": "80", "Mana": "10"}}}
+    after = {"state": {"alice": {"Health": "55", "Mana": "10"},
+                       "bob": {"Health": "100"}}}
+    patch = diff_save_states(before, after)
+    # Seules les valeurs modifiées/nouvelles — pas d'event parasite pour Mana.
+    assert patch["entities"] == {"alice": {"Health": "55"}, "bob": {"Health": "100"}}
+    assert patch["inventory"] == []
+    assert patch["modifiers"] == []
+
+
+def test_diff_inventaire_modifie_ajoute_retire():
+    from axiom.saves import diff_save_states
+
+    before = {"inventory": [
+        {"entity_id": "alice", "item_id": "sword", "quantity": 1},
+        {"entity_id": "alice", "item_id": "bread", "quantity": 3},
+    ]}
+    after = {"inventory": [
+        {"entity_id": "alice", "item_id": "sword", "quantity": 2},     # modifié
+        {"entity_id": "alice", "item_id": "potion", "quantity": 1},    # ajouté
+    ]}                                                                  # bread retiré
+    patch = diff_save_states(before, after)
+    assert {(i["item_id"], i["quantity"]) for i in patch["inventory"]} == {
+        ("sword", 2), ("potion", 1), ("bread", 0),
+    }
+
+
+def test_diff_modifiers_nouveaux_seulement():
+    from axiom.saves import diff_save_states
+
+    existing = {"entity_id": "alice", "stat_key": "Health", "delta": -2.0,
+                "minutes_remaining": 30}
+    new = {"entity_id": "alice", "stat_key": "Mana", "delta": 5.0,
+           "minutes_remaining": 10}
+    patch = diff_save_states({"modifiers": [existing]},
+                             {"modifiers": [existing, new]})
+    assert patch["modifiers"] == [new]
+
+
+def test_diff_identique_patch_vide():
+    from axiom.saves import diff_save_states
+
+    state = {"state": {"alice": {"Health": "80"}},
+             "inventory": [{"entity_id": "alice", "item_id": "sword", "quantity": 1}],
+             "modifiers": []}
+    patch = diff_save_states(state, state)
+    assert not any(patch.values())
+
+
+def test_diff_puis_correction_applicable(played_save):
+    """Le patch issu du diff passe tel quel dans apply_correction."""
+    from axiom.saves import diff_save_states
+
+    db, save_id = played_save
+    state = materialize_state(db, save_id)
+    before = {"state": state["entities"]}
+    after = {"state": {**state["entities"],
+                       "player_1": {**state["entities"]["player_1"], "Health": "1"}}}
+    patch = diff_save_states(before, after)
+    apply_correction(db, save_id, patch)
+    assert materialize_state(db, save_id)["entities"]["player_1"]["Health"] == "1"

@@ -461,6 +461,65 @@ def build_populate_lore_prompt(
         {"role": "user", "content": user_content},
     ]
 
+CANONIZE_SYSTEM_PROMPT: str = """\
+You are a deterministic canon-extraction engine for a role-playing universe.
+You read a transcript of recent play and extract the NEW canonical elements the story
+introduced (characters, factions, places, facts) so they become part of the universe
+definition for future games.
+
+CRITICAL RULES:
+1. Respond ONLY with a ~~~json ... ~~~ fenced block.
+2. DO NOT write any conversational text.
+3. Extract ONLY elements that are clearly established by the story — no invention.
+4. NEVER extract the player character itself.
+5. Skip anything already present in the known entities / lore lists.
+6. If nothing new is canon-worthy, return {"entities": [], "lore_entries": []}.
+"""
+
+
+def build_canonize_prompt(
+    narrative_text: str,
+    existing_entities: list[str],
+    existing_lore: list[str],
+    global_lore: str = "",
+) -> list[LLMMessage]:
+    """Prompt de canonisation (TICKET-030) : histoire récente → entités + lore canon."""
+    skip_entities = ", ".join(existing_entities) if existing_entities else "(none)"
+    skip_lore = ", ".join(existing_lore) if existing_lore else "(none)"
+
+    user_content = (
+        "TASK: Extract the NEW canonical elements introduced by this play transcript.\n"
+        "OUTPUT REQUIREMENT: Respond ONLY with the JSON block. No preamble.\n\n"
+        "~~~json\n"
+        "{\n"
+        "  \"entities\": [\n"
+        "    {\n"
+        "      \"name\": \"<NAME_HERE>\",\n"
+        "      \"entity_type\": \"<npc_OR_faction>\",\n"
+        "      \"description\": \"<CONCISE_CANON_DESCRIPTION>\"\n"
+        "    }\n"
+        "  ],\n"
+        "  \"lore_entries\": [\n"
+        "    {\n"
+        "      \"category\": \"<General|Faction|Location|Character|Magic>\",\n"
+        "      \"name\": \"<ENTRY_NAME_HERE>\",\n"
+        "      \"content\": \"<WHAT_THE_STORY_ESTABLISHED>\"\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "~~~\n\n"
+        f"KNOWN ENTITIES (SKIP THESE): {skip_entities}\n"
+        f"KNOWN LORE ENTRIES (SKIP THESE): {skip_lore}\n\n"
+        f"EXISTING WORLD LORE (for consistency):\n{global_lore}\n\n"
+        f"RECENT PLAY TRANSCRIPT:\n{narrative_text}"
+    )
+
+    return [
+        {"role": "system", "content": CANONIZE_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
 POPULATE_MAP_SYSTEM_PROMPT = (
     "You are an expert world builder. Your task is to expand the world map hierarchy and connections.\n"
     "Available scales (from largest to smallest): universe, galaxy, world, country, zone, city, district, building, room, poi.\n"

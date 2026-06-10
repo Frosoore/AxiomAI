@@ -28,7 +28,10 @@ from workers.db_tasks import (
     LoadStatsTask, LoadCheckpointsTask, RewindTask, AppendEventTask,
     LoadSessionHistoryTask, UpdateVariantTask, SnapshotTask, DeleteSaveTask, RenameSaveTask,
     PopulateEntitiesTask, TickModifiersTask, CreatePlayerEntityTask, DeleteEntityTask,
-    LoadInventoryTask, LoadTimelineTask
+    LoadInventoryTask, LoadTimelineTask,
+    PackSaveTask, UnpackSaveTask, DuplicateSaveTask, ExportSaveStateTask, EditSaveStateTask,
+    RefreshDefinitionTask, ConvertFlatDbTask,
+    PreviewPopulateTask, ApplyStagedSourceTask, CanonizeStoryTask
 )
 
 
@@ -61,6 +64,21 @@ class DbWorker(QObject):
     save_complete = Signal()
     error_occurred = Signal(str)
     status_update = Signal(str)
+    # TICKET-028 — gestion des saves depuis le GUI
+    save_packed = Signal(str)            # chemin de l'archive .axiomsave écrite
+    save_unpacked = Signal(dict)         # {"save_id", "db_path"} ou {"needs_force", "message"}
+    save_duplicated = Signal(dict)       # {"save_id", "db_path"}
+    save_state_exported = Signal(str, str)  # (save_id, texte save_state.toml)
+    save_edited = Signal(int)            # tour de la correction, -1 si rien à appliquer
+    # TICKET-029 — onglet « Fichiers » du Creator Studio
+    definition_refreshed = Signal()      # source texte recompilée in-place dans le .db
+    universe_converted = Signal(dict)    # {"source_dir", "db_path"} après conversion
+    # TICKET-030 — Populate × Universe-as-Code
+    populate_previewed = Signal(dict)    # {"diffs", "staged_dir", "src_dir", "counts"}
+    staged_applied = Signal()            # arbre validé appliqué (source + .db)
+    story_canonized = Signal(dict)       # idem preview + {"universe_db", "applied"}
+    # TICKET-033 — annulation volontaire d'une génération (pas une erreur)
+    generation_cancelled = Signal(str)
 
     def __init__(self, db_path: str) -> None:
         super().__init__()
@@ -72,6 +90,7 @@ class DbWorker(QObject):
         """Connect task signals to worker signals and start it."""
         task.signals.status.connect(self.status_update.emit)
         task.signals.error.connect(self.error_occurred.emit)
+        task.signals.cancelled.connect(self.generation_cancelled.emit)
         
         # Prevent GC of the task object
         self._active_tasks.add(task)
@@ -159,6 +178,74 @@ class DbWorker(QObject):
     def rename_save(self, save_id: str, new_name: str) -> None:
         task = RenameSaveTask(self._db_path, save_id, new_name)
         task.signals.result.connect(lambda _: self.save_complete.emit())
+        self._setup_task(task)
+
+    # --- TICKET-028 : gestion des saves depuis le GUI ------------------
+
+    def pack_save_to(self, save_id: str, output_path: str) -> None:
+        """Exporte une save en archive .axiomsave."""
+        task = PackSaveTask(self._db_path, save_id, output_path)
+        task.signals.result.connect(self.save_packed.emit)
+        self._setup_task(task)
+
+    def unpack_save_from(self, archive_path: str, force: bool = False) -> None:
+        """Importe une archive .axiomsave dans cet univers."""
+        task = UnpackSaveTask(self._db_path, archive_path, force)
+        task.signals.result.connect(self.save_unpacked.emit)
+        self._setup_task(task)
+
+    def duplicate_save(self, save_id: str, new_name: str | None = None) -> None:
+        """Duplique une save (= « save manuelle » / point de branche)."""
+        task = DuplicateSaveTask(self._db_path, save_id, new_name)
+        task.signals.result.connect(self.save_duplicated.emit)
+        self._setup_task(task)
+
+    def export_save_state(self, save_id: str) -> None:
+        """Matérialise l'état d'une save en texte save_state.toml (édition)."""
+        task = ExportSaveStateTask(self._db_path, save_id)
+        task.signals.result.connect(lambda res: self.save_state_exported.emit(res[0], res[1]))
+        self._setup_task(task)
+
+    def apply_save_state_edit(self, save_id: str, original_text: str, edited_text: str) -> None:
+        """Applique le diff d'un save_state.toml édité (correction en place)."""
+        task = EditSaveStateTask(self._db_path, save_id, original_text, edited_text)
+        task.signals.result.connect(self.save_edited.emit)
+        self._setup_task(task)
+
+    # --- TICKET-029 : onglet « Fichiers » du Creator Studio -------------
+
+    def refresh_definition_from(self, src_dir: str) -> None:
+        """Recompile la définition depuis la source texte (in-place, runtime intact)."""
+        task = RefreshDefinitionTask(self._db_path, src_dir)
+        task.signals.result.connect(lambda _: self.definition_refreshed.emit())
+        self._setup_task(task)
+
+    def convert_flat_to_folder(self) -> None:
+        """Convertit le .db plat de ce worker en univers-dossier."""
+        task = ConvertFlatDbTask(self._db_path)
+        task.signals.result.connect(self.universe_converted.emit)
+        self._setup_task(task)
+
+    # --- TICKET-030 : Populate × Universe-as-Code -----------------------
+
+    def preview_populate(self, targets: list[str], mode: str = "auto",
+                         custom_text: str | None = None) -> None:
+        """Populate ciblé en sandbox → diff texte à valider (univers-dossier)."""
+        task = PreviewPopulateTask(self._db_path, targets, mode, custom_text)
+        task.signals.result.connect(self.populate_previewed.emit)
+        self._setup_task(task)
+
+    def apply_staged(self, staged_dir: str, src_dir: str,
+                     save_db: str | None = None) -> None:
+        """Applique un arbre source validé (source + recompilation in-place)."""
+        task = ApplyStagedSourceTask(self._db_path, staged_dir, src_dir, save_db)
+        task.signals.result.connect(lambda _: self.staged_applied.emit())
+        self._setup_task(task)
+
+    def canonize_story(self, narrative_text: str, preview: bool = True) -> None:
+        """Extrait le canon de l'histoire récente vers la définition de l'univers."""
+        task = CanonizeStoryTask(self._db_path, narrative_text, preview)
+        task.signals.result.connect(self.story_canonized.emit)
         self._setup_task(task)
 
     def tick_modifiers(self, save_id: str, elapsed_minutes: int) -> None:
@@ -308,6 +395,9 @@ class DbWorker(QObject):
                     for k, v in meta.items():
                         conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);", (k, str(v)))
                     conn.commit()
+                # TICKET-027 : univers-dossier → l'arbo texte reste la vérité.
+                from axiom.library import sync_source_if_any
+                sync_source_if_any(self.db_path)
                 return True
         task = TempTask(self._db_path, "")
         task.signals.result.connect(lambda _: self.save_complete.emit())
@@ -382,6 +472,9 @@ class DbWorker(QObject):
                                 (c["source_id"], c["target_id"], int(c["distance_km"]))
                             )
                     conn.commit()
+                # TICKET-027 : univers-dossier → l'arbo texte reste la vérité.
+                from axiom.library import sync_source_if_any
+                sync_source_if_any(self.db_path)
                 return True
 
         task = TempTask(self._db_path, "")
@@ -389,25 +482,22 @@ class DbWorker(QObject):
         self._setup_task(task)
 
     def load_library(self, library_dir: str) -> None:
-        from pathlib import Path
-        from axiom.db_helpers import read_universe_card_metadata
+        from axiom.library import discover_universes
         class TempTask(LoadStatsTask):
             def execute(self) -> list:
-                db_files = sorted(Path(library_dir).glob("*.db"))
-                results = []
-                for fpath in db_files:
-                    name, updated, difficulty = read_universe_card_metadata(str(fpath))
-                    results.append({"db_path": str(fpath), "name": name, "last_updated": updated, "difficulty": difficulty})
-                return results
+                # *.db plat (legacy) + dossiers source Universe-as-Code (compilés à la demande).
+                return discover_universes(library_dir)
         task = TempTask(self._db_path, "")
         task.signals.result.connect(self.library_loaded.emit)
         self._setup_task(task)
 
     def load_saves_async(self) -> None:
-        from axiom.db_helpers import load_saves
+        from axiom.savestore import list_saves
         class TempTask(LoadStatsTask):
             def execute(self) -> list:
-                return load_saves(self.db_path)
+                # §7.6 : saves séparées (saves/<univers>/) + legacy embarquées.
+                # Chaque ligne porte db_path (base à ouvrir) et storage.
+                return list_saves(self.db_path)
         task = TempTask(self._db_path, "")
         task.signals.result.connect(self.saves_loaded.emit)
         self._setup_task(task)
@@ -558,3 +648,4 @@ class DbWorker(QObject):
                 return True
         task = TempTask(self._db_path, "")
         task.signals.result.connect(lambda _: self.save_complete.emit())
+        self._setup_task(task)  # TICKET-025 : la tâche n'était jamais dispatchée → personas jamais sauvegardées

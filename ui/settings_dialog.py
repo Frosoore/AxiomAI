@@ -132,9 +132,22 @@ class SettingsDialog(QDialog):
         
         self._gemini_key_label = QLabel(tr("api_key"))
         self._gemini_model_label = QLabel(tr("model_name"))
-        
+
+        # TICKET-031 : résilience aux quotas (429).
+        self._gemini_fallback = QLineEdit()
+        self._gemini_fallback.setPlaceholderText("e.g. gemini-2.0-flash-lite")
+        self._gemini_fallback.setToolTip(tr("gemini_fallback_tooltip"))
+        self._gemini_fallback_label = QLabel(tr("gemini_fallback_label"))
+        self._llm_rpm_spin = QSpinBox()
+        self._llm_rpm_spin.setRange(0, 600)
+        self._llm_rpm_spin.setSpecialValueText(tr("rpm_unlimited"))
+        self._llm_rpm_spin.setToolTip(tr("llm_rpm_tooltip"))
+        self._llm_rpm_label = QLabel(tr("llm_rpm_label"))
+
         gemini_form.addRow(self._gemini_key_label, self._gemini_key)
         gemini_form.addRow(self._gemini_model_label, self._gemini_model)
+        gemini_form.addRow(self._gemini_fallback_label, self._gemini_fallback)
+        gemini_form.addRow(self._llm_rpm_label, self._llm_rpm_spin)
         
         test_row2 = QHBoxLayout()
         test_row2.addWidget(self._gemini_test_btn)
@@ -295,6 +308,8 @@ class SettingsDialog(QDialog):
         self._time_model.setText(config.time_model)
         self._gemini_key.setText(config.gemini_api_key)
         self._gemini_model.setText(config.gemini_model)
+        self._gemini_fallback.setText(config.gemini_fallback_model)
+        self._llm_rpm_spin.setValue(config.llm_requests_per_minute)
         self._chronicler_spin.setValue(config.chronicler_minutes_interval)
         self._font_size_spin.setValue(config.ui_font_size)
         self._rag_chunk_spin.setValue(config.rag_chunk_count)
@@ -323,6 +338,8 @@ class SettingsDialog(QDialog):
             universal_model=self._univ_model.text().strip() or "llama3.2",
             gemini_api_key=self._gemini_key.text().strip(),
             gemini_model=self._gemini_model.text().strip() or "gemini-2.0-flash",
+            gemini_fallback_model=self._gemini_fallback.text().strip(),
+            llm_requests_per_minute=self._llm_rpm_spin.value(),
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
             time_model=self._time_model.text().strip() or "llama3.2:1b",
             timekeeper_enabled=self._timekeeper_cb.isChecked(),

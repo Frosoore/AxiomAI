@@ -41,16 +41,24 @@ def run_compile(args: argparse.Namespace) -> int:
 
 def add_pack_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom pack`."""
-    parser.add_argument("src_dir", help="Dossier source de l'univers (contient universe.toml).")
+    parser.add_argument(
+        "source",
+        help="Univers à empaqueter : dossier source (universe.toml) ou .db (décompilé à la volée).",
+    )
     parser.add_argument("output", help="Chemin de l'archive .axiom à produire.")
 
 
 def run_pack(args: argparse.Namespace) -> int:
-    """Empaquette une arborescence source en archive .axiom v2."""
-    from axiom.package import pack_universe, PackageError
+    """Empaquette un univers (arbo source ou .db) en archive .axiom v2."""
+    from pathlib import Path
+
+    from axiom.package import export_db_to_axiom, pack_universe, PackageError
 
     try:
-        out = pack_universe(args.src_dir, args.output)
+        if Path(args.source).is_file():
+            out = export_db_to_axiom(args.source, args.output)
+        else:
+            out = pack_universe(args.source, args.output)
     except PackageError as exc:
         print(f"Échec du packaging : {exc}", file=sys.stderr)
         return 1
@@ -83,6 +91,51 @@ def run_import(args: argparse.Namespace) -> int:
         print(f"Échec de l'import : {exc}", file=sys.stderr)
         return 1
     print(f"Univers importé : {out}")
+    return 0
+
+
+def add_dev_arguments(parser: argparse.ArgumentParser) -> None:
+    """Déclare les arguments de `axiom dev`."""
+    parser.add_argument("src_dir", help="Dossier source de l'univers à surveiller.")
+    parser.add_argument(
+        "--db",
+        metavar="DB",
+        help="Chemin du .db cible (défaut : <src_dir>/.axiom-cache/universe.db).",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=1.0,
+        metavar="S",
+        help="Période de polling en secondes (défaut : 1.0).",
+    )
+
+
+def run_dev(args: argparse.Namespace) -> int:
+    """Mode dev : watch + recompile in-place de la définition (hot reload)."""
+    from pathlib import Path
+
+    from axiom.dev import watch_universe
+
+    if not (Path(args.src_dir) / "universe.toml").exists():
+        print(
+            f"Arborescence source invalide (pas de universe.toml) : {args.src_dir}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # flush=True : les événements doivent apparaître immédiatement, même si
+    # stdout est redirigé (sinon ils restent dans le buffer process).
+    print(f"Mode dev — surveillance de {args.src_dir} (Ctrl-C pour arrêter)", flush=True)
+    try:
+        watch_universe(
+            args.src_dir,
+            args.db,
+            interval=args.interval,
+            on_event=lambda msg: print(msg, flush=True),
+        )
+    except KeyboardInterrupt:
+        print("\nArrêt du mode dev.")
     return 0
 
 

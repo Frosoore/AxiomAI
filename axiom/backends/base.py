@@ -89,6 +89,16 @@ class LLMParseError(Exception):
     """
 
 
+class GenerationCancelled(Exception):
+    """Annulation volontaire d'une génération (TICKET-033).
+
+    Levée quand `LLMBackend.cancel_event` est armé pendant une attente (retry
+    429, pacing) ou à une frontière coopérative (entre chunks/cibles d'un
+    Populate). Ce n'est PAS une erreur : les appelants la traduisent en signal
+    « annulé », jamais en popup d'erreur.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Regex patterns for the tool-call fence
 # ---------------------------------------------------------------------------
@@ -114,7 +124,24 @@ class LLMBackend(ABC):
     Concrete subclasses must implement complete(), stream_tokens(), and
     is_available().  The parse_tool_call() helper is provided here and is
     shared by all subclasses.
+
+    Hooks optionnels (TICKET-033), posés par l'appelant après construction —
+    zéro Qt, un backend qui ne les consulte pas reste valide :
+    - `on_status` : callback(str) de progression (ex. compte à rebours de retry) ;
+    - `cancel_event` : `threading.Event` armé pour demander l'arrêt — les
+      backends/appelants coopératifs lèvent alors `GenerationCancelled`.
     """
+
+    on_status = None        # Callable[[str], None] | None
+    cancel_event = None     # threading.Event | None
+
+    def _notify(self, message: str) -> None:
+        if self.on_status is not None:
+            self.on_status(message)
+
+    def _check_cancelled(self) -> None:
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise GenerationCancelled("Generation cancelled by user.")
 
     @abstractmethod
     def complete(

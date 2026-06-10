@@ -200,9 +200,39 @@ class MainWindow(QMainWindow):
 
     def _setup_status_bar(self) -> None:
         """Create and configure the status bar."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QPushButton
+
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage(tr("ready"))
+
+        # TICKET-033 : bouton d'annulation des générations LLM en cours,
+        # visible uniquement quand une génération annulable tourne (poll léger
+        # sur le registre des workers — aucune vue à câbler).
+        self._cancel_gen_btn = QPushButton(tr("cancel_generation"))
+        self._cancel_gen_btn.setStyleSheet("color: #FF4B4B;")
+        self._cancel_gen_btn.clicked.connect(self._on_cancel_generation)
+        self._cancel_gen_btn.hide()
+        self._status_bar.addPermanentWidget(self._cancel_gen_btn)
+
+        self._gen_watch_timer = QTimer(self)
+        self._gen_watch_timer.setInterval(500)
+        self._gen_watch_timer.timeout.connect(self._refresh_cancel_button)
+        self._gen_watch_timer.start()
+
+    @Slot()
+    def _refresh_cancel_button(self) -> None:
+        from workers.db_tasks import active_generation_count
+        self._cancel_gen_btn.setVisible(active_generation_count() > 0)
+
+    @Slot()
+    def _on_cancel_generation(self) -> None:
+        from workers.db_tasks import cancel_active_generations
+        if cancel_active_generations():
+            # Coopératif : l'arrêt est effectif à la prochaine frontière
+            # (fin d'attente de retry, frontière de chunk).
+            self.on_status_update(tr("generation_cancelling"))
 
     # ------------------------------------------------------------------
     # Navigation

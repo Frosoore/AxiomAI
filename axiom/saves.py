@@ -298,6 +298,142 @@ def import_save_state(
 
 
 # ---------------------------------------------------------------------------
+# Correction d'une save existante (édition en place, append-only)
+# ---------------------------------------------------------------------------
+
+def apply_correction(
+    db_path: str,
+    save_id: str,
+    patch: dict[str, Any],
+    *,
+    at_turn: int | None = None,
+) -> int:
+    """Applique une correction à une save **existante** sans réécrire le passé.
+
+    Les changements de stats deviennent des events `manual_edit` (au tour choisi, défaut =
+    dernier tour) → le journal reste cohérent et append-only, le rewind est préservé, et
+    l'édition est tracée. L'inventaire et les modifiers (non event-sourcés) sont écrits
+    directement.
+
+    `patch` = {
+        "entities":  {entity_id: {stat_key: "valeur", ...}},   # stat_set via manual_edit
+        "inventory": [{entity_id, item_id, quantity}, ...],     # upsert (quantity 0 → retrait)
+        "modifiers": [{entity_id, stat_key, delta, minutes_remaining}, ...],  # ajoutés
+    }
+
+    Returns:
+        Le `turn_id` auquel la correction a été apposée.
+    """
+    turn_id = resolve_point(db_path, save_id, at_turn=at_turn)
+    sourcer = EventSourcer(db_path)
+
+    with get_connection(db_path) as conn:
+        if conn.execute("SELECT 1 FROM Saves WHERE save_id = ?;", (save_id,)).fetchone() is None:
+            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+
+    events: list[tuple[str, int, str, str, dict]] = []
+    for eid, stats in patch.get("entities", {}).items():
+        for stat_key, value in stats.items():
+            events.append((
+                save_id, turn_id, "manual_edit", eid,
+                {"entity_id": eid, "stat_key": stat_key, "value": str(value)},
+            ))
+    if events:
+        sourcer.append_events_batch(events)
+
+    try:
+        with get_connection(db_path) as conn:
+            for it in patch.get("inventory", []):
+                qty = int(it.get("quantity", 1))
+                if qty <= 0:
+                    conn.execute(
+                        "DELETE FROM Items_Inventory WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
+                        (save_id, it["entity_id"], it["item_id"]),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
+                        "VALUES (?, ?, ?, ?);",
+                        (save_id, it["entity_id"], it["item_id"], qty),
+                    )
+            for m in patch.get("modifiers", []):
+                conn.execute(
+                    "INSERT INTO Active_Modifiers "
+                    "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
+                    "VALUES (?, ?, ?, ?, ?, ?);",
+                    (str(uuid.uuid4()), save_id, m["entity_id"], m["stat_key"],
+                     float(m["delta"]), int(m.get("minutes_remaining", 0))),
+                )
+            conn.commit()
+    except (sqlite3.Error, KeyError) as exc:
+        raise SaveError(f"Correction impossible (référence invalide ?) : {exc}") from exc
+
+    sourcer.rebuild_state_cache(save_id)
+    return turn_id
+
+
+def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    """Calcule le patch de correction entre deux états `save_state.toml` parsés.
+
+    Sert au flux « éditer la save » : on exporte l'état, l'utilisateur modifie
+    le TOML, et seules les **différences** sont apposées via `apply_correction`
+    (sinon chaque stat inchangée deviendrait un event `manual_edit` parasite).
+
+    - stats : valeurs modifiées ou ajoutées (la suppression d'une stat n'existe
+      pas dans le modèle de correction → ignorée) ;
+    - inventaire : quantités modifiées/ajoutées ; une ligne disparue → quantité 0
+      (= retrait) ;
+    - modifiers : seuls les **nouveaux** sont retenus (la correction ne sait
+      qu'ajouter des modifiers).
+    """
+    entities: dict[str, dict[str, str]] = {}
+    state_before = before.get("state", {})
+    for eid, stats in after.get("state", {}).items():
+        prior = state_before.get(eid, {})
+        changed = {k: v for k, v in stats.items() if str(prior.get(k)) != str(v)}
+        if changed:
+            entities[eid] = changed
+
+    inv_before = {
+        (i["entity_id"], i["item_id"]): int(i.get("quantity", 1))
+        for i in before.get("inventory", [])
+    }
+    inv_after = {
+        (i["entity_id"], i["item_id"]): int(i.get("quantity", 1))
+        for i in after.get("inventory", [])
+    }
+    inventory = [
+        {"entity_id": eid, "item_id": iid, "quantity": qty}
+        for (eid, iid), qty in inv_after.items()
+        if inv_before.get((eid, iid)) != qty
+    ]
+    inventory += [
+        {"entity_id": eid, "item_id": iid, "quantity": 0}
+        for (eid, iid) in inv_before.keys() - inv_after.keys()
+    ]
+
+    def _mod_key(m: dict) -> tuple:
+        return (m["entity_id"], m["stat_key"], float(m["delta"]),
+                int(m.get("minutes_remaining", 0)))
+
+    known = {_mod_key(m) for m in before.get("modifiers", [])}
+    modifiers = [m for m in after.get("modifiers", []) if _mod_key(m) not in known]
+
+    return {"entities": entities, "inventory": inventory, "modifiers": modifiers}
+
+
+def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *, at_turn: int | None = None) -> int:
+    """Charge un fichier TOML (mêmes sections que save_state.toml) et l'applique en correction."""
+    data = _load_state_toml(patch_path)
+    patch = {
+        "entities": data.get("state", {}),
+        "inventory": data.get("inventory", []),
+        "modifiers": data.get("modifiers", []),
+    }
+    return apply_correction(db_path, save_id, patch, at_turn=at_turn)
+
+
+# ---------------------------------------------------------------------------
 # Fork (découpe du journal à un point)
 # ---------------------------------------------------------------------------
 

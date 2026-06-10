@@ -40,7 +40,6 @@ from PySide6.QtWidgets import (
 
 from axiom.config import load_config, GLOBAL_DB_FILE
 from axiom.localization import tr
-from axiom.db_helpers import create_new_save
 from workers.db_worker import DbWorker
 
 if TYPE_CHECKING:
@@ -76,6 +75,39 @@ class PersonaCreationDialog(QDialog):
         return self.name_edit.text().strip(), self.desc_edit.toPlainText().strip()
 
 
+class SaveStateEditDialog(QDialog):
+    """TICKET-028 : édition du `save_state.toml` d'une partie.
+
+    Le texte validé est comparé à l'export d'origine : seules les différences
+    sont appliquées, en corrections `manual_edit` (rewind préservé).
+    """
+
+    def __init__(self, toml_text: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("edit_save_title"))
+        self.setMinimumSize(560, 480)
+
+        layout = QVBoxLayout(self)
+        hint = QLabel(tr("edit_save_hint"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #888;")
+        layout.addWidget(hint)
+
+        self._editor = QPlainTextEdit()
+        self._editor.setPlainText(toml_text)
+        from PySide6.QtGui import QFontDatabase
+        self._editor.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        layout.addWidget(self._editor)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def get_text(self) -> str:
+        return self._editor.toPlainText()
+
+
 class SetupView(QWidget):
     """Full-screen setup screen for starting or resuming a game."""
 
@@ -88,6 +120,7 @@ class SetupView(QWidget):
         self._all_personas: list[dict] = []
         self._setup_configs: list[dict] = []
         self._setup_widgets: dict[str, QWidget] = {}
+        self._pending_import_path: str | None = None
 
         self._setup_ui()
 
@@ -142,11 +175,44 @@ class SetupView(QWidget):
         self._saves_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self._saves_list.customContextMenuRequested.connect(self._on_saves_context_menu)
         layout.addWidget(self._saves_list)
-        
+
+        # TICKET-028 : pas de bouton « Sauvegarder » — la sauvegarde est
+        # continue (chaque tour est persisté immédiatement).
+        self._continuous_note = QLabel(tr("continuous_save_note"))
+        self._continuous_note.setWordWrap(True)
+        self._continuous_note.setStyleSheet("color: #888; font-size: 12px;")
+        layout.addWidget(self._continuous_note)
+
+        btn_bar = QHBoxLayout()
+        self._import_save_btn = QPushButton(tr("import_save"))
+        self._import_save_btn.clicked.connect(self._on_import_save_clicked)
+        btn_bar.addWidget(self._import_save_btn)
+        btn_bar.addStretch()
+
+        self._export_save_btn = QPushButton(tr("export_save"))
+        self._export_save_btn.clicked.connect(self._on_export_save_clicked)
+        btn_bar.addWidget(self._export_save_btn)
+
+        self._duplicate_save_btn = QPushButton(tr("duplicate_save"))
+        self._duplicate_save_btn.clicked.connect(self._on_duplicate_save_clicked)
+        btn_bar.addWidget(self._duplicate_save_btn)
+
+        self._rename_save_btn = QPushButton(tr("rename_save"))
+        self._rename_save_btn.clicked.connect(self._on_rename_save_clicked)
+        btn_bar.addWidget(self._rename_save_btn)
+
+        self._edit_save_btn = QPushButton(tr("edit_save"))
+        self._edit_save_btn.clicked.connect(self._on_edit_save_clicked)
+        btn_bar.addWidget(self._edit_save_btn)
+
         self._del_save_btn = QPushButton(tr("delete_save"))
         self._del_save_btn.setStyleSheet("color: #FF4B4B;")
         self._del_save_btn.clicked.connect(self._on_delete_save_clicked)
-        layout.addWidget(self._del_save_btn, 0, Qt.AlignRight)
+        btn_bar.addWidget(self._del_save_btn)
+        layout.addLayout(btn_bar)
+
+        self._saves_list.itemSelectionChanged.connect(self._update_save_buttons)
+        self._update_save_buttons()
 
         # Raccourcis clavier
         from PySide6.QtGui import QShortcut, QKeySequence
@@ -166,6 +232,106 @@ class SetupView(QWidget):
         self._shortcut_ctrl_up = QShortcut(QKeySequence("Ctrl+Up"), self._saves_list)
         self._shortcut_ctrl_up.setContext(Qt.WidgetShortcut)
         self._shortcut_ctrl_up.activated.connect(self._select_prev_save)
+
+    def _selected_save(self) -> dict | None:
+        """La save sélectionnée, ou None si la sélection n'est pas unique."""
+        items = self._saves_list.selectedItems()
+        return items[0].data(Qt.UserRole) if len(items) == 1 else None
+
+    @Slot()
+    def _update_save_buttons(self) -> None:
+        count = len(self._saves_list.selectedItems())
+        for btn in (self._export_save_btn, self._duplicate_save_btn,
+                    self._rename_save_btn, self._edit_save_btn):
+            btn.setEnabled(count == 1)
+        self._del_save_btn.setEnabled(count >= 1)
+
+    # --- TICKET-028 : export / import / duplication / édition -----------
+
+    @Slot()
+    def _on_export_save_clicked(self) -> None:
+        save = self._selected_save()
+        if not save:
+            return
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("export_save"), f"{save['player_name']}.axiomsave",
+            "Axiom Save (*.axiomsave)"
+        )
+        if not path:
+            return
+        if not path.endswith(".axiomsave"):
+            path += ".axiomsave"
+        self._db_worker.pack_save_to(save["save_id"], path)
+
+    @Slot(str)
+    def _on_save_packed(self, path: str) -> None:
+        QMessageBox.information(self, tr("export_save"), tr("save_exported_msg", path=path))
+
+    @Slot()
+    def _on_import_save_clicked(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("import_save"), "", "Axiom Save (*.axiomsave)"
+        )
+        if path:
+            self._pending_import_path = path
+            self._db_worker.unpack_save_from(path)
+
+    @Slot(dict)
+    def _on_save_unpacked(self, info: dict) -> None:
+        if info.get("needs_force"):
+            # Archive issue d'un autre univers : on demande avant de forcer.
+            reply = QMessageBox.question(self, tr("import_save"), tr("save_import_force_q"))
+            if reply == QMessageBox.Yes and self._pending_import_path:
+                self._db_worker.unpack_save_from(self._pending_import_path, force=True)
+            return
+        self._pending_import_path = None
+        self._db_worker.load_saves_async()
+        QMessageBox.information(
+            self, tr("import_save"), tr("save_imported_msg", name=info.get("save_id", ""))
+        )
+
+    @Slot()
+    def _on_duplicate_save_clicked(self) -> None:
+        save = self._selected_save()
+        if not save:
+            return
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, tr("duplicate_save"), tr("duplicate_save_name_q"),
+            QLineEdit.Normal, f"{save['player_name']} (fork)"
+        )
+        if not ok or not name.strip():
+            return
+        self._db_worker.duplicate_save(save["save_id"], name.strip())
+
+    @Slot(dict)
+    def _on_save_duplicated(self, info: dict) -> None:
+        self._db_worker.load_saves_async()
+
+    @Slot()
+    def _on_edit_save_clicked(self) -> None:
+        save = self._selected_save()
+        if not save:
+            return
+        self._db_worker.export_save_state(save["save_id"])
+
+    @Slot(str, str)
+    def _on_save_state_exported(self, save_id: str, text: str) -> None:
+        dialog = SaveStateEditDialog(text, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        edited = dialog.get_text()
+        if edited != text:
+            self._db_worker.apply_save_state_edit(save_id, text, edited)
+
+    @Slot(int)
+    def _on_save_edited(self, turn: int) -> None:
+        if turn < 0:
+            QMessageBox.information(self, tr("edit_save_title"), tr("save_edit_nochange_msg"))
+        else:
+            QMessageBox.information(self, tr("edit_save_title"), tr("save_edited_msg", turn=turn))
 
     @Slot()
     def _select_next_save(self) -> None:
@@ -229,6 +395,12 @@ class SetupView(QWidget):
         self._tabs.setTabText(2, tr("tab_setup"))
         self._launch_btn.setText(tr("launch_session"))
         self._del_save_btn.setText(tr("delete_save"))
+        self._import_save_btn.setText(tr("import_save"))
+        self._export_save_btn.setText(tr("export_save"))
+        self._duplicate_save_btn.setText(tr("duplicate_save"))
+        self._rename_save_btn.setText(tr("rename_save"))
+        self._edit_save_btn.setText(tr("edit_save"))
+        self._continuous_note.setText(tr("continuous_save_note"))
 
     def load_universe(self, db_path: str) -> None:
         self._db_path = db_path
@@ -254,6 +426,12 @@ class SetupView(QWidget):
         self._db_worker.saves_loaded.connect(self._on_saves_loaded)
         self._db_worker.full_universe_loaded.connect(self._on_universe_loaded)
         self._db_worker.error_occurred.connect(lambda msg: QMessageBox.critical(self, tr("error"), msg))
+        # TICKET-028 : gestion des saves
+        self._db_worker.save_packed.connect(self._on_save_packed)
+        self._db_worker.save_unpacked.connect(self._on_save_unpacked)
+        self._db_worker.save_duplicated.connect(self._on_save_duplicated)
+        self._db_worker.save_state_exported.connect(self._on_save_state_exported)
+        self._db_worker.save_edited.connect(self._on_save_edited)
         
         self._db_worker.load_saves_async()
         self._db_worker.load_full_universe()
@@ -394,10 +572,22 @@ class SetupView(QWidget):
         menu.addAction(play_action)
         
         if len(items) == 1:
-            rename_action = QAction("Rename", self)
+            rename_action = QAction(tr("rename_save"), self)
             rename_action.triggered.connect(self._on_rename_save_clicked)
             menu.addAction(rename_action)
-            
+
+            duplicate_action = QAction(tr("duplicate_save"), self)
+            duplicate_action.triggered.connect(self._on_duplicate_save_clicked)
+            menu.addAction(duplicate_action)
+
+            edit_action = QAction(tr("edit_save"), self)
+            edit_action.triggered.connect(self._on_edit_save_clicked)
+            menu.addAction(edit_action)
+
+            export_action = QAction(tr("export_save"), self)
+            export_action.triggered.connect(self._on_export_save_clicked)
+            menu.addAction(export_action)
+
         delete_action = QAction(tr("delete_save"), self)
         delete_action.triggered.connect(self._on_delete_save_clicked)
         menu.addAction(delete_action)
@@ -440,8 +630,12 @@ class SetupView(QWidget):
                 QMessageBox.warning(self, "Setup", "Please select only one save to launch.")
                 return
             save = items[0].data(Qt.UserRole)
+            # §7.6 : la save peut vivre dans son propre fichier (storage='separated').
+            save_db = save.get("db_path") or self._db_path
+            from axiom.savestore import refresh_save_definition
+            refresh_save_definition(save_db)  # resync si l'univers a été patché
             self._main_window.show_tabletop(
-                self._db_path, save["save_id"], player_persona=save.get("player_persona", "")
+                save_db, save["save_id"], player_persona=save.get("player_persona", "")
             )
             return
 
@@ -480,7 +674,10 @@ class SetupView(QWidget):
 
         diff = self._difficulty_combo.currentData()
 
-        save_id = create_new_save(self._db_path, name, diff, player_persona=persona)        
+        # §7.6 : nouvelle partie = save db séparée (définition copiée), l'univers
+        # n'est plus touché. La Session joue sur le fichier de la save.
+        from axiom.savestore import create_save
+        info = create_save(self._db_path, name, diff, player_persona=persona)
         self._main_window.show_tabletop(
-            self._db_path, save_id, player_persona=persona, setup_answers=answers
+            info["db_path"], info["save_id"], player_persona=persona, setup_answers=answers
         )

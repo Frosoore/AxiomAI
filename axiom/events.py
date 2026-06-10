@@ -222,7 +222,7 @@ class EventSourcer:
         relevant = [
             {"event_type": etype, "target_entity": target, "payload": payload}
             for (_sid, _tid, etype, target, payload) in events
-            if etype in ("entity_create", "stat_change", "stat_set", "chronicler_update")
+            if etype in ("entity_create", "stat_change", "stat_set", "chronicler_update", "manual_edit")
         ]
         if not relevant:
             return
@@ -395,10 +395,11 @@ class EventSourcer:
             stat_change       — adjusts a numeric stat by delta, or sets a string
                                 value when a 'value' key is present instead of 'delta'.
             stat_set          — unconditionally sets a stat to a string value.
-            chronicler_update — world-simulation stat change (TICKET-024 ↦ TICKET-006) :
-                                same payload shape (delta|value) ; matérialisé comme un
-                                stat_change/stat_set tout en conservant sa provenance
-                                « chronicler » dans le journal.
+            chronicler_update — world-simulation stat change (TICKET-006) : même payload
+                                (delta|value) ; matérialisé comme un stat_change/stat_set tout
+                                en conservant sa provenance « chronicler » dans le journal.
+            manual_edit       — correction manuelle (humain/LLM via l'éditeur de saves) : même
+                                payload (delta|value), provenance « édition » conservée.
 
         All other event types (e.g. 'dialogue', 'combat_roll') are ignored
         because they carry no cache-relevant state.
@@ -418,7 +419,7 @@ class EventSourcer:
             if entity_id not in cache:
                 cache[entity_id] = {}
 
-        elif event_type in ("stat_change", "stat_set", "chronicler_update"):
+        elif event_type in ("stat_change", "stat_set", "chronicler_update", "manual_edit"):
             entity_id = payload.get("entity_id", event.get("target_entity", ""))
             stat_key: str = payload["stat_key"]
 

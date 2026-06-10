@@ -134,6 +134,66 @@ _TRANSLATIONS = {
         "launch_session": "Launch Session",
         "resume_save": "Resume a Save",
         "delete_save": "Delete Save",
+        "export_save": "Export…",
+        "import_save": "Import a save…",
+        "duplicate_save": "Duplicate",
+        "rename_save": "Rename",
+        "edit_save": "Edit…",
+        "save_exported_msg": "Save exported to:\n{path}",
+        "save_imported_msg": "Save imported: {name}",
+        "save_duplicated_msg": "Save duplicated: {name}",
+        "save_edited_msg": "Correction applied (turn {turn}).",
+        "save_edit_nochange_msg": "No change to apply.",
+        "save_import_force_q": "This save comes from another universe. Import it anyway?",
+        "edit_save_title": "Edit Save State",
+        "edit_save_hint": ("Edit the values below, then confirm: only the differences are applied, "
+                           "as traceable corrections (rewind is preserved).\n"
+                           "[save] and [point] are informative; removing an [[inventory]] line removes "
+                           "the item; only NEW [[modifiers]] entries are added."),
+        "duplicate_save_name_q": "Name of the duplicated save:",
+        "continuous_save_note": ("Saving is continuous: every turn is recorded immediately — "
+                                 "“Duplicate” creates a branch point."),
+        "tab_files": "Files",
+        "files_save_file": "Save File",
+        "files_flat_db_msg": ("This universe is a flat .db file: it has no source text files.\n"
+                              "Convert it to a folder universe (TOML/MD files + compiled cache) "
+                              "to edit it as text.\nExisting saves are kept; the original .db is "
+                              "preserved as a .bak file."),
+        "files_convert_btn": "Convert to folder universe",
+        "files_convert_confirm": ("Convert this universe to a source folder? Existing saves are "
+                                  "moved to separate files and the original .db is kept as .bak."),
+        "files_converted_msg": "Universe converted to a source folder.",
+        "files_saved_refreshed": "Source file saved — universe definition reloaded.",
+        "files_unsaved_q": "Save changes to {name}? (No discards them)",
+        "uac_folder_required": ("This requires a folder universe (text source). "
+                                "Convert the flat .db from the Creator Studio “Files” tab."),
+        "populate_preview_check": "Preview the text diff before applying (folder universe)",
+        "preview_no_changes": "The generation produced no new content.",
+        "diff_preview_title": "Preview of universe changes",
+        "diff_preview_hint": "{count} source file(s) impacted. Review, then apply or cancel — nothing is written until you apply.",
+        "apply_changes_btn": "Apply",
+        "staged_applied_msg": "Changes applied to the universe source.",
+        "canon_auto": "Auto canon",
+        "canon_auto_tooltip": ("After each turn, silently add what the story established "
+                               "(characters, places, facts) to the universe definition. Off by default."),
+        "canonize_btn": "Canonize…",
+        "canonize_tooltip": ("Extract what the recent story established and add it to the "
+                             "universe definition (with a preview of the text changes)."),
+        "canonize_running": "Canonizing recent story…",
+        "canon_none_msg": "Nothing new to canonize.",
+        "canon_applied_msg": "Universe canon updated.",
+        "canon_counts": "({entities} entities, {lore} lore entries)",
+        "gemini_fallback_label": "Fallback model (quota):",
+        "gemini_fallback_tooltip": ("Model used when the main model is still rate-limited (429) "
+                                    "after automatic retries. Google quotas are per model, so a "
+                                    "different model usually still has budget. Empty = none."),
+        "llm_rpm_label": "Max requests / minute:",
+        "llm_rpm_tooltip": ("Slows down LLM calls to respect your plan's quota "
+                            "(e.g. free tier: 10/min per model — set 9). 0 = unlimited."),
+        "rpm_unlimited": "Unlimited",
+        "cancel_generation": "✖ Cancel generation",
+        "generation_cancelling": "Cancelling generation… (takes effect at the next checkpoint)",
+        "generation_cancelled": "Generation cancelled — work already saved is kept.",
         "save_name": "Save Name:",
         "difficulty": "Difficulty:",
         "persona_template": "Persona Template:",
@@ -374,6 +434,66 @@ _TRANSLATIONS = {
         "launch_session": "Lancer la session",
         "resume_save": "Reprendre une sauvegarde",
         "delete_save": "Supprimer la sauvegarde",
+        "export_save": "Exporter…",
+        "import_save": "Importer une save…",
+        "duplicate_save": "Dupliquer",
+        "rename_save": "Renommer",
+        "edit_save": "Éditer…",
+        "save_exported_msg": "Save exportée vers :\n{path}",
+        "save_imported_msg": "Save importée : {name}",
+        "save_duplicated_msg": "Save dupliquée : {name}",
+        "save_edited_msg": "Correction appliquée (tour {turn}).",
+        "save_edit_nochange_msg": "Aucune modification à appliquer.",
+        "save_import_force_q": "Cette save vient d'un autre univers. L'importer quand même ?",
+        "edit_save_title": "Éditer l'état de la save",
+        "edit_save_hint": ("Modifiez les valeurs ci-dessous puis validez : seules les différences "
+                           "sont appliquées, comme corrections traçables (le rewind est préservé).\n"
+                           "[save] et [point] sont informatifs ; supprimer une ligne [[inventory]] "
+                           "retire l'objet ; seuls les NOUVEAUX [[modifiers]] sont ajoutés."),
+        "duplicate_save_name_q": "Nom de la save dupliquée :",
+        "continuous_save_note": ("La sauvegarde est continue : chaque tour est enregistré "
+                                 "immédiatement — « Dupliquer » crée un point de branche."),
+        "tab_files": "Fichiers",
+        "files_save_file": "Enregistrer le fichier",
+        "files_flat_db_msg": ("Cet univers est un .db plat : il n'a pas de fichiers source texte.\n"
+                              "Convertissez-le en univers-dossier (fichiers TOML/MD + cache compilé) "
+                              "pour l'éditer en texte.\nLes saves existantes sont conservées ; le .db "
+                              "d'origine est gardé en .bak."),
+        "files_convert_btn": "Convertir en univers-dossier",
+        "files_convert_confirm": ("Convertir cet univers en dossier source ? Les saves existantes "
+                                  "passent en fichiers séparés et le .db d'origine est gardé en .bak."),
+        "files_converted_msg": "Univers converti en dossier source.",
+        "files_saved_refreshed": "Fichier source enregistré — définition de l'univers rechargée.",
+        "files_unsaved_q": "Enregistrer les modifications de {name} ? (Non = les abandonner)",
+        "uac_folder_required": ("Cette option exige un univers-dossier (source texte). "
+                                "Convertissez le .db plat depuis l'onglet « Fichiers » du Creator Studio."),
+        "populate_preview_check": "Prévisualiser le diff texte avant d'appliquer (univers-dossier)",
+        "preview_no_changes": "La génération n'a produit aucun contenu nouveau.",
+        "diff_preview_title": "Prévisualisation des changements de l'univers",
+        "diff_preview_hint": "{count} fichier(s) source impacté(s). Relisez puis appliquez ou annulez — rien n'est écrit avant validation.",
+        "apply_changes_btn": "Appliquer",
+        "staged_applied_msg": "Changements appliqués à la source de l'univers.",
+        "canon_auto": "Canon auto",
+        "canon_auto_tooltip": ("Après chaque tour, ajoute en silence ce que l'histoire a établi "
+                               "(personnages, lieux, faits) à la définition de l'univers. Inactif par défaut."),
+        "canonize_btn": "Canoniser…",
+        "canonize_tooltip": ("Extrait ce que l'histoire récente a établi et l'ajoute à la "
+                             "définition de l'univers (avec prévisualisation des changements texte)."),
+        "canonize_running": "Canonisation de l'histoire récente…",
+        "canon_none_msg": "Rien de nouveau à canoniser.",
+        "canon_applied_msg": "Canon de l'univers mis à jour.",
+        "canon_counts": "({entities} entités, {lore} entrées de lore)",
+        "gemini_fallback_label": "Modèle de secours (quota) :",
+        "gemini_fallback_tooltip": ("Modèle utilisé quand le modèle principal reste limité (429) "
+                                    "après les reprises automatiques. Les quotas Google sont par "
+                                    "modèle : un autre modèle a souvent encore du budget. Vide = aucun."),
+        "llm_rpm_label": "Requêtes max / minute :",
+        "llm_rpm_tooltip": ("Ralentit les appels LLM pour respecter le quota de votre offre "
+                            "(ex. free tier : 10/min par modèle — mettre 9). 0 = illimité."),
+        "rpm_unlimited": "Illimité",
+        "cancel_generation": "✖ Annuler la génération",
+        "generation_cancelling": "Annulation de la génération… (effective au prochain point d'étape)",
+        "generation_cancelled": "Génération annulée — le travail déjà enregistré est conservé.",
         "save_name": "Nom de la sauvegarde :",
         "difficulty": "Difficulté :",
         "persona_template": "Modèle de Persona :",
@@ -2252,3 +2372,26 @@ def tr(key: str, **kwargs) -> str:
 def get_translations_dict():
     """Expose the internal dictionary for debugging."""
     return _TRANSLATIONS
+
+
+_VERBOSITY_LEVELS = ("short", "balanced", "talkative")
+
+
+def canonical_verbosity(value: str) -> str:
+    """Normalise un niveau de verbosité vers sa valeur canonique.
+
+    TICKET-032 : le Creator Studio a historiquement stocké dans `Universe_Meta`
+    le TEXTE AFFICHÉ du combo (« équilibré », « locuaz », …) au lieu de la
+    valeur canonique attendue partout ailleurs (`short`/`balanced`/`talkative`).
+    Accepte les deux : canonique tel quel, sinon recherche inverse dans toutes
+    les langues (migration douce des univers déjà enregistrés). Inconnu →
+    'balanced'.
+    """
+    v = (value or "").strip().lower()
+    if v in _VERBOSITY_LEVELS:
+        return v
+    for lang_dict in _TRANSLATIONS.values():
+        for level in _VERBOSITY_LEVELS:
+            if lang_dict.get(level, "").lower() == v:
+                return level
+    return "balanced"

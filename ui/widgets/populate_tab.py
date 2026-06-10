@@ -26,9 +26,10 @@ from axiom.localization import tr
 class PopulateTabWidget(QWidget):
     """Refactored AI Population interface."""
 
-    # Emits (targets: list[str], mode: str, text: str|None)
+    # Emits (targets: list[str], mode: str, text: str|None, preview: bool)
     # targets may contain: "meta", "stats", "entities", "rules", "events", "lore"
-    populate_requested = Signal(list, str, object)
+    # preview (TICKET-030) : True = sandbox + diff texte à valider avant application
+    populate_requested = Signal(list, str, object, bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -87,6 +88,11 @@ class PopulateTabWidget(QWidget):
         source_layout.addWidget(self._custom_text)
         layout.addWidget(self._source_group)
 
+        # TICKET-030 : prévisualisation du diff texte (univers-dossier requis).
+        self._preview_check = QCheckBox(tr("populate_preview_check"))
+        self._preview_check.setChecked(True)
+        layout.addWidget(self._preview_check)
+
         # --- Actions ---
         layout.addStretch()
         
@@ -117,6 +123,7 @@ class PopulateTabWidget(QWidget):
         
         self._warning_label.setText(f"<i>{tr('populate_warning') if 'populate_warning' in tr('ready') else 'Note: Generating will automatically save your changes first.'}</i>")
         self._start_btn.setText(f"{tr('start_generation') if 'start_generation' in tr('ready') else 'Start AI Population'} ✨")
+        self._preview_check.setText(tr("populate_preview_check"))
 
     @Slot()
     def _on_start_clicked(self) -> None:
@@ -133,5 +140,11 @@ class PopulateTabWidget(QWidget):
 
         mode = "auto" if self._radio_auto.isChecked() else "custom"
         text = self._custom_text.toPlainText().strip() if mode == "custom" else None
-            
-        self.populate_requested.emit(targets, mode, text)
+
+        preview = self._preview_check.isEnabled() and self._preview_check.isChecked()
+        self.populate_requested.emit(targets, mode, text, preview)
+
+    def set_preview_supported(self, supported: bool) -> None:
+        """La prévisualisation exige un univers-dossier (source texte)."""
+        self._preview_check.setEnabled(supported)
+        self._preview_check.setToolTip("" if supported else tr("uac_folder_required"))

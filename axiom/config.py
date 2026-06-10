@@ -70,6 +70,13 @@ class AppConfig:
         ui_font_size:        Font size for the chat UI.
         enable_audio:        Whether background ambiance is enabled.
         rag_chunk_count:     Number of memory chunks to retrieve for RAG.
+        llm_requests_per_minute: Soft rate limit applied to Gemini calls
+                             (TICKET-031). 0 = unlimited. Free tier example:
+                             10 req/min per model — set 9 to stay under it.
+        gemini_fallback_model: Model tried when the primary Gemini model is
+                             still quota-exhausted (429) after retries.
+                             Google quotas are per-model, so a different model
+                             usually still has budget. Empty = no fallback.
     """
 
     llm_backend: str = "universal"
@@ -87,6 +94,8 @@ class AppConfig:
     enable_audio: bool = True
     rag_chunk_count: int = 5
     language: str = "en"
+    llm_requests_per_minute: int = 0
+    gemini_fallback_model: str = ""
 
 
 def load_config() -> AppConfig:
@@ -209,6 +218,8 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
         return GeminiClient(
             api_key=config.gemini_api_key,
             model_name=model_override if model_override else config.gemini_model,
+            requests_per_minute=config.llm_requests_per_minute,
+            fallback_model=config.gemini_fallback_model,
         )
 
     raise ValueError(

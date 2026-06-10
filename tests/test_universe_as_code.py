@@ -534,6 +534,7 @@ def test_import_v1_converts_to_v2(tmp_path: Path):
     _make_v1_axiom(v1)
 
     dest = unpack_universe(v1, tmp_path / "out")
+    assert dest.name == "Legacy_World"  # nom de l'univers, pas « legacy.axiom »
     assert (dest / "universe.toml").exists()
     db = dest / ".axiom-cache" / "universe.db"
     data = read_definition(db)
@@ -556,7 +557,8 @@ def test_cli_pack_and_import(source_tree: Path, tmp_path: Path):
 
     args = parser.parse_args(["import", str(archive), str(tmp_path / "cli_imp")])
     assert args.func(args) == 0
-    assert (tmp_path / "cli_imp" / "cli" / "universe.toml").exists()
+    # Le dossier d'import porte le NOM de l'univers (pas le nom du fichier .axiom).
+    assert (tmp_path / "cli_imp" / "Drakthar" / "universe.toml").exists()
 
 
 # ---------------------------------------------------------------------------

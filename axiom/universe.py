@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from axiom.schema import get_connection
-from axiom.db_helpers import load_saves
 
 
 class Universe:
@@ -50,5 +49,6 @@ class Universe:
         return cls(path, name, system_prompt)
 
     def list_saves(self) -> list[dict]:
-        """Retourne la liste des sauvegardes de cet univers."""
-        return load_saves(self.path)
+        """Liste les sauvegardes de cet univers (séparées §7.6 + embarquées)."""
+        from axiom.savestore import list_saves
+        return list_saves(self.path)

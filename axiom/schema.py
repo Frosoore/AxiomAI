@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS Entities (
     entity_type TEXT NOT NULL CHECK(entity_type IN ('player', 'npc', 'faction', 'world')),
     name        TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    is_active   INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1))
+    is_active   INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+    origin      TEXT NOT NULL DEFAULT 'definition' CHECK(origin IN ('definition', 'runtime'))
 );
 """
 
@@ -331,6 +332,35 @@ def migrate_entities_table(db_path: str) -> None:
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+    migrate_entities_origin_column(db_path)
+
+
+def migrate_entities_origin_column(db_path: str) -> bool:
+    """Add the `origin` provenance column to Entities if absent.
+
+    `origin` distingue les entités issues de la **définition** (compilées depuis
+    l'arbo texte / créées au Creator Studio) de celles créées **en jeu** (entité
+    joueur, PNJ découverts par extraction). Le hot reload (`axiom.dev`) ne
+    gère que les lignes `definition` — sans cette colonne il supprimerait le
+    joueur à la première resynchronisation.
+
+    Returns:
+        True si la colonne vient d'être ajoutée (DB d'avant la migration) —
+        l'appelant peut alors « amnistier » les lignes existantes au lieu de
+        les traiter en strictes lignes de définition.
+    """
+    with sqlite3.connect(str(db_path)) as conn:
+        try:
+            conn.execute(
+                "ALTER TABLE Entities ADD COLUMN origin TEXT NOT NULL DEFAULT 'definition' "
+                "CHECK(origin IN ('definition', 'runtime'));"
+            )
+            conn.commit()
+            return True
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+            return False
 
 
 def migrate_saves_table(db_path: str) -> None:

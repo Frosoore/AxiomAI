@@ -10,11 +10,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
 import traceback
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from axiom.backends.base import GenerationCancelled
 from axiom.logger import logger
 from axiom.events import EventSourcer
 from axiom.checkpoint import CheckpointManager
@@ -26,28 +28,82 @@ class TaskSignals(QObject):
     result = Signal(object)
     error = Signal(str)
     status = Signal(str)
+    cancelled = Signal(str)  # TICKET-033 : annulation volontaire (pas une erreur)
     finished = Signal()
+
+
+# --- TICKET-033 : registre des générations annulables en cours ----------------
+# Le bouton « Annuler » de la barre de statut (MainWindow) ne connaît pas les
+# vues : il passe par ce registre process-wide.
+
+_ACTIVE_GENERATIONS: set["BaseDbTask"] = set()
+_ACTIVE_LOCK = threading.Lock()
+
+
+def active_generation_count() -> int:
+    """Nombre de générations annulables en cours d'exécution."""
+    with _ACTIVE_LOCK:
+        return len(_ACTIVE_GENERATIONS)
+
+
+def cancel_active_generations() -> int:
+    """Demande l'arrêt de toutes les générations en cours. Retourne leur nombre.
+
+    Annulation coopérative : effective à la prochaine frontière (attente de
+    retry, frontière de chunk/cible) — le travail déjà commité reste.
+    """
+    with _ACTIVE_LOCK:
+        tasks = list(_ACTIVE_GENERATIONS)
+    for task in tasks:
+        task.cancel()
+    return len(tasks)
 
 
 class BaseDbTask(QRunnable):
     """Base class for all stateless DB tasks."""
+
+    #: TICKET-033 — les tâches de génération longue (LLM) se déclarent
+    #: annulables : inscrites au registre pendant run(), `cancel()` arme
+    #: l'event coopératif transmis au moteur/backend.
+    cancellable: bool = False
+
     def __init__(self, db_path: str):
         super().__init__()
         self.db_path = db_path
         self.signals = TaskSignals()
+        self.cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
 
     def run(self) -> None:
+        if self.cancellable:
+            with _ACTIVE_LOCK:
+                _ACTIVE_GENERATIONS.add(self)
         try:
             result = self.execute()
             self.signals.result.emit(result)
+        except GenerationCancelled as exc:
+            logger.info(f"DB Task cancelled: {exc}")
+            self.signals.cancelled.emit(str(exc))
         except Exception as exc:
             logger.error(f"DB Task Error: {exc}\n{traceback.format_exc()}")
             self.signals.error.emit(str(exc))
         finally:
+            if self.cancellable:
+                with _ACTIVE_LOCK:
+                    _ACTIVE_GENERATIONS.discard(self)
             self.signals.finished.emit()
 
     def execute(self) -> Any:
         raise NotImplementedError("Subclasses must implement execute()")
+
+    def _sync_definition_source(self) -> None:
+        """TICKET-027 : après une écriture de DÉFINITION (Populate, delete entité),
+        si la db est le cache d'un univers-dossier, resynchronise l'arbo texte
+        (la source reste la vérité). Non bloquant, no-op pour un .db plat."""
+        from axiom.library import sync_source_if_any
+        sync_source_if_any(self.db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -213,14 +269,13 @@ class DeleteSaveTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> bool:
-        from pathlib import Path
         import shutil
         self.signals.status.emit("Deleting save...")
-        
-        # 1. Delete from SQLite (cascades to Event_Log, State_Cache)
-        with get_connection(self.db_path) as conn:
-            conn.execute("DELETE FROM Saves WHERE save_id = ?;", (self.save_id,))
-            conn.commit()
+
+        # 1. Delete via savestore (§7.6 : la ligne Saves peut vivre dans un
+        # fichier séparé — résolution + suppression du fichier s'il se vide).
+        from axiom.savestore import delete_save
+        delete_save(self.db_path, self.save_id)
 
         # 2. Delete Vector Memory directory if it exists
         from axiom import paths
@@ -240,13 +295,407 @@ class RenameSaveTask(BaseDbTask):
 
     def execute(self) -> bool:
         self.signals.status.emit("Renaming save...")
-        with get_connection(self.db_path) as conn:
+        # §7.6 : la save peut vivre dans son propre fichier.
+        from axiom.savestore import resolve_save_db
+        db = resolve_save_db(self.db_path, self.save_id) or self.db_path
+        with get_connection(db) as conn:
             conn.execute(
                 "UPDATE Saves SET player_name = ? WHERE save_id = ?;",
                 (self.new_name, self.save_id)
             )
             conn.commit()
         return True
+
+
+# ---------------------------------------------------------------------------
+# TICKET-028 — gestion des saves depuis le GUI (coquilles fines sur le moteur)
+# ---------------------------------------------------------------------------
+
+class PackSaveTask(BaseDbTask):
+    """Exporte une save en archive `.axiomsave` (db_path = base UNIVERS)."""
+
+    def __init__(self, db_path: str, save_id: str, output_path: str):
+        super().__init__(db_path)
+        self.save_id = save_id
+        self.output_path = output_path
+
+    def execute(self) -> str:
+        from axiom.savestore import pack_save
+        self.signals.status.emit("Exporting save...")
+        return str(pack_save(self.db_path, self.save_id, self.output_path))
+
+
+class UnpackSaveTask(BaseDbTask):
+    """Importe une archive `.axiomsave` (db_path = base UNIVERS de destination).
+
+    Une archive issue d'un autre univers n'est PAS une erreur fatale : la tâche
+    renvoie {"needs_force": True, ...} pour que la vue demande confirmation et
+    relance avec force=True.
+    """
+
+    def __init__(self, db_path: str, archive_path: str, force: bool = False):
+        super().__init__(db_path)
+        self.archive_path = archive_path
+        self.force = force
+
+    def execute(self) -> dict:
+        from axiom.savestore import SaveStoreError, unpack_save
+        self.signals.status.emit("Importing save...")
+        try:
+            return unpack_save(self.archive_path, self.db_path, force=self.force)
+        except SaveStoreError as exc:
+            if "force" in str(exc) and not self.force:
+                return {"needs_force": True, "message": str(exc)}
+            raise
+
+
+class DuplicateSaveTask(BaseDbTask):
+    """Duplique une save (= « save manuelle ») — db_path = base UNIVERS."""
+
+    def __init__(self, db_path: str, save_id: str, new_name: str | None = None):
+        super().__init__(db_path)
+        self.save_id = save_id
+        self.new_name = new_name
+
+    def execute(self) -> dict:
+        from axiom.savestore import duplicate_save
+        self.signals.status.emit("Duplicating save...")
+        return duplicate_save(self.db_path, self.save_id, player_name=self.new_name)
+
+
+class ExportSaveStateTask(BaseDbTask):
+    """Matérialise l'état d'une save en texte `save_state.toml` (pour édition)."""
+
+    def __init__(self, db_path: str, save_id: str):
+        super().__init__(db_path)
+        self.save_id = save_id
+
+    def execute(self) -> tuple[str, str]:
+        import tempfile
+        from pathlib import Path
+        from axiom.saves import export_save_state
+        from axiom.savestore import resolve_save_db
+
+        self.signals.status.emit("Reading save state...")
+        db = resolve_save_db(self.db_path, self.save_id) or self.db_path
+        tmp = Path(tempfile.gettempdir()) / f"axiom_save_state_{self.save_id}.toml"
+        try:
+            export_save_state(db, self.save_id, tmp)
+            text = tmp.read_text(encoding="utf-8")
+        finally:
+            tmp.unlink(missing_ok=True)
+        return self.save_id, text
+
+
+class EditSaveStateTask(BaseDbTask):
+    """Applique un `save_state.toml` édité comme correction en place.
+
+    Seul le **diff** entre le texte d'origine et le texte édité est apposé
+    (events `manual_edit` append-only, rewind préservé). Renvoie le tour de la
+    correction, ou -1 si rien n'a changé.
+    """
+
+    def __init__(self, db_path: str, save_id: str, original_text: str, edited_text: str):
+        super().__init__(db_path)
+        self.save_id = save_id
+        self.original_text = original_text
+        self.edited_text = edited_text
+
+    def execute(self) -> int:
+        import tomllib
+        from axiom.saves import SaveError, apply_correction, diff_save_states
+        from axiom.savestore import resolve_save_db
+
+        self.signals.status.emit("Applying save edit...")
+        try:
+            before = tomllib.loads(self.original_text)
+            after = tomllib.loads(self.edited_text)
+        except tomllib.TOMLDecodeError as exc:
+            raise SaveError(f"save_state.toml invalide : {exc}") from exc
+
+        patch = diff_save_states(before, after)
+        if not any(patch.values()):
+            return -1
+        db = resolve_save_db(self.db_path, self.save_id) or self.db_path
+        return apply_correction(db, self.save_id, patch)
+
+
+# ---------------------------------------------------------------------------
+# TICKET-029 — onglet « Fichiers » du Creator Studio
+# ---------------------------------------------------------------------------
+
+class RefreshDefinitionTask(BaseDbTask):
+    """Recompile la définition depuis la source texte, in-place dans le `.db`.
+
+    Même sémantique que `axiom dev` : une source malformée lève CompileError
+    (remontée en signal error), le `.db` reste inchangé.
+    """
+
+    def __init__(self, db_path: str, src_dir: str):
+        super().__init__(db_path)
+        self.src_dir = src_dir
+
+    def execute(self) -> bool:
+        from axiom.dev import refresh_definition
+        self.signals.status.emit("Recompiling universe definition...")
+        refresh_definition(self.src_dir, self.db_path)
+        return True
+
+
+class ConvertFlatDbTask(BaseDbTask):
+    """Convertit un `.db` plat (legacy) en univers-dossier Universe-as-Code."""
+
+    def execute(self) -> dict:
+        from axiom.library import convert_flat_db_to_folder
+        self.signals.status.emit("Converting universe to source folder...")
+        return convert_flat_db_to_folder(self.db_path)
+
+
+# ---------------------------------------------------------------------------
+# TICKET-030 — Populate × Universe-as-Code (sandbox de prévisualisation)
+# ---------------------------------------------------------------------------
+
+def _stage_source_change(universe_db: str, mutate: Callable[[str], Any]) -> dict:
+    """Joue une mutation de définition dans une sandbox et met en scène le diff.
+
+    Copie le `.db` univers dans un dossier temporaire, applique `mutate` à la
+    copie, reconstruit l'arbre source futur (sync db→texte, TICKET-027) et le
+    diffe contre la source réelle. RIEN n'est écrit dans l'univers réel : le
+    `staged_dir` retourné attend `ApplyStagedSourceTask` (ou un simple rmtree
+    de son parent pour annuler). `staged_dir` vide = aucun changement.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from axiom.library import diff_source_trees, sync_source_from_db, universe_root_for
+    from axiom.localization import tr
+
+    src_root = universe_root_for(universe_db)
+    if src_root is None:
+        raise ValueError(tr("uac_folder_required"))
+
+    stage_root = Path(tempfile.mkdtemp(prefix="axiom_stage_"))
+    tmp_db = stage_root / "preview.db"
+    with sqlite3.connect(universe_db) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    shutil.copyfile(universe_db, tmp_db)
+
+    def _synced_copy(name: str) -> Path:
+        tree = stage_root / name
+        shutil.copytree(src_root, tree,
+                        ignore=shutil.ignore_patterns(".axiom-cache", ".git"))
+        sync_source_from_db(tmp_db, tree)
+        return tree
+
+    # Baseline = la source telle que la sync la normaliserait SANS la mutation :
+    # le diff ne montre que l'effet de la génération, pas le bruit de
+    # reformatage d'une source écrite à la main.
+    baseline = _synced_copy("baseline")
+    try:
+        result = mutate(str(tmp_db))
+        staged = _synced_copy("tree")
+    except BaseException:
+        # Mutation échouée ou annulée : pas de sandbox orpheline sur le disque.
+        shutil.rmtree(stage_root, ignore_errors=True)
+        raise
+    diffs = diff_source_trees(baseline, staged)
+    if not diffs:
+        shutil.rmtree(stage_root, ignore_errors=True)
+        return {"result": result, "diffs": [], "staged_dir": "", "src_dir": str(src_root)}
+    return {"result": result, "diffs": diffs, "staged_dir": str(staged), "src_dir": str(src_root)}
+
+
+def discard_staged_source(staged_dir: str) -> None:
+    """Annule une prévisualisation : supprime la sandbox (db temporaire incluse)."""
+    import shutil
+    from pathlib import Path
+
+    if staged_dir:
+        shutil.rmtree(Path(staged_dir).parent, ignore_errors=True)
+
+
+class PreviewPopulateTask(BaseDbTask):
+    """Populate ciblé en sandbox : génère sur une COPIE et renvoie le diff texte.
+
+    db_path = cache de l'univers-dossier. `targets` ⊆ {meta, stats, entities,
+    rules, events, lore}. Le résultat porte `diffs` + `staged_dir` (à appliquer
+    via ApplyStagedSourceTask après validation utilisateur).
+    """
+
+    cancellable = True  # TICKET-033
+
+    def __init__(self, db_path: str, targets: list[str], mode: str = "auto",
+                 custom_text: str | None = None):
+        super().__init__(db_path)
+        self.targets = targets
+        self.mode = mode
+        self.custom_text = custom_text
+
+    def execute(self) -> dict:
+        from axiom.populate import POPULATE_TARGETS
+
+        def mutate(tmp_db: str) -> dict:
+            counts: dict[str, object] = {}
+            for target in self.targets:
+                if self.cancel_event.is_set():
+                    raise GenerationCancelled("Populate preview annulé.")
+                fn = POPULATE_TARGETS.get(target)
+                if fn is None:
+                    continue
+                counts[target] = fn(tmp_db, self.mode, self.custom_text,
+                                    on_status=self.signals.status.emit,
+                                    cancel=self.cancel_event)
+            return counts
+
+        info = _stage_source_change(self.db_path, mutate)
+        info["counts"] = info.pop("result")
+        return info
+
+
+class ApplyStagedSourceTask(BaseDbTask):
+    """Applique un arbre source validé (sandbox) à l'univers réel.
+
+    db_path = cache de l'univers ; `save_db` optionnel = save en cours à
+    resynchroniser après application (canonisation en pleine partie).
+    """
+
+    def __init__(self, db_path: str, staged_dir: str, src_dir: str,
+                 save_db: str | None = None):
+        super().__init__(db_path)
+        self.staged_dir = staged_dir
+        self.src_dir = src_dir
+        self.save_db = save_db
+
+    def execute(self) -> bool:
+        from axiom.library import apply_staged_source
+        from axiom.savestore import refresh_save_definition
+
+        self.signals.status.emit("Applying changes to universe source...")
+        apply_staged_source(self.staged_dir, self.src_dir, self.db_path)
+        discard_staged_source(self.staged_dir)
+        if self.save_db:
+            refresh_save_definition(self.save_db)
+        return True
+
+
+def _insert_canon(db: str, entities: list, lore: list) -> dict:
+    """Insère les éléments canon extraits (idempotent : les ids/noms connus sont sautés)."""
+    import uuid
+
+    inserted = {"entities": 0, "lore": 0}
+    with get_connection(db) as conn:
+        existing_ids = {str(r[0]).lower() for r in conn.execute("SELECT entity_id FROM Entities;")}
+        for ent in entities or []:
+            name = str(ent.get("name", "")).strip()
+            if not name:
+                continue
+            eid = re.sub(r"[^a-z0-9]", "_", name.lower())
+            eid = re.sub(r"_+", "_", eid).strip("_")
+            if not eid or eid in existing_ids:
+                continue
+            etype = str(ent.get("entity_type", "npc")).lower()
+            if etype not in ("npc", "faction"):
+                etype = "npc"
+            conn.execute(
+                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active) "
+                "VALUES (?, ?, ?, ?, 1);",
+                (eid, name, etype, str(ent.get("description", "")).strip()),
+            )
+            existing_ids.add(eid)
+            inserted["entities"] += 1
+
+        existing_lore = {str(r[0]).lower() for r in conn.execute("SELECT name FROM Lore_Book;")}
+        for entry in lore or []:
+            name = str(entry.get("name", "")).strip()
+            if not name or name.lower() in existing_lore:
+                continue
+            conn.execute(
+                "INSERT INTO Lore_Book (entry_id, category, name, keywords, content) "
+                "VALUES (?, ?, ?, ?, ?);",
+                (str(uuid.uuid4()), str(entry.get("category", "General")) or "General",
+                 name, "", str(entry.get("content", "")).strip()),
+            )
+            existing_lore.add(name.lower())
+            inserted["lore"] += 1
+        conn.commit()
+    return inserted
+
+
+class CanonizeStoryTask(BaseDbTask):
+    """Canonise l'histoire récente dans la définition de l'UNIVERS (TICKET-030).
+
+    db_path = base de la save en cours (l'univers lié est retrouvé via
+    Save_Meta ; une save embarquée dans le cache d'un univers-dossier marche
+    aussi). `preview=True` → sandbox + diff à valider ; `preview=False`
+    (toggle « canon auto ») → application directe + resync de la save.
+    """
+
+    cancellable = True  # TICKET-033
+
+    def __init__(self, db_path: str, narrative_text: str, preview: bool = True):
+        super().__init__(db_path)
+        self.narrative_text = narrative_text
+        self.preview = preview
+
+    def _resolve_universe_db(self) -> str:
+        from axiom.library import universe_root_for
+        from axiom.localization import tr
+        from axiom.savestore import is_separated_save_db
+        from pathlib import Path
+
+        candidate = self.db_path
+        if is_separated_save_db(self.db_path):
+            with sqlite3.connect(self.db_path) as conn:
+                meta = dict(conn.execute("SELECT key, value FROM Save_Meta;").fetchall())
+            candidate = meta.get("universe_db", "")
+        if candidate and Path(candidate).is_file() and universe_root_for(candidate):
+            return candidate
+        raise ValueError(tr("uac_folder_required"))
+
+    def execute(self) -> dict:
+        from axiom.config import build_llm_from_config, load_config, resolve_extraction_model
+        from axiom.prompts import build_canonize_prompt
+        from axiom.savestore import refresh_save_definition
+
+        universe_db = self._resolve_universe_db()
+
+        self.signals.status.emit("Reading universe canon...")
+        with get_connection(universe_db) as conn:
+            existing_entities = [str(r[0]) for r in conn.execute(
+                "SELECT name FROM Entities WHERE is_active = 1;")]
+            existing_lore = [str(r[0]) for r in conn.execute("SELECT name FROM Lore_Book;")]
+            row = conn.execute(
+                "SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
+            global_lore = row[0] if row else ""
+
+        self.signals.status.emit("Canonizing recent story...")
+        cfg = load_config()
+        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+        # TICKET-033 : compte à rebours de retry visible + annulation.
+        llm.on_status = self.signals.status.emit
+        llm.cancel_event = self.cancel_event
+        prompt = build_canonize_prompt(
+            self.narrative_text, existing_entities, existing_lore, global_lore)
+        resp = llm.complete(prompt, response_format="json")
+        data = resp.tool_call if isinstance(resp.tool_call, dict) else {}
+        entities = data.get("entities", [])
+        lore = data.get("lore_entries", [])
+
+        info = _stage_source_change(
+            universe_db, lambda tmp_db: _insert_canon(tmp_db, entities, lore))
+        info["counts"] = info.pop("result")
+        info["universe_db"] = universe_db
+        info["applied"] = False
+
+        if not self.preview and info["staged_dir"]:
+            from axiom.library import apply_staged_source
+            apply_staged_source(info["staged_dir"], info["src_dir"], universe_db)
+            discard_staged_source(info["staged_dir"])
+            refresh_save_definition(self.db_path)
+            info["staged_dir"] = ""
+            info["applied"] = True
+        return info
 
 
 class TickModifiersTask(BaseDbTask):
@@ -261,511 +710,70 @@ class TickModifiersTask(BaseDbTask):
         return mp.tick_modifiers(self.save_id, self.elapsed_minutes)
 
 
-class PopulateMetaTask(BaseDbTask):
-    """AI-driven metadata refinement (Name, Global Lore, First Message)."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
+# ---------------------------------------------------------------------------
+# Populate* — coquilles fines (migration B3 : la logique vit dans axiom.populate)
+# ---------------------------------------------------------------------------
 
-    def execute(self) -> bool:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_meta_prompt
-        
-        self.signals.status.emit("Initializing AI backend...")
-        cfg = load_config()
-        try:
-            llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-        except Exception as e:
-            logger.error(f"[POPULATE_META] Failed to build LLM backend: {e}")
-            return False
-            
-        with get_connection(self.db_path) as conn:
-            meta_rows = conn.execute("SELECT key, value FROM Universe_Meta;").fetchall()
-            current_meta = {r[0]: r[1] for r in meta_rows}
+class _BasePopulateTask(BaseDbTask):
+    """Coquille Qt commune des générateurs Populate.
 
-        self.signals.status.emit("Refining universe metadata...")
-        prompt = build_populate_meta_prompt(current_meta, 
-                                            custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call if isinstance(resp.tool_call, dict) else {}
-        
-        if data:
-            with get_connection(self.db_path) as conn:
-                if "universe_name" in data:
-                    conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('universe_name', ?);", (data["universe_name"],))
-                if "global_lore" in data:
-                    conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('global_lore', ?);", (data["global_lore"],))
-                if "system_prompt" in data:
-                    conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('system_prompt', ?);", (data["system_prompt"],))
-                if "first_message" in data:
-                    conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('first_message', ?);", (data["first_message"],))
-                conn.commit()
-            self.signals.status.emit("Metadata refinement complete.")
-            return True
-    
-        return False
-
-class PopulateStatsTask(BaseDbTask):
-    """AI-driven stat definitions generation."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
-
-    def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_stats_prompt
-        
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-            
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
-            global_lore = row[0] if row else ""
-            st_rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            existing_stats = [r[0] for r in st_rows]
-
-        self.signals.status.emit("Generating stat definitions...")
-        prompt = build_populate_stats_prompt(global_lore, existing_stats, 
-                                             custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call
-        
-        # Heuristic: support both wrapped and raw lists
-        batch = []
-        if isinstance(data, list):
-            batch = data
-        elif isinstance(data, dict):
-            batch = data.get("stats", [])
-        
-        inserted = 0
-        if batch:
-            import uuid
-            with get_connection(self.db_path) as conn:
-                for s in batch:
-                    name = s.get("name")
-                    if name and name not in existing_stats:
-                        stat_id = re.sub(r'[^a-z0-9]', '_', name.lower()).strip('_')
-                        if not stat_id: stat_id = uuid.uuid4().hex[:8]
-                        
-                        conn.execute(
-                            "INSERT INTO Stat_Definitions (stat_id, name, description, value_type, parameters) VALUES (?, ?, ?, ?, ?);",
-                            (stat_id, name, s.get("description", ""), s.get("value_type", "numeric"), json.dumps(s.get("parameters", {})))
-                        )
-                        inserted += 1
-                conn.commit()
-            self.signals.status.emit(f"Stats generation complete: {inserted} added.")
-            return inserted
-        
-        return 0
-
-class PopulateRulesTask(BaseDbTask):
-    """AI-driven rule generation."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
-
-    def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_rules_prompt
-        
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-            
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
-            global_lore = row[0] if row else ""
-            st_rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            stat_names = [r[0] for r in st_rows]
-            rl_rows = conn.execute("SELECT rule_id FROM Rules;").fetchall()
-            existing_rules = [r[0] for r in rl_rows]
-
-        self.signals.status.emit("Generating game rules...")
-        prompt = build_populate_rules_prompt(global_lore, stat_names, existing_rules, 
-                                              custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call
-        
-        batch = []
-        if isinstance(data, list): batch = data
-        elif isinstance(data, dict):
-            batch = data.get("rules", [])
-        
-        inserted = 0
-        if batch:
-            import uuid
-            with get_connection(self.db_path) as conn:
-                for r in batch:
-                    rule_id = r.get("rule_id")
-                    if not rule_id: rule_id = uuid.uuid4().hex[:8]
-                    
-                    if rule_id not in existing_rules:
-                        conn.execute(
-                            "INSERT INTO Rules (rule_id, priority, conditions, actions, target_entity) VALUES (?, ?, ?, ?, ?);",
-                            (rule_id, r.get("priority", 0), json.dumps(r.get("conditions", {})), json.dumps(r.get("actions", [])), r.get("target_entity", "*"))
-                        )
-                        inserted += 1
-                conn.commit()
-            return inserted
-        return 0
-
-class PopulateEventsTask(BaseDbTask):
-    """AI-driven event scheduling."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
-
-    def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_events_prompt
-        
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-            
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
-            global_lore = row[0] if row else ""
-            ev_rows = conn.execute("SELECT title FROM Scheduled_Events;").fetchall()
-            existing_events = [r[0] for r in ev_rows]
-
-        self.signals.status.emit("Scheduling world events...")
-        prompt = build_populate_events_prompt(global_lore, existing_events, 
-                                              custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call
-        
-        batch = []
-        if isinstance(data, list): batch = data
-        elif isinstance(data, dict):
-            batch = data.get("events", [])
-        
-        inserted = 0
-        if batch:
-            import uuid
-            with get_connection(self.db_path) as conn:
-                for ev in batch:
-                    event_id = ev.get("event_id")
-                    if not event_id:
-                        title = ev.get("title", "event")
-                        event_id = re.sub(r'[^a-z0-9]', '_', title.lower()).strip('_')
-                        if not event_id: event_id = uuid.uuid4().hex[:8]
-                    
-                    conn.execute(
-                        "INSERT INTO Scheduled_Events (event_id, title, description, trigger_minute) VALUES (?, ?, ?, ?);",
-                        (event_id, ev.get("title", "Event"), ev.get("description", ""), ev.get("trigger_minute", 0))
-                    )
-                    inserted += 1
-                conn.commit()
-            return inserted
-        return 0
-
-class PopulateEntitiesTask(BaseDbTask):
-    """Asynchronous entity generation using LLM.
-    
-    Reads world context or custom prompt, and inserts new
-    entities into the database idempotently.
+    Toute la logique (contexte, prompt, insertion idempotente, sync source
+    TICKET-027, reprise par chunk TICKET-031) vit côté moteur dans
+    `axiom.populate` — ce wrapper ne fait que déporter l'appel hors du thread
+    principal et brancher la progression sur les signaux Qt.
     """
+
+    _TARGET: str = ""  # clé dans axiom.populate.POPULATE_TARGETS
+    cancellable = True  # TICKET-033
+
     def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
         super().__init__(db_path)
         self.mode = mode
         self.custom_text = custom_text
 
-    def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_prompt
-        
-        self.signals.status.emit("Initializing AI backend...")
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-        
-        # 1. Gather context
-        self.signals.status.emit("Gathering context...")
-        with get_connection(self.db_path) as conn:
-            # Universe Meta
-            meta_rows = conn.execute("SELECT key, value FROM Universe_Meta;").fetchall()
-            meta = {row[0]: row[1] for row in meta_rows}
-            
-            # Lore Book
-            lore_rows = conn.execute("SELECT name, content, category FROM Lore_Book;").fetchall()
-            
-            # Stat Definitions
-            stat_rows = conn.execute("SELECT name, description, value_type, parameters FROM Stat_Definitions;").fetchall()
-            stat_defs = []
-            for r in stat_rows:
-                try:
-                    params = json.loads(r[3]) if r[3] else {}
-                except:
-                    params = {}
-                stat_defs.append({
-                    "name": r[0],
-                    "description": r[1],
-                    "value_type": r[2],
-                    "parameters": params
-                })
+    def execute(self):
+        from axiom.populate import POPULATE_TARGETS
+        return POPULATE_TARGETS[self._TARGET](
+            self.db_path, self.mode, self.custom_text,
+            on_status=self.signals.status.emit,
+            cancel=self.cancel_event,
+        )
 
-            # Existing entities for idempotence
-            ent_rows = conn.execute("SELECT entity_id, name FROM Entities;").fetchall()
-            existing_ids = {str(row[0]).lower() for row in ent_rows}
-            existing_names = [str(row[1]) for row in ent_rows if row[1]]
 
-        # 2. Prepare chunks
-        chunks = []
-        if self.mode == "custom" and self.custom_text:
-            chunks.append(self.custom_text)
-        else:
-            # Always include Global Lore as a distinct chunk if it exists
-            global_lore = meta.get("global_lore", "").strip()
-            if global_lore:
-                chunks.append(f"=== GLOBAL WORLD LORE ===\n{global_lore}")
+class PopulateMetaTask(_BasePopulateTask):
+    """AI-driven metadata refinement (Name, Global Lore, First Message)."""
+    _TARGET = "meta"
 
-            # Each lore entry becomes its own individual chunk
-            for name, content, cat in lore_rows:
-                cat = cat or "General"
-                chunks.append(f"=== CATEGORY: {cat} ===\n### Name: {name}\n{content}")
 
-        if not chunks:
-            chunks = ["(No context found)"]
+class PopulateStatsTask(_BasePopulateTask):
+    """AI-driven stat definitions generation."""
+    _TARGET = "stats"
 
-        # 3. Process each chunk
-        new_entities_found = []
-        
-        for i, chunk in enumerate(chunks):
-            self.signals.status.emit(f"Processing chunk {i+1}/{len(chunks)}...")
-            
-            prompt = build_populate_prompt(chunk, existing_names, stat_defs,
-                                           custom_instruction=self.custom_text if self.mode == "custom" else None)
-            
-            # Force JSON format at the API level
-            resp = llm.complete(prompt, response_format="json")
-            
-            # Resilient JSON parsing
-            data = resp.tool_call
-            
-            batch = []
-            if isinstance(data, list):
-                batch = data
-            elif isinstance(data, dict):
-                if "entities" in data:
-                    batch = data["entities"]
-                else:
-                    # Fallback for single object return
-                    batch = [data]
-            
-            if isinstance(batch, list):
-                # Filter stats to ensure only defined ones are kept
-                allowed_stats = {s["name"].lower() for s in stat_defs}
-                for ent in batch:
-                    if "stats" in ent and isinstance(ent["stats"], dict):
-                        valid_stats = {}
-                        stat_name_map = {s["name"].lower(): s["name"] for s in stat_defs}
-                        for k, v in ent["stats"].items():
-                            if k.lower() in allowed_stats:
-                                valid_stats[stat_name_map[k.lower()]] = v
-                        ent["stats"] = valid_stats
-                new_entities_found.extend(batch)
 
-        # 4. Filter and Insert
-        self.signals.status.emit("Finalizing new entities...")
-        inserted_count = 0
-        valid_stat_names = {s["name"].lower(): s["name"] for s in stat_defs}
-        
-        with get_connection(self.db_path) as conn:
-            for ent in new_entities_found:
-                name = ent.get("name", "").strip()
-                etype = str(ent.get("entity_type", "npc")).lower()
-                description = ent.get("description", "").strip()
-                stats_dict = ent.get("stats", {})
-                
-                if not name: continue
-                
-                eid = re.sub(r'[^a-z0-9]', '_', name.lower())
-                eid = re.sub(r'_+', '_', eid).strip('_')
-                if not eid: continue
-                if etype not in ("npc", "faction"): etype = "npc"
-                if eid in existing_ids: continue
-                
-                conn.execute(
-                    "INSERT INTO Entities (entity_id, name, entity_type, description, is_active) VALUES (?, ?, ?, ?, 1);",
-                    (eid, name, etype, description)
-                )
-                existing_ids.add(eid)
-                existing_names.append(name)
-                
-                if isinstance(stats_dict, dict):
-                    for skey, sval in stats_dict.items():
-                        lower_key = skey.lower()
-                        if lower_key in valid_stat_names:
-                            real_name = valid_stat_names[lower_key]
-                            conn.execute(
-                                "INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);",
-                                (eid, real_name, str(sval))
-                            )
-                inserted_count += 1
-            conn.commit()
-        
-        return inserted_count
+class PopulateRulesTask(_BasePopulateTask):
+    """AI-driven rule generation."""
+    _TARGET = "rules"
 
-class PopulateLoreTask(BaseDbTask):
-    """Asynchronous lore expansion using LLM."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
 
-    def execute(self) -> int:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_lore_prompt
-        
-        self.signals.status.emit("Initializing AI backend...")
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-            
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
-            global_lore = row[0] if row else ""
-            ent_rows = conn.execute("SELECT name FROM Lore_Book;").fetchall()
-            existing_entries = [r[0] for r in ent_rows]
+class PopulateEventsTask(_BasePopulateTask):
+    """AI-driven event scheduling."""
+    _TARGET = "events"
 
-        self.signals.status.emit("Generating lore expansion...")
-        prompt = build_populate_lore_prompt(global_lore, existing_entries, 
-                                            custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call
-        
-        batch = []
-        if isinstance(data, list): batch = data
-        elif isinstance(data, dict):
-            batch = data.get("lore_entries", [data] if "name" in data else [])
-        
-        inserted = 0
-        if batch:
-            import uuid
-            with get_connection(self.db_path) as conn:
-                for entry in batch:
-                    name = entry.get("name")
-                    if name and name not in existing_entries:
-                        conn.execute(
-                            "INSERT INTO Lore_Book (entry_id, category, name, content) VALUES (?, ?, ?, ?);",
-                            (uuid.uuid4().hex, entry.get("category", "General"), name, entry.get("content", ""))
-                        )
-                        inserted += 1
-                conn.commit()
-            self.signals.status.emit(f"Lore expansion complete: {inserted} entries added.")
-            return inserted
-        
-        self.signals.status.emit("Lore expansion complete: No new entries added.")
-        return 0
 
-class PopulateMapTask(BaseDbTask):
+class PopulateEntitiesTask(_BasePopulateTask):
+    """AI-driven entity generation (commit par chunk → reprise, TICKET-031)."""
+    _TARGET = "entities"
+
+
+class PopulateLoreTask(_BasePopulateTask):
+    """AI-driven lore expansion."""
+    _TARGET = "lore"
+
+
+class PopulateMapTask(_BasePopulateTask):
     """AI-driven map generation (Locations & Connections)."""
-    def __init__(self, db_path: str, mode: str = "auto", custom_text: str | None = None):
-        super().__init__(db_path)
-        self.mode = mode
-        self.custom_text = custom_text
+    _TARGET = "map"
 
-    def execute(self) -> dict:
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
-        from axiom.prompts import build_populate_map_prompt
-        
-        self.signals.status.emit("Initializing AI backend...")
-        cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
-            
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'global_lore';").fetchone()
-            global_lore = row[0] if row else ""
-            loc_rows = conn.execute("SELECT location_id, name, scale FROM Locations;").fetchall()
-            existing_locs = [dict(r) for r in loc_rows]
-
-        self.signals.status.emit("Generating world map expansion...")
-        prompt = build_populate_map_prompt(global_lore, existing_locs, 
-                                           custom_instruction=self.custom_text if self.mode == "custom" else None)
-        
-        resp = llm.complete(prompt, response_format="json")
-        data = resp.tool_call
-        
-        # Extremely robust parsing: search for the first dictionary if a list is returned
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict):
-                    data = item
-                    break
-        
-        if not isinstance(data, dict):
-            logger.error(f"[POPULATE_MAP] Invalid response format (expected dict or list containing dict, got {type(data)}): {data}")
-            return {"added_locs": 0, "added_conns": 0}
-
-        new_locs = data.get("locations", [])
-        new_conns = data.get("connections", [])
-        
-        added_locs = 0
-        added_conns = 0
-        
-        with get_connection(self.db_path) as conn:
-            # Pre-fetch existing IDs to avoid redundant queries in loops
-            existing_ids_rows = conn.execute("SELECT location_id FROM Locations;").fetchall()
-            existing_ids = {str(r[0]) for r in existing_ids_rows}
-
-            # 1. Insert Locations
-            for l in new_locs:
-                lid = l.get("location_id")
-                if not lid: continue
-                if lid in existing_ids: continue
-                
-                # Default name to scale if missing
-                name = l.get("name", "").strip()
-                scale = str(l.get("scale", "zone")).lower()
-                if not name:
-                    name = scale.capitalize()
-                
-                # Handle 'none'/'null' strings for parent_id
-                pid = l.get("parent_id")
-                if isinstance(pid, str) and pid.lower() in ("none", "null", ""):
-                    pid = None
-                
-                conn.execute(
-                    "INSERT INTO Locations (location_id, name, scale, parent_id, description, x, y) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                    (lid, name, scale, pid, l.get("description", ""), l.get("x", 0), l.get("y", 0))
-                )
-                existing_ids.add(lid)
-                added_locs += 1
-                
-            # 2. Insert Connections
-            for c in new_conns:
-                src = c.get("source_id")
-                tgt = c.get("target_id")
-                if not src or not tgt: continue
-                if src not in existing_ids or tgt not in existing_ids:
-                    # Skip connections to non-existent nodes (safety)
-                    continue
-                
-                # Bi-directional insert
-                try:
-                    dist = int(c.get("distance_km", 10))
-                    conn.execute(
-                        "INSERT OR IGNORE INTO Location_Connections (source_id, target_id, distance_km) VALUES (?, ?, ?);",
-                        (src, tgt, dist)
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO Location_Connections (source_id, target_id, distance_km) VALUES (?, ?, ?);",
-                        (tgt, src, dist)
-                    )
-                    added_conns += 1
-                except:
-                    pass
-                    
-            conn.commit()
-            
-        self.signals.status.emit(f"Map generation complete: {added_locs} locations, {added_conns} connections added.")
-        return {"added_locs": added_locs, "added_conns": added_conns}
 
 class CreatePlayerEntityTask(BaseDbTask):
     """Creates a new entity of type 'player' with initial stats."""
@@ -778,6 +786,8 @@ class CreatePlayerEntityTask(BaseDbTask):
         self.signals.status.emit(f"Creating player entity '{self.name}'...")
         import re
         from datetime import datetime
+        from axiom.schema import migrate_entities_origin_column
+        migrate_entities_origin_column(self.db_path)
         # 1. Generate safe ID
         eid = re.sub(r'[^a-z0-9]', '_', self.name.lower()).strip('_')
         if not eid:
@@ -791,8 +801,8 @@ class CreatePlayerEntityTask(BaseDbTask):
 
             # Insert Entity
             conn.execute(
-                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active) "
-                "VALUES (?, ?, 'player', ?, 1);",
+                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active, origin) "
+                "VALUES (?, ?, 'player', ?, 1, 'runtime');",
                 (eid, self.name, self.description)
             )
             
@@ -817,6 +827,8 @@ class CreatePlayerEntityTask(BaseDbTask):
 
     def execute(self) -> str:
         self.signals.status.emit(f"Creating player entity '{self.name}'...")
+        from axiom.schema import migrate_entities_origin_column
+        migrate_entities_origin_column(self.db_path)
         # 1. Generate safe ID
         eid = re.sub(r'[^a-z0-9]', '_', self.name.lower()).strip('_')
         if not eid:
@@ -830,8 +842,8 @@ class CreatePlayerEntityTask(BaseDbTask):
 
             # Insert Entity
             conn.execute(
-                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active) "
-                "VALUES (?, ?, 'player', ?, 1);",
+                "INSERT INTO Entities (entity_id, name, entity_type, description, is_active, origin) "
+                "VALUES (?, ?, 'player', ?, 1, 'runtime');",
                 (eid, self.name, self.description)
             )
             
@@ -901,6 +913,7 @@ class DeleteEntityTask(BaseDbTask):
             # Foreign keys ON ensures ON DELETE CASCADE for Entity_Stats
             conn.execute("DELETE FROM Entities WHERE entity_id = ?;", (self.entity_id,))
             conn.commit()
+        self._sync_definition_source()
         self.signals.status.emit(f"Entity {self.entity_id} deleted.")
         return True
 

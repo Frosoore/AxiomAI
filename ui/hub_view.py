@@ -44,11 +44,7 @@ from PySide6.QtWidgets import (
 from ui.widgets.universe_card import UniverseCard
 from axiom.config import GLOBAL_DB_FILE
 from axiom.localization import tr
-from axiom.db_helpers import (
-    create_new_save,
-    load_saves,
-    provision_blank_universe,
-)
+from axiom.db_helpers import provision_blank_universe
 from workers.db_worker import DbWorker
 from workers.import_export_worker import ImportExportWorker
 from axiom.paths import UNIVERSES_DIR
@@ -298,10 +294,17 @@ class HubView(QWidget):
 
     @Slot(str)
     def _on_card_delete_requested(self, db_path: str) -> None:
-        """Confirm and delete a universe database file."""
+        """Confirm and delete a universe (flat .db file or source directory)."""
         from pathlib import Path
 
-        universe_name = Path(db_path).stem.replace("_", " ").title()
+        from axiom.library import universe_root_for
+
+        # Univers-dossier (Universe-as-Code) : supprimer le .db cache seul ne
+        # suffirait pas (la source serait recompilée au prochain refresh).
+        src_root = universe_root_for(db_path)
+        target = src_root if src_root is not None else Path(db_path)
+
+        universe_name = target.stem.replace("_", " ").title()
         reply = QMessageBox.warning(
             self,
             tr("delete_universe"),
@@ -312,8 +315,16 @@ class HubView(QWidget):
         if reply != QMessageBox.Yes:
             return
         try:
-            import os
-            os.remove(db_path)
+            # §7.6 : les parties de cet univers vivent sous saves/<univers>/ —
+            # elles partent avec lui.
+            from axiom.savestore import delete_universe_saves
+            delete_universe_saves(db_path)
+            if src_root is not None:
+                import shutil
+                shutil.rmtree(src_root)
+            else:
+                import os
+                os.remove(db_path)
             self.refresh_library()
             self._main_window.on_status_update(tr("ready"))
         except OSError as exc:
@@ -322,10 +333,16 @@ class HubView(QWidget):
     @Slot(str)
     def _on_card_export_requested(self, db_path: str) -> None:
         """Save-dialog then start ImportExportWorker in export mode."""
+        from axiom.db_helpers import read_universe_card_metadata
+
+        # Nom de fichier proposé = nom réel de l'univers (pas « universe.axiom »,
+        # qui finissait par nommer le dossier d'import « universe »).
+        name, _, _ = read_universe_card_metadata(db_path)
+        safe = "".join(c if c.isalnum() or c in "_ -" else "_" for c in name).strip().replace(" ", "_")
         dest_path, _ = QFileDialog.getSaveFileName(
             self,
             tr("export"),
-            str(Path.home() / "universe.axiom"),
+            str(Path.home() / f"{safe or 'universe'}.axiom"),
             "Axiom AI Universe (*.axiom)",
         )
         if not dest_path:

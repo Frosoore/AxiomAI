@@ -350,186 +350,96 @@ class TestJsonFenceFiltering:
 # ---------------------------------------------------------------------------
 
 class TestEntityEditorSync:
-    """collect_data() must capture the currently visible form before returning."""
+    """L'éditeur d'entités ne doit pas perdre les éditions en cours (flush UI→données).
 
-    def _make_widget(self):
-        """Instantiate EntityEditorWidget without a live QApplication."""
-        # Import here so import errors surface as test errors, not collection errors
+    Tests sur de vrais widgets (QApplication via conftest, qtbot via pytest-qt).
+    L'API réelle est `_sync_stats_from_ui` (flush) + `_on_row_selected` (lit `currentRow`).
+    """
+
+    def _widget(self, qtbot):
         from ui.widgets.entity_editor import EntityEditorWidget
-        return EntityEditorWidget.__new__(EntityEditorWidget)
+        w = EntityEditorWidget()
+        qtbot.addWidget(w)
+        return w
 
-    def test_collect_data_flushes_active_form(self) -> None:
-        """After adding an entity and editing its name, collect_data returns the edit."""
-        from ui.widgets.entity_editor import EntityEditorWidget
+    def test_collect_data_flushes_stat_edit(self, qtbot) -> None:
+        """Une valeur de stat éditée dans la table est capturée par collect_data()."""
+        from PySide6.QtWidgets import QLineEdit
 
-        w = EntityEditorWidget.__new__(EntityEditorWidget)
-        # Directly simulate the in-memory state that would exist after the user
-        # clicked "Add Entity", which appended a new dict and set _selected_row
-        w._entities_data = [
-            {"entity_id": "hero", "entity_type": "player", "name": "Old Name", "stats": {}}
-        ]
-        w._selected_row = 0
+        w = self._widget(qtbot)
+        w.populate([{"entity_id": "hero", "entity_type": "player", "name": "Hero",
+                     "description": "", "stats": {"HP": "10"}}])
+        w._table.setCurrentCell(0, 2)            # sélectionne la ligne 0 → charge ses stats
+        val = w._stats_table.cellWidget(0, 1)    # QLineEdit (stat hors définitions)
+        assert isinstance(val, QLineEdit)
+        val.setText("99")
+        assert w.collect_data()[0]["stats"]["HP"] == "99"
 
-        # Simulate the user having typed "Gojo" in the name field by monkey-patching
-        # _sync_current_form to verify it's called and returns the right data
-        synced = []
+    def test_row_switch_preserves_previous_edit(self, qtbot) -> None:
+        """Changer de ligne flushe l'édition de la ligne précédente (pas de perte)."""
+        w = self._widget(qtbot)
+        w.populate([
+            {"entity_id": "e0", "entity_type": "npc", "name": "E0", "description": "", "stats": {"HP": "10"}},
+            {"entity_id": "e1", "entity_type": "npc", "name": "E1", "description": "", "stats": {}},
+        ])
+        w._table.setCurrentCell(0, 2)
+        w._stats_table.cellWidget(0, 1).setText("77")
+        w._table.setCurrentCell(1, 2)            # switch → doit flusher la ligne 0
+        assert w.collect_data()[0]["stats"]["HP"] == "77"
 
-        original_sync = EntityEditorWidget._sync_current_form
-
-        def fake_sync(self_inner):
-            # Write "Gojo" as if the form QLineEdit contained it
-            row = self_inner._selected_row
-            if 0 <= row < len(self_inner._entities_data):
-                self_inner._entities_data[row]["name"] = "Gojo"
-            synced.append(row)
-
-        EntityEditorWidget._sync_current_form = fake_sync
-        try:
-            result = w.collect_data()
-        finally:
-            EntityEditorWidget._sync_current_form = original_sync
-
-        assert synced, "collect_data() must call _sync_current_form()"
-        assert result[0]["name"] == "Gojo"
-
-    def test_on_entity_selected_flushes_previous_row(self) -> None:
-        """Selecting a new entity must flush the form data for the PREVIOUS row."""
-        from ui.widgets.entity_editor import EntityEditorWidget
-
-        w = EntityEditorWidget.__new__(EntityEditorWidget)
-        w._entities_data = [
-            {"entity_id": "e0", "entity_type": "npc", "name": "Entity0", "stats": {}},
-            {"entity_id": "e1", "entity_type": "npc", "name": "Entity1", "stats": {}},
-        ]
-        w._selected_row = 0  # Row 0 is currently displayed
-
-        flushed_rows = []
-        original_sync = EntityEditorWidget._sync_current_form
-
-        def fake_sync(self_inner):
-            flushed_rows.append(self_inner._selected_row)
-
-        EntityEditorWidget._sync_current_form = fake_sync
-        try:
-            # Simulate selecting row 1 without a live Qt widget
-            w._on_entity_selected(1)
-        except Exception:
-            pass  # AttributeError for missing Qt widgets is OK here
-        finally:
-            EntityEditorWidget._sync_current_form = original_sync
-
-        assert 0 in flushed_rows, (
-            "_on_entity_selected must flush row 0 (previous) before loading row 1"
-        )
-
-    def test_selected_row_advances_after_selection(self) -> None:
-        """_selected_row must be updated to the new row after _on_entity_selected."""
-        from ui.widgets.entity_editor import EntityEditorWidget
-
-        w = EntityEditorWidget.__new__(EntityEditorWidget)
-        w._entities_data = [
-            {"entity_id": "e0", "entity_type": "npc", "name": "A", "stats": {}},
-            {"entity_id": "e1", "entity_type": "npc", "name": "B", "stats": {}},
-        ]
-        w._selected_row = 0
-
-        original_sync = EntityEditorWidget._sync_current_form
-        EntityEditorWidget._sync_current_form = lambda s: None
-        try:
-            w._on_entity_selected(1)
-        except Exception:
-            pass  # Qt widget methods will fail without QApplication — that's fine
-        finally:
-            EntityEditorWidget._sync_current_form = original_sync
-
+    def test_selected_row_advances_after_selection(self, qtbot) -> None:
+        """Sélectionner une ligne met à jour `_selected_row`."""
+        w = self._widget(qtbot)
+        w.populate([
+            {"entity_id": "e0", "entity_type": "npc", "name": "A", "description": "", "stats": {}},
+            {"entity_id": "e1", "entity_type": "npc", "name": "B", "description": "", "stats": {}},
+        ])
+        w._table.setCurrentCell(1, 2)
         assert w._selected_row == 1
 
 
 class TestRuleEditorSync:
-    """collect_data() and navigation must correctly target _selected_row."""
+    """L'éditeur de règles : round-trip, navigation, et flush depuis la table.
 
-    def test_on_rule_selected_flushes_previous_row(self) -> None:
-        """Selecting a new rule must flush the form for the PREVIOUS row, not the new one."""
+    Tests sur de vrais widgets. API réelle : `_sync_subtables_from_ui` (flush) +
+    `_on_row_selected` (lit `currentRow`), table principale col 0/1/2 = id/priority/target.
+    """
+
+    def _widget(self, qtbot):
         from ui.widgets.rule_editor import RuleEditorWidget
+        w = RuleEditorWidget()
+        qtbot.addWidget(w)
+        return w
 
-        w = RuleEditorWidget.__new__(RuleEditorWidget)
-        w._rules_data = [
+    @staticmethod
+    def _rules():
+        return [
             {"rule_id": "r0", "priority": 0, "target_entity": "*",
              "conditions": {"operator": "AND", "clauses": []}, "actions": []},
             {"rule_id": "r1", "priority": 1, "target_entity": "*",
              "conditions": {"operator": "AND", "clauses": []}, "actions": []},
         ]
-        w._selected_row = 0
-        w._condition_rows = []
-        w._action_rows = []
 
-        flushed_rows = []
-        original_sync = RuleEditorWidget._sync_current_form
+    def test_collect_data_roundtrips_rules(self, qtbot) -> None:
+        """collect_data() restitue les règles peuplées (ids + priorités)."""
+        w = self._widget(qtbot)
+        w.populate(self._rules())
+        out = w.collect_data()
+        assert [r["rule_id"] for r in out] == ["r0", "r1"]
+        assert [r["priority"] for r in out] == [0, 1]
 
-        def fake_sync(self_inner):
-            flushed_rows.append(self_inner._selected_row)
-
-        RuleEditorWidget._sync_current_form = fake_sync
-        try:
-            w._on_rule_selected(1)
-        except Exception:
-            pass
-        finally:
-            RuleEditorWidget._sync_current_form = original_sync
-
-        assert 0 in flushed_rows, (
-            "_on_rule_selected must flush row 0 (previous) before loading row 1"
-        )
-
-    def test_selected_row_advances_after_selection(self) -> None:
-        """Selecting a rule row updates _selected_row to the new index."""
-        from ui.widgets.rule_editor import RuleEditorWidget
-
-        w = RuleEditorWidget.__new__(RuleEditorWidget)
-        w._rules_data = [
-            {"rule_id": "r0", "priority": 0, "target_entity": "*",
-             "conditions": {}, "actions": []},
-            {"rule_id": "r1", "priority": 1, "target_entity": "*",
-             "conditions": {}, "actions": []},
-        ]
-        w._selected_row = 0
-        w._condition_rows = []
-        w._action_rows = []
-
-        original_sync = RuleEditorWidget._sync_current_form
-        RuleEditorWidget._sync_current_form = lambda s: None
-        try:
-            w._on_rule_selected(1)
-        except Exception:
-            pass
-        finally:
-            RuleEditorWidget._sync_current_form = original_sync
-
+    def test_selected_row_advances_after_selection(self, qtbot) -> None:
+        """Sélectionner une règle met à jour `_selected_row`."""
+        w = self._widget(qtbot)
+        w.populate(self._rules())
+        w._table.setCurrentCell(1, 0)
         assert w._selected_row == 1
 
-    def test_collect_data_calls_sync(self) -> None:
-        """collect_data flushes the visible rule form via _sync_current_form
-        before returning."""
-        from ui.widgets.rule_editor import RuleEditorWidget
+    def test_collect_data_flushes_main_table_edit(self, qtbot) -> None:
+        """Une édition de la table principale (target_entity) est capturée par collect_data()."""
+        from PySide6.QtWidgets import QTableWidgetItem
 
-        w = RuleEditorWidget.__new__(RuleEditorWidget)
-        w._rules_data = [
-            {"rule_id": "r0", "priority": 0, "target_entity": "*",
-             "conditions": {"operator": "AND", "clauses": []}, "actions": []},
-        ]
-        w._selected_row = 0
-
-        synced = []
-        original_sync = RuleEditorWidget._sync_current_form
-
-        def fake_sync(self_inner):
-            synced.append(self_inner._selected_row)
-
-        RuleEditorWidget._sync_current_form = fake_sync
-        try:
-            w.collect_data()
-        finally:
-            RuleEditorWidget._sync_current_form = original_sync
-
-        assert synced, "collect_data() must call _sync_current_form()"
-        assert 0 in synced
+        w = self._widget(qtbot)
+        w.populate(self._rules())
+        w._table.setItem(0, 2, QTableWidgetItem("player_1"))
+        assert w.collect_data()[0]["target_entity"] == "player_1"

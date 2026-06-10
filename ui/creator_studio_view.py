@@ -13,6 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
+    QDialog,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -34,6 +35,7 @@ from ui.widgets.scheduled_events_editor import ScheduledEventsEditorWidget
 from ui.widgets.story_setup_editor import StorySetupEditorWidget
 from ui.widgets.populate_tab import PopulateTabWidget
 from ui.widgets.map_editor import MapEditorWidget
+from ui.widgets.universe_files_tab import UniverseFilesTabWidget
 from workers.db_worker import DbWorker
 from axiom.config import load_config
 from axiom.localization import tr
@@ -53,9 +55,10 @@ class CreatorStudioView(QWidget):
         self._save_worker: DbWorker | None = None
         
         # Pending AI operations (Chain: Save -> AI Task)
-        self._pending_ai_tasks: list[str] = [] 
+        self._pending_ai_tasks: list[str] = []
         self._pending_ai_mode: str = "auto"
         self._pending_ai_text: str | None = None
+        self._pending_ai_preview: bool = False  # TICKET-030
 
         self._setup_ui()
         self._setup_shortcuts()
@@ -89,7 +92,8 @@ class CreatorStudioView(QWidget):
         self._story_setup_editor = StorySetupEditorWidget()
         self._map_editor = MapEditorWidget()
         self._populate_tab = PopulateTabWidget()
-        
+        self._files_tab = UniverseFilesTabWidget()
+
         self._tabs.addTab(self._build_lore_tab(), tr("tab_meta"))
         self._tabs.addTab(self._stat_editor, tr("stats"))
         self._tabs.addTab(self._entity_editor, tr("tab_entities"))
@@ -99,6 +103,7 @@ class CreatorStudioView(QWidget):
         self._tabs.addTab(self._story_setup_editor, tr("tab_setup"))
         self._tabs.addTab(self._lore_book_editor, tr("tab_lore"))
         self._tabs.addTab(self._populate_tab, tr("populate"))
+        self._tabs.addTab(self._files_tab, tr("tab_files"))  # TICKET-029
         layout.addWidget(self._tabs)
 
         # Connections
@@ -109,6 +114,8 @@ class CreatorStudioView(QWidget):
         self._lore_book_editor.populate_requested.connect(self._on_populate_requested_single)
         self._populate_tab.populate_requested.connect(self._on_populate_requested)
         self._map_editor.populate_requested.connect(self._on_map_populate_requested)
+        self._files_tab.file_saved.connect(self._on_source_file_saved)
+        self._files_tab.convert_requested.connect(self._on_convert_requested)
 
     def _setup_shortcuts(self) -> None:
         self._save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)
@@ -168,7 +175,10 @@ class CreatorStudioView(QWidget):
 
         from PySide6.QtWidgets import QComboBox, QCheckBox
         self._verbosity_combo = QComboBox()
-        self._verbosity_combo.addItems([tr("short"), tr("balanced"), tr("talkative")])
+        # TICKET-032 : la valeur CANONIQUE vit dans itemData, le texte affiché
+        # n'est que la traduction (sinon « équilibré » finissait en base).
+        for level in ("short", "balanced", "talkative"):
+            self._verbosity_combo.addItem(tr(level), level)
         self._verbosity_label_row = QLabel(f"{tr('verbosity')}:")
         tension_form.addRow(self._verbosity_label_row, self._verbosity_combo)
 
@@ -202,6 +212,8 @@ class CreatorStudioView(QWidget):
         self._tabs.setTabText(6, tr("tab_setup"))
         self._tabs.setTabText(7, tr("tab_lore"))
         self._tabs.setTabText(8, tr("populate"))
+        self._tabs.setTabText(9, tr("tab_files"))
+        self._files_tab.retranslate_ui()
 
         self._lore_group.setTitle(tr("world_lore"))
         self._prompt_group.setTitle(tr("sys_prompt_override"))
@@ -211,6 +223,8 @@ class CreatorStudioView(QWidget):
         self._temp_label_row.setText(tr("llm_temp"))
         self._top_p_label_row.setText(tr("llm_top_p"))
         self._verbosity_label_row.setText(f"{tr('verbosity')}:")
+        for i in range(self._verbosity_combo.count()):
+            self._verbosity_combo.setItemText(i, tr(self._verbosity_combo.itemData(i)))
         
         self._lore_edit.setPlaceholderText(tr("global_lore_placeholder"))
         self._system_prompt_edit.setPlaceholderText(tr("system_prompt_placeholder"))
@@ -233,6 +247,15 @@ class CreatorStudioView(QWidget):
         self._db_worker.error_occurred.connect(self._on_worker_error)
         self._db_worker.status_update.connect(self._main_window.on_status_update)
         self._db_worker.load_full_universe()
+        self._files_tab.set_universe(db_path)  # TICKET-029
+        # TICKET-030 : preview de Populate (sandbox + diff) si univers-dossier.
+        from axiom.library import universe_root_for
+        self._populate_tab.set_preview_supported(universe_root_for(db_path) is not None)
+        self._db_worker.populate_previewed.connect(self._on_populate_previewed)
+        self._db_worker.staged_applied.connect(self._on_staged_applied)
+        # TICKET-033 : annulation volontaire ≠ erreur (pas de popup).
+        self._db_worker.generation_cancelled.connect(
+            lambda _msg: self._main_window.on_status_update(tr("generation_cancelled")))
 
     # ------------------------------------------------------------------
     # Slots
@@ -267,6 +290,10 @@ class CreatorStudioView(QWidget):
             sdefs = self._stat_editor.collect_data()
             self._entity_editor.set_stat_definitions(sdefs)
             self._rule_editor.set_stat_definitions(sdefs)
+        # TICKET-029 : la source bouge après chaque save Studio (TICKET-027),
+        # l'onglet Fichiers se relit à chaque activation.
+        if self._tabs.widget(index) is self._files_tab:
+            self._files_tab.refresh()
 
     @Slot()
     def _on_save_clicked(self) -> None:
@@ -282,7 +309,7 @@ class CreatorStudioView(QWidget):
             "world_tension_level": str(self._tension_spin.value()),
             "llm_temperature": str(self._temp_spin.value()),
             "llm_top_p": str(self._top_p_spin.value()),
-            "llm_verbosity": self._verbosity_combo.currentText().lower(),
+            "llm_verbosity": self._verbosity_combo.currentData() or "balanced",
             "companion_mode_enabled": "1" if self._companion_enabled_check.isChecked() else "0",
             "companion_hero_id": self._companion_hero_combo.currentData() or "",
             "calendar_config": cal_meta.get("calendar_config", "{}")
@@ -315,6 +342,13 @@ class CreatorStudioView(QWidget):
         if self._pending_ai_tasks:
             tasks = list(self._pending_ai_tasks)
             self._pending_ai_tasks = []
+            # TICKET-030 : mode preview — tout le lot part dans une sandbox,
+            # le diff texte sera proposé avant application.
+            if self._pending_ai_preview:
+                self._pending_ai_preview = False
+                self._db_worker.preview_populate(
+                    tasks, self._pending_ai_mode, self._pending_ai_text)
+                return
             for task in tasks:
                 if task == "meta":
                     self._db_worker.populate_meta(self._pending_ai_mode, self._pending_ai_text)
@@ -329,17 +363,19 @@ class CreatorStudioView(QWidget):
                 elif task == "lore":
                     self._db_worker.populate_lore(self._pending_ai_mode, self._pending_ai_text)
 
-    @Slot(list, str, object)
-    def _on_populate_requested(self, tasks: list[str], mode: str, text: str | None) -> None:
+    @Slot(list, str, object, bool)
+    def _on_populate_requested(self, tasks: list[str], mode: str, text: str | None,
+                               preview: bool = False) -> None:
         self._pending_ai_tasks = tasks
         self._pending_ai_mode = mode
         self._pending_ai_text = text
+        self._pending_ai_preview = preview
         self._on_save_clicked()
 
     @Slot(str, object)
     def _on_populate_requested_single(self, task: str, text: str | None) -> None:
         """Helper for single-tab populate buttons."""
-        self._on_populate_requested([task], "auto", text)
+        self._on_populate_requested([task], "auto", text, False)
 
     def _on_meta_loaded(self, meta: dict) -> None:
         name = meta.get("universe_name", "Universe")
@@ -351,13 +387,10 @@ class CreatorStudioView(QWidget):
         self._temp_spin.setValue(float(meta.get("llm_temperature", "0.7")))
         self._top_p_spin.setValue(float(meta.get("llm_top_p", "1.0")))
         
-        v = meta.get("llm_verbosity", "balanced")
-        idx = -1
-        for i in range(self._verbosity_combo.count()):
-            if self._verbosity_combo.itemText(i).lower() == tr(v).lower() or self._verbosity_combo.itemText(i).lower() == v.lower():
-                idx = i
-                break
-        self._verbosity_combo.setCurrentIndex(max(0, idx))
+        # TICKET-032 : normalise les valeurs historiques stockées localisées.
+        from axiom.localization import canonical_verbosity
+        v = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
+        self._verbosity_combo.setCurrentIndex(max(0, self._verbosity_combo.findData(v)))
 
         # Companion Feature
         enabled = meta.get("companion_mode_enabled") == "1"
@@ -383,7 +416,70 @@ class CreatorStudioView(QWidget):
         worker.error_occurred.connect(self._on_worker_error)
         worker.populate_map(custom_text=custom_text)
 
+    # --- TICKET-029 : onglet « Fichiers » -------------------------------
+
+    @Slot(str)
+    def _on_source_file_saved(self, _path: str) -> None:
+        """Un fichier source a été écrit : recompile la définition in-place,
+        puis recharge les vues classiques du Studio (texte = vérité)."""
+        if not self._db_path:
+            return
+        from axiom.library import universe_root_for
+        src_root = universe_root_for(self._db_path)
+        if src_root is None:
+            return
+        self._refresh_worker = DbWorker(self._db_path)
+        self._refresh_worker.definition_refreshed.connect(self._on_definition_refreshed)
+        self._refresh_worker.error_occurred.connect(self._on_worker_error)
+        self._refresh_worker.status_update.connect(self._main_window.on_status_update)
+        self._refresh_worker.refresh_definition_from(str(src_root))
+
+    @Slot()
+    def _on_definition_refreshed(self) -> None:
+        self._main_window.on_status_update(tr("files_saved_refreshed"))
+        self._db_worker.load_full_universe()
+
+    @Slot()
+    def _on_convert_requested(self) -> None:
+        """Convertit le .db plat courant en univers-dossier puis recharge le Studio."""
+        if not self._db_path:
+            return
+        self._convert_worker = DbWorker(self._db_path)
+        self._convert_worker.universe_converted.connect(self._on_universe_converted)
+        self._convert_worker.error_occurred.connect(self._on_worker_error)
+        self._convert_worker.status_update.connect(self._main_window.on_status_update)
+        self._convert_worker.convert_flat_to_folder()
+
+    @Slot(dict)
+    def _on_universe_converted(self, info: dict) -> None:
+        self._main_window.on_status_update(tr("files_converted_msg"))
+        # Recharge le Studio sur le nouveau cache (l'onglet Fichiers passe en mode arbo).
+        self.load_universe(info["db_path"])
+
+    # --- TICKET-030 : Populate ciblé avec prévisualisation ---------------
+
+    @Slot(dict)
+    def _on_populate_previewed(self, info: dict) -> None:
+        if not info.get("diffs"):
+            QMessageBox.information(self, tr("populate"), tr("preview_no_changes"))
+            return
+        from ui.widgets.diff_preview_dialog import DiffPreviewDialog
+        dialog = DiffPreviewDialog(info["diffs"], self)
+        if dialog.exec() == QDialog.Accepted:
+            self._db_worker.apply_staged(info["staged_dir"], info["src_dir"])
+        else:
+            from workers.db_tasks import discard_staged_source
+            discard_staged_source(info["staged_dir"])
+
+    @Slot()
+    def _on_staged_applied(self) -> None:
+        self._main_window.on_status_update(tr("staged_applied_msg"))
+        self._db_worker.load_full_universe()
+        if self._tabs.currentWidget() is self._files_tab:
+            self._files_tab.refresh()
+
     @Slot(str)
     def _on_worker_error(self, message: str) -> None:
         self._pending_ai_tasks = []
+        self._pending_ai_preview = False
         QMessageBox.critical(self, tr("error"), message)

@@ -70,6 +70,36 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
     return output_path
 
 
+def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
+    """Exporte un univers `.db` en archive `.axiom` v2 (decompile → pack).
+
+    Pour les univers qui ne vivent encore que sous forme `.db` (legacy GUI).
+    L'archive ne contient que la **définition** (l'arbo décompilée + son cache
+    recompilé) : les saves embarquées dans le `.db` ne sont pas exportées —
+    même contrat que l'export v1.
+
+    Args:
+        db_path:     Chemin du `.db` univers à exporter.
+        output_path: Chemin de l'archive `.axiom` à produire.
+
+    Returns:
+        Le chemin de l'archive créée.
+    """
+    db_path = Path(db_path)
+    if not db_path.is_file():
+        raise PackageError(f"Base univers introuvable : {db_path}")
+
+    from axiom.decompile import DecompileError, decompile_universe
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src = Path(tmp_dir) / db_path.stem
+        try:
+            decompile_universe(db_path, src)
+        except DecompileError as exc:
+            raise PackageError(f"Décompilation impossible : {exc}") from exc
+        return pack_universe(src, output_path)
+
+
 # ---------------------------------------------------------------------------
 # Unpack (.axiom → arbo source + cache, prêt à jouer)
 # ---------------------------------------------------------------------------
@@ -104,11 +134,50 @@ def unpack_universe(axiom_path: str | Path, dest_root: str | Path) -> Path:
     axiom_path = Path(axiom_path)
     dest_root = Path(dest_root)
     fmt = detect_format(axiom_path)
-    name = axiom_path.stem
+    # Le dossier prend le NOM DE L'UNIVERS (lu dans l'archive), pas le nom du
+    # fichier .axiom — sinon un export laissé en « universe.axiom » s'installe
+    # sous « universe/ ».
+    base = _archive_universe_name(axiom_path, fmt) or axiom_path.stem
+    name = _unique_name(dest_root, base)
 
     if fmt == "v2":
         return _unpack_v2(axiom_path, dest_root, name)
     return _import_v1(axiom_path, dest_root, name)
+
+
+def _archive_universe_name(axiom_path: Path, fmt: str) -> str | None:
+    """Lit le nom d'univers déclaré dans l'archive (v2 : universe.toml [meta].name ;
+    v1 : universe_meta.json universe_name). None si absent/illisible."""
+    import tomllib
+
+    try:
+        with zipfile.ZipFile(str(axiom_path), "r") as zf:
+            if fmt == "v2":
+                data = tomllib.loads(zf.read(_V2_MARKER).decode("utf-8"))
+                raw = data.get("meta", {}).get("name", "")
+            else:
+                meta = json.loads(zf.read("universe_meta.json").decode("utf-8"))
+                raw = meta.get("universe_name", "")
+    except (KeyError, OSError, zipfile.BadZipFile, json.JSONDecodeError,
+            tomllib.TOMLDecodeError, UnicodeDecodeError):
+        return None
+    safe = "".join(c if c.isalnum() or c in "_ -" else "_" for c in str(raw)).strip()
+    safe = safe.replace(" ", "_")
+    return safe or None
+
+
+def _unique_name(dest_root: Path, stem: str) -> str:
+    """Nom de dossier libre sous `dest_root` (suffixe _1, _2, … si conflit).
+
+    Ré-importer une archive ne doit jamais écraser un univers installé : son
+    cache `.db` peut contenir des parties en cours (§7.6 différé).
+    """
+    name = stem
+    counter = 1
+    while (dest_root / name).exists():
+        name = f"{stem}_{counter}"
+        counter += 1
+    return name
 
 
 def _unpack_v2(axiom_path: Path, dest_root: Path, name: str) -> Path:

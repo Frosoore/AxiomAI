@@ -13,6 +13,37 @@ Récapitulatifs des tickets traités. Les tickets restent numérotés dans
 
 ---
 
+## TICKET-026 — `parse_tool_call` : résilience confirmée
+
+**Statut :** clos le 2026-06-09, décision utilisateur. Le comportement **résilient** est conservé :
+sur un bloc JSON de tool-call malformé/tronqué, `axiom/backends/base.py::parse_tool_call` renvoie
+`(texte, None)` au lieu de lever `LLMParseError` — un tour narratif n'est jamais interrompu par un
+JSON cassé (adapté au setup Gemini réel). Les tests `tests/test_llm_base.py` étaient déjà alignés.
+**Aucun changement de code.**
+
+---
+
+## TICKET-027 — Creator Studio sur univers-dossier : sync db → source
+
+**Statut :** résolu le 2026-06-09 (Pilier 2, Phase 8).
+
+**Problème :** depuis Universe-as-Code, un univers importé/installé vit en dossier source
+(`universe.toml` + cache `.axiom-cache/universe.db`) et le Hub fait éditer le **cache** au Creator
+Studio. Les modifs Studio ne remontaient pas dans l'arbo texte (« le texte est la vérité » violé) et
+auraient été écrasées au prochain refresh de définition.
+
+**Fix :** `axiom/library.py::sync_source_from_db` — après chaque écriture de définition côté app
+(`save_full_universe`, `save_universe_meta`, les 7 `Populate*Task`, `DeleteEntityTask`), l'arbo
+texte est réécrite en miroir depuis le `.db` : décompilation vers un dossier temporaire puis
+copie + purge des fichiers orphelins (`.axiom-cache/` et `.git/` jamais touchés), entités
+`origin='runtime'` exclues de l'export, hash de cache mis à jour (pas de recompilation parasite).
+Non bloquant : un échec de sync logge un warning sans faire échouer la sauvegarde Studio.
+
+**Tests :** `tests/test_dev_hotreload.py::TestStudioSyncSource` (5, dont un bout-en-bout worker Qt
+offscreen et un round-trip compile(source resynchronisée) == définition du db).
+
+---
+
 ## TICKET-004 — Réviser le doc d'upgrade : §5.3 Étape 3 (abstraction Qt/paths)
 
 **Statut :** clos le 2026-05-23. Révision purement documentaire (aucun code modifié).
@@ -250,3 +281,149 @@ hors `main.py`), sans rapport.
 
 **Reste ouvert :** TICKET-017 (`major_event_description` inutilisé ; le time-skip §6.4 est partiellement
 couvert par TICKET-018 mais le champ reste non consommé) — voir `PENDING.md`.
+
+---
+
+## Lot 2026-06-09 — Pilier 2 (Universe-as-Code) + correctifs tickets
+
+> Session Claude (branche dev). Détail complet : `maintenance/B2-pilier2-universe-as-code/`.
+
+### TICKET-006 — Chronicler : `chronicler_update` matérialisé
+`EventSourcer._apply_event` (+ filtre `update_state_cache`) traite désormais `chronicler_update`
+(payload `delta|value`, provenance conservée dans le journal) ; `Session.take_turn` rematérialise
+`State_Cache` (+`invalidate_stats_cache`) après le run du Chronicler → ses changements de monde
+prennent effet. Avant : events silencieusement ignorés, même au `rebuild_state_cache`.
+Tests : `tests/test_ticket_fixes.py`.
+
+### TICKET-023 — `Universe.load` lit `universe_name`
+`axiom/universe.py` : `meta.get("universe_name") or meta.get("name") or stem`. Le cache compilé
+s'appelant toujours `universe.db`, l'ancien code affichait « universe ». Validé sur `ST_Aglae.db`
+(« Aglae »). Tests : `tests/test_ticket_fixes.py`.
+
+### TICKET-024 — `Active_Modifiers` isolé par `save_id`
+Colonne `save_id` (DDL + FK `Saves` ON DELETE CASCADE pour DB neuves ;
+`migrate_active_modifiers_table` = `ALTER ADD COLUMN` pour DB existantes, branchée
+`create_new_save`/`load_saves`). Filtrage par save partout : `modifiers.py`
+(`add/tick/apply/_fetch`), `arbitrator._fetch_effective_stats`, `hardcore_worker`. Modifiers
+réintégrés à l'éditeur de saves. Avant : buffs/debuffs partagés entre toutes les parties d'un univers.
+Tests : `tests/test_ticket_fixes.py`, `tests/test_saves_editing.py`, `test_modifier_processor` adapté.
+
+### TICKET-025 — `save_global_personas` ne dispatchait jamais sa tâche
+`workers/db_worker.py::save_global_personas` créait la `QRunnable` et connectait son signal mais
+oubliait `self._setup_task(task)` (présent dans toutes les autres méthodes) → personas globales
+**jamais sauvegardées** (en jeu comme en test). 1 ligne ajoutée. C'est le vrai bug que
+`tests/test_persona_global.py` captait (faussement étiqueté « pré-existant connu » depuis TICKET-001).
+
+### TICKET-001 — Rework tests : **réellement complété** (suite verte)
+La 1ʳᵉ passe (2026-05-23) avait documenté 3 groupes d'échecs comme « pré-existants connus » au lieu
+de les résoudre. Ils le sont maintenant :
+- **persona_global** : vrai bug applicatif corrigé (TICKET-025).
+- **ambiance** (5) : `pytest-qt` (déjà dans `requirements-dev.txt`) installé dans le `.venv` ; fixture
+  corrigée (`AmbianceManager` est un `QObject`, pas un `QWidget` → suppression du `qtbot.addWidget`) ;
+  comparaisons de volume en `pytest.approx` (float32).
+- **phase6** (6) : tests périmés réécrits sur de **vrais widgets** (API réelle `_sync_stats_from_ui`/
+  `_on_row_selected` au lieu de `_sync_current_form`/`_on_entity_selected`), vérifient le vrai
+  comportement anti-perte de données (flush UI→données au changement de ligne / collect).
+- **test_llm_base** (2, découvert en chemin) : `parse_tool_call` est devenu résilient (renvoie `None`
+  au lieu de lever) ; tests alignés sur ce contrat → cf. **TICKET-026** (choix de design à valider).
+Vérification : **31/31 fichiers de tests verts** (lancés par fichier ; le run de toute la suite en un
+seul process reste le segfault torch+Qt de TICKET-008, limite de harnais, pas une régression).
+
+### Nettoyage `debug/` (2026-06-09, feu vert utilisateur)
+Audit reconfirmé : aucune couverture unique à porter (localisation → `tests/test_localization.py`,
+params `Universe_Meta` → `tests/test_universe_meta.py`, déjà migrés en TICKET-001). **Supprimés**
+(doublons / tests sur mocks ne touchant pas le vrai code / checks filesystem fragiles) :
+`debug/test_translations.py`, `test_db_logic.py`, `test_rules_logic.py`, `test_populate.py`,
+`test_populate_async.py`, `test_llm_logic.py`, `test_audio_logic.py`, + `debug/DEPRECATED.md`.
+**Conservés** (ce ne sont pas des tests automatisés) : `startup_check.py` (garde-fou du contrat
+collab), `run_step7_live.py` (harnais live), `db_integrity.py`, `llm_test.py` et
+`test_audio_crossfade.py` (outils interactifs manuels).
+
+### TICKET-032 — `llm_verbosity` stocké localisé (bug i18n)
+Le Creator Studio écrivait dans `Universe_Meta` le **texte affiché** du combo de verbosité
+(`currentText().lower()` → « équilibré » en FR) au lieu de la valeur canonique
+(`short`/`balanced`/`talkative`) — d'où le `WARNING: Localization key missing: 'équilibré'`
+au tabletop et une logique de verbosité (max_tokens, guidance du prompt) retombant
+silencieusement en défaut dès que l'UI n'était pas en anglais. Corrigé (2026-06-10) :
+- combo du Studio : valeur canonique en `itemData`, texte = traduction (`retranslate_ui`
+  rafraîchit les libellés sans toucher la donnée) ; écriture via `currentData()` ;
+- `axiom.localization.canonical_verbosity()` : **migration douce** des univers déjà
+  enregistrés — accepte la valeur canonique ou n'importe quel texte localisé (recherche
+  inverse dans toutes les langues), inconnu → `balanced` ;
+- lecture normalisée dans le Studio (`findData`) et le tabletop (slider + état session).
+Tests : `tests/test_localization.py` (+3, dont valeurs historiques FR/ES/DE), smoke
+offscreen Studio + tabletop avec un univers legacy « équilibré ».
+
+## Archivage PENDING → DONE (2026-06-10)
+
+Nettoyage demandé par l'utilisateur : les tickets terminés quittent PENDING (index compris)
+et laissent leur trace condensée ici. Les quatre entrées ci-dessous n'existaient pas encore
+dans DONE ; les autres tickets retirés de PENDING (001, 006, 015/016/018→021, 023→027, 032,
+TC1→TC5…) étaient déjà documentés plus haut. Les mentions « attente feu vert commit » de
+l'époque sont caduques : l'utilisateur gère git lui-même.
+
+### TICKET-003 — Suppression des modules engine dépréciés (post-Pilier 1)
+**✅ Résolu (2026-06-04).** Conditions remplies (parité fonctionnelle + run réel GUI + 236 tests
+verts) ; vérifié par grep que le sous-graphe déprécié n'était référencé que par lui-même.
+Supprimés : `core/{arbitrator,chronicler,config,localization,logger,paths,rules_engine,
+time_system}.py`, `database/{checkpoint,event_sourcing,modifier_processor,presets,schema}.py`,
+tout `llm_engine/`, `workers/db_helpers.py`, + les 3 `DEPRECATED.md`. Conservés (vivants) :
+`core/{__init__,st_parser,multiplayer_queue}.py`, `database/{__init__,backup_manager}.py`.
+
+### TICKET-007 — Bugs backend Gemini (extraction_model 404 + >5 stop_sequences)
+**✅ Résolu.** Deux bugs pré-existants rendant l'app inutilisable en Gemini-only :
+(1) `extraction_model` (nom Ollama local) envoyé à l'API Gemini → 404 ; fix
+`axiom/config.py::resolve_extraction_model` (gemini → `gemini_model`), adopté par la décision
+héros et les 7 sites Populate. (2) 6 stop sequences envoyées alors que Gemini en plafonne 5 →
+400 sur tout tour narratif ; fix `_clamp_stop_sequences` dans `complete()`/`stream_tokens()`.
+Tests : `test_config.py::TestResolveExtractionModel`, `test_gemini_client.py` (clamp).
+Le « reste » de l'époque (quota 429 free tier) est traité depuis par **TICKET-031**
+(retry au délai suggéré + ralentisseur + modèle de secours).
+
+### TICKET-008 — Segfault torch+Qt au premier tour narratif
+**✅ Résolu.** Cause racine : le 1er encode sentence-transformers sur un QThread importait
+paresseusement `torch._dynamo` → `dlopen(libtriton.so)` depuis un thread secondaire sous Qt
+→ crash natif. Fix : `axiom/memory.py::preload_embedding_runtime()` appelé sur le thread
+principal au démarrage (`main.py`) — le dlopen a lieu sur le main thread, l'usage cross-thread
+ensuite est sûr. Test à dents : `tests/test_vector_threading.py` (+ scénario sous-process Qt
+offscreen : `nopreload` → 139, `preload` → 0). L'app a depuis tourné en GUI réelle (validations
+Pilier 2, 2026-06-09) sans récidive. Séquelle de harnais connue : la suite pytest monolithique
+en un seul process segfaulte toujours (limite torch+Qt, d'où les runs par fichier).
+
+### TICKET-022 — Doc : collision de numérotation des tickets dans DONE.md
+**✅ Résolu (2026-06-07).** TICKET-010/011/012 désignaient deux lots sans rapport (Save
+Management ET temps causal). Les cinq tickets temps causal ont été renumérotés **TC1 → TC5**
+(contenu inchangé), note explicative en tête de DONE.md ; 010/011/012 désignent désormais sans
+ambiguïté le lot Save Management.
+
+## TICKET-028/029/030/031 — UX Pilier 2 + résilience quota : validés GUI (2026-06-10)
+
+Implémentés les 2026-06-09/10, **validés en GUI réelle par l'utilisateur le 2026-06-10**.
+Détail complet dans les dossiers d'étape (TODO/CHANGELOG/DOC) :
+- **TICKET-028** (`maintenance/TICKET-028-gui-saves/`) — panneau de gestion des saves dans le
+  Setup : Exporter/Importer `.axiomsave`, Dupliquer (= save manuelle), Renommer, Éditer
+  (save_state.toml, diff appliqué en `manual_edit`), Supprimer ; fix latent Delete/Rename
+  no-op sur saves séparées ; backups `auto_backups/` en un seul fichier.
+- **TICKET-029** (`maintenance/TICKET-029-studio-fichiers/`) — onglet « Fichiers » du Creator
+  Studio (arbo TOML/MD éditable, save → `refresh_definition` + reload) ; conversion .db plat
+  → univers-dossier (`convert_flat_db_to_folder`, saves embarquées migrées, original en .bak).
+- **TICKET-030** (`maintenance/TICKET-030-populate-uac/`) — Populate ciblé + prévisualisation
+  du diff texte (sandbox, rien d'écrit avant validation) + canonisation in-game (bouton
+  « Canoniser… » avec preview, toggle « Canon auto » OFF par défaut).
+- **TICKET-031** (`maintenance/TICKET-031-quota-llm/`) — résilience 429 : retry au délai
+  suggéré par l'API, ralentisseur req/min, modèle de secours, Populate commité par chunk
+  (relance = reprise). Suite directe : TICKET-033 (visibilité des retries + annulation).
+
+## TICKET-033 — Retries visibles + annulation des générations : validé GUI (2026-06-10)
+
+Implémenté puis **validé en GUI réelle par l'utilisateur le 2026-06-10**. Détail complet
+dans `maintenance/TICKET-033-annulation-generation/` (TODO/CHANGELOG/DOC).
+- **Compte à rebours des retries 429** dans la barre de statut (« Quota exhausted (model)
+  — attempt 1/3 — retry in 27s », rafraîchi ~5 s), bascule sur le modèle de secours annoncée.
+- **Bouton « ✖ Annuler la génération »** dans la barre de statut, visible seulement quand
+  une génération LLM tourne (registre process-wide dans `workers/db_tasks.py`, poll 500 ms
+  côté MainWindow — aucune vue à câbler). Annulation **coopérative** : immédiate pendant
+  une attente, sinon à la prochaine frontière de chunk ; le travail déjà commité reste
+  (cohérent avec la reprise TICKET-031), une preview annulée supprime sa sandbox.
+- Mécanique : `GenerationCancelled` + hooks neutres `on_status`/`cancel_event` sur
+  `LLMBackend` (zéro Qt), signal Qt `cancelled` distinct d'`error` (pas de popup).

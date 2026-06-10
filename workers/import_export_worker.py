@@ -3,33 +3,28 @@ workers/import_export_worker.py
 
 QThread worker for .axiom archive import and export operations.
 
-All filesystem and SQLite work is performed off the main thread.
-The main thread receives progress updates and completion notifications
-exclusively via Qt signals.
+Thin Qt shell over the engine (`axiom.package`) : toute la logique de
+packaging vit côté moteur (Pilier 2, règle ARCHITECTURE.md). Ce worker ne
+fait que déporter l'appel hors du thread principal et traduire le résultat
+en signaux Qt.
 
-.axiom archive layout
-----------------------
-universe_meta.json  — key-value pairs from Universe_Meta table
-entities.json       — list of entity dicts (entity_id, entity_type, name, stats)
-rules.json          — list of rule dicts (canonical Rules Engine schema)
-format_version.json — {"version": "1.0"}
+.axiom v2 = zip de l'arborescence source (TOML/MD) + cache compilé
+`.axiom-cache/universe.db`. Les archives v1 (zip de JSON) sont converties
+à la volée par `axiom.package.unpack_universe`.
+
+Le mode `import_st` (cartes SillyTavern → .db plat) est indépendant du
+format .axiom et reste implémenté ici.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
-import tempfile
-import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
 from axiom.schema import create_universe_db
-
-
-_FORMAT_VERSION: str = "1.0"
 
 
 class ImportExportWorker(QThread):
@@ -264,73 +259,25 @@ class ImportExportWorker(QThread):
     # ------------------------------------------------------------------
 
     def _run_import(self) -> None:
-        """Unpack a .axiom archive and provision a new universe database."""
-        self.status_update.emit("Importing universe…")
-        total_steps = 4
+        """Unpack a .axiom archive (v1 or v2) into a playable source tree."""
+        from axiom.compile import CACHE_DB_NAME, CACHE_DIRNAME, CompileError
+        from axiom.package import PackageError, unpack_universe
 
+        self.status_update.emit("Importing universe…")
+        total_steps = 2
         self.progress_update.emit(0, total_steps)
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            # Step 1 — Unzip
-            try:
-                with zipfile.ZipFile(self._source_path, "r") as zf:
-                    zf.extractall(tmp_dir)
-            except (zipfile.BadZipFile, OSError) as exc:
-                self.error_occurred.emit(f"Cannot open .axiom file: {exc}")
-                return
+        try:
+            src_dir = unpack_universe(self._source_path, self._dest_path)
+        except (PackageError, CompileError) as exc:
+            self.error_occurred.emit(f"Cannot import .axiom file: {exc}")
+            return
 
-            self.progress_update.emit(1, total_steps)
+        self.progress_update.emit(1, total_steps)
 
-            # Step 2 — Validate required files
-            tmp = Path(tmp_dir)
-            required = ["universe_meta.json", "entities.json", "rules.json"]
-            missing = [f for f in required if not (tmp / f).exists()]
-            if missing:
-                self.error_occurred.emit(
-                    f"Corrupt .axiom: missing files: {', '.join(missing)}"
-                )
-                return
-
-            # Load JSON data
-            try:
-                meta: dict = json.loads((tmp / "universe_meta.json").read_text())
-                entities: list = json.loads((tmp / "entities.json").read_text())
-                rules: list = json.loads((tmp / "rules.json").read_text())
-                
-                # Lore Book is optional for backward compatibility
-                lore_book: list = []
-                if (tmp / "lore_book.json").exists():
-                    lore_book = json.loads((tmp / "lore_book.json").read_text())
-            except (json.JSONDecodeError, OSError) as exc:
-                self.error_occurred.emit(f"Failed to parse archive JSON: {exc}")
-                return
-
-            self.progress_update.emit(2, total_steps)
-
-            # Step 3 — Create universe DB
-            universe_name = meta.get("universe_name", Path(self._source_path).stem)
-            safe_name = "".join(c if c.isalnum() or c in "_ " else "_" for c in universe_name)
-            dest_dir = Path(self._dest_path)
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(dest_dir / f"{safe_name}.db")
-
-            try:
-                create_universe_db(db_path)
-            except Exception as exc:
-                self.error_occurred.emit(f"Failed to create universe database: {exc}")
-                return
-
-            # Step 4 — Populate tables
-            try:
-                self._populate_db(db_path, meta, entities, rules, lore_book)
-            except Exception as exc:
-                self.error_occurred.emit(f"Failed to populate database: {exc}")
-                return
-
-            self.progress_update.emit(3, total_steps)
-
+        db_path = str(Path(src_dir) / CACHE_DIRNAME / CACHE_DB_NAME)
         self.progress_update.emit(total_steps, total_steps)
-        self.status_update.emit(f"Universe '{universe_name}' imported.")
+        self.status_update.emit(f"Universe '{Path(src_dir).name}' imported.")
         self.import_complete.emit(db_path)
 
     @staticmethod
@@ -412,108 +359,24 @@ class ImportExportWorker(QThread):
     # ------------------------------------------------------------------
 
     def _run_export(self) -> None:
-        """Pack a universe database into a .axiom archive."""
+        """Pack a universe (source tree or flat .db) into a .axiom v2 archive."""
+        from axiom.compile import CompileError
+        from axiom.library import universe_root_for
+        from axiom.package import PackageError, export_db_to_axiom, pack_universe
+
         self.status_update.emit("Exporting universe…")
 
         try:
-            meta, entities, rules, lore_book = self._read_db(self._source_path)
-        except Exception as exc:
-            self.error_occurred.emit(f"Failed to read universe database: {exc}")
+            src_root = universe_root_for(self._source_path)
+            if src_root is not None:
+                # Univers-dossier : on zippe l'arbo telle quelle (texte = vérité).
+                pack_universe(src_root, self._dest_path)
+            else:
+                # .db plat legacy : decompile → pack (définition seule, comme en v1).
+                export_db_to_axiom(self._source_path, self._dest_path)
+        except (PackageError, CompileError) as exc:
+            self.error_occurred.emit(f"Failed to write .axiom archive: {exc}")
             return
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            try:
-                (tmp / "universe_meta.json").write_text(
-                    json.dumps(meta, indent=2, ensure_ascii=False)
-                )
-                (tmp / "entities.json").write_text(
-                    json.dumps(entities, indent=2, ensure_ascii=False)
-                )
-                (tmp / "rules.json").write_text(
-                    json.dumps(rules, indent=2, ensure_ascii=False)
-                )
-                (tmp / "lore_book.json").write_text(
-                    json.dumps(lore_book, indent=2, ensure_ascii=False)
-                )
-                (tmp / "format_version.json").write_text(
-                    json.dumps({"version": _FORMAT_VERSION})
-                )
-
-                dest = Path(self._dest_path)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(str(dest), "w", zipfile.ZIP_DEFLATED) as zf:
-                    for json_file in tmp.glob("*.json"):
-                        zf.write(json_file, json_file.name)
-            except (OSError, zipfile.BadZipFile) as exc:
-                self.error_occurred.emit(f"Failed to write .axiom archive: {exc}")
-                return
 
         self.status_update.emit("Universe exported.")
         self.export_complete.emit(self._dest_path)
-
-    @staticmethod
-    def _read_db(db_path: str) -> tuple[dict, list, list, list]:
-        """Read Universe_Meta, Entities (with stats), Rules, and Lore_Book from a db.
-
-        Args:
-            db_path: Path to the universe .db.
-
-        Returns:
-            Tuple of (meta_dict, entities_list, rules_list, lore_book_list).
-        """
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-
-            meta = {
-                row["key"]: row["value"]
-                for row in conn.execute("SELECT key, value FROM Universe_Meta;")
-            }
-
-            entity_rows = conn.execute(
-                "SELECT entity_id, entity_type, name FROM Entities WHERE is_active = 1;"
-            ).fetchall()
-            entities = []
-            for row in entity_rows:
-                eid = row["entity_id"]
-                stats = {
-                    r["stat_key"]: r["stat_value"]
-                    for r in conn.execute(
-                        "SELECT stat_key, stat_value FROM Entity_Stats WHERE entity_id = ?;",
-                        (eid,),
-                    )
-                }
-                entities.append({
-                    "entity_id": eid,
-                    "entity_type": row["entity_type"],
-                    "name": row["name"],
-                    "stats": stats,
-                })
-
-            rule_rows = conn.execute(
-                "SELECT rule_id, priority, conditions, actions, target_entity FROM Rules;"
-            ).fetchall()
-            rules = []
-            for row in rule_rows:
-                rules.append({
-                    "rule_id": row["rule_id"],
-                    "priority": row["priority"],
-                    "conditions": json.loads(row["conditions"]),
-                    "actions": json.loads(row["actions"]),
-                    "target_entity": row["target_entity"],
-                })
-                
-            lore_rows = conn.execute(
-                "SELECT entry_id, category, name, keywords, content FROM Lore_Book;"
-            ).fetchall()
-            lore_book = []
-            for row in lore_rows:
-                lore_book.append({
-                    "entry_id": row["entry_id"],
-                    "category": row["category"],
-                    "name": row["name"],
-                    "keywords": row["keywords"],
-                    "content": row["content"],
-                })
-
-        return meta, entities, rules, lore_book

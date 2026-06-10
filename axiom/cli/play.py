@@ -96,8 +96,11 @@ def _resolve_playable_db(raw: str) -> str | None:
 
     if path.is_dir():
         if (path / "universe.toml").exists():
-            from axiom.compile import compile_universe
-            return str(compile_universe(path))
+            # ensure_compiled (pas compile_universe) : si la source a changé
+            # depuis la dernière partie, refresh in-place de la définition —
+            # un rebuild plein effacerait les saves du cache (§7.6 différé).
+            from axiom.dev import ensure_compiled
+            return str(ensure_compiled(path))
         return None
 
     if path.suffix == ".axiom":
@@ -274,42 +277,47 @@ def run_play(args: argparse.Namespace) -> int:
     from axiom.universe import Universe
     from axiom.session import Session
     from axiom.config import load_config, build_llm_from_config
-    from axiom.db_helpers import load_saves, create_new_save
+    from axiom.savestore import create_save, list_saves, prepare_save_for_play
     from axiom.compile import CompileError
     from axiom.package import PackageError
 
     try:
-        db_path = _resolve_playable_db(args.universe)
+        universe_db = _resolve_playable_db(args.universe)
     except (CompileError, PackageError) as exc:
         print(f"Impossible de préparer l'univers : {exc}", file=sys.stderr)
         return 2
-    if db_path is None:
+    if universe_db is None:
         print(f"Univers introuvable : {args.universe}", file=sys.stderr)
         return 2
 
-    universe = Universe.load(db_path)
-    print(f"Univers : {universe.name}  ({db_path})")
+    universe = Universe.load(universe_db)
+    print(f"Univers : {universe.name}  ({universe_db})")
 
-    # --- Choix de la sauvegarde ---
-    saves = load_saves(db_path)
+    # --- Choix de la sauvegarde (§7.6 : séparées + legacy embarquées) ---
+    saves = list_saves(universe_db)
     save_id: str
+    db_path: str  # base de la PARTIE (save db séparée, ou l'univers en legacy)
     mode: str = args.difficulty
 
     if args.save:
         save_id = args.save
         match = next((s for s in saves if s["save_id"] == save_id), None)
-        if match:
-            mode = match["difficulty"] or mode
-        else:
+        if not match:
             print(f"Sauvegarde {save_id} introuvable dans cet univers.", file=sys.stderr)
             return 2
+        mode = match["difficulty"] or mode
+        # Resynchronise la définition de la save si la source a été patchée.
+        db_path = prepare_save_for_play(universe_db, save_id)
     elif args.new or not saves:
-        save_id = create_new_save(db_path, args.name, args.difficulty)
+        info = create_save(universe_db, args.name, args.difficulty)
+        save_id = info["save_id"]
+        db_path = info["db_path"]
         print(f"Nouvelle partie créée (save_id={save_id}, mode={args.difficulty}).")
     else:
-        # Reprend la sauvegarde la plus récente (load_saves trie desc).
+        # Reprend la sauvegarde la plus récente (list_saves trie desc).
         save_id = saves[0]["save_id"]
         mode = saves[0]["difficulty"] or mode
+        db_path = prepare_save_for_play(universe_db, save_id)
         print(f"Reprise de la sauvegarde la plus récente : {saves[0]['player_name']} ({save_id}).")
 
     # --- LLM ---

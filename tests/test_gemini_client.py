@@ -289,3 +289,117 @@ class TestStreamTokens:
         mock_inner.models.generate_content_stream.return_value = iter([_BadChunk(), good_chunk])
         tokens = list(client.stream_tokens([]))
         assert tokens == ["Safe text"]
+
+
+# ---------------------------------------------------------------------------
+# TICKET-031 — résilience aux quotas (429)
+# ---------------------------------------------------------------------------
+
+_QUOTA_MSG = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
+    "'You exceeded your current quota. Please retry in 32.437285974s.', "
+    "'status': 'RESOURCE_EXHAUSTED'}}"
+)
+
+
+def _quota_exc() -> Exception:
+    return Exception(_QUOTA_MSG)
+
+
+def _fake_clock(monkeypatch) -> list[float]:
+    """Horloge factice : `sleep` avance `monotonic` (l'attente par tranches de
+    `_interruptible_wait` boucle sur monotonic — un sleep no-op bloquerait)."""
+    clock = {"t": 0.0}
+    sleeps: list[float] = []
+
+    def fake_sleep(s: float) -> None:
+        sleeps.append(s)
+        clock["t"] += s
+
+    monkeypatch.setattr("axiom.backends.gemini.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("axiom.backends.gemini.time.sleep", fake_sleep)
+    return sleeps
+
+
+class TestQuotaResilience:
+    def test_parse_retry_delay(self) -> None:
+        from axiom.backends.gemini import _parse_retry_delay
+
+        assert _parse_retry_delay(_QUOTA_MSG) == pytest.approx(32.437285974)
+        assert _parse_retry_delay("'retryDelay': '32s'") == 32.0
+        assert _parse_retry_delay("no hint here") is None
+
+    def test_retry_respecte_le_delai_puis_reussit(self, mock_client_cls, monkeypatch) -> None:
+        client, inner = _make_gemini_client(mock_client_cls)
+        sleeps = _fake_clock(monkeypatch)
+
+        inner.models.generate_content.side_effect = [
+            _quota_exc(), _make_response("ok"),
+        ]
+        resp = client.complete([{"role": "user", "content": "hi"}])
+        assert resp.narrative_text == "ok"
+        assert inner.models.generate_content.call_count == 2
+        # délai suggéré par l'API (32.4s) + marge, pas le backoff par défaut
+        # (attendu par tranches ≤ 5s : on vérifie le total)
+        assert 32.0 < sum(sleeps) < 35.0
+
+    def test_erreur_non_quota_part_immediatement(self, mock_client_cls, monkeypatch) -> None:
+        client, inner = _make_gemini_client(mock_client_cls)
+        monkeypatch.setattr("axiom.backends.gemini.time.sleep",
+                            lambda s: pytest.fail("ne doit pas attendre"))
+        inner.models.generate_content.side_effect = Exception("boom 500")
+        with pytest.raises(LLMConnectionError):
+            client.complete([{"role": "user", "content": "hi"}])
+        assert inner.models.generate_content.call_count == 1  # pas de retry
+
+    def test_fallback_model_apres_retries(self, mock_client_cls, monkeypatch) -> None:
+        from axiom.backends.gemini import _MAX_QUOTA_RETRIES
+
+        mock_inner = MagicMock()
+        mock_client_cls.return_value = mock_inner
+        client = GeminiClient(api_key="fake-key", model_name="primary",
+                              fallback_model="secours")
+        _fake_clock(monkeypatch)
+
+        # primary : quota épuisé à chaque tentative ; secours : OK.
+        def gen(model, contents, config):
+            if model == "primary":
+                raise _quota_exc()
+            return _make_response("sauvé")
+
+        mock_inner.models.generate_content.side_effect = gen
+        resp = client.complete([{"role": "user", "content": "hi"}])
+        assert resp.narrative_text == "sauvé"
+        calls = [c.kwargs["model"] for c in mock_inner.models.generate_content.call_args_list]
+        assert calls.count("primary") == _MAX_QUOTA_RETRIES + 1
+        assert calls[-1] == "secours"
+
+    def test_quota_epuise_partout_erreur_claire(self, mock_client_cls, monkeypatch) -> None:
+        client, inner = _make_gemini_client(mock_client_cls)
+        _fake_clock(monkeypatch)
+        inner.models.generate_content.side_effect = _quota_exc
+        with pytest.raises(LLMConnectionError, match="quota"):
+            client.complete([{"role": "user", "content": "hi"}])
+
+    def test_rate_limiter_espace_les_requetes(self, monkeypatch) -> None:
+        from axiom.backends import gemini as g
+
+        clock = {"now": 100.0}
+        sleeps: list[float] = []
+        monkeypatch.setattr(g.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(g.time, "sleep", sleeps.append)
+
+        rl = g._RateLimiter()
+        rl.wait_turn("m", 6.0)   # première : passe direct
+        rl.wait_turn("m", 6.0)   # deuxième : doit attendre ~6s
+        assert sleeps == [pytest.approx(6.0)]
+        # un autre modèle a son propre compteur
+        rl.wait_turn("autre", 6.0)
+        assert len(sleeps) == 1
+
+    def test_pacing_desactive_par_defaut(self, mock_client_cls, monkeypatch) -> None:
+        client, inner = _make_gemini_client(mock_client_cls)
+        monkeypatch.setattr("axiom.backends.gemini.time.sleep",
+                            lambda s: pytest.fail("pas de pacing par défaut"))
+        inner.models.generate_content.return_value = _make_response("ok")
+        assert client.complete([{"role": "user", "content": "hi"}]).narrative_text == "ok"

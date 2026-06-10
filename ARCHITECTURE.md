@@ -124,7 +124,6 @@ logique dans `axiom/`** (patron coquille ci-dessus) plutôt que d'en rajouter da
 
 | Feature (logique encore côté app)            | Fichier                              | Destination moteur visée |
 |----------------------------------------------|--------------------------------------|--------------------------|
-| Construction d'univers (`Populate*`, carte)  | `workers/db_tasks.py`                | `axiom/compile.py` (Pilier 2) |
 | Création entité joueur                        | `workers/db_tasks.py` (`CreatePlayerEntityTask`) | `axiom/` |
 | Régénération de réponse                       | `workers/regenerate_worker.py`       | `axiom/` (méthode `Session`) |
 | Lookups de lore (MiniDico)                    | `workers/mini_dico_worker.py`        | `axiom/` |

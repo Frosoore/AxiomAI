@@ -191,6 +191,18 @@ class TabletopView(HardcoreMixin, QWidget):
         # Small fixed spacing between verbosity and buttons
         right_layout.addSpacing(15)
         
+        # TICKET-030 : canonisation de l'histoire vers l'univers (OFF par défaut).
+        from PySide6.QtWidgets import QCheckBox
+        self._canon_auto_check = QCheckBox(tr("canon_auto"))
+        self._canon_auto_check.setChecked(False)
+        self._canon_auto_check.setToolTip(tr("canon_auto_tooltip"))
+        right_layout.addWidget(self._canon_auto_check)
+        self._canonize_btn = QPushButton(tr("canonize_btn"))
+        self._canonize_btn.setToolTip(tr("canonize_tooltip"))
+        self._canonize_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        right_layout.addWidget(self._canonize_btn)
+        right_layout.addSpacing(15)
+
         # Buttons (Dynamic size based on content)
         self._rewind_btn = QPushButton(tr("rewind"))
         self._rewind_btn.setToolTip("Go back to a previous checkpoint in time.")
@@ -219,6 +231,7 @@ class TabletopView(HardcoreMixin, QWidget):
         # --- Connections ---
         self._rewind_btn.clicked.connect(self._on_rewind_clicked)
         self._hub_btn.clicked.connect(self._on_hub_clicked)
+        self._canonize_btn.clicked.connect(self._on_canonize_clicked)
         self._chat.message_submitted.connect(self._on_send_message)
         self._chat.variant_requested.connect(self._on_variant_requested)
         self._chat.regenerate_requested.connect(self._on_regenerate_requested)
@@ -249,6 +262,10 @@ class TabletopView(HardcoreMixin, QWidget):
         self._rewind_btn.setText(tr("rewind"))
         self._rewind_btn.setToolTip(f"{tr('rewind')} (Ctrl+Z)")
         self._hub_btn.setText(tr("hub"))
+        self._canon_auto_check.setText(tr("canon_auto"))
+        self._canon_auto_check.setToolTip(tr("canon_auto_tooltip"))
+        self._canonize_btn.setText(tr("canonize_btn"))
+        self._canonize_btn.setToolTip(tr("canonize_tooltip"))
 
         # Sub-widgets
         if hasattr(self._sidebar, "retranslate_ui"): self._sidebar.retranslate_ui()
@@ -379,7 +396,10 @@ class TabletopView(HardcoreMixin, QWidget):
         except ValueError:
             self._llm_top_p = 1.0
 
-        self._llm_verbosity = meta.get("llm_verbosity", "balanced")
+        # TICKET-032 : normalise les valeurs historiques stockées localisées
+        # (« équilibré »…) — sinon tr() râle et le niveau retombe en défaut.
+        from axiom.localization import canonical_verbosity
+        self._llm_verbosity = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
         v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 1)
         self._verbosity_slider.setValue(v_idx)
         self._verbosity_status_label.setText(tr(self._llm_verbosity).capitalize())
@@ -607,9 +627,13 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
 
         self._chat.set_send_enabled(True)
-        
+
         # Force a DB sync of the sidebar
         self._db_worker.load_full_game_state(self._save_id)
+
+        # TICKET-030 : toggle « Canon auto » (OFF par défaut) — l'histoire du
+        # tour vient enrichir la définition de l'univers, en silence.
+        self._maybe_auto_canonize(narrative_text)
 
     @Slot(int, int)
     def _on_variant_requested(self, turn_id: int, variant_index: int) -> None:
@@ -729,6 +753,88 @@ class TabletopView(HardcoreMixin, QWidget):
         """Stop all workers and return to HubView."""
         self._chat.set_send_enabled(False)
         self._main_window.show_hub()
+
+    # ------------------------------------------------------------------
+    # TICKET-030 : canonisation de l'histoire vers l'univers
+    # ------------------------------------------------------------------
+
+    def _recent_narrative(self, max_entries: int = 8) -> str:
+        """Le transcript des derniers échanges (joueur + narrateur)."""
+        lines: list[str] = []
+        for entry in self._history[-max_entries:]:
+            payload = entry.get("payload", {})
+            if entry.get("event_type") == "user_input":
+                lines.append(f"PLAYER: {payload.get('text', '')}")
+            elif entry.get("event_type") == "narrative_text":
+                variants = payload.get("variants", [])
+                active = payload.get("active", 0)
+                if variants:
+                    lines.append(f"NARRATOR: {variants[min(active, len(variants) - 1)]}")
+        return "\n\n".join(lines)
+
+    @Slot()
+    def _on_canonize_clicked(self) -> None:
+        """Canonisation ponctuelle : extraction LLM puis diff texte à valider."""
+        text = self._recent_narrative()
+        if not text.strip():
+            return
+        self._canonize_btn.setEnabled(False)
+        self._main_window.on_status_update(tr("canonize_running"))
+        self._canon_worker = DbWorker(self._db_path)
+        self._canon_worker.story_canonized.connect(self._on_story_canonized)
+        self._canon_worker.error_occurred.connect(self._on_canon_error)
+        self._canon_worker.generation_cancelled.connect(self._on_canon_cancelled)
+        self._canon_worker.status_update.connect(self._main_window.on_status_update)
+        self._canon_worker.canonize_story(text, preview=True)
+
+    @Slot(str)
+    def _on_canon_cancelled(self, _msg: str) -> None:
+        self._canonize_btn.setEnabled(True)
+        self._main_window.on_status_update(tr("generation_cancelled"))
+
+    def _maybe_auto_canonize(self, narrative_text: str) -> None:
+        """Toggle « Canon auto » : canonise le dernier tour en silence."""
+        if not self._canon_auto_check.isChecked() or not narrative_text.strip():
+            return
+        self._canon_worker = DbWorker(self._db_path)
+        self._canon_worker.story_canonized.connect(self._on_story_canonized)
+        # Silencieux : une save non liée à un univers-dossier ne spamme pas
+        # d'erreur à chaque tour, juste la barre de statut.
+        self._canon_worker.error_occurred.connect(self._main_window.on_status_update)
+        self._canon_worker.generation_cancelled.connect(self._on_canon_cancelled)
+        self._canon_worker.canonize_story(narrative_text, preview=False)
+
+    @Slot(dict)
+    def _on_story_canonized(self, info: dict) -> None:
+        self._canonize_btn.setEnabled(True)
+        counts = info.get("counts", {})
+        summary = tr("canon_counts", entities=counts.get("entities", 0),
+                     lore=counts.get("lore", 0))
+        if info.get("applied"):  # mode auto : déjà appliqué + save resynchronisée
+            self._main_window.on_status_update(f"{tr('canon_applied_msg')} {summary}")
+            return
+        if not info.get("diffs"):
+            self._main_window.on_status_update(tr("canon_none_msg"))
+            return
+        from ui.widgets.diff_preview_dialog import DiffPreviewDialog
+        dialog = DiffPreviewDialog(info["diffs"], self, title=tr("canonize_btn"))
+        if dialog.exec() != QDialog.Accepted:
+            from workers.db_tasks import discard_staged_source
+            discard_staged_source(info["staged_dir"])
+            self._main_window.on_status_update(tr("ready"))
+            return
+        # Application sur l'UNIVERS (pas la save) + resync de la save en cours.
+        self._canon_apply_worker = DbWorker(info["universe_db"])
+        self._canon_apply_worker.staged_applied.connect(
+            lambda: self._main_window.on_status_update(f"{tr('canon_applied_msg')} {summary}"))
+        self._canon_apply_worker.error_occurred.connect(self._on_canon_error)
+        self._canon_apply_worker.apply_staged(
+            info["staged_dir"], info["src_dir"], save_db=self._db_path)
+
+    @Slot(str)
+    def _on_canon_error(self, message: str) -> None:
+        self._canonize_btn.setEnabled(True)
+        QMessageBox.warning(self, tr("canonize_btn"), message)
 
     # ------------------------------------------------------------------
     # Error Handling

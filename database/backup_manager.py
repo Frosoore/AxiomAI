@@ -6,6 +6,7 @@ Utility for automated Axiom AI database backups before destructive operations.
 
 import logging
 import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -43,14 +44,22 @@ def create_auto_backup(db_path: str, reason: str) -> str | None:
         backup_filename = f"{timestamp}_{reason}_{db_name}"
         backup_path = backup_dir / backup_filename
 
+        # TICKET-028 : vide le WAL dans le fichier principal avant la copie,
+        # pour que chaque backup tienne en UN seul fichier (pas de sidecars).
+        checkpointed = _checkpoint_wal(source_path)
+
         # Copy the main DB file
         shutil.copy2(source_path, backup_path)
-        
-        # Also try to copy WAL/SHM if they exist (though WAL should be checkpointed usually)
-        for suffix in ["-wal", "-shm"]:
-            aux_file = source_path.with_name(source_path.name + suffix)
-            if aux_file.exists():
-                shutil.copy2(aux_file, backup_path.with_name(backup_filename + suffix))
+
+        if not checkpointed:
+            # Base verrouillée : on retombe sur l'ancienne copie avec sidecars
+            # plutôt que de produire un backup potentiellement incomplet.
+            for suffix in ["-wal", "-shm"]:
+                aux_file = source_path.with_name(source_path.name + suffix)
+                if aux_file.exists():
+                    shutil.copy2(aux_file, backup_path.with_name(backup_filename + suffix))
+
+        _absorb_legacy_sidecars(backup_dir)
 
         logger.info(f"Automated backup created: {backup_path} (Reason: {reason})")
         return str(backup_path)
@@ -58,3 +67,39 @@ def create_auto_backup(db_path: str, reason: str) -> str | None:
     except Exception as e:
         logger.error(f"Failed to create automated backup for {db_path}: {e}")
         return None
+
+
+def _checkpoint_wal(db_path: Path) -> bool:
+    """Merge the WAL into the main file. Returns False if the db was locked."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE);").fetchone()
+        finally:
+            conn.close()
+        # row[0] == 1 → checkpoint bloqué (writer/reader concurrent).
+        return bool(row) and row[0] == 0
+    except sqlite3.Error as e:
+        logger.warning(f"WAL checkpoint failed for {db_path}: {e}")
+        return False
+
+
+def _absorb_legacy_sidecars(backup_dir: Path) -> None:
+    """Fold leftover `-wal`/`-shm` sidecars of past backups into their main file.
+
+    Les anciens backups étaient copiés en trois fichiers ; ouvrir la base
+    rejoue son WAL, le checkpoint l'absorbe, puis les sidecars sont supprimés.
+    Un sidecar orphelin (base principale disparue) est supprimé tel quel.
+    """
+    for wal in backup_dir.glob("*.db-wal"):
+        main = wal.with_name(wal.name[: -len("-wal")])
+        if not main.exists() or _checkpoint_wal(main):
+            for suffix in ["-wal", "-shm"]:
+                sidecar = main.with_name(main.name + suffix)
+                if sidecar.exists():
+                    sidecar.unlink()
+    for shm in backup_dir.glob("*.db-shm"):
+        main = shm.with_name(shm.name[: -len("-shm")])
+        # Un -shm sans -wal (ou sans base) ne porte aucune donnée.
+        if not main.exists() or not main.with_name(main.name + "-wal").exists():
+            shm.unlink()

@@ -18,20 +18,83 @@ Typical usage
         print(response.narrative_text)
 """
 
-from typing import Iterator
+import re
+import threading
+import time
+from typing import Callable, Iterator, TypeVar
 
 from google import genai
 from google.genai import types as genai_types
 
 from axiom.backends.base import (
+    GenerationCancelled,
     LLMBackend,
     LLMConnectionError,
     LLMMessage,
     LLMParseError,
     LLMResponse,
 )
+from axiom.logger import logger
 
 _DEFAULT_MODEL: str = "gemini-2.0-flash"
+
+# --- Résilience aux quotas (TICKET-031) -------------------------------------
+# Le free tier Gemini est limité par requêtes/minute ET PAR MODÈLE. Trois
+# parades, toutes côté backend pour couvrir tous les appels (Populate,
+# canonisation, narration, Timekeeper, Chronicler) sans toucher aux appelants :
+# 1. retry sur 429 en respectant le délai renvoyé par l'API ;
+# 2. ralentisseur optionnel (requêtes/minute, partagé entre threads) ;
+# 3. modèle de secours quand le quota du modèle principal persiste.
+
+_MAX_QUOTA_RETRIES: int = 3      # tentatives supplémentaires par modèle
+_MAX_RETRY_WAIT_S: float = 90.0  # plafond d'attente par retry
+
+T = TypeVar("T")
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    text = str(exc)
+    return "RESOURCE_EXHAUSTED" in text or getattr(exc, "code", None) == 429 or " 429 " in f" {text} "
+
+
+def _parse_retry_delay(exc_text: str) -> float | None:
+    """Extrait le délai suggéré par l'API (« Please retry in 32.4s » / retryDelay)."""
+    m = re.search(r"retry in ([0-9.]+)\s*s", exc_text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"retryDelay'?\"?\s*[:=]\s*'?\"?([0-9.]+)s", exc_text)
+    try:
+        return float(m.group(1)) if m else None
+    except ValueError:
+        return None
+
+
+class _RateLimiter:
+    """Espacement minimal entre requêtes, par modèle, partagé entre threads."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next_slot: dict[str, float] = {}
+
+    def reserve_turn(self, key: str, min_interval: float) -> float:
+        """Réserve le prochain créneau et retourne le délai à attendre (0 = passe).
+
+        L'attente est laissée à l'appelant : elle peut ainsi être interruptible
+        (annulation, TICKET-033)."""
+        if min_interval <= 0:
+            return 0.0
+        with self._lock:
+            now = time.monotonic()
+            slot = max(self._next_slot.get(key, now), now)
+            self._next_slot[key] = slot + min_interval
+        return max(0.0, slot - time.monotonic())
+
+    def wait_turn(self, key: str, min_interval: float) -> None:
+        delay = self.reserve_turn(key, min_interval)
+        if delay > 0:
+            time.sleep(delay)
+
+
+_RATE_LIMITER = _RateLimiter()
 
 # The Gemini API rejects requests with more than 5 stop sequences
 # (GenerateContentRequest.generation_config.stop_sequences). The engine builds
@@ -53,16 +116,100 @@ class GeminiClient(LLMBackend):
         api_key:    Google Generative AI API key.
         model_name: Gemini model identifier.
                     Defaults to "gemini-2.0-flash".
+        requests_per_minute: Ralentisseur (TICKET-031). 0 = illimité.
+        fallback_model: Modèle tenté quand le quota du modèle principal
+                    persiste après les retries (quotas par modèle). "" = aucun.
     """
 
     def __init__(
         self,
         api_key: str,
         model_name: str = _DEFAULT_MODEL,
+        requests_per_minute: int = 0,
+        fallback_model: str = "",
     ) -> None:
         self._api_key = api_key
         self._model_name = model_name
+        self._min_interval = 60.0 / requests_per_minute if requests_per_minute > 0 else 0.0
+        self._fallback_model = fallback_model.strip()
         self._client = genai.Client(api_key=api_key)
+
+    # ------------------------------------------------------------------
+    # Résilience quota (TICKET-031)
+    # ------------------------------------------------------------------
+
+    def _candidate_models(self) -> list[str]:
+        models = [self._model_name]
+        if self._fallback_model and self._fallback_model != self._model_name:
+            models.append(self._fallback_model)
+        return models
+
+    def _interruptible_wait(self, delay: float, label: str | None = None) -> None:
+        """Attend `delay` secondes par tranches : annulable (`cancel_event`) et,
+        si `label` est fourni, compte à rebours émis via `on_status` (TICKET-033)."""
+        deadline = time.monotonic() + delay
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if label is not None:
+                self._notify(f"{label} — retry in {max(1, round(remaining))}s")
+            slice_s = min(remaining, 5.0)
+            if self.cancel_event is not None:
+                if self.cancel_event.wait(slice_s):
+                    raise GenerationCancelled("Generation cancelled by user.")
+            else:
+                time.sleep(slice_s)
+
+    def _call_with_quota_retry(self, request: Callable[[str], T]) -> T:
+        """Exécute `request(model)` avec pacing, retries 429 et modèle de secours.
+
+        Pour chaque modèle candidat : jusqu'à `_MAX_QUOTA_RETRIES` reprises en
+        respectant le délai suggéré par l'API (backoff sinon). Quota toujours
+        épuisé → modèle de secours. Toute autre erreur part immédiatement en
+        LLMConnectionError (comportement historique).
+        """
+        last_exc: Exception | None = None
+        for model in self._candidate_models():
+            for attempt in range(_MAX_QUOTA_RETRIES + 1):
+                self._check_cancelled()
+                # Pacing : silencieux mais interruptible (le délai peut être long
+                # avec un faible req/min).
+                slot_delay = _RATE_LIMITER.reserve_turn(model, self._min_interval)
+                if slot_delay > 0:
+                    self._interruptible_wait(slot_delay)
+                try:
+                    return request(model)
+                except GenerationCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — trié juste dessous
+                    if not _is_quota_error(exc):
+                        raise LLMConnectionError(
+                            f"Gemini API error ({type(exc).__name__}): {exc}"
+                        ) from exc
+                    last_exc = exc
+                    if attempt < _MAX_QUOTA_RETRIES:
+                        delay = _parse_retry_delay(str(exc)) or (5.0 * (2 ** attempt))
+                        delay = min(delay + 0.5, _MAX_RETRY_WAIT_S)
+                        logger.warning(
+                            "Gemini quota épuisé (%s) — nouvel essai dans %.1fs "
+                            "(tentative %d/%d)", model, delay, attempt + 1, _MAX_QUOTA_RETRIES)
+                        # TICKET-033 : compte à rebours visible + annulable.
+                        self._interruptible_wait(
+                            delay,
+                            label=(f"Quota exhausted ({model}) "
+                                   f"— attempt {attempt + 1}/{_MAX_QUOTA_RETRIES}"),
+                        )
+            if model != self._candidate_models()[-1]:
+                logger.warning(
+                    "Gemini quota toujours épuisé pour '%s' — bascule sur le modèle "
+                    "de secours '%s'", model, self._fallback_model)
+                self._notify(f"Quota still exhausted on '{model}' "
+                             f"— switching to fallback model '{self._fallback_model}'")
+        raise LLMConnectionError(
+            f"Gemini API error (quota épuisé après retries"
+            f"{' et modèle de secours' if self._fallback_model else ''}): {last_exc}"
+        ) from last_exc
 
     # ------------------------------------------------------------------
     # LLMBackend interface
@@ -126,16 +273,14 @@ class GeminiClient(LLMBackend):
             stop_sequences=_clamp_stop_sequences(stop_sequences),
         )
 
-        try:
-            response = self._client.models.generate_content(
-                model=self._model_name,
+        # TICKET-031 : pacing + retry 429 (délai suggéré par l'API) + fallback.
+        response = self._call_with_quota_retry(
+            lambda model: self._client.models.generate_content(
+                model=model,
                 contents=contents,
                 config=config,
             )
-        except Exception as exc:
-            raise LLMConnectionError(
-                f"Gemini API error ({type(exc).__name__}): {exc}"
-            ) from exc
+        )
 
         try:
             raw_content: str = response.text
@@ -191,12 +336,33 @@ class GeminiClient(LLMBackend):
             stop_sequences=_clamp_stop_sequences(stop_sequences),
         )
 
-        try:
-            for chunk in self._client.models.generate_content_stream(
-                model=self._model_name,
+        # TICKET-031 : le 429 d'un stream surgit à l'établissement (première
+        # itération) — on force le premier chunk DANS la zone de retry, puis
+        # on streame le reste normalement.
+        def _open_stream(model: str):
+            stream = iter(self._client.models.generate_content_stream(
+                model=model,
                 contents=contents,
                 config=config,
-            ):
+            ))
+            first = next(stream, None)
+            return first, stream
+
+        try:
+            first_chunk, stream = self._call_with_quota_retry(_open_stream)
+        except LLMConnectionError:
+            raise
+
+        try:
+            chunks = [first_chunk] if first_chunk is not None else []
+            for chunk in chunks:
+                try:
+                    text = chunk.text
+                    if text:
+                        yield text
+                except (AttributeError, ValueError):
+                    pass
+            for chunk in stream:
                 try:
                     text = chunk.text
                     if text:

@@ -44,6 +44,7 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 GLOBAL_DB_FILE = CONFIG_DIR / "global.db"
 LOG_DIR = CACHE_DIR / "logs"
 UNIVERSES_DIR = DATA_DIR / "universes"
+SAVES_DIR = DATA_DIR / "saves"
 VECTOR_DIR = DATA_DIR / "vector"
 
 
@@ -109,6 +110,11 @@ def has_config_override() -> bool:
 def get_vector_dir() -> Path:
     """Vector store root, honouring an injected/env data_dir."""
     return _data_root() / "vector"
+
+
+def get_saves_dir() -> Path:
+    """Racine des sauvegardes séparées (§7.6), honore data_dir injecté/env."""
+    return _data_root() / "saves"
 
 
 def get_log_dir() -> Path:
