@@ -77,6 +77,14 @@ class AppConfig:
                              still quota-exhausted (429) after retries.
                              Google quotas are per-model, so a different model
                              usually still has budget. Empty = no fallback.
+        image_generation_enabled: Whether narrative image generation is enabled.
+        image_backend:       Image generation backend ("mock", "stable_diffusion", or "comfyui").
+        image_api_url:       API base URL for the local image generator.
+        image_width:         Generated image width in pixels.
+        image_height:        Generated image height in pixels.
+        image_steps:         Denoising steps for the image generation.
+        image_cfg_scale:     Classifier Free Guidance scale.
+        image_comfyui_workflow: Optional path to a ComfyUI workflow JSON file or a serialized workflow JSON string.
     """
 
     llm_backend: str = "universal"
@@ -96,6 +104,16 @@ class AppConfig:
     language: str = "en"
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
+
+    # Image generation settings
+    image_generation_enabled: bool = False
+    image_backend: str = "mock"
+    image_api_url: str = "http://127.0.0.1:7860"
+    image_width: int = 512
+    image_height: int = 512
+    image_steps: int = 20
+    image_cfg_scale: float = 7.0
+    image_comfyui_workflow: str = ""
 
 
 # Cache de load_config (QA-042.1) : tr() et les chemins chauds rechargent la

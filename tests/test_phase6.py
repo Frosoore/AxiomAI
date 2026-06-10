@@ -149,7 +149,7 @@ class TestBuildNarrativePromptLoreBook:
             entity_stats_block="(no entities)",
             rag_chunks=[],
             history=[],
-            user_message="Hello",
+            intents={"player": "Hello"},
             lore_book=entries,
         )
         system_content = msgs[0]["content"]
@@ -163,7 +163,7 @@ class TestBuildNarrativePromptLoreBook:
             entity_stats_block="(no entities)",
             rag_chunks=[],
             history=[],
-            user_message="Hi",
+            intents={"player": "Hi"},
             lore_book=[],
         )
         assert "=== LORE BOOK ===" not in msgs[0]["content"]
@@ -175,7 +175,7 @@ class TestBuildNarrativePromptLoreBook:
             entity_stats_block="(no entities)",
             rag_chunks=[],
             history=[],
-            user_message="Hi",
+            intents={"player": "Hi"},
             lore_book=None,
         )
         assert "=== LORE BOOK ===" not in msgs[0]["content"]

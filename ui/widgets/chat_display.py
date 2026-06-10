@@ -1,6 +1,7 @@
 import json
 import urllib.request
 import re
+from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextBrowser, QHBoxLayout, QTextEdit, QPushButton
 from PySide6.QtGui import QTextCursor, QTextCharFormat, QTextBlockFormat, QColor, QFont, QKeyEvent, QImage, QTextDocument
 from PySide6.QtCore import Signal, QUrl, Qt
@@ -403,7 +404,7 @@ class ChatDisplayWidget(QWidget):
         
         self._reset_states()
 
-    def rebuild_from_history(self, history: list[dict]):
+    def rebuild_from_history(self, history: list[dict], assets_dir: str | Path | None = None):
         self._narrative_display.viewport().setUpdatesEnabled(False)
         try:
             self._narrative_display.clear()
@@ -448,6 +449,26 @@ class ChatDisplayWidget(QWidget):
 
                     self.append_assistant_separator()
                     self._insert_instant_parsed_text(text_to_print)
+
+                    # If assets_dir is provided, check if a generated image exists for this turn_id
+                    if assets_dir:
+                        img_path = Path(assets_dir) / f"turn_{turn_id}.png"
+                        if img_path.exists():
+                            cursor = self._narrative_display.textCursor()
+                            cursor.movePosition(QTextCursor.End)
+                            cursor.insertBlock()
+                            img_fmt = QTextBlockFormat()
+                            img_fmt.setAlignment(Qt.AlignCenter)
+                            cursor.insertBlock(img_fmt)
+                            file_url = QUrl.fromLocalFile(str(img_path.resolve())).toString()
+                            cursor.insertHtml(f"<img src='{file_url}' width='400'>")
+                            
+                            # Reset block format back to normal
+                            reset_fmt = QTextBlockFormat()
+                            reset_fmt.setAlignment(Qt.AlignLeft)
+                            cursor.insertBlock(reset_fmt)
+                            self._narrative_display.setCurrentCharFormat(self._get_current_format())
+
                     is_latest = (turn_id == max_tid)
                     self.append_variants_nav(turn_id, active_idx, total_vars, is_latest=is_latest)
             
@@ -457,3 +478,32 @@ class ChatDisplayWidget(QWidget):
             self._narrative_display.verticalScrollBar().setValue(
                 self._narrative_display.verticalScrollBar().maximum()
             )
+
+    def append_image(self, image_path: str | Path | None):
+        if not image_path:
+            return
+        img_path = Path(image_path)
+        if not img_path.exists():
+            return
+            
+        cursor = self._narrative_display.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        
+        cursor.insertBlock()
+        img_fmt = QTextBlockFormat()
+        img_fmt.setAlignment(Qt.AlignCenter)
+        cursor.insertBlock(img_fmt)
+        
+        file_url = QUrl.fromLocalFile(str(img_path.resolve())).toString()
+        cursor.insertHtml(f"<img src='{file_url}' width='400'>")
+        
+        # Reset block format back to normal
+        reset_fmt = QTextBlockFormat()
+        reset_fmt.setAlignment(Qt.AlignLeft)
+        cursor.insertBlock(reset_fmt)
+        self._narrative_display.setCurrentCharFormat(self._get_current_format())
+        
+        # Scroll to bottom
+        self._narrative_display.verticalScrollBar().setValue(
+            self._narrative_display.verticalScrollBar().maximum()
+        )
