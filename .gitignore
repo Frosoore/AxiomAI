@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+# Packaging (export_engine.py / pip / build)
+dist/
+build/
+*.egg-info/
+
 # Databases (Local saves and universes)
 universes/
 vector/

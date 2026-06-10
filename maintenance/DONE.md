@@ -497,3 +497,30 @@ historique git de `PENDING.md` (ajout puis retrait le 2026-06-10).
   (`Session.rewind` → `truncate_assets_in`, honore le data_dir injecté). Nouveau helper
   `paths.get_assets_dir()` utilisé par le GUI. **Tranché** : seul le chemin `Session`
   génère des images, la file multijoueur (`ActionQueue`) n'en produit pas. +5 tests.
+
+---
+
+## TICKET-009 — Moteur pip-installable : résolu SANS split physique (mono-repo conservé)
+
+**Statut : clos le 2026-06-10** (étape `feature-packaging-pip`), sur demande utilisateur, en
+**version légère** : le ticket prévoyait de déplacer `axiom/` sous `axiom-engine/` ; au final un
+simple `pyproject.toml` **à la racine** suffit — il déclare le package PyPI **`axiomai-engine`**
+(`axiom-engine` et `axiom` étaient déjà pris sur PyPI par d'autres projets ; le nom d'IMPORT
+reste `axiom`) et n'emballe **que** `axiom/` (liste d'inclusion explicite). Zéro déplacement, zéro churn de merge, l'app
+continue d'importer `from axiom...` comme avant.
+
+**Livré :**
+- `pyproject.toml` racine : deps moteur (zéro Qt), `console_script` `axiom = axiom.cli.main:main`,
+  version dynamique lue dans `axiom/__init__.py::__version__` (source de vérité unique), licence
+  AGPL-3.0-or-later. → `pip install .` / `pip install git+<repo>` installe le moteur seul.
+- `axiom.help` : guide de démarrage rapide intégré, affichable/appelable dans tout REPL.
+- `export_engine.py` (racine, hors package) : clone le moteur dans un dossier PyPI-ready autonome
+  (axiom/ + pyproject + LICENSE + README librairie généré), bump de version (`--bump`/`--set-version`),
+  garde anti-fuite (refuse d'exporter si le moteur importe PySide6/ui/workers/core/database),
+  `--build` (sdist+wheel), récap twine.
+- 15 tests (`tests/test_packaging.py`). Vérifié en réel : wheel construite (ne contient QUE `axiom/`),
+  installée dans un venv vierge → `import axiom`, `axiom.help()`, commande `axiom --help` OK ;
+  l'export construit aussi en autonome.
+
+**Non repris du ticket d'origine (toujours pas nécessaires) :** `axiom-app/pyproject.toml`,
+split prompts.py en sous-modules, `VectorMemory` en Protocol.

@@ -8,49 +8,10 @@
 
 | N°        | Titre                                                          | Statut    |
 |-----------|----------------------------------------------------------------|-----------|
-| TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ⏸ différé (handover + dev parallèle) |
 | TICKET-017| Temps causal : `major_event_description` ignoré + **time-skip Chronicler** (spec §6.4) | ouvert (partiellement couvert par TICKET-018, domaine Pilier 5/Gemini) |
 
-Tickets résolus/clos : voir `DONE.md` (001→008, 010→012, TC1→TC5, 015→048 sauf 017).
+Tickets résolus/clos : voir `DONE.md` (001→012, TC1→TC5, 015→048 sauf 017).
 
-
----
-
-## TICKET-009 — Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)
-
-**⏸ DIFFÉRÉ (décision 2026-06-04).** Le code va être rendu au possesseur originel, qui ajoute des
-features côté GUI (via Gemini CLI) sans se soucier de l'archi, en **parallèle** du travail moteur.
-Dans ce contexte, le split physique sert le mauvais besoin (distribution, pas coordination) et
-aggrave les risques : il n'empêche pas l'éparpillement de logique côté app, ajoute une frontière
-deux-packages + install editable qu'un dev non-archi (et Gemini CLI) cassera, et crée un churn de
-merge maximal pendant le dev parallèle. **Décision : rester en mono-repo** avec la séparation
-*logique* `axiom/` (déjà en place) — 90 % du bénéfice, zéro du danger. Le split (et le `pip install`)
-se fera **plus tard**, quand le repo sera repris en solo et que les features auront été migrées dans
-l'engine. La migration des features app→engine est un chantier à part (piliers), cf. ci-dessous.
-
-**Contexte :** le Pilier 1 a extrait le moteur dans `axiom/` (zéro Qt) et l'a rendu pilotable hors
-GUI (API `Session`, CLI `axiom play`, étapes 1-8). C'est l'extraction **fonctionnelle**. Reste
-l'objectif **packaging** du plan (§5.2, §5.4) : faire de `axiom-engine` un package **pip-installable**
-distinct de l'app UI. Le `pyproject.toml` était reporté dès l'étape 1 (« étape de split physique »).
-
-**Ce qui resterait à faire (à ordonnancer, non planifié dans les étapes 1-8) :**
-- Déplacer `axiom/` sous un dossier racine dédié `axiom-engine/axiom/` (le nom de package reste
-  `axiom` → les imports `from axiom...` ne changent pas, CLI inclus puisqu'il vit dans `axiom/cli/`).
-- Écrire `axiom-engine/pyproject.toml` (deps moteur : chromadb, sentence-transformers, google-genai,
-  etc. ; **zéro Qt**) + `console_script` `axiom = axiom.cli:main`. README package.
-- `axiom-app/pyproject.toml` (l'app actuelle réduite à l'UI) **dépend de** `axiom-engine`.
-- Pré-requis : **TICKET-003** (supprimer les anciens modules `core/`/`database/`/`llm_engine/`
-  dépréciés, sinon doublons à l'install). Conditions de TICKET-003 désormais réunies côté run réel.
-
-**Finitions de propreté §5.2 (non bloquantes, regroupables ici ou à part) :**
-- Splitter `axiom/prompts.py` en sous-modules (`prompts/narrative.py`, `chronicler.py`, `mini_dico.py`,
-  `populate.py`). N'impacte que les consommateurs internes (arbitrator/session/chronicler/db_tasks),
-  **pas** le CLI ni l'API publique.
-- Passer `VectorMemory` en `Protocol` (abstraction d'embedding injectable). Additif.
-
-**Priorité :** moyenne — c'est le dernier cran du Pilier 1, mais l'extraction fonctionnelle (le gros
-de la valeur : moteur headless + CLI) est déjà acquise. À faire avant tout projet voulant
-`pip install axiom-engine` (mods, UI web, notebooks).
 
 ---
 

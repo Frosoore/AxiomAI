@@ -5,12 +5,17 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `dev-0`
-**Chantier :** Pilier 2 — Universe-as-Code (doc §7 + annexe C.1) — MVP cœur
+**Chantier :** Packaging pip du moteur (TICKET-009 version légère, mono-repo conservé)
 
 ## Fichiers / modules que je touche en ce moment
 
 | Fichier / module        | Type de modif        | Depuis (date) | Note pour le pote |
 |-------------------------|----------------------|---------------|-------------------|
+| `pyproject.toml`        | création (racine)    | 2026-06-10    | n'emballe QUE `axiom/` ; n'affecte pas l'app. **Package PyPI publié : `axiomai-engine`** — nouvelle dep moteur ⇒ l'ajouter ici AUSSI |
+| `axiom/__init__.py`     | + `__version__` + objet `help` | 2026-06-10 | additive, lazy imports inchangés. `__version__` se bump via `export_engine.py`, pas à la main |
+| `export_engine.py`      | création (racine)    | 2026-06-10    | utilitaire d'export PyPI, hors package |
+| `tests/test_packaging.py` | création           | 2026-06-10    | nouveau fichier de tests |
+| `README.md` + `ARCHITECTURE.md` | MAJ doc (librairie PyPI + features récentes) | 2026-06-10 | ARCHITECTURE : nouvelle section « Packaging & distribution » |
 | `axiom/compile.py`      | création (arbo→.db)  | 2026-06-09    | nouveau module moteur, zéro Qt |
 | `axiom/decompile.py`    | création (.db→arbo)  | 2026-06-09    | nouveau module moteur, zéro Qt |
 | `axiom/package.py`      | création (.axiom v2 + compat v1) | 2026-06-09 | zéro Qt ; touche le **format `.axiom`** |

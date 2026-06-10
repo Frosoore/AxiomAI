@@ -174,9 +174,32 @@ sous `axiom/`. Si tu cherches un module moteur :
 - **Testable** : pas de `QApplication`, les tests moteur sont rapides et déterministes.
 - **Cleanup pas cher** : tant que la logique reste dans `axiom/` (et pas éparpillée dans l'UI),
   reprendre/refondre/déplacer une feature est trivial.
-- **Distribution (plus tard)** : à terme `pip install axiom-engine`. **Pas maintenant** — on reste en
-  **mono-repo** (un seul dépôt) tant que le projet évolue à plusieurs. Ne crée pas de second package
-  ni de `pyproject.toml` de split.
+- **Distribution (en place depuis le 2026-06-10)** : le moteur est publié sur PyPI sous le nom
+  **`axiomai-engine`** (`pip install axiomai-engine` → `import axiom`), **sans split** : on reste en
+  mono-repo, c'est le `pyproject.toml` à la racine qui n'emballe que `axiom/`. Voir la section
+  « Packaging & distribution » ci-dessous.
+
+## Packaging & distribution (où sont les trucs)
+
+Le moteur `axiom/` est un **package pip-installable** publié sur PyPI : **`axiomai-engine`**
+(les noms `axiom`, `axiom-engine` et `axiomai` étaient pris/refusés). Le nom d'**import** reste
+`axiom`. L'app Qt n'est **pas** distribuée — elle vit ici comme vitrine du moteur.
+
+| Quoi | Où |
+|------|-----|
+| Recette du package (n'emballe QUE `axiom/`, deps moteur, commande console `axiom`) | `pyproject.toml` (racine) |
+| Version du package (source de vérité **unique**) | `axiom/__init__.py::__version__` |
+| Guide intégré pour les utilisateurs de la librairie | `axiom.help` (objet, défini dans `axiom/__init__.py`) |
+| Utilitaire de release : export PyPI-ready + bump de version + build | `export_engine.py` (racine) |
+| Tests du packaging (dont garde anti-import app) | `tests/test_packaging.py` |
+| Historique/décisions de l'étape | `maintenance/feature-packaging-pip/` |
+
+**Règles qui en découlent :**
+- Nouvelle dépendance tierce dans `axiom/` ⇒ l'ajouter dans **`pyproject.toml`** (le package)
+  **ET** `requirements.txt` (l'app). Jamais de Qt dans les deps du package.
+- Ne **jamais** modifier `__version__` à la main : passer par `export_engine.py --bump`.
+- Publier une release : `python export_engine.py --bump patch|minor|major --build`
+  puis `twine upload dist/axiomai-engine/dist/*` (compte PyPI côté mainteneur).
 
 ## Ce qu'il NE faut PAS faire
 
@@ -185,3 +208,5 @@ sous `axiom/`. Si tu cherches un module moteur :
 - ❌ Réimplémenter dans un worker une logique déjà dans le moteur (duplication = drift).
 - ❌ Importer Qt dans `axiom/`.
 - ❌ Recréer `core/arbitrator.py` & co : ils ont déménagé sous `axiom/` (cf. table).
+- ❌ Ajouter une dépendance tierce au moteur sans la déclarer dans `pyproject.toml`
+  (sinon le package PyPI casse à l'install chez les utilisateurs).

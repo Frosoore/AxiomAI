@@ -1,11 +1,14 @@
 # Axiom AI — AI Role Playing Game
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Qt 6](https://img.shields.io/badge/Qt-6-green.svg)](https://www.qt.io/)
+[![PyPI](https://img.shields.io/pypi/v/axiomai-engine.svg)](https://pypi.org/project/axiomai-engine/)
 
 **Axiom AI** is a local-first, deterministic sandbox RPG engine that bridges the gap between the narrative freedom of Large Language Models (LLMs) and the strict, mathematical logic of traditional RPGs.
 
 No cloud servers. No data collection. Absolute player sovereignty.
+
+The game engine is also a standalone **Python library**: [`pip install axiomai-engine`](https://pypi.org/project/axiomai-engine/) — embed Axiom worlds in your own scripts, bots or web apps, no GUI required (see [The Python Library](#the-python-library-axiomai-engine)).
 
 ---
 <table border="0" style="width: 100%;">
@@ -38,13 +41,15 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
 
 ## Technical Stack
 
-- **Logic & Backend:** Python 3.10+ (Strictly typed)
+- **Logic & Backend:** Python 3.11+ (Strictly typed)
+- **Engine Library:** [`axiomai-engine`](https://pypi.org/project/axiomai-engine/) on PyPI (headless, zero Qt)
 - **UI Framework:** PySide6 (Qt for Python)
 - **Database:** SQLite (Event Sourcing & State Cache)
 - **Vector Memory:** ChromaDB + Sentence-Transformers (Local RAG)
 - **AI Integration:** 
   - **Local:** Ollama / Universal OpenAI-compatible API
   - **Cloud:** Google Gemini (Optional)
+  - **Illustrations:** Stable Diffusion WebUI / ComfyUI APIs (Optional)
 
 ---
 
@@ -52,9 +57,9 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
 
 | Platform | Requirement | Command / Action |
 |---|---|---|
-| **Linux** | **Python 3.10+** | `sudo apt install python3 python3-pip python3-venv` |
+| **Linux** | **Python 3.11+** | `sudo apt install python3 python3-pip python3-venv` |
 | | **GUI Libraries** | `sudo apt install libxcb-cursor0` |
-| **Windows** | **Python 3.10+** | [Download from python.org](https://www.python.org/downloads/) |
+| **Windows** | **Python 3.11+** | [Download from python.org](https://www.python.org/downloads/) |
 | **Optional** | **Ollama** | [Install from ollama.com](https://ollama.com) |
 
 ---
@@ -84,15 +89,58 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
    - **Local (Recommended):** Set up Ollama with `ollama pull llama3.2`.
    - **Cloud:** Enter your Gemini API key.
 
+---
+
+## The Python Library (`axiomai-engine`)
+
+The entire game engine ships as a standalone, GUI-free Python package — this repository is both the engine and its showcase application. Use it to drive Axiom worlds from scripts, notebooks, Discord bots, web servers…
+
+```bash
+pip install axiomai-engine
+```
+
+```python
+import axiom
+axiom.help()   # built-in quick-start guide (API, modules, CLI)
+
+from axiom.config import load_config, build_llm_from_config
+from axiom.db_helpers import create_new_save
+
+llm = build_llm_from_config(load_config())
+save_id = create_new_save("MyUniverse.db", "Alice", "Normal")
+
+session = axiom.Session("MyUniverse.db", save_id, llm=llm)
+result = session.take_turn("I open the tavern door.")
+print(result.narrative_text)
+```
+
+It also installs the `axiom` command — a full terminal frontend:
+
+```bash
+axiom play <universe>      # text-adventure in your terminal
+axiom compile / decompile  # universe source tree <-> .db cache
+axiom pack / import        # .axiom archives
+axiom populate             # AI-assisted universe authoring
+axiom save-*               # inspect, edit, fork, export saves
+axiom dev                  # hot-reload a universe while you edit it
+```
+
+Package name is `axiomai-engine`; import name is simply `axiom`. The engine never depends on Qt.
+
 ## Key Features
 
 - **Dual-Agent Architecture:** An *Arbitrator* (deterministic rule-enforcer) and a *Chronicler* (macro-world simulator) work together to keep the story grounded.
 - **Event Sourcing:** Every game event is logged. Rewind any session to any previous turn with perfect state reconstruction.
-- **Spreadsheet Studio:** Powerful universe creator with bulk-editing, keyboard navigation, and AI-assisted population.
-- **Custom Calendars:** Define your own time systems, month names, and adventure start dates.
+- **Universe-as-Code:** A universe is a plain-text source tree (TOML/Markdown) you can read, edit, version with git and share; the SQLite `.db` is just a compiled cache. Hot reload (`axiom dev`) applies source edits to a running world without touching ongoing games.
+- **Portable Worlds & Saves:** Export/import whole universes as `.axiom` archives and individual playthroughs as `.axiomsave` files. Saves live in their own files — duplicate, fork, rename, hand-edit or share them freely.
+- **Game Modes:** *Normal*, *Hardcore* (character death triggers permanent file deletion and memory wipe) and *Companion* (an AI-driven Hero plays alongside you, with its own decision model and enriched narrative context).
+- **Causal Time:** A *Timekeeper* model estimates how much in-game time each action takes; the world clock, custom calendars and the Chronicler's "World Turns" all run on in-game minutes — long journeys make the world move on without you.
+- **AI Illustrations (optional):** Each turn can be illustrated via a local Stable Diffusion WebUI or ComfyUI backend; images follow their save through duplication, export and rewind.
+- **Spreadsheet Studio:** Powerful universe creator with bulk-editing, keyboard navigation, a Files tab over the source tree, and AI-assisted population — targeted generation with a diff preview before anything is written, plus in-game "canonization" of story events into universe lore.
 - **Vector Memory (RAG):** Local semantic search via ChromaDB for infinite lore and narrative consistency.
-- **Hardcore Mode:** True stakes—character death triggers permanent file deletion and memory wipe.
+- **Resilient Free-Tier Usage:** Automatic retry with countdown on LLM quota errors (429), request-rate throttling, fallback model, and cancellable generations — large AI population jobs resume where they stopped.
 - **Architecture Optimized:**
+    - **Headless Engine:** All game logic lives in the `axiom` package (zero Qt) — the GUI, the terminal CLI and your own scripts drive the exact same code.
     - **Lazy-Loading:** Heavy AI libraries (ChromaDB, Transformers) only load when needed, saving RAM on startup.
     - **Snapshots:** 20-turn snapshots for near-instant state reconstruction in long campaigns.
     - **Context Pruning:** Heuristic entity filtering to support small local models (7B/8B) without context overflow.
@@ -102,10 +150,13 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
 ## Architecture Overview
 
 - **The Arbitrator:** The deterministic firewall. It parses LLM tool-calls, validates them against current stats, and enforces rules.
-- **The Chronicler:** A background agent that performs "World Turns" every X player turns to update the macro-state of the universe.
+- **The Chronicler:** A background agent that performs "World Turns" to update the macro-state of the universe, paced in in-game minutes.
+- **The Timekeeper:** A lightweight model that estimates the in-game duration of each action, driving the world clock and the Chronicler.
 - **Mini-Dico:** A secondary, RAG-powered chat for lore lookups that is strictly siloed from the main narrative to prevent context contamination.
 - **Snapshot System:** Efficient state recovery using periodic snapshots of the event stream.
 - **Lazy I/O:** All database and AI operations run in dedicated QThread workers to keep the UI responsive at all times.
+
+Contributing code? The engine/app split and "where does my code go" rules live in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 

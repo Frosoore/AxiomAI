@@ -1,0 +1,53 @@
+# Packaging du MOTEUR uniquement (`axiom/` → package PyPI `axiomai-engine`).
+# (`axiom-engine`/`axiom` déjà pris sur PyPI, `axiomai` refusé « trop proche de axiom-ai »
+#  par la règle anti-typosquatting — choix utilisateur 2026-06-10.
+#  Le nom d'IMPORT reste `axiom` : pip install axiomai-engine → import axiom.)
+# L'app Qt (ui/, workers/, core/, main.py) n'est PAS distribuée : elle vit dans
+# ce repo comme vitrine/consommatrice du moteur (mono-repo, cf. TICKET-009).
+# Install moteur seul :  pip install .   (ou  pip install git+<url-du-repo>)
+# Export PyPI-ready   :  python export_engine.py --help
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axiomai-engine"
+dynamic = ["version"]
+description = "Moteur de jeu narratif piloté par LLM (headless) : univers persistants SQLite, arbitrage LLM, event-sourcing/rewind, mémoire vectorielle."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Axiom AI" }]
+keywords = ["llm", "game-engine", "narrative", "interactive-fiction", "headless"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment :: Role-Playing",
+]
+# Dépendances du MOTEUR seul — jamais de Qt ici (contrat headless, testé).
+dependencies = [
+    "chromadb>=1.0.0",
+    "sentence-transformers>=2.2.0",
+    "httpx>=0.24.0",
+    "google-genai>=1.0.0",
+    "tomlkit>=0.13.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+axiom = "axiom.cli.main:main"
+
+[tool.setuptools]
+# Liste d'inclusion EXPLICITE : seul axiom/ part dans le package.
+# (Sans elle, setuptools verrait ui/, workers/, core/… et refuserait de construire.)
+packages = { find = { include = ["axiom*"] } }
+
+[tool.setuptools.dynamic]
+version = { attr = "axiom.__version__" }

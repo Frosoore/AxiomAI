@@ -68,7 +68,8 @@ Vérif GUI optionnelle (non bloquante, l'utilisateur sait) : les 4 points de con
 B4 — créer une entité joueur, bouton Régénérer, question Mini-Dico, tour multijoueur.
 
 Hors chantier : §7.8 plugins (Pilier 6), rewind en minutes (Pilier 5 = domaine Gemini),
-TICKET-009 split packaging (plus aucun prérequis de migration), TICKET-017.
+TICKET-017. TICKET-009 : **clos le 2026-06-10** (packaging pip sans split physique,
+cf. [[project-engine-split-strategy]] + étape `maintenance/feature-packaging-pip/`).
 Tout est désormais COMMITÉ sur `dev-0` (67c89a3, 03458ae, 210fa21 — commits du 2026-06-09/10).
 
 **QA du 2026-06-10 + fixes (même jour)** : revue complète des features récentes → 9 tickets
@@ -94,5 +95,5 @@ corrigés (étape `maintenance/QA-fixes-043-048/`, archivés dans DONE.md). Déc
 id joueur résolu depuis les intents (jamais `"player"` en dur), mock image réservé au backend
 `"mock"` (échec réel → None), illustrations = partie de la save (suivent duplication/suppression/
 `.axiomsave`/rewind/mort hardcore, helper `paths.get_assets_dir()`), pas d'images sur le chemin
-multijoueur. PENDING ne contient plus que 009 (différé) et 017 (Gemini). Travail dans le working
-tree, non commité.
+multijoueur. PENDING ne contient plus que 017 (Gemini) — 009 clos le 2026-06-10 (packaging pip).
+Travail dans le working tree, non commité.
