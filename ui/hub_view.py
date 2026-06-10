@@ -315,16 +315,31 @@ class HubView(QWidget):
         if reply != QMessageBox.Yes:
             return
         try:
+            import shutil
+
             # §7.6 : les parties de cet univers vivent sous saves/<univers>/ —
-            # elles partent avec lui.
-            from axiom.savestore import delete_universe_saves
+            # elles partent avec lui. Idem leurs mémoires vectorielles
+            # (vector/<save_id>), sinon elles restent orphelines sur le disque.
+            from axiom import paths
+            from axiom.savestore import delete_universe_saves, list_saves
+            try:
+                save_ids = [s["save_id"] for s in list_saves(db_path)]
+            except Exception:
+                save_ids = []  # base illisible : on supprime quand même l'univers
+            for sid in save_ids:
+                vector_dir = paths.get_vector_dir() / sid
+                if vector_dir.is_dir():
+                    shutil.rmtree(str(vector_dir), ignore_errors=True)
             delete_universe_saves(db_path)
             if src_root is not None:
-                import shutil
                 shutil.rmtree(src_root)
             else:
                 import os
                 os.remove(db_path)
+                for suffix in ("-wal", "-shm"):
+                    sidecar = Path(db_path + suffix)
+                    if sidecar.exists():
+                        sidecar.unlink()
             self.refresh_library()
             self._main_window.on_status_update(tr("ready"))
         except OSError as exc:

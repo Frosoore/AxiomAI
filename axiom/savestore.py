@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 from axiom.compile import hash_directory
@@ -93,7 +94,7 @@ def is_separated_save_db(db_path: str | Path) -> bool:
     if not db_path.is_file():
         return False
     try:
-        with sqlite3.connect(str(db_path)) as conn:
+        with closing(sqlite3.connect(str(db_path))) as conn:
             row = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Save_Meta';"
             ).fetchone()
@@ -303,7 +304,7 @@ def refresh_save_definition(save_db: str | Path) -> bool:
     if not is_separated_save_db(save_db):
         return False
 
-    with sqlite3.connect(str(save_db)) as conn:
+    with closing(sqlite3.connect(str(save_db))) as conn:
         meta = dict(conn.execute("SELECT key, value FROM Save_Meta;").fetchall())
     src = meta.get("universe_source") or ""
     if not src or not (Path(src) / "universe.toml").exists():
@@ -322,7 +323,7 @@ def refresh_save_definition(save_db: str | Path) -> bool:
     except CompileError:
         return False  # source momentanément cassée : on joue avec la définition embarquée
 
-    with sqlite3.connect(str(save_db)) as conn:
+    with closing(sqlite3.connect(str(save_db))) as conn:
         conn.execute(
             "INSERT OR REPLACE INTO Save_Meta (key, value) VALUES ('definition_hash', ?);",
             (current,),
@@ -415,10 +416,14 @@ def pack_save(universe_db: str | Path, save_id: str, output_path: str | Path) ->
     finally:
         conn.close()
 
+    def _toml_str(value: str) -> str:
+        # Chaîne TOML basique échappée (un nom d'univers peut porter " ou \).
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
     manifest = (
         f'format = "axiomsave-1"\n'
-        f'save_id = "{save_id}"\n'
-        f'universe_key = "{universe_key(universe_db)}"\n'
+        f"save_id = {_toml_str(save_id)}\n"
+        f"universe_key = {_toml_str(universe_key(universe_db))}\n"
     )
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -482,6 +487,31 @@ def unpack_save(
         new_id = str(uuid.uuid4())
         _reassign_save_id(tmp, save_id, new_id)
         save_id = new_id
+
+    # Re-lie la save à l'univers de DESTINATION : l'archive porte les chemins
+    # de la machine/univers de l'exportateur — sans cette réécriture, la save
+    # importée ne se resynchroniserait jamais avec la source locale (§7.6) et
+    # la canonisation la croirait orpheline (TICKET-036).
+    src_root = universe_root_for(universe_db)
+    meta = {
+        "universe_key": dst_key,
+        "universe_db": str(universe_db),
+        "universe_source": str(src_root) if src_root else "",
+        # Hash volontairement vide : la définition embarquée vient d'un autre
+        # export — le premier prepare_save_for_play resynchronisera depuis la
+        # source locale si elle existe.
+        "definition_hash": "",
+    }
+    conn = sqlite3.connect(str(tmp))
+    try:
+        conn.execute(_DDL_SAVE_META)
+        conn.executemany(
+            "INSERT OR REPLACE INTO Save_Meta (key, value) VALUES (?, ?);",
+            list(meta.items()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     final_db = finalize_save_container(tmp, save_id)
     return {"save_id": save_id, "db_path": str(final_db)}
@@ -582,7 +612,7 @@ def delete_save(universe_db: str | Path, save_id: str) -> bool:
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
         return False
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("PRAGMA foreign_keys=ON;")
         conn.execute("DELETE FROM Saves WHERE save_id = ?;", (save_id,))
         conn.commit()

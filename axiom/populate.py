@@ -70,6 +70,22 @@ def _safe_id(raw: str) -> str:
     return re.sub(r"_+", "_", out).strip("_")
 
 
+def entity_id_for(name: str) -> str:
+    """Id stable dérivé d'un nom d'entité.
+
+    Un nom 100 % non-latin (cyrillique, CJK…) donnerait un `_safe_id` vide —
+    l'entité serait alors silencieusement sautée. Fallback **déterministe**
+    (hash du nom) : l'idempotence des Populate (relance = reprise, ids connus
+    sautés) exige des ids stables d'un run à l'autre.
+    """
+    sid = _safe_id(name)
+    if sid:
+        return sid
+    import hashlib
+
+    return "ent_" + hashlib.sha1(name.strip().lower().encode("utf-8")).hexdigest()[:12]
+
+
 # ---------------------------------------------------------------------------
 # Générateurs
 # ---------------------------------------------------------------------------
@@ -148,11 +164,17 @@ def populate_stats(
 
     inserted = 0
     with get_connection(db_path) as conn:
+        # Deux noms différents peuvent produire le même id via _safe_id
+        # (« Force! » / « Force? ») : stat_id est PRIMARY KEY, on désambiguïse.
+        existing_ids = {r[0] for r in conn.execute("SELECT stat_id FROM Stat_Definitions;")}
         for s in batch:
             name = s.get("name")
             if not name or name in existing_stats:
                 continue
             stat_id = _safe_id(name) or uuid.uuid4().hex[:8]
+            if stat_id in existing_ids:
+                stat_id = f"{stat_id}_{uuid.uuid4().hex[:6]}"
+            existing_ids.add(stat_id)
             conn.execute(
                 "INSERT INTO Stat_Definitions (stat_id, name, description, value_type, parameters) "
                 "VALUES (?, ?, ?, ?, ?);",
@@ -243,13 +265,20 @@ def populate_events(
 
     inserted = 0
     with get_connection(db_path) as conn:
+        # event_id est PRIMARY KEY : si le LLM repropose un titre existant
+        # (la liste passée au prompt n'est qu'indicative), on saute la ligne
+        # au lieu de crasher en IntegrityError (idempotence, TICKET-035).
+        existing_ids = {r[0] for r in conn.execute("SELECT event_id FROM Scheduled_Events;")}
         for ev in batch:
             event_id = ev.get("event_id") or _safe_id(ev.get("title", "event")) or uuid.uuid4().hex[:8]
+            if event_id in existing_ids:
+                continue
             conn.execute(
                 "INSERT INTO Scheduled_Events (event_id, title, description, trigger_minute) "
                 "VALUES (?, ?, ?, ?);",
                 (event_id, ev.get("title", "Event"), ev.get("description", ""),
                  ev.get("trigger_minute", 0)))
+            existing_ids.add(event_id)
             inserted += 1
         conn.commit()
     _sync_source(db_path)
@@ -352,8 +381,8 @@ def populate_entities(
                 name = str(ent.get("name", "")).strip()
                 if not name:
                     continue
-                eid = _safe_id(name)
-                if not eid or eid in existing_ids:
+                eid = entity_id_for(name)
+                if eid in existing_ids:
                     continue
                 etype = str(ent.get("entity_type", "npc")).lower()
                 if etype not in ("npc", "faction"):

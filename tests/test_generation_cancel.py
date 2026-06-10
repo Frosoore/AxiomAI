@@ -136,10 +136,13 @@ def test_populate_entities_annule_entre_chunks(tmp_path: Path):
 def test_tache_annulee_emet_cancelled_pas_error(qapp_or_none=None):
     from workers.db_tasks import BaseDbTask
 
+    executed: list[bool] = []
+
     class DummyGen(BaseDbTask):
         cancellable = True
 
         def execute(self):
+            executed.append(True)
             if self.cancel_event.is_set():
                 raise GenerationCancelled("stoppé net")
             return "done"
@@ -151,6 +154,32 @@ def test_tache_annulee_emet_cancelled_pas_error(qapp_or_none=None):
     task.signals.error.connect(got_error.append)
 
     task.cancel()
+    task.run()
+    # Annulée avant démarrage : execute() n'est jamais appelé (QA-042.3, la
+    # tâche encore en file est couverte), et c'est `cancelled` qui est émis,
+    # jamais `error`.
+    assert executed == []
+    assert len(got_cancel) == 1
+    assert got_error == []
+
+
+def test_tache_annulee_en_cours_emet_cancelled_pas_error(qapp_or_none=None):
+    from workers.db_tasks import BaseDbTask
+
+    class DummyGen(BaseDbTask):
+        cancellable = True
+
+        def execute(self):
+            # L'annulation tombe pendant l'exécution (frontière coopérative).
+            self.cancel_event.set()
+            raise GenerationCancelled("stoppé net")
+
+    task = DummyGen("unused.db")
+    got_cancel: list[str] = []
+    got_error: list[str] = []
+    task.signals.cancelled.connect(got_cancel.append)
+    task.signals.error.connect(got_error.append)
+
     task.run()
     assert got_cancel == ["stoppé net"]
     assert got_error == []

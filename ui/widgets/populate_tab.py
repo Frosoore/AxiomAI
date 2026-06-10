@@ -96,12 +96,12 @@ class PopulateTabWidget(QWidget):
         # --- Actions ---
         layout.addStretch()
         
-        self._warning_label = QLabel(f"<i>{tr('populate_warning') if 'populate_warning' in tr('ready') else 'Note: Generating will automatically save your changes first.'}</i>")
+        self._warning_label = QLabel(f"<i>{tr('populate_warning')}</i>")
         self._warning_label.setStyleSheet("color: #a6adc8;")
         self._warning_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._warning_label)
 
-        self._start_btn = QPushButton(f"{tr('start_generation') if 'start_generation' in tr('ready') else 'Start AI Population'} ✨")
+        self._start_btn = QPushButton(f"{tr('start_generation')} ✨")
         self._start_btn.setMinimumHeight(50)
         self._start_btn.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold; font-size: 14px;")
         self._start_btn.clicked.connect(self._on_start_clicked)
@@ -121,8 +121,8 @@ class PopulateTabWidget(QWidget):
         self._radio_auto.setText(tr("populate_auto") if "populate_auto" in tr("ready") else "Automatic: Infer from existing tabs")
         self._radio_custom.setText(tr("populate_custom") if "populate_custom" in tr("ready") else "Custom: Use a specific narrative prompt")
         
-        self._warning_label.setText(f"<i>{tr('populate_warning') if 'populate_warning' in tr('ready') else 'Note: Generating will automatically save your changes first.'}</i>")
-        self._start_btn.setText(f"{tr('start_generation') if 'start_generation' in tr('ready') else 'Start AI Population'} ✨")
+        self._warning_label.setText(f"<i>{tr('populate_warning')}</i>")
+        self._start_btn.setText(f"{tr('start_generation')} ✨")
         self._preview_check.setText(tr("populate_preview_check"))
 
     @Slot()

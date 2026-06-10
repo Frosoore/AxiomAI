@@ -121,6 +121,7 @@ class SetupView(QWidget):
         self._setup_configs: list[dict] = []
         self._setup_widgets: dict[str, QWidget] = {}
         self._pending_import_path: str | None = None
+        self._pending_launch: dict | None = None  # contexte du lancement asynchrone (QA-042.6)
 
         self._setup_ui()
 
@@ -333,6 +334,25 @@ class SetupView(QWidget):
         else:
             QMessageBox.information(self, tr("edit_save_title"), tr("save_edited_msg", turn=turn))
 
+    @Slot(str)
+    def _on_save_prepared(self, save_db: str) -> None:
+        """La save est resynchronisée : lancement effectif (QA-042.6)."""
+        ctx = self._pending_launch
+        self._pending_launch = None
+        self._launch_btn.setEnabled(True)
+        if not ctx:
+            return
+        self._main_window.show_tabletop(
+            save_db, ctx["save_id"], player_persona=ctx["persona"]
+        )
+
+    @Slot(str)
+    def _on_worker_error(self, message: str) -> None:
+        # Un lancement en attente ne doit pas laisser le bouton mort.
+        self._pending_launch = None
+        self._launch_btn.setEnabled(True)
+        QMessageBox.critical(self, tr("error"), message)
+
     @Slot()
     def _select_next_save(self) -> None:
         row = self._saves_list.currentRow()
@@ -425,13 +445,14 @@ class SetupView(QWidget):
         self._db_worker = DbWorker(db_path)
         self._db_worker.saves_loaded.connect(self._on_saves_loaded)
         self._db_worker.full_universe_loaded.connect(self._on_universe_loaded)
-        self._db_worker.error_occurred.connect(lambda msg: QMessageBox.critical(self, tr("error"), msg))
+        self._db_worker.error_occurred.connect(self._on_worker_error)
         # TICKET-028 : gestion des saves
         self._db_worker.save_packed.connect(self._on_save_packed)
         self._db_worker.save_unpacked.connect(self._on_save_unpacked)
         self._db_worker.save_duplicated.connect(self._on_save_duplicated)
         self._db_worker.save_state_exported.connect(self._on_save_state_exported)
         self._db_worker.save_edited.connect(self._on_save_edited)
+        self._db_worker.save_prepared.connect(self._on_save_prepared)
         
         self._db_worker.load_saves_async()
         self._db_worker.load_full_universe()
@@ -632,11 +653,14 @@ class SetupView(QWidget):
             save = items[0].data(Qt.UserRole)
             # §7.6 : la save peut vivre dans son propre fichier (storage='separated').
             save_db = save.get("db_path") or self._db_path
-            from axiom.savestore import refresh_save_definition
-            refresh_save_definition(save_db)  # resync si l'univers a été patché
-            self._main_window.show_tabletop(
-                save_db, save["save_id"], player_persona=save.get("player_persona", "")
-            )
+            # Resync (si l'univers a été patché) hors main thread — la recompile
+            # in-place peut prendre du temps sur un gros univers (QA-042.6).
+            self._launch_btn.setEnabled(False)
+            self._pending_launch = {
+                "save_id": save["save_id"],
+                "persona": save.get("player_persona", ""),
+            }
+            self._db_worker.prepare_save_for_play(save_db)
             return
 
         # 2. Check if we are creating a new game

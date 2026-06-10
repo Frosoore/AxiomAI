@@ -30,6 +30,7 @@ from workers.db_tasks import (
     PopulateEntitiesTask, TickModifiersTask, CreatePlayerEntityTask, DeleteEntityTask,
     LoadInventoryTask, LoadTimelineTask,
     PackSaveTask, UnpackSaveTask, DuplicateSaveTask, ExportSaveStateTask, EditSaveStateTask,
+    PrepareSaveTask,
     RefreshDefinitionTask, ConvertFlatDbTask,
     PreviewPopulateTask, ApplyStagedSourceTask, CanonizeStoryTask
 )
@@ -70,6 +71,7 @@ class DbWorker(QObject):
     save_duplicated = Signal(dict)       # {"save_id", "db_path"}
     save_state_exported = Signal(str, str)  # (save_id, texte save_state.toml)
     save_edited = Signal(int)            # tour de la correction, -1 si rien à appliquer
+    save_prepared = Signal(str)          # save db resynchronisée, prête à lancer (QA-042.6)
     # TICKET-029 — onglet « Fichiers » du Creator Studio
     definition_refreshed = Signal()      # source texte recompilée in-place dans le .db
     universe_converted = Signal(dict)    # {"source_dir", "db_path"} après conversion
@@ -210,6 +212,12 @@ class DbWorker(QObject):
         """Applique le diff d'un save_state.toml édité (correction en place)."""
         task = EditSaveStateTask(self._db_path, save_id, original_text, edited_text)
         task.signals.result.connect(self.save_edited.emit)
+        self._setup_task(task)
+
+    def prepare_save_for_play(self, save_db: str) -> None:
+        """Resynchronise une save avant lancement (hors main thread, QA-042.6)."""
+        task = PrepareSaveTask(save_db)
+        task.signals.result.connect(self.save_prepared.emit)
         self._setup_task(task)
 
     # --- TICKET-029 : onglet « Fichiers » du Creator Studio -------------

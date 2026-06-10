@@ -279,6 +279,44 @@ def test_fork_by_minute(played_save):
     assert materialize_state(db, new_id)["entities"]["player_1"]["Health"] == "90"
 
 
+def test_fork_copies_modifiers_and_fired_events(played_save):
+    """TICKET-034 : le fork emporte les modifiers actifs et les événements déjà
+    déclenchés (sinon buffs perdus + re-déclenchement des Scheduled_Events)."""
+    db, save_id = played_save
+    with get_connection(db) as conn:
+        conn.execute(
+            "INSERT INTO Active_Modifiers "
+            "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
+            "VALUES ('m1', ?, 'player_1', 'Health', -5.0, 30);",
+            (save_id,),
+        )
+        conn.execute(
+            "INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) "
+            "VALUES ('ev1', 10, 'Aube', '');"
+        )
+        conn.execute(
+            "INSERT INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, 'ev1');",
+            (save_id,),
+        )
+        conn.commit()
+
+    new_id = fork_save(db, save_id, at_turn=2)
+
+    with get_connection(db) as conn:
+        mods = conn.execute(
+            "SELECT entity_id, stat_key, delta, minutes_remaining, modifier_id "
+            "FROM Active_Modifiers WHERE save_id = ?;",
+            (new_id,),
+        ).fetchall()
+        fired = conn.execute(
+            "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
+            (new_id,),
+        ).fetchall()
+    assert [(m[0], m[1], m[2], m[3]) for m in mods] == [("player_1", "Health", -5.0, 30)]
+    assert mods[0][4] != "m1"  # modifier_id régénéré (pas de collision de PK)
+    assert [f[0] for f in fired] == ["ev1"]
+
+
 def test_fork_rewind_still_works(played_save):
     """Après fork, le rewind fonctionne toujours sur la nouvelle save."""
     db, save_id = played_save

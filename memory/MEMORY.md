@@ -1,6 +1,6 @@
 # Memory Index — AxiomAI
 
-- [Pilier 2 Universe-as-Code — état/reprise](project_pilier2_status.md) — TOUT TERMINÉ et VALIDÉ (2026-06-10) : pilier + UX (028/029/030), quotas (031), annulation (033), i18n (032), Populate*→axiom (B3), **fin du portage moteur (B4, table « non migré » VIDE, chronicler_worker supprimé)** ; PENDING = seulement 009 (différé) et 017 (ouvert, Pilier 5/Gemini) ; RIEN n'est commité (3 sessions de travail dans le working tree)
+- [Pilier 2 Universe-as-Code — état/reprise](project_pilier2_status.md) — TOUT TERMINÉ, VALIDÉ et COMMITÉ sur dev-0 (2026-06-10) : pilier + UX (028→033), B3, B4 ; QA du 2026-06-10 → TICKET-034→042 tous CORRIGÉS le jour même (étape QA-fixes-034-042, dans le working tree non commité) ; PENDING = 009 (différé) + 017 (Gemini)
 - [Profil utilisateur : néophyte non-codeur](user_profile_non_coder.md) — pilote tout par IA, expliquer les choix techniques en termes accessibles avant de décider
 - [Workflow maintenance par étapes](feedback_maintenance_workflow.md) — Créer maintenance/<etape>/{TODO,CHANGELOG,DOC}.md avant tout travail de code
 - [Style d'exécution](feedback_execution_style.md) — Implémenter directement, docs minimales (TODO+CHANGELOG), pas de superpowers

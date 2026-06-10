@@ -272,6 +272,29 @@ def _safe_filename(raw: str) -> str:
     return cleaned or "unnamed"
 
 
+class _UniqueNames:
+    """Alloue des noms de fichiers uniques par dossier (déterministe).
+
+    Deux ids distincts peuvent donner le même nom via `_safe_filename`
+    (« bob.smith » / « bob_smith ») : sans désambiguïsation, le second fichier
+    écraserait le premier en silence. Le compilateur lisant les ids DANS le
+    fichier, le suffixe n'altère pas le round-trip.
+    """
+
+    def __init__(self) -> None:
+        self._used: set[str] = set()
+
+    def claim(self, raw_id: str) -> str:
+        name = _safe_filename(raw_id)
+        candidate = name
+        counter = 2
+        while candidate in self._used:
+            candidate = f"{name}_{counter}"
+            counter += 1
+        self._used.add(candidate)
+        return candidate
+
+
 # ---------------------------------------------------------------------------
 # API publique
 # ---------------------------------------------------------------------------
@@ -310,6 +333,7 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
         doc["definitions"] = arr
         _write_toml(out / "stats" / "definitions.toml", doc)
 
+    ent_names = _UniqueNames()
     for ent in data["entities"]:
         doc = tomlkit.document()
         doc["entity_id"] = ent["entity_id"]
@@ -322,8 +346,9 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
             for k, v in ent["stats"].items():
                 stats_tbl[k] = v
             doc["stats"] = stats_tbl
-        _write_toml(out / "entities" / f"{_safe_filename(ent['entity_id'])}.toml", doc)
+        _write_toml(out / "entities" / f"{ent_names.claim(ent['entity_id'])}.toml", doc)
 
+    rule_names = _UniqueNames()
     for rule in data["rules"]:
         doc = tomlkit.document()
         doc["rule_id"] = rule["rule_id"]
@@ -331,7 +356,7 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
         doc["target_entity"] = rule["target_entity"]
         doc["conditions"] = rule["conditions"]
         doc["actions"] = rule["actions"]
-        _write_toml(out / "rules" / f"{_safe_filename(rule['rule_id'])}.toml", doc)
+        _write_toml(out / "rules" / f"{rule_names.claim(rule['rule_id'])}.toml", doc)
 
     if data["locations"] or data["connections"]:
         doc = tomlkit.document()
@@ -360,17 +385,18 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
             doc["connections"] = conns
         _write_toml(out / "locations" / "map.toml", doc)
 
+    lore_names = _UniqueNames()
     for entry in data["lore"]:
-        fname = _safe_filename(entry["entry_id"])
-        _write_lore_entry(out / "lore" / f"{fname}.md", entry)
+        _write_lore_entry(out / "lore" / f"{lore_names.claim(entry['entry_id'])}.md", entry)
 
+    event_names = _UniqueNames()
     for ev in data["events"]:
         doc = tomlkit.document()
         doc["event_id"] = ev["event_id"]
         doc["trigger_minute"] = ev["trigger_minute"]
         doc["title"] = ev["title"]
         doc["description"] = ev["description"]
-        _write_toml(out / "events" / f"{_safe_filename(ev['event_id'])}.toml", doc)
+        _write_toml(out / "events" / f"{event_names.claim(ev['event_id'])}.toml", doc)
 
     if data["setup"]:
         doc = tomlkit.document()
@@ -387,6 +413,7 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
         doc["questions"] = arr
         _write_toml(out / "setup" / "questions.toml", doc)
 
+    item_names = _UniqueNames()
     for it in data["items"]:
         doc = tomlkit.document()
         doc["item_id"] = it["item_id"]
@@ -395,7 +422,7 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
         doc["category"] = it["category"]
         doc["weight"] = it["weight"]
         doc["rarity"] = it["rarity"]
-        _write_toml(out / "items" / f"{_safe_filename(it['item_id'])}.toml", doc)
+        _write_toml(out / "items" / f"{item_names.claim(it['item_id'])}.toml", doc)
 
     # .gitignore : le cache compilé n'est jamais versionné.
     (out / ".gitignore").write_text(f"{CACHE_DIRNAME}/\n", encoding="utf-8")

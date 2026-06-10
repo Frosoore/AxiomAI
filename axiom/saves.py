@@ -503,6 +503,28 @@ def fork_save(
             "VALUES (?, ?, ?, ?);",
             [(new_id, r["entity_id"], r["item_id"], r["quantity"]) for r in inv_rows],
         )
+        mod_rows = conn.execute(
+            "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
+            "WHERE save_id = ?;",
+            (save_id,),
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO Active_Modifiers "
+            "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
+            "VALUES (?, ?, ?, ?, ?, ?);",
+            [(str(uuid.uuid4()), new_id, r["entity_id"], r["stat_key"], r["delta"],
+              r["minutes_remaining"]) for r in mod_rows],
+        )
+        # Sans cette copie, les événements planifiés déjà déclenchés se
+        # redéclencheraient dans la save forkée.
+        fired_rows = conn.execute(
+            "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
+            (save_id,),
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, ?);",
+            [(new_id, r["event_id"]) for r in fired_rows],
+        )
         conn.commit()
 
     sourcer = EventSourcer(db_path)

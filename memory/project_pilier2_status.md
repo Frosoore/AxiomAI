@@ -69,5 +69,13 @@ B4 — créer une entité joueur, bouton Régénérer, question Mini-Dico, tour 
 
 Hors chantier : §7.8 plugins (Pilier 6), rewind en minutes (Pilier 5 = domaine Gemini),
 TICKET-009 split packaging (plus aucun prérequis de migration), TICKET-017.
-⚠ RIEN n'est commité — tout le travail (TICKET-028→033, B3, B4, archivage PENDING→DONE) est
-dans le working tree de `dev-0` ; l'utilisateur découpe ses commits lui-même.
+Tout est désormais COMMITÉ sur `dev-0` (67c89a3, 03458ae, 210fa21 — commits du 2026-06-09/10).
+
+**QA du 2026-06-10 + fixes (même jour)** : revue complète des features récentes → 9 tickets
+(TICKET-034→042), confirmés purs bugs (zéro arbitrage d'archi) puis **tous corrigés** sur
+feu vert utilisateur (étape `maintenance/QA-fixes-034-042/`, archivés dans DONE.md).
+Décisions notables : id d'entité non-latin = hash déterministe (idempotence Populate) ;
+conversion .db plat marque les joueurs `origin='runtime'` (hors héros compagnon) ;
+export `.axiom` = définition seule (cache purgé des tables runtime) ; saves importées
+re-liées à l'univers local (`definition_hash` vidé → resync au 1er lancement).
+Suites vertes : 512 (non-Qt) + lot Qt/vector. Travail dans le working tree, non commité.

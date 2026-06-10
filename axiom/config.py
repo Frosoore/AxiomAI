@@ -98,24 +98,46 @@ class AppConfig:
     gemini_fallback_model: str = ""
 
 
+# Cache de load_config (QA-042.1) : tr() et les chemins chauds rechargent la
+# config en boucle — sans cache, chaque appel relisait settings.json ET
+# refaisait un connect sqlite (create_global_db). Invalidation par mtime du
+# fichier, clé = chemin résolu (AXIOM_CONFIG_DIR injectable dans les tests).
+_CONFIG_CACHE: dict[str, tuple[int, AppConfig]] = {}
+_GLOBAL_DB_READY: set[str] = set()
+
+
 def load_config() -> AppConfig:
     """Load configuration from the settings file.
 
     Returns sensible defaults if the file does not exist or is malformed.
-    Never raises.
+    Never raises. Le résultat est mis en cache tant que le mtime du fichier
+    ne change pas (`save_config` passe par le fichier : invalidation auto).
 
     Returns:
         AppConfig populated from disk, or a default AppConfig on any error.
     """
     from axiom.schema import create_global_db
     config_file = _resolve_config_file()
-    try:
-        create_global_db(str(_resolve_global_db_file()))
-    except Exception:
-        pass
+
+    global_db = str(_resolve_global_db_file())
+    if global_db not in _GLOBAL_DB_READY:
+        try:
+            create_global_db(global_db)
+            _GLOBAL_DB_READY.add(global_db)
+        except Exception:
+            pass
 
     if not config_file.exists():
+        _CONFIG_CACHE.pop(str(config_file), None)
         return AppConfig()
+
+    try:
+        mtime = config_file.stat().st_mtime_ns
+    except OSError:
+        mtime = -1
+    cached = _CONFIG_CACHE.get(str(config_file))
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
 
     try:
         raw = json.loads(config_file.read_text(encoding="utf-8"))
@@ -136,7 +158,9 @@ def load_config() -> AppConfig:
         # Only accept known keys — ignore unknown keys gracefully
         known = {f for f in AppConfig.__dataclass_fields__}
         filtered = {k: v for k, v in raw.items() if k in known}
-        return AppConfig(**filtered)
+        config = AppConfig(**filtered)
+        _CONFIG_CACHE[str(config_file)] = (mtime, config)
+        return config
     except Exception:
         return AppConfig()
 

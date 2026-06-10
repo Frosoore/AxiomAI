@@ -436,6 +436,39 @@ def test_pack_unpack_v2_roundtrip(source_tree: Path, tmp_path: Path):
     assert_definitions_equal(read_definition(src_db), read_definition(db))
 
 
+def test_pack_definition_seule(source_tree: Path, tmp_path: Path):
+    """TICKET-039 : l'archive .axiom ne publie que la définition — pas les
+    saves embarquées du cache (vie privée), pas `.git/`, pas les sidecars WAL."""
+    import zipfile
+
+    from axiom.db_helpers import create_new_save
+    from axiom.package import pack_universe
+
+    cache = compile_universe(source_tree)
+    sid = create_new_save(str(cache), "Privé", "Normal")
+    (source_tree / ".git").mkdir()
+    (source_tree / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+    archive = pack_universe(source_tree, tmp_path / "u.axiom")
+
+    with zipfile.ZipFile(str(archive)) as zf:
+        names = zf.namelist()
+        assert not any(n.startswith(".git/") for n in names)
+        assert not any(n.endswith(("-wal", "-shm")) for n in names)
+        extracted = tmp_path / "x"
+        zf.extractall(extracted)
+    with sqlite3.connect(str(extracted / ".axiom-cache" / "universe.db")) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM Saves;").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM Event_Log;").fetchone()[0] == 0
+        # La définition, elle, voyage bien.
+        assert conn.execute("SELECT COUNT(*) FROM Entities;").fetchone()[0] > 0
+
+    # L'original n'a pas été touché : la save embarquée est toujours là.
+    with sqlite3.connect(str(cache)) as conn:
+        saves = [r[0] for r in conn.execute("SELECT save_id FROM Saves;")]
+    assert saves == [sid]
+
+
 def test_pack_embeds_valid_cache(source_tree: Path, tmp_path: Path):
     """L'archive embarque un cache dont le hash correspond à la source (réutilisable tel quel)."""
     from axiom.package import pack_universe, unpack_universe

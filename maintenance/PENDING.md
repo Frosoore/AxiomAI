@@ -11,7 +11,7 @@
 | TICKET-009| Split physique `axiom-engine/` + `pyproject.toml` (pip-installable)        | ⏸ différé (handover + dev parallèle) |
 | TICKET-017| Temps causal : `major_event_description` ignoré + **time-skip Chronicler** (spec §6.4) | ouvert (partiellement couvert par TICKET-018, domaine Pilier 5/Gemini) |
 
-Tickets résolus/clos : voir `DONE.md` (001→008, 010→012, TC1→TC5, 015→033 sauf 017).
+Tickets résolus/clos : voir `DONE.md` (001→008, 010→012, TC1→TC5, 015→042 sauf 017).
 
 
 ---
@@ -82,5 +82,3 @@ saut temporel devrait faire évoluer le monde.
 **Priorité :** moyenne (fonctionnalité spec manquante + léger gaspillage tokens). Lié à TICKET-018.
 
 ---
-
-

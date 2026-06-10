@@ -8,10 +8,10 @@ This eliminates the DbWorker state-overwriting anti-pattern.
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import threading
 import traceback
+from contextlib import closing
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, Signal
@@ -63,8 +63,9 @@ class BaseDbTask(QRunnable):
     """Base class for all stateless DB tasks."""
 
     #: TICKET-033 — les tâches de génération longue (LLM) se déclarent
-    #: annulables : inscrites au registre pendant run(), `cancel()` arme
-    #: l'event coopératif transmis au moteur/backend.
+    #: annulables : inscrites au registre dès la construction (une tâche encore
+    #: en file QThreadPool doit aussi être touchée par « Annuler »), `cancel()`
+    #: arme l'event coopératif transmis au moteur/backend.
     cancellable: bool = False
 
     def __init__(self, db_path: str):
@@ -72,15 +73,18 @@ class BaseDbTask(QRunnable):
         self.db_path = db_path
         self.signals = TaskSignals()
         self.cancel_event = threading.Event()
+        if self.cancellable:
+            with _ACTIVE_LOCK:
+                _ACTIVE_GENERATIONS.add(self)
 
     def cancel(self) -> None:
         self.cancel_event.set()
 
     def run(self) -> None:
-        if self.cancellable:
-            with _ACTIVE_LOCK:
-                _ACTIVE_GENERATIONS.add(self)
         try:
+            # Annulée alors qu'elle attendait encore son thread : ne pas démarrer.
+            if self.cancellable and self.cancel_event.is_set():
+                raise GenerationCancelled("Generation cancelled before start.")
             result = self.execute()
             self.signals.result.emit(result)
         except GenerationCancelled as exc:
@@ -363,6 +367,21 @@ class DuplicateSaveTask(BaseDbTask):
         return duplicate_save(self.db_path, self.save_id, player_name=self.new_name)
 
 
+class PrepareSaveTask(BaseDbTask):
+    """Resynchronise la définition d'une save avant lancement (db_path = save db).
+
+    `refresh_save_definition` peut recompiler la définition (hash + transaction) :
+    hors du main thread pour ne pas geler l'UI au clic « Lancer » (QA-042.6).
+    Renvoie le chemin de la base, prête à passer à `Session`.
+    """
+
+    def execute(self) -> str:
+        from axiom.savestore import refresh_save_definition
+        self.signals.status.emit("Preparing save...")
+        refresh_save_definition(self.db_path)
+        return self.db_path
+
+
 class ExportSaveStateTask(BaseDbTask):
     """Matérialise l'état d'une save en texte `save_state.toml` (pour édition)."""
 
@@ -477,7 +496,7 @@ def _stage_source_change(universe_db: str, mutate: Callable[[str], Any]) -> dict
 
     stage_root = Path(tempfile.mkdtemp(prefix="axiom_stage_"))
     tmp_db = stage_root / "preview.db"
-    with sqlite3.connect(universe_db) as conn:
+    with closing(sqlite3.connect(universe_db)) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     shutil.copyfile(universe_db, tmp_db)
 
@@ -583,6 +602,8 @@ def _insert_canon(db: str, entities: list, lore: list) -> dict:
     """Insère les éléments canon extraits (idempotent : les ids/noms connus sont sautés)."""
     import uuid
 
+    from axiom.populate import entity_id_for
+
     inserted = {"entities": 0, "lore": 0}
     with get_connection(db) as conn:
         existing_ids = {str(r[0]).lower() for r in conn.execute("SELECT entity_id FROM Entities;")}
@@ -590,9 +611,8 @@ def _insert_canon(db: str, entities: list, lore: list) -> dict:
             name = str(ent.get("name", "")).strip()
             if not name:
                 continue
-            eid = re.sub(r"[^a-z0-9]", "_", name.lower())
-            eid = re.sub(r"_+", "_", eid).strip("_")
-            if not eid or eid in existing_ids:
+            eid = entity_id_for(name)
+            if eid in existing_ids:
                 continue
             etype = str(ent.get("entity_type", "npc")).lower()
             if etype not in ("npc", "faction"):
@@ -646,7 +666,7 @@ class CanonizeStoryTask(BaseDbTask):
 
         candidate = self.db_path
         if is_separated_save_db(self.db_path):
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn:
                 meta = dict(conn.execute("SELECT key, value FROM Save_Meta;").fetchall())
             candidate = meta.get("universe_db", "")
         if candidate and Path(candidate).is_file() and universe_root_for(candidate):

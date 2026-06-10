@@ -89,6 +89,41 @@ def test_populate_events_insere(db):
     assert rows == [("l_clipse", 1440)]
 
 
+def test_populate_events_collision_id_sautee(db):
+    """TICKET-035 : un titre reproposé (même event_id dérivé) ne crashe plus en
+    IntegrityError — la ligne est sautée (idempotence)."""
+    llm = _FakeLLM({"events": [
+        {"title": "L'éclipse", "description": "…", "trigger_minute": 1440},
+    ]})
+    assert pop.populate_events(db, llm=llm) == 1
+    assert pop.populate_events(db, llm=llm) == 0  # relance : rien à insérer
+    assert len(_rows(db, "SELECT event_id FROM Scheduled_Events;")) == 1
+
+
+def test_populate_stats_collision_id_desambiguisee(db):
+    """TICKET-035 : deux noms différents → même _safe_id (PK) : la 2e stat est
+    insérée sous un id désambiguïsé au lieu de crasher."""
+    assert pop.populate_stats(db, llm=_FakeLLM({"stats": [{"name": "Force!"}]})) == 1
+    assert pop.populate_stats(db, llm=_FakeLLM({"stats": [{"name": "Force?"}]})) == 1
+    rows = _rows(db, "SELECT stat_id, name FROM Stat_Definitions;")
+    assert len(rows) == 2
+    assert {r[1] for r in rows} == {"Force!", "Force?"}
+
+
+def test_populate_entities_nom_non_latin(db):
+    """TICKET-041 : un nom 100 % non-latin reçoit un id déterministe au lieu
+    d'être silencieusement sauté ; la relance reste idempotente."""
+    llm = _FakeLLM({"entities": [
+        {"name": "山田", "entity_type": "npc", "description": "Forgeron."},
+    ]})
+    assert pop.populate_entities(db, mode="custom", custom_text="x", llm=llm) == 1
+    rows = _rows(db, "SELECT entity_id, name FROM Entities;")
+    assert rows[0][1] == "山田"
+    assert rows[0][0].startswith("ent_")
+    # Relance : même id dérivé → entité connue, rien d'inséré.
+    assert pop.populate_entities(db, mode="custom", custom_text="x", llm=llm) == 0
+
+
 def test_populate_lore_idempotent(db):
     llm = _FakeLLM({"lore_entries": [
         {"category": "Faction", "name": "La Guilde", "content": "Secrète."},

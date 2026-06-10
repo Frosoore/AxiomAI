@@ -427,3 +427,40 @@ dans `maintenance/TICKET-033-annulation-generation/` (TODO/CHANGELOG/DOC).
   (cohérent avec la reprise TICKET-031), une preview annulée supprime sa sandbox.
 - Mécanique : `GenerationCancelled` + hooks neutres `on_status`/`cancel_event` sur
   `LLMBackend` (zéro Qt), signal Qt `cancelled` distinct d'`error` (pas de popup).
+
+---
+
+## TICKET-034 → 042 — lot QA du 2026-06-10 : tous corrigés le jour même
+
+Bugs trouvés par la revue qualité des features récentes (Pilier 2 / B3 / B4), corrigés en lot
+(étape `maintenance/QA-fixes-034-042/`, détail fichier par fichier dans son CHANGELOG).
+Constats d'origine complets : voir l'historique git de `PENDING.md` (ajout puis retrait le
+2026-06-10). Aucun changement d'architecture — uniquement des bugs contenus.
+
+- **TICKET-034** — `fork_save` ne copiait ni `Active_Modifiers` ni `Fired_Scheduled_Events`
+  (buffs perdus, événements re-déclenchés). → copie ajoutée (modifier_id régénéré) + test.
+- **TICKET-035** — `populate_events`/`populate_stats` crashaient en IntegrityError sur
+  collision d'id (PK). → skip idempotent (events) / désambiguïsation (stats) + tests.
+- **TICKET-036** — `unpack_save` gardait le `Save_Meta` de l'exportateur : save importée
+  jamais resynchronisée avec la source locale, canonisation cassée. → Save_Meta re-lié à
+  l'univers de destination (`definition_hash` vidé → resync au premier lancement) + test.
+- **TICKET-037** — la conversion .db plat → dossier exportait le joueur dans la définition.
+  → entités `player` (hors héros compagnon) marquées `origin='runtime'` avant conversion,
+  purge runtime partagée avec la sync Studio + test (le joueur survit à la resync).
+- **TICKET-038** — `with sqlite3.connect()` ne ferme pas la connexion : unlink sous Windows
+  cassé (`delete_save`), fuites de handles. → `closing(...)` sur tout le périmètre récent.
+- **TICKET-039** — l'export `.axiom` d'un univers-dossier embarquait saves embarquées,
+  sidecars WAL et `.git/`. → exclusions + cache purgé des 8 tables runtime + test.
+- **TICKET-040** — « Canoniser… » crashait sur les payloads legacy en chaîne brute.
+  → garde `isinstance` dans `_recent_narrative`.
+- **TICKET-041** — noms d'entités 100 % non-latins silencieusement sautés (`_safe_id` vide).
+  → `entity_id_for()` : fallback déterministe `ent_<sha1[:12]>` (idempotence préservée),
+  partagé Populate/canonisation + test.
+- **TICKET-042** (mineurs regroupés) — cache mtime sur `load_config` (perf `tr()`) ;
+  garde « canonisation déjà en cours » + réutilisation des DbWorker existants (Studio) ;
+  annulation couvrant les tâches encore en file (registre à la construction) ; i18n
+  (court-circuit populate_tab, contaminations fr/es/de) ; suppression d'univers emporte
+  sidecars WAL + dossiers vector des saves ; resync au lancement déportée hors main thread
+  (`PrepareSaveTask`/`save_prepared`) ; collisions `_safe_filename` du decompiler
+  désambiguïsées ; manifest `.axiomsave` échappé ; sidecars debug orphelins supprimés.
+  Non traité (volontaire) : retraduction complète des langues secondaires (contenu, pas un bug).

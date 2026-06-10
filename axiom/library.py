@@ -9,6 +9,7 @@ le `DbWorker` du Hub n'est qu'une coquille au-dessus.
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 from axiom.compile import CACHE_DIRNAME, CompileError
@@ -170,9 +171,15 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
     if root.exists():
         raise LibraryError(f"Le dossier existe déjà : {root}")
 
+    # 0. Provenance : AVANT extraction et décompilation, marquer 'runtime' les
+    # entités joueur d'un db d'avant la colonne `origin` — sinon le joueur
+    # créé au lobby deviendrait une entité de DÉFINITION de l'univers converti
+    # (TICKET-037). Les saves extraites héritent ainsi du bon origin.
+    _mark_legacy_runtime_entities(db_path)
+
     # 1. Saves embarquées → fichiers séparés (la clé d'univers est identique :
     # le stem du .db plat devient le nom du dossier).
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         has_saves = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Saves';"
         ).fetchone()
@@ -185,9 +192,11 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
             continue  # déjà extraite (conversion rejouée) : ne jamais écraser
         extract_save(db_path, sid)
 
-    # 2. Définition → arborescence texte, puis cache compilé.
+    # 2. Définition → arborescence texte (sans les entités runtime, comme la
+    # sync Studio), puis cache compilé.
     try:
         decompile_universe(db_path, root)
+        _strip_runtime_entity_files(db_path, root)
         cache_db = compile_universe(root)
     except (DecompileError, CompileError) as exc:
         raise LibraryError(f"Conversion impossible : {exc}") from exc
@@ -198,7 +207,7 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
         save_db = sep_dir / f"save_{sid}.db"
         if not save_db.is_file():
             continue
-        with sqlite3.connect(str(save_db)) as conn:
+        with closing(sqlite3.connect(str(save_db))) as conn:
             conn.executemany(
                 "INSERT OR REPLACE INTO Save_Meta (key, value) VALUES (?, ?);",
                 [
@@ -210,7 +219,7 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
             conn.commit()
 
     # 4. L'original sort de la bibliothèque (mais reste récupérable).
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     db_path.replace(db_path.with_name(db_path.name + ".bak"))
     for suffix in ("-wal", "-shm"):
@@ -252,6 +261,69 @@ def sync_source_if_any(db_path: str | Path) -> bool:
         return False
 
 
+def _mark_legacy_runtime_entities(db_path: Path) -> None:
+    """Pose la provenance 'runtime' sur les entités joueur d'un `.db` plat.
+
+    Dans un `.db` plat, les joueurs d'avant la colonne `origin` sont en
+    'definition' (défaut de migration) — la conversion les exporterait alors
+    vers la définition de l'univers. Seules les entités `entity_type='player'`
+    sont requalifiées (un joueur dans un `.db` plat vient du lobby ; les
+    PNJ/factions viennent du Studio ou d'un Populate : c'est bien de la
+    définition), en épargnant l'éventuel héros compagnon (référencé par la
+    définition).
+    """
+    import sqlite3
+
+    from axiom.schema import migrate_entities_origin_column
+
+    migrate_entities_origin_column(str(db_path))
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        hero = conn.execute(
+            "SELECT value FROM Universe_Meta WHERE key = 'companion_hero_id';"
+        ).fetchone()
+        hero_id = hero[0] if hero else ""
+        conn.execute(
+            "UPDATE Entities SET origin = 'runtime' "
+            "WHERE entity_type = 'player' AND entity_id != ?;",
+            (hero_id,),
+        )
+        conn.commit()
+
+
+def _strip_runtime_entity_files(db_path: Path, tree: Path) -> None:
+    """Retire d'une arbo décompilée les entités `origin='runtime'` du `.db`.
+
+    Le joueur et les PNJ nés en jeu n'appartiennent pas à la définition —
+    partagé entre la sync Studio (TICKET-027) et la conversion (TICKET-037).
+    L'id fait foi (lu DANS chaque fichier : le nom de fichier peut être
+    désambiguïsé par le décompilateur).
+    """
+    import sqlite3
+    import tomllib
+
+    try:
+        with closing(sqlite3.connect(str(db_path))) as conn:
+            runtime_ids = {
+                r[0] for r in conn.execute(
+                    "SELECT entity_id FROM Entities WHERE origin = 'runtime';"
+                )
+            }
+    except sqlite3.OperationalError:
+        return  # colonne absente (db d'avant migration)
+    if not runtime_ids:
+        return
+    ent_dir = tree / "entities"
+    if not ent_dir.is_dir():
+        return
+    for f in ent_dir.glob("*.toml"):
+        try:
+            entity_id = tomllib.loads(f.read_text(encoding="utf-8")).get("entity_id")
+        except (tomllib.TOMLDecodeError, OSError):
+            continue
+        if entity_id in runtime_ids:
+            f.unlink()
+
+
 def sync_source_from_db(db_path: str | Path, src_dir: str | Path) -> None:
     """Réécrit l'arborescence source d'un univers depuis son `.db` (miroir).
 
@@ -264,11 +336,10 @@ def sync_source_from_db(db_path: str | Path, src_dir: str | Path) -> None:
     Le hash de cache est mis à jour : le `.db` qui vient d'être écrit EST la
     compilation de la source fraîchement réécrite (round-trip lossless).
     """
-    import sqlite3
     import tempfile
 
     from axiom.compile import CACHE_HASH_NAME, hash_directory
-    from axiom.decompile import _safe_filename, decompile_universe
+    from axiom.decompile import decompile_universe
 
     db_path = Path(db_path)
     src_dir = Path(src_dir)
@@ -276,22 +347,8 @@ def sync_source_from_db(db_path: str | Path, src_dir: str | Path) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / "tree"
         decompile_universe(db_path, tree)
-
         # Les entités runtime n'appartiennent pas à la définition.
-        try:
-            with sqlite3.connect(str(db_path)) as conn:
-                runtime_ids = [
-                    r[0] for r in conn.execute(
-                        "SELECT entity_id FROM Entities WHERE origin = 'runtime';"
-                    )
-                ]
-        except sqlite3.OperationalError:
-            runtime_ids = []  # colonne absente (db d'avant migration)
-        for eid in runtime_ids:
-            f = tree / "entities" / f"{_safe_filename(eid)}.toml"
-            if f.exists():
-                f.unlink()
-
+        _strip_runtime_entity_files(db_path, tree)
         _mirror_tree(tree, src_dir)
 
     hash_file = src_dir / CACHE_DIRNAME / CACHE_HASH_NAME

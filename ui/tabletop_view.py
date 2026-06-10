@@ -106,6 +106,9 @@ class TabletopView(HardcoreMixin, QWidget):
         self._vector_worker: VectorWorker | None = None
         self._vector_init_worker: VectorInitWorker | None = None
         self._hardcore_worker: HardcoreWorker | None = None
+        # TICKET-030/042 : une seule canonisation à la fois (le « Canon auto »
+        # par tour ne doit pas écraser un worker encore en vol).
+        self._canon_busy: bool = False
 
         # Multi-player Queue System
         self._arbitrator_worker: ArbitratorWorker | None = None
@@ -762,6 +765,8 @@ class TabletopView(HardcoreMixin, QWidget):
         lines: list[str] = []
         for entry in self._history[-max_entries:]:
             payload = entry.get("payload", {})
+            if not isinstance(payload, dict):
+                payload = {"text": str(payload), "variants": [str(payload)], "active": 0}
             if entry.get("event_type") == "user_input":
                 lines.append(f"PLAYER: {payload.get('text', '')}")
             elif entry.get("event_type") == "narrative_text":
@@ -774,9 +779,12 @@ class TabletopView(HardcoreMixin, QWidget):
     @Slot()
     def _on_canonize_clicked(self) -> None:
         """Canonisation ponctuelle : extraction LLM puis diff texte à valider."""
+        if self._canon_busy:
+            return
         text = self._recent_narrative()
         if not text.strip():
             return
+        self._canon_busy = True
         self._canonize_btn.setEnabled(False)
         self._main_window.on_status_update(tr("canonize_running"))
         self._canon_worker = DbWorker(self._db_path)
@@ -788,6 +796,7 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(str)
     def _on_canon_cancelled(self, _msg: str) -> None:
+        self._canon_busy = False
         self._canonize_btn.setEnabled(True)
         self._main_window.on_status_update(tr("generation_cancelled"))
 
@@ -795,16 +804,25 @@ class TabletopView(HardcoreMixin, QWidget):
         """Toggle « Canon auto » : canonise le dernier tour en silence."""
         if not self._canon_auto_check.isChecked() or not narrative_text.strip():
             return
+        if self._canon_busy:
+            return  # la précédente tourne encore (retries 429…) : on saute ce tour
+        self._canon_busy = True
         self._canon_worker = DbWorker(self._db_path)
         self._canon_worker.story_canonized.connect(self._on_story_canonized)
         # Silencieux : une save non liée à un univers-dossier ne spamme pas
         # d'erreur à chaque tour, juste la barre de statut.
-        self._canon_worker.error_occurred.connect(self._main_window.on_status_update)
+        self._canon_worker.error_occurred.connect(self._on_canon_silent_error)
         self._canon_worker.generation_cancelled.connect(self._on_canon_cancelled)
         self._canon_worker.canonize_story(narrative_text, preview=False)
 
+    @Slot(str)
+    def _on_canon_silent_error(self, message: str) -> None:
+        self._canon_busy = False
+        self._main_window.on_status_update(message)
+
     @Slot(dict)
     def _on_story_canonized(self, info: dict) -> None:
+        self._canon_busy = False
         self._canonize_btn.setEnabled(True)
         counts = info.get("counts", {})
         summary = tr("canon_counts", entities=counts.get("entities", 0),
@@ -832,6 +850,7 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(str)
     def _on_canon_error(self, message: str) -> None:
+        self._canon_busy = False
         self._canonize_btn.setEnabled(True)
         QMessageBox.warning(self, tr("canonize_btn"), message)
 

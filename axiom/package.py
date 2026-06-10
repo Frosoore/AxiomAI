@@ -46,7 +46,11 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
     """Empaquette une arborescence source en archive `.axiom` v2.
 
     Recompile d'abord le cache (`.axiom-cache/universe.db`) pour l'embarquer, puis
-    zippe toute l'arborescence.
+    zippe l'arborescence. Une archive ne publie que la **définition** (même
+    contrat que l'export d'un `.db` plat, TICKET-039) :
+    - `.git/` et les sidecars WAL (`-wal`/`-shm`) sont exclus ;
+    - le cache embarqué est une copie **purgée des tables runtime** (les saves
+      embarquées legacy — historique de jeu privé — ne voyagent pas).
 
     Args:
         src_dir:     Dossier source de l'univers (contient universe.toml).
@@ -60,14 +64,69 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
         raise PackageError(f"Arborescence source invalide (pas de universe.toml) : {src_dir}")
 
     compile_universe(src_dir)  # garantit un cache à jour à embarquer
+    cache_rel = f"{CACHE_DIRNAME}/{CACHE_DB_NAME}"
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(str(output_path), "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in sorted(src_dir.rglob("*")):
-            if path.is_file():
-                zf.write(path, path.relative_to(src_dir).as_posix())
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        clean_db = _runtime_free_cache_copy(src_dir / cache_rel, Path(tmp_dir))
+        with zipfile.ZipFile(str(output_path), "w", zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(src_dir.rglob("*")):
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(src_dir).as_posix()
+                if rel.split("/", 1)[0] == ".git":
+                    continue
+                if rel.endswith(("-wal", "-shm")):
+                    continue
+                if rel == cache_rel:
+                    zf.write(clean_db, rel)
+                    continue
+                zf.write(path, rel)
     return output_path
+
+
+# Tables runtime purgées du cache embarqué dans une archive (l'ordre respecte
+# les FK : enfants d'abord, Saves en dernier).
+_RUNTIME_TABLES = (
+    "Fired_Scheduled_Events",
+    "Active_Modifiers",
+    "Items_Inventory",
+    "Timeline",
+    "Snapshots",
+    "State_Cache",
+    "Event_Log",
+    "Saves",
+)
+
+
+def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
+    """Copie du cache compilé sans aucune donnée runtime (définition seule).
+
+    Les sidecars WAL sont copiés avec la base puis fusionnés (checkpoint) :
+    sans eux, les dernières écritures non checkpointées seraient perdues.
+    """
+    import shutil
+    from contextlib import closing
+
+    clean = tmp_dir / CACHE_DB_NAME
+    shutil.copyfile(cache_db, clean)
+    wal = Path(str(cache_db) + "-wal")
+    if wal.exists():
+        shutil.copyfile(wal, Path(str(clean) + "-wal"))  # le -shm se reconstruit seul
+
+    with closing(sqlite3.connect(str(clean))) as conn:
+        conn.execute("PRAGMA foreign_keys=OFF;")
+        for table in _RUNTIME_TABLES:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (table,)
+            ).fetchone()
+            if row:
+                conn.execute(f"DELETE FROM {table};")
+        conn.commit()
+        conn.execute("VACUUM;")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    return clean
 
 
 def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:

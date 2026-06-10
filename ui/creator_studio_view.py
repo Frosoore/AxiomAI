@@ -253,6 +253,10 @@ class CreatorStudioView(QWidget):
         self._populate_tab.set_preview_supported(universe_root_for(db_path) is not None)
         self._db_worker.populate_previewed.connect(self._on_populate_previewed)
         self._db_worker.staged_applied.connect(self._on_staged_applied)
+        # TICKET-029 : refresh/conversion passent par CE worker (pas d'instance
+        # jetable par action : une référence écrasée en plein vol risque le GC).
+        self._db_worker.definition_refreshed.connect(self._on_definition_refreshed)
+        self._db_worker.universe_converted.connect(self._on_universe_converted)
         # TICKET-033 : annulation volontaire ≠ erreur (pas de popup).
         self._db_worker.generation_cancelled.connect(
             lambda _msg: self._main_window.on_status_update(tr("generation_cancelled")))
@@ -428,11 +432,7 @@ class CreatorStudioView(QWidget):
         src_root = universe_root_for(self._db_path)
         if src_root is None:
             return
-        self._refresh_worker = DbWorker(self._db_path)
-        self._refresh_worker.definition_refreshed.connect(self._on_definition_refreshed)
-        self._refresh_worker.error_occurred.connect(self._on_worker_error)
-        self._refresh_worker.status_update.connect(self._main_window.on_status_update)
-        self._refresh_worker.refresh_definition_from(str(src_root))
+        self._db_worker.refresh_definition_from(str(src_root))
 
     @Slot()
     def _on_definition_refreshed(self) -> None:
@@ -444,11 +444,7 @@ class CreatorStudioView(QWidget):
         """Convertit le .db plat courant en univers-dossier puis recharge le Studio."""
         if not self._db_path:
             return
-        self._convert_worker = DbWorker(self._db_path)
-        self._convert_worker.universe_converted.connect(self._on_universe_converted)
-        self._convert_worker.error_occurred.connect(self._on_worker_error)
-        self._convert_worker.status_update.connect(self._main_window.on_status_update)
-        self._convert_worker.convert_flat_to_folder()
+        self._db_worker.convert_flat_to_folder()
 
     @Slot(dict)
     def _on_universe_converted(self, info: dict) -> None:

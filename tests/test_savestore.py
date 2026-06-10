@@ -283,6 +283,44 @@ class TestPackUnpack:
         assert out["save_id"] != legacy_id  # collision → ré-identifiée
         assert Path(out["db_path"]).exists()
 
+    def test_unpack_relie_la_save_a_l_univers_local(self, universe_db: Path,
+                                                    source_tree: Path, tmp_path: Path):
+        """TICKET-036 : l'archive porte les chemins de l'exportateur — l'import
+        doit re-lier Save_Meta à l'univers de destination, sinon la save ne se
+        resynchronise jamais avec la source locale."""
+        from axiom.savestore import pack_save, refresh_save_definition, unpack_save
+
+        info = self._played_separated_save(universe_db)
+        archive = tmp_path / "hero.axiomsave"
+        pack_save(universe_db, info["save_id"], archive)
+
+        # Simule une archive venant d'une autre machine : chemins exotiques.
+        with sqlite3.connect(info["db_path"]) as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO Save_Meta (key, value) VALUES (?, ?);",
+                [("universe_db", "/machine/exportateur/u.db"),
+                 ("universe_source", "/machine/exportateur/src"),
+                 ("definition_hash", "stale")],
+            )
+            conn.commit()
+        pack_save(universe_db, info["save_id"], archive)
+
+        out = unpack_save(archive, universe_db)
+        with sqlite3.connect(out["db_path"]) as conn:
+            meta = dict(conn.execute("SELECT key, value FROM Save_Meta;").fetchall())
+        assert meta["universe_db"] == str(universe_db)
+        assert meta["universe_source"] == str(source_tree)
+        assert meta["universe_key"] == "demo_src"
+        assert meta["definition_hash"] == ""  # → resync au premier lancement
+
+        # La resync depuis la source LOCALE fonctionne désormais.
+        _write(source_tree / "entities" / "bob.toml",
+               'entity_id = "bob"\nname = "Bob"\n')
+        assert refresh_save_definition(out["db_path"]) is True
+        with sqlite3.connect(out["db_path"]) as conn:
+            ids = {r[0] for r in conn.execute("SELECT entity_id FROM Entities;")}
+        assert "bob" in ids
+
     def test_unpack_refuse_autre_univers(self, universe_db: Path, tmp_path: Path):
         from axiom.savestore import SaveStoreError, pack_save, unpack_save
         from axiom.schema import create_universe_db
@@ -412,6 +450,51 @@ class TestConvertFlatDb:
         # L'original sort de la bibliothèque mais reste récupérable.
         assert not flat.exists()
         assert flat.with_name("MonUnivers.db.bak").exists()
+
+    def test_conversion_n_exporte_pas_le_joueur(self, tmp_path: Path):
+        """TICKET-037 : l'entité joueur (créée au lobby) ne doit pas devenir
+        une entité de DÉFINITION de l'univers converti — mais elle reste dans
+        la save extraite, et la resync ne la supprime pas."""
+        from axiom.db_helpers import create_player_entity
+        from axiom.library import convert_flat_db_to_folder
+        from axiom.savestore import refresh_save_definition
+
+        flat = self._flat_universe(tmp_path)
+        sid = create_new_save(str(flat), "Hero", "Normal")
+        player_id = create_player_entity(str(flat), "Hero")
+        # Simule un joueur d'avant la colonne `origin` (défaut de migration =
+        # 'definition') : c'est le cas legacy que la conversion doit rattraper.
+        with sqlite3.connect(str(flat)) as conn:
+            conn.execute(
+                "UPDATE Entities SET origin = 'definition' WHERE entity_id = ?;",
+                (player_id,),
+            )
+            conn.commit()
+
+        out = convert_flat_db_to_folder(flat)
+        root = Path(out["source_dir"])
+        cache = Path(out["db_path"])
+
+        # Le joueur n'est ni dans la source texte, ni dans le cache compilé.
+        ent_ids = set()
+        for f in (root / "entities").glob("*.toml"):
+            import tomllib
+            ent_ids.add(tomllib.loads(f.read_text(encoding="utf-8"))["entity_id"])
+        assert ent_ids == {"alice"}
+        with sqlite3.connect(str(cache)) as conn:
+            cache_ids = {r[0] for r in conn.execute("SELECT entity_id FROM Entities;")}
+        assert player_id not in cache_ids
+
+        # La save extraite garde son joueur, marqué runtime, et il survit
+        # à une resynchronisation depuis la nouvelle source.
+        save_db = list_saves(cache)[0]["db_path"]
+        _write(root / "entities" / "bob.toml", 'entity_id = "bob"\nname = "Bob"\n')
+        assert refresh_save_definition(save_db) is True
+        with sqlite3.connect(save_db) as conn:
+            rows = dict(conn.execute("SELECT entity_id, origin FROM Entities;").fetchall())
+        assert rows.get(player_id) == "runtime"
+        assert "bob" in rows
+        assert sid in {r["save_id"] for r in list_saves(cache)}
 
     def test_refuse_un_cache_d_univers_dossier(self, universe_db: Path):
         from axiom.library import LibraryError, convert_flat_db_to_folder
