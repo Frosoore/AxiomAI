@@ -62,6 +62,71 @@ class SaveStoreError(Exception):
 
 
 # ---------------------------------------------------------------------------
+# Images générées (illustrations de tour) — TICKET-048
+#
+# Les illustrations vivent hors save db, sous `<data_root>/assets/<save_id>/
+# turn_<n>.png`. Elles suivent la save : copiées à la duplication, purgées à
+# la suppression, embarquées dans `.axiomsave`, tronquées au rewind. Décision
+# assumée : seul le chemin `Session` en génère (pas la file multijoueur).
+# ---------------------------------------------------------------------------
+
+def assets_dir_for_save(save_id: str) -> Path:
+    """Dossier des illustrations d'une save (non créé s'il n'existe pas)."""
+    from axiom.paths import get_assets_dir
+
+    return get_assets_dir() / save_id
+
+
+def copy_save_assets(src_save_id: str, dst_save_id: str) -> int:
+    """Copie les illustrations d'une save vers une autre. Retourne le nombre copié."""
+    import shutil
+
+    src = assets_dir_for_save(src_save_id)
+    if not src.is_dir():
+        return 0
+    dst = assets_dir_for_save(dst_save_id)
+    dst.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for f in src.glob("turn_*.png"):
+        shutil.copyfile(f, dst / f.name)
+        count += 1
+    return count
+
+
+def delete_save_assets(save_id: str) -> None:
+    """Supprime le dossier d'illustrations d'une save (no-op s'il n'existe pas)."""
+    import shutil
+
+    d = assets_dir_for_save(save_id)
+    if d.is_dir():
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def truncate_save_assets(save_id: str, last_kept_turn_id: int) -> int:
+    """Purge les `turn_<n>.png` avec n > `last_kept_turn_id` (rewind).
+
+    Retourne le nombre de fichiers supprimés. Les noms non conformes sont ignorés.
+    """
+    return truncate_assets_in(assets_dir_for_save(save_id), last_kept_turn_id)
+
+
+def truncate_assets_in(assets_dir: Path, last_kept_turn_id: int) -> int:
+    """Variante de `truncate_save_assets` sur un dossier explicite (Session
+    avec data_dir injecté)."""
+    import re
+
+    if not assets_dir.is_dir():
+        return 0
+    removed = 0
+    for f in assets_dir.glob("turn_*.png"):
+        m = re.fullmatch(r"turn_(\d+)\.png", f.name)
+        if m and int(m.group(1)) > last_kept_turn_id:
+            f.unlink(missing_ok=True)
+            removed += 1
+    return removed
+
+
+# ---------------------------------------------------------------------------
 # Identité univers → dossier de saves
 # ---------------------------------------------------------------------------
 
@@ -350,6 +415,7 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
 
 _MANIFEST_NAME = "manifest.toml"
 _ARCHIVE_DB_NAME = "save.db"
+_ARCHIVE_ASSETS_PREFIX = "assets/"
 
 
 def extract_save(universe_db: str | Path, save_id: str) -> Path:
@@ -430,6 +496,12 @@ def pack_save(universe_db: str | Path, save_id: str, output_path: str | Path) ->
     with zipfile.ZipFile(str(output_path), "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(db_path, _ARCHIVE_DB_NAME)
         zf.writestr(_MANIFEST_NAME, manifest)
+        # Illustrations de tour (TICKET-048). Entrées supplémentaires ignorées
+        # par les anciens lecteurs : le format reste compatible dans les deux sens.
+        assets = assets_dir_for_save(save_id)
+        if assets.is_dir():
+            for f in sorted(assets.glob("turn_*.png")):
+                zf.write(f, f"{_ARCHIVE_ASSETS_PREFIX}{f.name}")
 
     if cleanup is not None:
         # L'extraction n'était qu'un intermédiaire d'export : on ne laisse pas
@@ -465,6 +537,16 @@ def unpack_save(
                 raise SaveStoreError("Archive .axiomsave invalide (save.db/manifest manquant).")
             manifest = tomllib.loads(zf.read(_MANIFEST_NAME).decode("utf-8"))
             db_bytes = zf.read(_ARCHIVE_DB_NAME)
+            # Illustrations embarquées (TICKET-048) ; absentes des archives
+            # antérieures, et seuls les noms `turn_<n>.png` plats sont acceptés.
+            asset_bytes: dict[str, bytes] = {
+                Path(n).name: zf.read(n)
+                for n in names
+                if n.startswith(_ARCHIVE_ASSETS_PREFIX)
+                and "/" not in n[len(_ARCHIVE_ASSETS_PREFIX):]
+                and Path(n).name.startswith("turn_")
+                and n.endswith(".png")
+            }
     except (zipfile.BadZipFile, OSError, tomllib.TOMLDecodeError) as exc:
         raise SaveStoreError(f"Archive .axiomsave illisible : {exc}") from exc
 
@@ -514,6 +596,13 @@ def unpack_save(
         conn.close()
 
     final_db = finalize_save_container(tmp, save_id)
+
+    if asset_bytes:
+        assets_dir = assets_dir_for_save(save_id)
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        for name, data in asset_bytes.items():
+            (assets_dir / name).write_bytes(data)
+
     return {"save_id": save_id, "db_path": str(final_db)}
 
 
@@ -566,6 +655,7 @@ def duplicate_save(
         from axiom.saves import fork_save
 
         new_id = fork_save(db_path, save_id, player_name=player_name)
+        copy_save_assets(save_id, new_id)
         return {"save_id": new_id, "db_path": db_path}
 
     # Fige le WAL pour copier un fichier principal complet.
@@ -596,6 +686,7 @@ def duplicate_save(
     finally:
         conn.close()
     final_db = finalize_save_container(tmp, new_id)
+    copy_save_assets(save_id, new_id)
     return {"save_id": new_id, "db_path": str(final_db)}
 
 
@@ -619,13 +710,19 @@ def delete_save(universe_db: str | Path, save_id: str) -> bool:
         remaining = conn.execute("SELECT COUNT(*) FROM Saves;").fetchone()[0]
     if remaining == 0 and is_separated_save_db(db_path):
         _remove_db_files(Path(db_path))
+    delete_save_assets(save_id)
     return True
 
 
 def delete_universe_saves(universe_db: str | Path) -> None:
-    """Supprime le dossier de saves séparées d'un univers (avec l'univers)."""
+    """Supprime le dossier de saves séparées d'un univers (avec l'univers),
+    illustrations comprises."""
     import shutil
 
+    for row in list_saves(universe_db):
+        sid = row.get("save_id")
+        if sid:
+            delete_save_assets(sid)
     sep_dir = saves_dir_for(universe_db)
     if sep_dir.is_dir():
         shutil.rmtree(sep_dir)

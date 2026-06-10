@@ -372,7 +372,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_label.setText(tr("turn_fmt", count=turn_id))
         
         from axiom import paths
-        assets_dir = paths._data_root() / "assets" / self._save_id
+        assets_dir = paths.get_assets_dir() / self._save_id
         self._chat.rebuild_from_history(history, assets_dir=assets_dir)
         self._check_all_loaded()
 

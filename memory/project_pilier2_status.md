@@ -79,3 +79,20 @@ conversion .db plat marque les joueurs `origin='runtime'` (hors héros compagnon
 export `.axiom` = définition seule (cache purgé des tables runtime) ; saves importées
 re-liées à l'univers local (`definition_hash` vidé → resync au 1er lancement).
 Suites vertes : 512 (non-Qt) + lot Qt/vector. Travail dans le working tree, non commité.
+
+**QA post-merge (2026-06-10, après merge `9814896` Companion+images dans dev-0)** : merge vérifié
+sain (zéro perte dev-0, config/i18n/quotas préservés, API `intents=` propagée partout côté prod,
+580 tests verts). Corrigé en séance : `tests/test_engine_port_b4.py` (fake `ActionQueue` non migré
+vers `intents=` → gelait pytest). Ouverts : TICKET-043 (id joueur `"player"` en dur dans
+`session.py` → contexte Héros/images silencieusement vide, prio moyenne-haute), 044 (artefacts du
+merge à supprimer, feu vert requis), 045 (mock 1×1 affichée sur échec backend image), 046 (i18n
+contournée onglet Illustration), 047 (format SIMULTANEOUS sur action solo), 048 (images vs
+fork/suppression/.axiomsave/rewind). Étape : `maintenance/QA-post-merge-companion-images/`.
+
+**Fixes QA post-merge (2026-06-10, même jour, feu vert utilisateur)** : TICKET-043→048 tous
+corrigés (étape `maintenance/QA-fixes-043-048/`, archivés dans DONE.md). Décisions actées :
+id joueur résolu depuis les intents (jamais `"player"` en dur), mock image réservé au backend
+`"mock"` (échec réel → None), illustrations = partie de la save (suivent duplication/suppression/
+`.axiomsave`/rewind/mort hardcore, helper `paths.get_assets_dir()`), pas d'images sur le chemin
+multijoueur. PENDING ne contient plus que 009 (différé) et 017 (Gemini). Travail dans le working
+tree, non commité.

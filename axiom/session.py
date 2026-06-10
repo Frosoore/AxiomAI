@@ -208,10 +208,16 @@ class Session:
                 from axiom.image_generator import ImageGenerator
                 img_gen = ImageGenerator(cfg, llm=self._llm)
                 
-                # Retrieve player location and contextual descriptions
+                # Retrieve player location and contextual descriptions.
+                # The real player entity id is name-derived (TICKET-043): resolve
+                # it from this tick's intents like the Arbitrator does, never
+                # assume a literal "player" id.
+                player_entity_id = next(
+                    (aid for aid in intents if aid != hero_entity_id), "player"
+                )
                 entities = self._get_entities()
                 all_stats = self.current_stats()
-                player_loc = all_stats.get("player", {}).get("Location", "")
+                player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
                 
                 spatial_ctx = None
                 if player_loc:
@@ -225,7 +231,7 @@ class Session:
                 character_desc_list = []
                 for e in entities:
                     eid = e["entity_id"]
-                    if eid == "player":
+                    if eid == player_entity_id:
                         continue
                     entity_loc = all_stats.get(eid, {}).get("Location", "")
                     if entity_loc and entity_loc.lower() == player_loc.lower():
@@ -307,6 +313,10 @@ class Session:
         summary = self._checkpoints.rewind(self._save_id, target_turn_id)
         self._arbitrator.invalidate_stats_cache()
         self._turn_id = get_max_turn_id(self._db_path, self._save_id)
+        # Les illustrations des tours annulés ne doivent pas réapparaître si on
+        # rejoue jusqu'au même numéro de tour (TICKET-048).
+        from axiom.savestore import truncate_assets_in
+        truncate_assets_in(self._data_root / "assets" / self._save_id, self._turn_id)
         return summary
 
     def list_checkpoints(self) -> list[int]:
@@ -433,8 +443,9 @@ class Session:
                         assistant_content = str(payload)
             
             if user_parts:
-                if len(user_parts) == 1 and ("Player" in user_parts[0] or "[player]" in user_parts[0].lower()):
-                    # Find the exact original text of this single event
+                if len(user_parts) == 1:
+                    # Solo action (whatever the actor's name): keep the raw text,
+                    # the grouped format is only for genuinely simultaneous ticks.
                     single_ev = next(e for e in turn_events if e["event_type"] in ("user_input", "hero_intent"))
                     raw_text = single_ev["payload"].get("text", "") if isinstance(single_ev["payload"], dict) else str(single_ev["payload"])
                     user_content = raw_text
@@ -524,12 +535,17 @@ class Session:
         # Get active entities and their stats
         entities = self._get_entities()
         all_stats = self.current_stats()
-        
+
+        # The real player entity id is name-derived (TICKET-043): resolve it
+        # from the current intents (first non-hero actor), never assume "player".
+        hero_id = hero_ent["entity_id"]
+        player_id = next((eid for eid in (current_intents or {}) if eid != hero_id), "player")
+
         # We always want the hero and the player
-        relevant_entity_ids = {hero_ent["entity_id"], "player"}
-        
+        relevant_entity_ids = {hero_id, player_id}
+
         # And any other NPCs that share the same location (Limit to 3 to prevent bloat)
-        player_loc = all_stats.get("player", {}).get("Location", "")
+        player_loc = all_stats.get(player_id, {}).get("Location", "")
         if player_loc:
             npc_count = 0
             for e in entities:
@@ -548,9 +564,9 @@ class Session:
         for e in entities:
             id_to_name[e["entity_id"]] = e.get("name", e["entity_id"])
             id_to_type[e["entity_id"]] = e.get("entity_type", "unknown")
-        if "player" not in id_to_name:
-            id_to_name["player"] = player_name
-            id_to_type["player"] = "player"
+        if player_id not in id_to_name:
+            id_to_name[player_id] = player_name
+            id_to_type[player_id] = "player"
 
         snapshots = []
         for eid in relevant_entity_ids:

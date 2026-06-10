@@ -134,6 +134,10 @@ class HardcoreWorker(QThread):
         if vdir.exists():
             shutil.rmtree(str(vdir), ignore_errors=True)
 
+        # Step 4b — Delete generated turn illustrations (TICKET-048)
+        from axiom.savestore import delete_save_assets
+        delete_save_assets(self._save_id)
+
         # Step 5 — Delete the .db file if no other saves remain
         try:
             remaining = self._count_remaining_saves(self._db_path)

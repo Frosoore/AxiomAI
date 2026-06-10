@@ -124,6 +124,10 @@ class ImageGenerator:
         if backend == "mock":
             return self._save_mock_image(save_path)
 
+        if backend not in ("stable_diffusion", "comfyui"):
+            logger.warning(f"Unknown image backend '{backend}': no image generated.")
+            return None
+
         if backend == "stable_diffusion":
             try:
                 url = f"{api_url.rstrip('/')}/sdapi/v1/txt2img"
@@ -227,8 +231,9 @@ class ImageGenerator:
                     f"Please verify that ComfyUI is running at {api_url}."
                 )
 
-        logger.warning("Falling back to mock image due to backend selection or generation error.")
-        return self._save_mock_image(save_path)
+        # Real backend failed: no image for this turn (TICKET-045). A 1×1 mock
+        # placeholder in the chat would be worse than nothing.
+        return None
 
     def _save_mock_image(self, save_path: Path) -> str:
         """Write the mock PNG data to the target path."""

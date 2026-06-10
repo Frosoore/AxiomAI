@@ -189,10 +189,11 @@ def test_action_queue_sequentielle_et_stop():
     order: list[str] = []
 
     class FakeArbitrator:
-        def process_turn(self, *, save_id, turn_id, user_message,
-                         universe_system_prompt, history, player_entity_id,
+        def process_turn(self, *, save_id, turn_id, intents,
+                         universe_system_prompt, history,
                          stream_token_callback, temperature, top_p, verbosity_level):
             stream_token_callback("tok")
+            player_entity_id = next(iter(intents))
             order.append(player_entity_id)
             return f"result-{player_entity_id}"
 

@@ -529,3 +529,76 @@ class TestDelete:
         assert saves_dir_for(universe_db).is_dir()
         delete_universe_saves(universe_db)
         assert not saves_dir_for(universe_db).exists()
+
+
+class TestAssetsLifecycle:
+    """TICKET-048 : les illustrations (`assets/<save_id>/turn_<n>.png`) suivent la save."""
+
+    @staticmethod
+    def _seed_assets(save_id: str, turns: list[int]) -> Path:
+        from axiom.savestore import assets_dir_for_save
+
+        d = assets_dir_for_save(save_id)
+        d.mkdir(parents=True, exist_ok=True)
+        for n in turns:
+            (d / f"turn_{n}.png").write_bytes(b"png-" + str(n).encode())
+        return d
+
+    def test_duplicate_copie_les_illustrations(self, universe_db: Path):
+        from axiom.savestore import assets_dir_for_save, duplicate_save
+
+        info = create_save(universe_db, "Hero", "Normal")
+        self._seed_assets(info["save_id"], [1, 2])
+
+        dup = duplicate_save(universe_db, info["save_id"])
+        dup_dir = assets_dir_for_save(dup["save_id"])
+        assert sorted(f.name for f in dup_dir.glob("*.png")) == ["turn_1.png", "turn_2.png"]
+        # L'original garde les siennes.
+        assert (assets_dir_for_save(info["save_id"]) / "turn_1.png").exists()
+
+    def test_delete_purge_les_illustrations(self, universe_db: Path):
+        from axiom.savestore import assets_dir_for_save
+
+        info = create_save(universe_db, "Hero", "Normal")
+        d = self._seed_assets(info["save_id"], [1])
+        assert delete_save(universe_db, info["save_id"]) is True
+        assert not d.exists()
+
+    def test_pack_unpack_embarque_les_illustrations(self, universe_db: Path, tmp_path: Path):
+        import zipfile
+
+        from axiom.savestore import assets_dir_for_save, pack_save, unpack_save
+
+        info = create_save(universe_db, "Hero", "Normal")
+        self._seed_assets(info["save_id"], [1, 3])
+
+        archive = tmp_path / "out.axiomsave"
+        pack_save(universe_db, info["save_id"], archive)
+        with zipfile.ZipFile(str(archive)) as zf:
+            names = set(zf.namelist())
+        assert {"assets/turn_1.png", "assets/turn_3.png"} <= names
+
+        # La save existe déjà ici → l'import ré-identifie ; les images suivent le nouvel id.
+        imported = unpack_save(archive, universe_db)
+        assert imported["save_id"] != info["save_id"]
+        new_dir = assets_dir_for_save(imported["save_id"])
+        assert sorted(f.name for f in new_dir.glob("*.png")) == ["turn_1.png", "turn_3.png"]
+        assert (new_dir / "turn_3.png").read_bytes() == b"png-3"
+
+    def test_archive_sans_assets_reste_importable(self, universe_db: Path, tmp_path: Path):
+        from axiom.savestore import pack_save, unpack_save
+
+        info = create_save(universe_db, "Hero", "Normal")
+        archive = tmp_path / "noimg.axiomsave"
+        pack_save(universe_db, info["save_id"], archive)
+        imported = unpack_save(archive, universe_db)
+        assert imported["save_id"]
+
+    def test_truncate_purge_les_tours_annules(self, universe_db: Path):
+        from axiom.savestore import assets_dir_for_save, truncate_save_assets
+
+        info = create_save(universe_db, "Hero", "Normal")
+        d = self._seed_assets(info["save_id"], [1, 2, 3, 4])
+        removed = truncate_save_assets(info["save_id"], 2)
+        assert removed == 2
+        assert sorted(f.name for f in d.glob("*.png")) == ["turn_1.png", "turn_2.png"]

@@ -39,29 +39,6 @@ from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker
 
 
-def _tr_img(key: str, default_en: str) -> str:
-    """Helper for localizing image settings tab."""
-    from axiom.config import load_config
-    try:
-        lang = load_config().language
-    except Exception:
-        lang = "en"
-    if lang == "fr":
-        fr_map = {
-            "tab_image": "Illustration",
-            "enable_image": "Activer la génération d'images",
-            "backend": "Moteur de rendu :",
-            "api_url": "URL de l'API :",
-            "width": "Largeur (pixels) :",
-            "height": "Hauteur (pixels) :",
-            "steps": "Étapes de débruitage :",
-            "cfg_scale": "Échelle CFG (guidage) :",
-            "workflow": "Workflow ComfyUI (JSON) :",
-        }
-        return fr_map.get(key, default_en)
-    return default_en
-
-
 class SettingsDialog(QDialog):
     """LLM backend and application settings dialog.
 
@@ -215,7 +192,7 @@ class SettingsDialog(QDialog):
         self._image_widget = QWidget()
         image_form = QFormLayout(self._image_widget)
         
-        self._image_enabled_cb = QCheckBox(_tr_img("enable_image", "Enable Image Generation"))
+        self._image_enabled_cb = QCheckBox(tr("image_enable"))
         self._image_backend_combo = QComboBox()
         self._image_backend_combo.addItem("Mock Generator", "mock")
         self._image_backend_combo.addItem("Stable Diffusion (WebUI)", "stable_diffusion")
@@ -242,13 +219,13 @@ class SettingsDialog(QDialog):
         self._image_workflow = QLineEdit()
         self._image_workflow.setPlaceholderText("Path to workflow JSON file or raw JSON template")
         
-        self._image_backend_label = QLabel(_tr_img("backend", "Backend:"))
-        self._image_url_label = QLabel(_tr_img("api_url", "API URL:"))
-        self._image_width_label = QLabel(_tr_img("width", "Width:"))
-        self._image_height_label = QLabel(_tr_img("height", "Height:"))
-        self._image_steps_label = QLabel(_tr_img("steps", "Steps:"))
-        self._image_cfg_label = QLabel(_tr_img("cfg_scale", "CFG Scale:"))
-        self._image_workflow_label = QLabel(_tr_img("workflow", "ComfyUI Workflow:"))
+        self._image_backend_label = QLabel(tr("image_backend"))
+        self._image_url_label = QLabel(tr("image_api_url"))
+        self._image_width_label = QLabel(tr("image_width"))
+        self._image_height_label = QLabel(tr("image_height"))
+        self._image_steps_label = QLabel(tr("image_steps"))
+        self._image_cfg_label = QLabel(tr("image_cfg_scale"))
+        self._image_workflow_label = QLabel(tr("image_workflow"))
 
         image_form.addRow("", self._image_enabled_cb)
         image_form.addRow(self._image_backend_label, self._image_backend_combo)
@@ -259,7 +236,7 @@ class SettingsDialog(QDialog):
         image_form.addRow(self._image_cfg_label, self._image_cfg_spin)
         image_form.addRow(self._image_workflow_label, self._image_workflow)
 
-        self._tabs.addTab(self._image_widget, _tr_img("tab_image", "Illustration"))
+        self._tabs.addTab(self._image_widget, tr("tab_image"))
 
         layout.addWidget(self._tabs)
 
@@ -364,15 +341,15 @@ class SettingsDialog(QDialog):
         # Image Generation tab
         img_tab_idx = self._tabs.indexOf(self._image_widget)
         if img_tab_idx >= 0:
-            self._tabs.setTabText(img_tab_idx, _tr_img("tab_image", "Illustration"))
-        self._image_enabled_cb.setText(_tr_img("enable_image", "Enable Image Generation"))
-        self._image_backend_label.setText(_tr_img("backend", "Backend:"))
-        self._image_url_label.setText(_tr_img("api_url", "API URL:"))
-        self._image_width_label.setText(_tr_img("width", "Width:"))
-        self._image_height_label.setText(_tr_img("height", "Height:"))
-        self._image_steps_label.setText(_tr_img("steps", "Steps:"))
-        self._image_cfg_label.setText(_tr_img("cfg_scale", "CFG Scale:"))
-        self._image_workflow_label.setText(_tr_img("workflow", "ComfyUI Workflow:"))
+            self._tabs.setTabText(img_tab_idx, tr("tab_image"))
+        self._image_enabled_cb.setText(tr("image_enable"))
+        self._image_backend_label.setText(tr("image_backend"))
+        self._image_url_label.setText(tr("image_api_url"))
+        self._image_width_label.setText(tr("image_width"))
+        self._image_height_label.setText(tr("image_height"))
+        self._image_steps_label.setText(tr("image_steps"))
+        self._image_cfg_label.setText(tr("image_cfg_scale"))
+        self._image_workflow_label.setText(tr("image_workflow"))
 
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()

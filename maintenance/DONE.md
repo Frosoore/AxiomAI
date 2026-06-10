@@ -464,3 +464,36 @@ Constats d'origine complets : voir l'historique git de `PENDING.md` (ajout puis 
   (`PrepareSaveTask`/`save_prepared`) ; collisions `_safe_filename` du decompiler
   désambiguïsées ; manifest `.axiomsave` échappé ; sidecars debug orphelins supprimés.
   Non traité (volontaire) : retraduction complète des langues secondaires (contenu, pas un bug).
+
+---
+
+## TICKET-043 → 048 — lot QA post-merge du 2026-06-10 : tous corrigés le jour même
+
+Défauts trouvés par la QA post-merge des features de la branche Gemini (Companion Mode +
+génération d'images, merge `9814896`), corrigés en lot sur feu vert utilisateur (étape
+`maintenance/QA-fixes-043-048/`, détail dans son CHANGELOG). Constats d'origine complets :
+historique git de `PENDING.md` (ajout puis retrait le 2026-06-10).
+
+- **TICKET-043** — `"player"` codé en dur dans `session.py` (contexte image + décision du
+  Héros) alors que l'id joueur réel est dérivé du nom → contexte silencieusement vide.
+  → id résolu depuis les intents du tick (même règle que l'arbitrator) + test.
+- **TICKET-044** — artefacts du merge supprimés : `fix_tests.py`, `fix_tests2.py`,
+  `refactor_tests.py` (scripts regex one-shot, racine) et 2 PNG 1×1 de dev commités dans
+  `assets/<uuid>/` (les vrais assets vivent hors repo).
+- **TICKET-045** — un backend image réel en échec retombait sur l'image mock 1×1 (carré
+  gris affiché dans le chat, fichiers parasites). → mock réservé au backend `"mock"`,
+  échec/backend inconnu → `None` (le GUI ignore proprement) + tests inversés + test backend
+  inconnu.
+- **TICKET-046** — onglet Illustration : helper `_tr_img` (map fr en dur) supprimé, clés
+  `tab_image`/`image_*` ajoutées à `axiom/localization.py` (en+fr), `tr()` partout.
+- **TICKET-047** — `_load_history` : le format groupé « SIMULTANEOUS ACTIONS » ne se
+  déclenche plus que s'il y a réellement plusieurs intentions dans le tour (avant : toute
+  action solo d'un joueur au nom ≠ "Player" le subissait) + test.
+- **TICKET-048** — cycle de vie des illustrations (`assets/<save_id>/turn_<n>.png`)
+  intégré aux saves : copiées par `duplicate_save` (séparée **et** fork legacy), purgées
+  par `delete_save`/`delete_universe_saves`/mort hardcore, embarquées dans `.axiomsave`
+  (`pack_save`/`unpack_save`, format compatible dans les deux sens — archive sans assets
+  importable, anciens lecteurs ignorent les entrées en plus), tronquées au rewind
+  (`Session.rewind` → `truncate_assets_in`, honore le data_dir injecté). Nouveau helper
+  `paths.get_assets_dir()` utilisé par le GUI. **Tranché** : seul le chemin `Session`
+  génère des images, la file multijoueur (`ActionQueue`) n'en produit pas. +5 tests.

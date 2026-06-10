@@ -101,9 +101,10 @@ def test_image_generator_stable_diffusion_backend_success(
 
 
 @patch("requests.post")
-def test_image_generator_stable_diffusion_backend_failure_falls_back_to_mock(
+def test_image_generator_stable_diffusion_backend_failure_returns_none(
     mock_post: MagicMock, tmp_path: Path
 ) -> None:
+    """TICKET-045 : un backend réel en échec ne produit AUCUNE image (pas de mock 1×1)."""
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.raise_for_status.side_effect = Exception("HTTP 500 Server Error")
@@ -113,9 +114,8 @@ def test_image_generator_stable_diffusion_backend_failure_falls_back_to_mock(
     img_gen = ImageGenerator(cfg)
 
     save_path = img_gen.generate_image("digital fantasy art", tmp_path, "sd_fail.png")
-    assert save_path is not None
-    assert Path(save_path).exists()
-    assert Path(save_path).read_bytes() == base64.b64decode(MOCK_PNG_BASE64)
+    assert save_path is None
+    assert not (tmp_path / "sd_fail.png").exists()
 
 
 @patch("requests.get")
@@ -177,18 +177,28 @@ def test_image_generator_comfyui_backend_success(
 
 
 @patch("requests.post")
-def test_image_generator_comfyui_backend_failure_falls_back_to_mock(
+def test_image_generator_comfyui_backend_failure_returns_none(
     mock_post: MagicMock, tmp_path: Path
 ) -> None:
+    """TICKET-045 : ComfyUI injoignable → None, rien d'écrit sur disque."""
     mock_post.side_effect = Exception("Network connection refused")
 
     cfg = AppConfig(image_backend="comfyui")
     img_gen = ImageGenerator(cfg)
 
     save_path = img_gen.generate_image("comfyui art", tmp_path, "comfy_fail.png")
-    assert save_path is not None
-    assert Path(save_path).exists()
-    assert Path(save_path).read_bytes() == base64.b64decode(MOCK_PNG_BASE64)
+    assert save_path is None
+    assert not (tmp_path / "comfy_fail.png").exists()
+
+
+def test_image_generator_unknown_backend_returns_none(tmp_path: Path) -> None:
+    """TICKET-045 : backend inconnu → None (le mock est réservé au backend 'mock')."""
+    cfg = AppConfig(image_backend="dall-e-imaginaire")
+    img_gen = ImageGenerator(cfg)
+
+    save_path = img_gen.generate_image("any prompt", tmp_path, "unknown.png")
+    assert save_path is None
+    assert not (tmp_path / "unknown.png").exists()
 
 
 class _DummyVectorMemory:

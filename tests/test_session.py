@@ -362,3 +362,55 @@ def test_get_hero_decision_passes_player_context_and_stats(universe_db):
     # Verify the current intents keys were mapped from entity ID to name
     assert "[Aria] INTENT: I attack Grum" in blob
 
+
+
+def test_load_history_solo_named_player_keeps_raw_text(universe_db):
+    """TICKET-047 : une action solo garde son texte brut, même si le joueur
+    porte un nom personnalisé (le format groupé est réservé aux ticks à
+    plusieurs intentions)."""
+    db, save_id = universe_db
+    events = EventSourcer(db)
+    events.append_event(save_id, 1, "user_input", "aria", {"text": "I open the door"})
+    events.append_event(save_id, 1, "narrative_text", "narrator", {"text": "It creaks."})
+    _add_entity(db, "aria", "player", "Aria")
+
+    sess = Session(db, save_id, llm=_DummyLLM(), vector_memory=_DummyVectorMemory())
+    history = sess._load_history()
+
+    assert history[0] == {"role": "user", "content": "I open the door"}
+    assert "[SIMULTANEOUS ACTIONS FOR THIS TICK]" not in history[0]["content"]
+
+
+def test_get_hero_decision_resolves_named_player_id(universe_db):
+    """TICKET-043 : l'id joueur réel (dérivé du nom, pas 'player') est résolu
+    depuis les intents — ses stats et sa localisation alimentent le Héros."""
+    db, save_id = universe_db
+    from axiom.schema import get_connection
+    with get_connection(db) as conn:
+        conn.execute(
+            "UPDATE Saves SET player_name = 'Aria' WHERE save_id = ?;", (save_id,)
+        )
+
+    _add_entity(db, "kael", "npc", "Kael", "A bold knight", {"Location": "Forest"})
+    _add_entity(db, "aria", "player", "Aria", "", {"Location": "Forest"})
+    _add_entity(db, "goblin", "npc", "Grum", "A nasty goblin", {"Location": "Forest"})
+
+    events = EventSourcer(db)
+    for eid in ("aria", "kael", "goblin"):
+        events.append_event(save_id, 0, "entity_create", eid, {"entity_id": eid})
+        events.append_event(
+            save_id, 0, "stat_set", eid,
+            {"entity_id": eid, "stat_key": "Location", "value": "Forest"},
+        )
+
+    hero_llm = _ScriptedLLM("Hero draws sword.")
+    sess = _companion_session(db, save_id, hero_llm=hero_llm)
+    hero_ent = sess._find_hero_entity("kael")
+
+    sess._get_hero_decision(hero_ent, [], {"aria": "I attack Grum"})
+    blob = " ".join(m["content"] for m in hero_llm.last_prompt)
+
+    # Le joueur (id réel) est dans le bloc de stats, et le PNJ co-localisé est
+    # trouvé via SA localisation — les deux échouaient avec "player" en dur.
+    assert "Aria (id: aria)" in blob
+    assert "Grum (id: goblin)" in blob

@@ -117,6 +117,12 @@ def get_saves_dir() -> Path:
     return _data_root() / "saves"
 
 
+def get_assets_dir() -> Path:
+    """Racine des images générées (`assets/<save_id>/turn_<n>.png`),
+    honore data_dir injecté/env."""
+    return _data_root() / "assets"
+
+
 def get_log_dir() -> Path:
     """Log directory. Defaults to the machine-global cache root (legacy
     location); under an injected/env data_dir, logs move to ``<data_dir>/logs``."""
