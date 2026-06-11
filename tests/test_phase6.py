@@ -282,12 +282,12 @@ class TestJsonFenceFiltering:
 
     class _FakeFlusher:
         """Minimal stand-in exposing just the fence-filtering logic."""
-        _JSON_OPEN = "~~~json"
-        _JSON_CLOSE = "~~~"
+        _JSON_FENCES = (("~~~json", "~~~"), ("```json", "```"))
 
         def __init__(self):
             self._token_buf = ""
             self._in_json_fence = False
+            self._json_fence_close = "~~~"
 
         def feed(self, token: str) -> str:
             self._token_buf += token

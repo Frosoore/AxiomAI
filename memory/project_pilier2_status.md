@@ -96,3 +96,25 @@ id joueur résolu depuis les intents (jamais `"player"` en dur), mock image rés
 `.axiomsave`/rewind/mort hardcore, helper `paths.get_assets_dir()`), pas d'images sur le chemin
 multijoueur. PENDING ne contient plus que 009 (différé) et 017 (Gemini). Travail dans le working
 tree, non commité.
+
+**Backend image Gemini (2026-06-10, branche `image-gen`)** : étape
+`maintenance/feature-image-backend-gemini/` — backend `"gemini"` dans `axiom/image_generator.py`
+(+ `GeminiClient.generate_image_bytes` réutilisant la résilience 031/033, champ
+`image_gemini_model` défaut `gemini-2.5-flash-image`, choix « Google Gemini (cloud) » + champ
+modèle dans l'onglet Illustration). Code + tests TERMINÉS (suites vertes, +7 tests),
+⚠ validation GUI réelle en attente. Au passage : TICKET-049 ouvert (`compile.py` casse sous
+Python ≤ 3.12 — 21 tests rouges préexistants, cf. [[project-test-env]]). Non commité.
+**Suite (même jour)** : Gemini image = **hors free tier** (`limit: 0` sur TOUS les modèles
+d'image de la clé, vérifié en réel — attendre ne sert à rien) → TICKET-050 ouvert (fail-fast
+sur 429 `limit: 0`) ; l'utilisateur passe sur **reForge local** pour ses tests. Étapes sœurs :
+`fix-json-fence-streaming` (le chat masquait `~~~json` mais pas ```` ```json ```` → JSON
+visible en live, corrigé +3 tests) et `image-backends-locaux` (cause racine SD = reForge
+lancé **sans `--api`** → 404, corrigé en permanence dans son `webui-user.sh` ;
+`image_timeout` configurable défaut 180 s + champ UI, polling ComfyUI borné pareil ;
+reste le test réel après redémarrage de reForge).
+**2026-06-11** : premier essai ComfyUI réel de l'utilisateur → workflow par défaut invalide
+(checkpoint `v1-5-pruned-emaonly.ckpt` en dur absent du serveur + entrée VAEDecode
+`latent_image` au lieu de `samples`). Corrigé dans `image-backends-locaux` : checkpoint
+auto-résolu via `GET /object_info/CheckpointLoaderSimple` (manquant → 1ᵉʳ installé, vaut
+aussi pour les workflows custom), `samples` corrigé, rejet 400 → warning détaillé. +3 tests
+(image_generator 18). ⚠ Re-test ComfyUI réel utilisateur en attente. Non commité.

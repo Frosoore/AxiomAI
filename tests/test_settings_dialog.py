@@ -23,6 +23,8 @@ def test_settings_dialog_image_fields(qtbot) -> None:
         image_steps=30,
         image_cfg_scale=8.5,
         image_comfyui_workflow="my_workflow.json",
+        image_gemini_model="gemini-2.5-flash-image",
+        image_timeout=240,
     )
 
     dialog = SettingsDialog(cfg)
@@ -37,12 +39,16 @@ def test_settings_dialog_image_fields(qtbot) -> None:
     assert dialog._image_steps_spin.value() == 30
     assert dialog._image_cfg_spin.value() == 8.5
     assert dialog._image_workflow.text() == "my_workflow.json"
+    assert dialog._image_gemini_model.text() == "gemini-2.5-flash-image"
+    assert dialog._image_timeout_spin.value() == 240
 
     # Modify widget values
     dialog._image_enabled_cb.setChecked(False)
     dialog._image_backend_combo.setCurrentIndex(
         dialog._image_backend_combo.findData("stable_diffusion")
     )
+    dialog._image_gemini_model.setText("gemini-3-pro-image-preview")
+    dialog._image_timeout_spin.setValue(90)
     dialog._image_url.setText("http://another-generator:7860")
     dialog._image_width_spin.setValue(256)
     dialog._image_height_spin.setValue(256)
@@ -60,3 +66,19 @@ def test_settings_dialog_image_fields(qtbot) -> None:
     assert updated_cfg.image_steps == 10
     assert updated_cfg.image_cfg_scale == 6.0
     assert updated_cfg.image_comfyui_workflow == "another.json"
+    assert updated_cfg.image_gemini_model == "gemini-3-pro-image-preview"
+    assert updated_cfg.image_timeout == 90
+
+
+def test_settings_dialog_gemini_image_backend_selectable(qtbot) -> None:
+    cfg = AppConfig(image_backend="gemini")
+
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._image_backend_combo.currentData() == "gemini"
+    # Empty model field falls back to the default model on save
+    dialog._image_gemini_model.setText("")
+    updated_cfg = dialog.collect_config()
+    assert updated_cfg.image_backend == "gemini"
+    assert updated_cfg.image_gemini_model == "gemini-2.5-flash-image"
