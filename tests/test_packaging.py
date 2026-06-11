@@ -104,6 +104,7 @@ def test_export_produces_standalone_package(tmp_path):
     assert (dest / "axiom" / "cli" / "main.py").exists()
     assert (dest / "pyproject.toml").exists()
     assert (dest / "LICENSE").exists()
+    assert (dest / "NOTICE").exists()
     readme = (dest / "README.md").read_text(encoding="utf-8")
     assert axiom.__version__ in readme
     # Rien d'autre que le moteur : pas d'app, pas de caches.

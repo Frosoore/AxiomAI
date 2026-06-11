@@ -8,6 +8,7 @@ construire et publier tel quel sur PyPI, sans rien changer au repo :
     ├── axiom/            (copie du moteur, sans __pycache__)
     ├── pyproject.toml    (copie de celui du repo)
     ├── LICENSE
+    ├── NOTICE            (copyright + obligation de citation, GPLv3 §7(b))
     └── README.md         (README spécifique librairie, généré)
 
 Usage :
@@ -86,12 +87,18 @@ result = s.take_turn("J'ouvre la porte de la taverne.")
 print(result.narrative_text)
 ```
 
+## Projet
+
+Code source, application graphique (vitrine du moteur) et suivi des bugs :
+**https://github.com/Frosoore/AxiomAI**
+
 ## Licence
 
-AGPL-3.0-or-later — voir `LICENSE`.
+AGPL-3.0-or-later — voir `LICENSE`. Citation de l'origine requise en cas de
+redistribution (terme additionnel AGPLv3 §7(b)) — voir `NOTICE`.
 
-*Ce package est développé dans le mono-repo Axiom AI, dont l'application graphique
-sert de vitrine au moteur. Version {version}.*
+*Ce package est développé dans le mono-repo [Axiom AI](https://github.com/Frosoore/AxiomAI),
+dont l'application graphique sert de vitrine au moteur. Version {version}.*
 """
 
 
@@ -157,6 +164,7 @@ def export(dest: Path, version_str: str, force: bool) -> None:
     )
     shutil.copy2(REPO_ROOT / "pyproject.toml", dest / "pyproject.toml")
     shutil.copy2(REPO_ROOT / "LICENSE", dest / "LICENSE")
+    shutil.copy2(REPO_ROOT / "NOTICE", dest / "NOTICE")
     (dest / "README.md").write_text(
         _README_TEMPLATE.format(version=version_str), encoding="utf-8"
     )

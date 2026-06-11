@@ -17,7 +17,7 @@ dynamic = ["version"]
 description = "Moteur de jeu narratif piloté par LLM (headless) : univers persistants SQLite, arbitrage LLM, event-sourcing/rewind, mémoire vectorielle."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 authors = [{ name = "Axiom AI" }]
 keywords = ["llm", "game-engine", "narrative", "interactive-fiction", "headless"]
@@ -40,6 +40,13 @@ dependencies = [
     "tomlkit>=0.13.0",
     "requests>=2.31.0",
 ]
+
+# Liens affichés dans la barre latérale de la page PyPI — sans eux, impossible
+# de retrouver le repo (l'app GUI vit dans le même mono-repo que le moteur).
+[project.urls]
+Homepage = "https://github.com/Frosoore/AxiomAI"
+Repository = "https://github.com/Frosoore/AxiomAI"
+Issues = "https://github.com/Frosoore/AxiomAI/issues"
 
 [project.scripts]
 axiom = "axiom.cli.main:main"

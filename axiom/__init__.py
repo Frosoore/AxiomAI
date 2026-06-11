@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 # Source de vérité unique de la version du package `axiom-engine`
 # (lue par pyproject.toml et par export_engine.py — littéral obligatoire).
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 # `help` est volontairement hors de __all__ : un `from axiom import *`
 # ne doit pas masquer le help() natif de Python.

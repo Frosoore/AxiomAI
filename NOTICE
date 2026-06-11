@@ -1,0 +1,42 @@
+Axiom AI — Copyright and Attribution Notice
+===========================================
+
+Copyright (C) 2026 The Axiom AI authors: 17h59 and Frosoore
+Project home: https://github.com/Frosoore/AxiomAI
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public
+License along with this program (see the LICENSE file). If not, see
+<https://www.gnu.org/licenses/>.
+
+
+Additional terms under GNU AGPL version 3, section 7(b)
+-------------------------------------------------------
+
+As permitted by section 7(b) of the GNU Affero General Public License
+version 3 ("Requiring preservation of specified reasonable legal
+notices or author attributions"), the following additional term
+applies to this work:
+
+  Any redistribution of this software, of modified versions of it,
+  or of works containing substantial portions of it, in source or
+  binary form, must preserve this NOTICE file, including the
+  copyright line and project home URL above, and must retain the
+  following attribution in its documentation and/or in the
+  "Appropriate Legal Notices" (e.g. an "About" screen) of any
+  interactive interface:
+
+      "Based on Axiom AI (https://github.com/Frosoore/AxiomAI)
+       by 17h59 and Frosoore."
+
+Removing or altering this attribution is a violation of the license
+terms (AGPLv3, section 7, last paragraph of "Additional Terms").

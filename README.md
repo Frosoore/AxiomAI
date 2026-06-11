@@ -175,7 +175,11 @@ We welcome contributions! Whether it's bug fixes, new UI features, or lore templ
 
 ## License
 
-Distributed under the AGPL-3.0 License. See `LICENSE` for more information.
+Distributed under the GNU Affero General Public License v3.0 (or later). See `LICENSE` for the full text.
+
+**Attribution required:** as an additional term under AGPLv3 section 7(b), any redistribution
+(original or modified, source or binary) must preserve the `NOTICE` file and credit the original
+project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by 17h59 and Frosoore."*
 
 ## Acknowledgments
 
