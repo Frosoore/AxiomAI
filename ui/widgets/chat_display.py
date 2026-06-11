@@ -74,8 +74,11 @@ class ChatDisplayWidget(QWidget):
     regenerate_requested = Signal(int)
     message_submitted = Signal(str)
     
-    _JSON_OPEN = "~~~json"
-    _JSON_CLOSE = "~~~"
+    # Tool-call fences hidden during streaming. The engine parser
+    # (axiom/backends/base.py::_FENCE_PATTERNS) accepts ~~~json AND ```json —
+    # the models (Gemini notably) often use backticks despite the prompt, so
+    # the UI filter must know both or the raw JSON leaks into the chat.
+    _JSON_FENCES = (("~~~json", "~~~"), ("```json", "```"))
 
     _IMG_REGEX = re.compile(
         r'!\[.*?\]\((https?://[^\)]+)\)'              # ![alt](url)
@@ -142,6 +145,7 @@ class ChatDisplayWidget(QWidget):
 
         self._reset_states()
         self._in_json_fence = False
+        self._json_fence_close = "~~~"
         self._token_buf = ""
 
     def retranslate_ui(self):
@@ -255,39 +259,48 @@ class ChatDisplayWidget(QWidget):
 
         while buf:
             if self._in_json_fence:
-                # Waiting for the closing ~~~
-                close_pos = buf.find(self._JSON_CLOSE)
+                # Waiting for the closing fence matching the opener (~~~ or ```)
+                close_pos = buf.find(self._json_fence_close)
                 if close_pos == -1:
                     # Not yet found - keep everything buffered
                     break
                 # Consume through the close fence (and any trailing newline)
-                after_close = close_pos + len(self._JSON_CLOSE)
+                after_close = close_pos + len(self._json_fence_close)
                 if after_close < len(buf) and buf[after_close] == "\n":
                     after_close += 1
                 buf = buf[after_close:]
                 self._in_json_fence = False
             else:
-                open_pos = buf.find(self._JSON_OPEN)
+                # Earliest opener of any known fence style wins
+                open_pos = -1
+                opener_len = 0
+                for fence_open, fence_close in self._JSON_FENCES:
+                    pos = buf.find(fence_open)
+                    if pos != -1 and (open_pos == -1 or pos < open_pos):
+                        open_pos = pos
+                        opener_len = len(fence_open)
+                        self._json_fence_close = fence_close
                 if open_pos == -1:
-                    # No complete fence ahead. 
+                    # No complete fence ahead.
                     if force:
                         out_parts.append(buf)
                         buf = ""
                         break
-                        
+
                     overlap = 0
-                    for length in range(len(self._JSON_OPEN) - 1, 0, -1):
-                        if buf.endswith(self._JSON_OPEN[:length]):
-                            overlap = length
-                            break
-                    
+                    for fence_open, _ in self._JSON_FENCES:
+                        for length in range(len(fence_open) - 1, 0, -1):
+                            if buf.endswith(fence_open[:length]):
+                                overlap = max(overlap, length)
+                                break
+
                     safe_len = len(buf) - overlap
                     out_parts.append(buf[:safe_len])
                     buf = buf[safe_len:]
                     break
                 # Flush everything before the fence opener
                 out_parts.append(buf[:open_pos])
-                buf = buf[open_pos + len(self._JSON_OPEN):]
+                buf = buf[open_pos + opener_len:]
                 self._in_json_fence = True
 
         self._token_buf = buf

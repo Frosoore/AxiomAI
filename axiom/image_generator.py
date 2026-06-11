@@ -21,6 +21,23 @@ from axiom.logger import logger
 
 MOCK_PNG_BASE64 = b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
+# Aspect ratios accepted by the Gemini image API (it takes a ratio, not pixel
+# dimensions). The configured width/height are mapped to the closest one.
+GEMINI_ASPECT_RATIOS: tuple[str, ...] = (
+    "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9",
+)
+
+
+def closest_aspect_ratio(width: int, height: int) -> str:
+    """Return the supported Gemini aspect ratio closest to width/height."""
+    if width <= 0 or height <= 0:
+        return "1:1"
+    target = width / height
+    return min(
+        GEMINI_ASPECT_RATIOS,
+        key=lambda r: abs((int(r.split(":")[0]) / int(r.split(":")[1])) - target),
+    )
+
 
 class ImageGenerator:
     """Handles prompt generation and communication with local image generation backends.
@@ -124,9 +141,16 @@ class ImageGenerator:
         if backend == "mock":
             return self._save_mock_image(save_path)
 
+        if backend == "gemini":
+            return self._generate_gemini(prompt, save_path)
+
         if backend not in ("stable_diffusion", "comfyui"):
             logger.warning(f"Unknown image backend '{backend}': no image generated.")
             return None
+
+        # Local backends can be slow (first call loads the model, AMD/CPU rigs
+        # take minutes): the timeout must be configurable, 30s was never enough.
+        timeout_s = max(10, self.config.image_timeout)
 
         if backend == "stable_diffusion":
             try:
@@ -141,7 +165,16 @@ class ImageGenerator:
                 }
 
                 logger.info(f"Requesting SD image from {url} for prompt: {prompt[:50]}...")
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload, timeout=timeout_s)
+                if response.status_code == 404:
+                    # The WebUI is up but its API is not: /sdapi/* only exists
+                    # when the server was started with the --api flag.
+                    logger.warning(
+                        f"SD WebUI at {api_url} answered 404 on {url}: the server is "
+                        f"running WITHOUT its API. Restart it with the --api option "
+                        f"(e.g. ./webui.sh --api or COMMANDLINE_ARGS=\"--api\")."
+                    )
+                    return None
                 response.raise_for_status()
 
                 data = response.json()
@@ -152,6 +185,12 @@ class ImageGenerator:
                     return str(save_path.resolve())
                 else:
                     logger.warning("No images returned from SD WebUI API.")
+            except requests.exceptions.Timeout:
+                logger.warning(
+                    f"Stable Diffusion image generation timed out after {timeout_s}s. "
+                    f"Increase the image timeout in the settings (slow hardware needs "
+                    f"more, especially on the first image while the model loads)."
+                )
             except Exception as e:
                 logger.warning(
                     f"Stable Diffusion image generation failed: {e}. "
@@ -160,12 +199,34 @@ class ImageGenerator:
 
         elif backend == "comfyui":
             try:
-                workflow = self._load_comfyui_workflow(prompt)
                 base_url = api_url.rstrip('/')
+                workflow = self._load_comfyui_workflow(prompt, base_url)
                 prompt_url = f"{base_url}/prompt"
 
                 logger.info(f"Submitting workflow to ComfyUI at {prompt_url}")
                 response = requests.post(prompt_url, json={"prompt": workflow}, timeout=10)
+                if response.status_code == 400:
+                    # ComfyUI validates the workflow upfront and answers 400
+                    # with per-node errors (missing checkpoint, bad input name…).
+                    try:
+                        err = response.json()
+                        parts = [(err.get("error") or {}).get("message", "")]
+                        for node_id, node_err in (err.get("node_errors") or {}).items():
+                            label = node_err.get("class_type", f"node {node_id}")
+                            for node_e in node_err.get("errors", []):
+                                parts.append(
+                                    f"{label}: {node_e.get('message', '')} "
+                                    f"{node_e.get('details', '')}".strip()
+                                )
+                        detail = "; ".join(p for p in parts if p)
+                    except Exception:
+                        detail = response.text[:300]
+                    logger.warning(
+                        f"ComfyUI rejected the workflow: {detail or 'invalid prompt'}. "
+                        f"Check the model/node names in your workflow (settings, "
+                        f"Illustration tab)."
+                    )
+                    return None
                 response.raise_for_status()
 
                 res_data = response.json()
@@ -180,7 +241,7 @@ class ImageGenerator:
                 completed_data = None
                 history_url = f"{base_url}/history/{prompt_id}"
 
-                for _ in range(60):  # 60 seconds max
+                for _ in range(timeout_s):  # ~1 poll per second up to the timeout
                     time.sleep(1)
                     try:
                         hist_resp = requests.get(history_url, timeout=5)
@@ -193,7 +254,11 @@ class ImageGenerator:
                         logger.warning(f"Error polling ComfyUI history: {poll_err}")
 
                 if not completed_data:
-                    logger.warning("ComfyUI generation timed out or failed.")
+                    logger.warning(
+                        f"ComfyUI generation not finished after {timeout_s}s. "
+                        f"Increase the image timeout in the settings if your "
+                        f"hardware needs more time per image."
+                    )
                     return None
 
                 outputs = completed_data.get("outputs", {})
@@ -235,6 +300,58 @@ class ImageGenerator:
         # placeholder in the chat would be worse than nothing.
         return None
 
+    def _generate_gemini(self, prompt: str, save_path: Path) -> str | None:
+        """Generate an image through the Gemini API (cloud, no local install).
+
+        Reuses the text backend's API key and quota resilience; the dedicated
+        image model comes from config.image_gemini_model. Real failure → None
+        (TICKET-045: no placeholder).
+        """
+        api_key = (self.config.gemini_api_key or "").strip()
+        if not api_key:
+            logger.warning(
+                "Gemini image backend selected but no Gemini API key is configured: "
+                "no image generated."
+            )
+            return None
+
+        try:
+            from axiom.backends.gemini import GeminiClient
+
+            client = GeminiClient(
+                api_key=api_key,
+                model_name=self.config.image_gemini_model,
+                requests_per_minute=self.config.llm_requests_per_minute,
+            )
+            # Propagate the status/cancellation hooks of the session's text
+            # backend (TICKET-033) so retry countdowns stay visible/cancellable.
+            if self._llm is not None:
+                client.on_status = getattr(self._llm, "on_status", None)
+                client.cancel_event = getattr(self._llm, "cancel_event", None)
+
+            aspect_ratio = closest_aspect_ratio(
+                self.config.image_width, self.config.image_height
+            )
+            logger.info(
+                f"Requesting Gemini image ({self.config.image_gemini_model}, "
+                f"{aspect_ratio}) for prompt: {prompt[:50]}..."
+            )
+            img_data = client.generate_image_bytes(prompt, aspect_ratio=aspect_ratio)
+            if not img_data:
+                logger.warning("Gemini response did not contain an image part.")
+                return None
+
+            save_path.write_bytes(img_data)
+            logger.info(f"Successfully saved Gemini image to {save_path}")
+            return str(save_path.resolve())
+        except Exception as e:
+            logger.warning(
+                f"Gemini image generation failed: {e}. "
+                f"Please verify the API key and the image model "
+                f"'{self.config.image_gemini_model}' in the settings."
+            )
+            return None
+
     def _save_mock_image(self, save_path: Path) -> str:
         """Write the mock PNG data to the target path."""
         img_data = base64.b64decode(MOCK_PNG_BASE64)
@@ -242,7 +359,24 @@ class ImageGenerator:
         logger.info(f"Successfully saved mock image to {save_path}")
         return str(save_path.resolve())
 
-    def _load_comfyui_workflow(self, prompt: str) -> dict:
+    def _comfyui_available_checkpoints(self, base_url: str) -> list[str]:
+        """Return the checkpoint files installed on the ComfyUI server (or [])."""
+        import requests
+
+        try:
+            resp = requests.get(
+                f"{base_url}/object_info/CheckpointLoaderSimple", timeout=10
+            )
+            resp.raise_for_status()
+            node_info = resp.json().get("CheckpointLoaderSimple", {})
+            choices = node_info["input"]["required"]["ckpt_name"][0]
+            if isinstance(choices, list):
+                return [c for c in choices if isinstance(c, str)]
+        except Exception as e:
+            logger.warning(f"Could not list ComfyUI checkpoints from {base_url}: {e}")
+        return []
+
+    def _load_comfyui_workflow(self, prompt: str, base_url: str = "") -> dict:
         """Load, configure, and inject parameters into ComfyUI workflow JSON."""
         workflow_str = self.config.image_comfyui_workflow.strip()
         workflow = None
@@ -300,7 +434,7 @@ class ImageGenerator:
                 },
                 "8": {
                     "class_type": "VAEDecode",
-                    "inputs": {"latent_image": ["3", 0], "vae": ["4", 2]},
+                    "inputs": {"samples": ["3", 0], "vae": ["4", 2]},
                 },
                 "9": {
                     "class_type": "SaveImage",
@@ -357,5 +491,26 @@ class ImageGenerator:
             if len(clip_nodes) > 1:
                 second_inputs = clip_nodes[1].get("inputs", {})
                 second_inputs["text"] = "blurry, low quality, distorted, extra limbs, bad anatomy, text, watermark"
+
+        # No install actually has the exact checkpoint file a workflow names
+        # (the default template ships the classic SD1.5 name): ask the server
+        # what it has and substitute any missing checkpoint with its first one.
+        ckpt_nodes = [
+            node for node in workflow.values()
+            if isinstance(node, dict)
+            and node.get("class_type") == "CheckpointLoaderSimple"
+            and isinstance(node.get("inputs"), dict)
+        ]
+        if ckpt_nodes and base_url:
+            available = self._comfyui_available_checkpoints(base_url)
+            if available:
+                for node in ckpt_nodes:
+                    current = node["inputs"].get("ckpt_name")
+                    if current not in available:
+                        logger.info(
+                            f"ComfyUI checkpoint '{current}' is not installed on "
+                            f"the server: using '{available[0]}' instead."
+                        )
+                        node["inputs"]["ckpt_name"] = available[0]
 
         return workflow

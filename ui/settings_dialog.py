@@ -197,9 +197,13 @@ class SettingsDialog(QDialog):
         self._image_backend_combo.addItem("Mock Generator", "mock")
         self._image_backend_combo.addItem("Stable Diffusion (WebUI)", "stable_diffusion")
         self._image_backend_combo.addItem("ComfyUI", "comfyui")
-        
+        self._image_backend_combo.addItem("Google Gemini (cloud)", "gemini")
+
         self._image_url = QLineEdit()
         self._image_url.setPlaceholderText("e.g. http://127.0.0.1:7860")
+
+        self._image_gemini_model = QLineEdit()
+        self._image_gemini_model.setPlaceholderText("gemini-2.5-flash-image")
         
         self._image_width_spin = QSpinBox()
         self._image_width_spin.setRange(64, 4096)
@@ -215,25 +219,34 @@ class SettingsDialog(QDialog):
         self._image_cfg_spin = QDoubleSpinBox()
         self._image_cfg_spin.setRange(1.0, 30.0)
         self._image_cfg_spin.setSingleStep(0.5)
+
+        self._image_timeout_spin = QSpinBox()
+        self._image_timeout_spin.setRange(10, 900)
+        self._image_timeout_spin.setSingleStep(10)
+        self._image_timeout_spin.setSuffix(" s")
         
         self._image_workflow = QLineEdit()
         self._image_workflow.setPlaceholderText("Path to workflow JSON file or raw JSON template")
         
         self._image_backend_label = QLabel(tr("image_backend"))
         self._image_url_label = QLabel(tr("image_api_url"))
+        self._image_gemini_model_label = QLabel(tr("image_gemini_model"))
         self._image_width_label = QLabel(tr("image_width"))
         self._image_height_label = QLabel(tr("image_height"))
         self._image_steps_label = QLabel(tr("image_steps"))
         self._image_cfg_label = QLabel(tr("image_cfg_scale"))
+        self._image_timeout_label = QLabel(tr("image_timeout"))
         self._image_workflow_label = QLabel(tr("image_workflow"))
 
         image_form.addRow("", self._image_enabled_cb)
         image_form.addRow(self._image_backend_label, self._image_backend_combo)
         image_form.addRow(self._image_url_label, self._image_url)
+        image_form.addRow(self._image_gemini_model_label, self._image_gemini_model)
         image_form.addRow(self._image_width_label, self._image_width_spin)
         image_form.addRow(self._image_height_label, self._image_height_spin)
         image_form.addRow(self._image_steps_label, self._image_steps_spin)
         image_form.addRow(self._image_cfg_label, self._image_cfg_spin)
+        image_form.addRow(self._image_timeout_label, self._image_timeout_spin)
         image_form.addRow(self._image_workflow_label, self._image_workflow)
 
         self._tabs.addTab(self._image_widget, tr("tab_image"))
@@ -345,10 +358,12 @@ class SettingsDialog(QDialog):
         self._image_enabled_cb.setText(tr("image_enable"))
         self._image_backend_label.setText(tr("image_backend"))
         self._image_url_label.setText(tr("image_api_url"))
+        self._image_gemini_model_label.setText(tr("image_gemini_model"))
         self._image_width_label.setText(tr("image_width"))
         self._image_height_label.setText(tr("image_height"))
         self._image_steps_label.setText(tr("image_steps"))
         self._image_cfg_label.setText(tr("image_cfg_scale"))
+        self._image_timeout_label.setText(tr("image_timeout"))
         self._image_workflow_label.setText(tr("image_workflow"))
 
         # Sub-widgets
@@ -384,10 +399,12 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._image_backend_combo.setCurrentIndex(idx)
         self._image_url.setText(config.image_api_url)
+        self._image_gemini_model.setText(config.image_gemini_model)
         self._image_width_spin.setValue(config.image_width)
         self._image_height_spin.setValue(config.image_height)
         self._image_steps_spin.setValue(config.image_steps)
         self._image_cfg_spin.setValue(config.image_cfg_scale)
+        self._image_timeout_spin.setValue(config.image_timeout)
         self._image_workflow.setText(config.image_comfyui_workflow)
         
         idx = self._lang_combo.findData(config.language)
@@ -435,7 +452,10 @@ class SettingsDialog(QDialog):
             image_height=self._image_height_spin.value(),
             image_steps=self._image_steps_spin.value(),
             image_cfg_scale=self._image_cfg_spin.value(),
+            image_timeout=self._image_timeout_spin.value(),
             image_comfyui_workflow=self._image_workflow.text().strip(),
+            image_gemini_model=self._image_gemini_model.text().strip()
+            or "gemini-2.5-flash-image",
         )
 
     # ------------------------------------------------------------------

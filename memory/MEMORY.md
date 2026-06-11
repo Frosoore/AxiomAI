@@ -1,6 +1,6 @@
 # Memory Index — AxiomAI
 
-- [Pilier 2 Universe-as-Code — état/reprise](project_pilier2_status.md) — TOUT TERMINÉ, VALIDÉ et COMMITÉ sur dev-0 (2026-06-10) : pilier + UX (028→033), B3, B4, QA 034→042 ; QA post-merge Companion+images (2026-06-10) : merge sain + TICKET-043→048 tous CORRIGÉS le jour même (étapes QA-post-merge-companion-images + QA-fixes-043-048, working tree non commité) ; PENDING = 017 seul (009 clos le 2026-06-10 via packaging pip sans split, étape feature-packaging-pip non commitée)
+- [Pilier 2 Universe-as-Code — état/reprise](project_pilier2_status.md) — TOUT TERMINÉ, VALIDÉ et COMMITÉ : pilier + UX (028→033), B3, B4, QA 034→048 ; packaging pip (TICKET-009 clos, `axiomai-engine` sur PyPI) et génération d'images (backend Gemini cloud + fiabilisation SD/ComfyUI) **mergés dans `main` le 2026-06-11** ; validations GUI en attente (images) ; PENDING = 017 (Gemini) + 049 (compile.py vs Python 3.12) + 050 (fail-fast 429 limit:0)
 - [Profil utilisateur : néophyte non-codeur](user_profile_non_coder.md) — pilote tout par IA, expliquer les choix techniques en termes accessibles avant de décider
 - [Workflow maintenance par étapes](feedback_maintenance_workflow.md) — Créer maintenance/<etape>/{TODO,CHANGELOG,DOC}.md avant tout travail de code
 - [Style d'exécution](feedback_execution_style.md) — Implémenter directement, docs minimales (TODO+CHANGELOG), pas de superpowers

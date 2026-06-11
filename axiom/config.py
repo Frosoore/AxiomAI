@@ -85,6 +85,9 @@ class AppConfig:
         image_steps:         Denoising steps for the image generation.
         image_cfg_scale:     Classifier Free Guidance scale.
         image_comfyui_workflow: Optional path to a ComfyUI workflow JSON file or a serialized workflow JSON string.
+        image_gemini_model:  Gemini image model used by the "gemini" image backend.
+        image_timeout:       Max seconds to wait for a local image backend
+                             (SD WebUI request / ComfyUI polling) per image.
     """
 
     llm_backend: str = "universal"
@@ -114,6 +117,8 @@ class AppConfig:
     image_steps: int = 20
     image_cfg_scale: float = 7.0
     image_comfyui_workflow: str = ""
+    image_gemini_model: str = "gemini-2.5-flash-image"
+    image_timeout: int = 180
 
 
 # Cache de load_config (QA-042.1) : tr() et les chemins chauds rechargent la

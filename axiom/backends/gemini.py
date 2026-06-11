@@ -301,6 +301,60 @@ class GeminiClient(LLMBackend):
             finish_reason=finish_reason,
         )
 
+    def generate_image_bytes(
+        self,
+        prompt: str,
+        aspect_ratio: str | None = None,
+    ) -> bytes | None:
+        """Generate an image from a text prompt and return the raw bytes.
+
+        Used by the "gemini" image backend (axiom/image_generator.py) with an
+        image-capable model (e.g. "gemini-2.5-flash-image"). Goes through the
+        same quota-resilience path as text calls (TICKET-031 pacing/429 retry,
+        TICKET-033 status/cancellation hooks).
+
+        Args:
+            prompt:       Visual prompt describing the image.
+            aspect_ratio: Optional aspect ratio supported by the API
+                          ("1:1", "16:9", ...). Omitted if the installed SDK
+                          does not expose ImageConfig.
+
+        Returns:
+            The image bytes (PNG/JPEG as returned by the API), or None if the
+            response contains no image part.
+
+        Raises:
+            LLMConnectionError: On network failure, API error or exhausted quota.
+            GenerationCancelled: If cancel_event is set during a retry wait.
+        """
+        config_kwargs: dict = {"response_modalities": ["TEXT", "IMAGE"]}
+        if aspect_ratio and hasattr(genai_types, "ImageConfig"):
+            config_kwargs["image_config"] = genai_types.ImageConfig(
+                aspect_ratio=aspect_ratio
+            )
+        config = genai_types.GenerateContentConfig(**config_kwargs)
+
+        response = self._call_with_quota_retry(
+            lambda model: self._client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=config,
+            )
+        )
+
+        for candidate in getattr(response, "candidates", None) or []:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None) if inline is not None else None
+                if data:
+                    # The SDK normally returns bytes; tolerate base64 strings.
+                    if isinstance(data, str):
+                        import base64
+                        return base64.b64decode(data)
+                    return data
+        return None
+
     def stream_tokens(
         self,
         messages: list[LLMMessage],
