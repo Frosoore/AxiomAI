@@ -116,7 +116,9 @@ def _resolve_text(src_dir: Path, data: dict, inline_key: str, file_key: str) -> 
         target = src_dir / str(data[file_key])
         try:
             # newline="" : pas de traduction de fin de ligne (fidélité LF).
-            return target.read_text(encoding="utf-8", newline="")
+            # Via open() et non read_text(newline=) : ce dernier exige Python 3.13+ (TICKET-049).
+            with target.open("r", encoding="utf-8", newline="") as fh:
+                return fh.read()
         except OSError as exc:
             raise CompileError(f"Fichier référencé introuvable : {target} — {exc}") from exc
     return str(data.get(inline_key, ""))
@@ -294,7 +296,9 @@ def _parse_lore(src_dir: Path, referenced: set[str]) -> list[tuple]:
     for path in sorted(lore_dir.rglob("*.md")):
         if path.resolve() in referenced_paths:
             continue
-        front, body = _split_frontmatter(path.read_text(encoding="utf-8", newline=""))
+        # open(newline="") et non read_text(newline=) : ce dernier exige Python 3.13+ (TICKET-049).
+        with path.open("r", encoding="utf-8", newline="") as fh:
+            front, body = _split_frontmatter(fh.read())
         default_id = path.relative_to(lore_dir).with_suffix("").as_posix().replace("/", "_")
         rows.append((
             str(front.get("entry_id", default_id)),

@@ -9,10 +9,9 @@
 | N°        | Titre                                                          | Statut    |
 |-----------|----------------------------------------------------------------|-----------|
 | TICKET-017| Temps causal : `major_event_description` ignoré + **time-skip Chronicler** (spec §6.4) | ouvert (partiellement couvert par TICKET-018, domaine Pilier 5/Gemini) |
-| TICKET-049| `compile.py` cassé sous Python ≤ 3.12 (`Path.read_text(newline=)` = 3.13+) | ouvert — quick win |
 | TICKET-050| Gemini 429 `limit: 0` (modèle hors free tier) : fail-fast au lieu de 3 retries inutiles | ouvert — quick win |
 
-Tickets résolus/clos : voir `DONE.md` (001→012, TC1→TC5, 015→048 sauf 017).
+Tickets résolus/clos : voir `DONE.md` (001→012, TC1→TC5, 015→049 sauf 017, 051→052).
 
 
 ---
@@ -46,28 +45,6 @@ saut temporel devrait faire évoluer le monde.
 
 ---
 
-## TICKET-049 — `compile.py` cassé sous Python ≤ 3.12 (`Path.read_text(newline=)`)
-
-**Constat (2026-06-10, session backend image Gemini).** `axiom/compile.py:119` et `:297` appellent
-`Path.read_text(encoding="utf-8", newline="")` — le paramètre `newline` de `read_text` n'existe
-qu'à partir de **Python 3.13**. Sous 3.12 : `TypeError: Path.read_text() got an unexpected keyword
-argument 'newline'`. Or `run.sh`/`test.sh` créent le venv avec le **python3 système** (3.12.3 sur la
-machine actuelle — l'ancien venv, disparu, devait être en 3.13) et le README annonce « Python 3.10+ ».
-
-**Impact réel :** toute compilation d'arbo source → .db échoue (donc `ensure_compiled` au lancement
-d'une partie sur un univers-dossier, hot reload, pack v2, preview Populate…). **21 tests** échouent
-sous 3.12 (`test_universe_as_code.py` ×20, `test_source_preview.py::test_stage_puis_apply`) —
-vérifiés préexistants, sans rapport avec le chantier image.
-
-**Fix trivial (2 lignes) :** remplacer par `with path.open("r", encoding="utf-8", newline="") as f:
-f.read()` — `open(newline=)` existe depuis toujours. (`write_text(newline=)` est OK : dispo
-depuis 3.10, `decompile.py`/`saves.py` ne sont pas concernés.)
-
-**Priorité :** haute sur cette machine (bloque le jeu sur univers-dossiers + 21 tests rouges),
-quick win sans risque.
-
----
-
 ## TICKET-050 — Gemini 429 `limit: 0` : fail-fast au lieu de retries inutiles
 
 **Constat (2026-06-10, test réel du backend image Gemini).** Quand un modèle n'est **pas inclus
@@ -83,5 +60,7 @@ avec un message clair (« modèle hors free tier — facturation requise »). Co
 (le backend est partagé).
 
 **Priorité :** moyenne (UX/perf, aucun comportement correct perdu), quick win.
+
+---
 
 ---

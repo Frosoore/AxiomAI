@@ -14,7 +14,7 @@ echo "--- Axiom AI System Check ---"
 
 if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 not found."
-    echo "Please install Python 3.10+ and venv:"
+    echo "Please install Python 3.11+ and venv:"
     echo "  sudo apt update && sudo apt install python3 python3-pip python3-venv"
     exit 1
 fi
@@ -50,8 +50,8 @@ PYTHON_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
 PYTHON_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
 PYTHON_VER="${PYTHON_MAJOR}.${PYTHON_MINOR}"
 
-if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]; }; then
-    echo "ERROR: Python 3.10+ required (found $PYTHON_VER)."
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
+    echo "ERROR: Python 3.11+ required (found $PYTHON_VER)."
     exit 1
 fi
 

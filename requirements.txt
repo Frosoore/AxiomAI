@@ -3,5 +3,6 @@ chromadb>=1.0.0
 sentence-transformers>=2.2.0
 httpx>=0.24.0
 google-genai>=1.0.0
+requests>=2.31.0
 Pillow>=10.0.0
 tomlkit>=0.13.0

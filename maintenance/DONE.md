@@ -524,3 +524,34 @@ continue d'importer `from axiom...` comme avant.
 
 **Non repris du ticket d'origine (toujours pas nécessaires) :** `axiom-app/pyproject.toml`,
 split prompts.py en sous-modules, `VectorMemory` en Protocol.
+
+## TICKET-052 — `requests` manquant dans `requirements.txt` : corrigé
+
+**Statut : clos le 2026-06-11** (détecté et corrigé pendant la QA post-merge `d77db2b`, étape
+`QA-post-merge-pip-images`). `axiom/image_generator.py` importe `requests` directement
+(backends SD WebUI/ComfyUI) mais l'app ne le déclarait pas — il n'était installé que par
+transitivité via `google-genai`. Fix : `requests>=2.31.0` ajouté à `requirements.txt`,
+aligné sur le `pyproject.toml` du moteur (qui le déclarait déjà correctement).
+
+## TICKET-049 — `compile.py` cassé sous Python ≤ 3.12 : corrigé + versions harmonisées
+
+**Statut : clos le 2026-06-11** (étape `QA-post-merge-pip-images`). `axiom/compile.py` (×2)
+appelait `Path.read_text(newline="")`, paramètre qui n'existe qu'en Python **3.13+** →
+`TypeError` sous 3.11/3.12 (21 tests rouges, toute compilation arbo→.db cassée). Fix : passage
+par `path.open("r", encoding="utf-8", newline="")` (dispo depuis toujours), même fidélité LF.
+Le bug ne mordait plus localement (venv repassé en 3.14.5 suite à la MAJ Fedora) mais restait
+entier pour la lib PyPI annoncée `>= 3.11`. **Version minimale harmonisée partout à 3.11**
+(plancher réel : `tomllib`, stdlib 3.11+, utilisé par 6 modules) : `pyproject.toml` et README
+disaient déjà 3.11+, `run.sh` corrigé (3.10 → 3.11, message + garde `-lt 11`). Vérifié :
+`test_universe_as_code` + `test_source_preview` + `test_packaging` + `test_cli_play` = 66 verts.
+
+## TICKET-051 — Données de jeu perso commitées + trous `.gitignore` : corrigé
+
+**Statut : clos le 2026-06-11** (étape `QA-post-merge-pip-images`, sur feu vert utilisateur).
+La branche image-gen (`a03edf5`) avait commité des données de partie personnelles : 10 saves
+`saves/Myria/save_*.db` (~1,7 Mo) + 3 illustrations générées `assets/<uuid>/turn_1.png`
+(~1,2 Mo). Fix : les 13 fichiers retirés du suivi git (`git rm --cached`, fichiers conservés
+sur le disque, suppression **stagée non commitée** — commit à la main de l'utilisateur) ;
+`.gitignore` complété avec `/saves/` et `/assets/*/` (les captures à plat d'`assets/` —
+creator/main_menu/in_game.png — et les fixtures `tests/data/*.db` restent versionnées,
+vérifié par `git check-ignore`).

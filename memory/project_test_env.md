@@ -9,10 +9,11 @@ L'utilisateur teste AxiomAI sur une machine à **carte AMD** : il ne fait **pas 
 (Ollama/universal indisponible en pratique). Le seul backend exploitable est **Gemini**, avec une clé
 configurée valide.
 
-**MAJ 2026-06-10 :** le venv `.venv/` avait **disparu** du repo — recréé depuis le python3 système =
-**Python 3.12.3** (l'ancien devait être en 3.13). Conséquence : `Path.read_text(newline=)` (3.13+)
-casse `axiom/compile.py` → **21 tests rouges préexistants** (`test_universe_as_code.py`,
-`test_source_preview.py`) = **TICKET-049**, pas un vrai bug de feature. La suite large
+**MAJ 2026-06-11 :** le venv `.venv/` est désormais en **Python 3.14.5** (le python3 système a
+avancé avec la MAJ Fedora ; il était en 3.12.3 le 2026-06-10). **TICKET-049 clos** le même jour :
+`compile.py` n'utilise plus `read_text(newline=)` (3.13+), et le **plancher du projet est
+harmonisé à Python 3.11** partout (pyproject, README, run.sh) — plancher réel = `tomllib`.
+La suite large
 (`pytest tests/ --ignore` des 4 fichiers vector/Qt : `test_vector_memory`, `test_vector_threading`,
 `test_phase6`, `test_ambiance_manager`) tourne sans segfault ; lancer ces 4 fichiers en lot séparé
 (56 tests, OK). À noter : `~/stable-diffusion-webui-reForge/` existe sur la machine — un SD WebUI
