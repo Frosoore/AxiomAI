@@ -555,3 +555,75 @@ sur le disque, suppression **stagée non commitée** — commit à la main de l'
 `.gitignore` complété avec `/saves/` et `/assets/*/` (les captures à plat d'`assets/` —
 creator/main_menu/in_game.png — et les fixtures `tests/data/*.db` restent versionnées,
 vérifié par `git check-ignore`).
+
+---
+
+## TICKET-053 — i18n : rework (traductions externalisées, 10 langues complètes)
+
+**Statut : clos le 2026-06-12** (prérequis du chantier doc intégrée). Traductions sorties du
+monolithe `axiom/localization.py` (2419 lignes) vers des **TOML par langue** (chargement
+paresseux/caché, API `tr()` inchangée, round-trip vérifié) ; **10 langues complétées à 295/295**
+(679 clés ajoutées, placeholders cohérents) ; outil de couverture + test. ⚠ Les emplacements
+créés ici (`axiom/locales/`, `axiom i18n-check`) ont été **déplacés côté app par TICKET-054**
+(le moteur ne traduit plus). Détails : `maintenance/TICKET-053-i18n-rework/`.
+
+---
+
+## TICKET-054 — i18n : séparation des couches (le moteur ne traduit plus)
+
+**Statut : code clos le 2026-06-12** — ⚠ **validation GUI réelle en attente** (changement de
+langue + affichage du temps localisé). `axiom/localization.py` + `axiom/locales/` +
+`axiom/cli/i18n_cmd.py` **supprimés** ; `fmt_num` → `axiom/textfmt.py` ;
+`TimeSystem.get_time_components()` (données + clé de phase) + `get_time_string()` anglais par
+défaut. Tout l'i18n vit côté app : **`core/localization.py` + `core/locales/*.toml`** (`tr`,
+`SUPPORTED_LANGUAGES`, `canonical_verbosity`, `format_time`, couverture) + outil
+`tools/i18n_check.py`. 26 fichiers app rebasculés (imports seuls). Wheel moteur vérifié sans
+i18n. 60 passed, collecte 565 tests → 0 import cassé. Détails :
+`maintenance/TICKET-054-i18n-engine-gui-split/`.
+
+---
+
+## TICKET-055 — CLI moteur en anglais
+
+**Statut : clos le 2026-06-12** (jamais passé par PENDING — étape directe, archivé ici pour la
+numérotation). Le CLI `axiom` (publié dans le wheel) avait son texte user-facing en français ;
+traduit FR→EN dans les 5 modules `axiom/cli/*.py` (`help=`/`description=`/`print`/`write`,
+boucle `play` incluse), commentaires/docstrings internes laissés en FR. Pas de l'i18n (CLI dev =
+anglais). 4 assertions de tests mises à jour, `axiom --help` 100 % EN, 157 tests verts.
+Découverte en chemin : TICKET-056. Détails : `maintenance/TICKET-055-cli-english/`.
+
+---
+
+## TICKET-056 — Messages user-facing du moteur en anglais (events `dev` + exceptions)
+
+**Statut : clos le 2026-06-12** (suite de 055). ~30 messages d'exception
+(`compile`/`decompile`/`dev`/`library`/`package`/`saves`/`savestore`/`gemini`) + events
+`axiom dev` + statuts `populate` + libellé journal « Save importée » traduits FR→EN. Méthode :
+liste exhaustive des `raise` (le FR sans accent échappe au grep), traduction par fragments
+(placeholders préservés). 5 assertions de tests mises à jour, 166 tests verts. Restent FR hors
+périmètre : logs `logger.*` (diagnostic) et l'app `workers/` (couche i18n). Le moteur publié
+n'expose plus aucun texte français. Détails : `maintenance/TICKET-056-engine-english/`.
+
+---
+
+## TICKET-058 — Site de doc de la lib `axiomai-engine` (Sphinx)
+
+**Statut : clos le 2026-06-12** — ⚠ **publication en attente** : activer GitHub Pages
+(Settings → Pages → Source « GitHub Actions », droits admin Frosoore requis) puis relancer le
+job `deploy` raté (le build du merge dans `main` a réussi, seul le déploiement a renvoyé 404
+Pages-non-activé). Site Sphinx complet dans `docs/` : **EN + FR** (gettext `.po`, sélecteur de
+langue, réf API traduite ~720 chaînes, fallback EN), thème Furo, pages MyST/Markdown, quickstart
++ 6 guides + référence d'API autodoc ; workflow `.github/workflows/docs.yml` (build strict `-W`,
+deps lourdes mockées). Au passage : ~100 docstrings publiques du moteur traduites FR→EN, warnings
+reST corrigés, `requirements-dev.txt` complété. 621 tests verts. Découverte en chemin :
+TICKET-060. Détails : `maintenance/TICKET-058-doc-sphinx/`.
+
+---
+
+## TICKET-060 — `axiom.help` en anglais (angle mort de 055/056)
+
+**Statut : clos le 2026-06-12.** Le guide REPL `axiom.help` (`axiom/__init__.py::_HELP_TEXT`,
+publié dans le wheel) traduit FR→EN, docstrings de module/`_Help` inclus, + lien vers le site de
+doc (TICKET-058) en pied de guide. Aucun test n'assertait le texte FR (`test_packaging.py`
+15 verts). Le moteur publié n'expose plus aucun texte français, REPL compris. Détails :
+`maintenance/TICKET-060-help-english/`.

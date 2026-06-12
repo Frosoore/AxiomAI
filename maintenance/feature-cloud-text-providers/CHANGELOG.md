@@ -32,8 +32,8 @@
 - Vérifié : **632 tests verts** + `debug/startup_check.py` OK + `tools/i18n_check.py` OK.
 - Au passage : pytest/pytest-mock/pytest-qt réinstallés dans `.venv` (manquaient alors
   qu'ils sont dans `requirements-dev.txt`).
-- Tickets ouverts en chemin : TICKET-061 (modèles reasoning OpenAI gpt-5/o-series :
-  `max_completion_tokens`, `temperature` figée), TICKET-062 (backend d'images Venice AI).
+- Tickets ouverts en chemin : TICKET-063 (modèles reasoning OpenAI gpt-5/o-series :
+  `max_completion_tokens`, `temperature` figée), TICKET-064 (backend d'images Venice AI).
 
 ⚠ Reste : validation GUI réelle (sélection fournisseur + test connexion + partie jouée).
 

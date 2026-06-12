@@ -94,18 +94,20 @@ class UniverseCard(QFrame):
 
         layout.addStretch()
 
+        from ui.help_system import doc
+
         # Primary buttons row: Play + Export
         btn_layout = QHBoxLayout()
-        self._play_btn = QPushButton(tr("play"))
-        self._export_btn = QPushButton(tr("export"))
+        self._play_btn = doc(QPushButton(tr("play")), "hub.card_play")
+        self._export_btn = doc(QPushButton(tr("export")), "hub.card_export")
         btn_layout.addWidget(self._play_btn)
         btn_layout.addWidget(self._export_btn)
         layout.addLayout(btn_layout)
 
         # Secondary buttons row: Edit + Delete
         mgmt_layout = QHBoxLayout()
-        self._edit_btn = QPushButton(tr("edit"))
-        self._delete_btn = QPushButton(tr("delete"))
+        self._edit_btn = doc(QPushButton(tr("edit")), "hub.card_edit")
+        self._delete_btn = doc(QPushButton(tr("delete")), "hub.card_delete")
         self._delete_btn.setStyleSheet("color: #e74c3c;")
         mgmt_layout.addWidget(self._edit_btn)
         mgmt_layout.addWidget(self._delete_btn)

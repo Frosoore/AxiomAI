@@ -50,18 +50,18 @@ class PersonaCreationDialog(QDialog):
     """Dialog to create a new global persona."""
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Create New Persona")
+        self.setWindowTitle(tr("create_persona_title"))
         self.setMinimumWidth(400)
-        
+
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        
+
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Persona Name")
+        self.name_edit.setPlaceholderText(tr("persona_name_placeholder"))
         form.addRow(tr("name"), self.name_edit)
-        
+
         self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setPlaceholderText("Persona Description...")
+        self.desc_edit.setPlaceholderText(tr("persona_desc_placeholder"))
         form.addRow(tr("description"), self.desc_edit)
         
         layout.addLayout(form)
@@ -136,40 +136,50 @@ class SetupView(QWidget):
         header.addWidget(self._title_label)
         header.addStretch()
         
-        self._back_btn = QPushButton(tr("hub"))
+        from ui.help_system import doc, doc_tab
+        from ui.help_dialogs import make_help_button
+
+        self._back_btn = doc(QPushButton(tr("hub")), "setup.back")
         self._back_btn.clicked.connect(self._on_back_clicked)
         header.addWidget(self._back_btn)
+        self._help_btn = make_help_button("setup", self)
+        header.addWidget(self._help_btn)
         layout.addLayout(header)
 
         self._tabs = QTabWidget()
-        
+
         # Tab 1: Saves
         self._saves_tab = QWidget()
         self._setup_saves_tab()
         self._tabs.addTab(self._saves_tab, tr("resume_save"))
+        doc_tab(self._tabs, 0, "setup.tab_saves")
 
         # Tab 2: Persona
         self._persona_tab = QWidget()
         self._setup_persona_tab()
-        self._tabs.addTab(self._persona_tab, "Persona")
+        self._tabs.addTab(self._persona_tab, tr("tab_persona"))
+        doc_tab(self._tabs, 1, "setup.tab_persona")
 
         # Tab 3: Story Setup
         self._setup_tab = QWidget()
         self._setup_story_setup_tab()
         self._tabs.addTab(self._setup_tab, tr("tab_setup"))
+        doc_tab(self._tabs, 2, "setup.tab_story")
 
         layout.addWidget(self._tabs)
 
         # Bottom Launch Button
-        self._launch_btn = QPushButton(tr("launch_session"))
+        self._launch_btn = doc(QPushButton(tr("launch_session")), "setup.launch")
         self._launch_btn.setFixedHeight(50)
         self._launch_btn.setStyleSheet("font-weight: bold; font-size: 16px; background-color: #2E7D32;")
         self._launch_btn.clicked.connect(self._on_launch_clicked)
         layout.addWidget(self._launch_btn)
 
     def _setup_saves_tab(self) -> None:
+        from ui.help_system import doc
+
         layout = QVBoxLayout(self._saves_tab)
-        self._saves_list = QListWidget()
+        self._saves_list = doc(QListWidget(), "setup.saves_list")
         self._saves_list.setStyleSheet("font-size: 14px;")
         self._saves_list.setSelectionMode(QListWidget.ExtendedSelection)
         self._saves_list.itemDoubleClicked.connect(lambda _: self._on_launch_clicked())
@@ -185,28 +195,28 @@ class SetupView(QWidget):
         layout.addWidget(self._continuous_note)
 
         btn_bar = QHBoxLayout()
-        self._import_save_btn = QPushButton(tr("import_save"))
+        self._import_save_btn = doc(QPushButton(tr("import_save")), "setup.import_save")
         self._import_save_btn.clicked.connect(self._on_import_save_clicked)
         btn_bar.addWidget(self._import_save_btn)
         btn_bar.addStretch()
 
-        self._export_save_btn = QPushButton(tr("export_save"))
+        self._export_save_btn = doc(QPushButton(tr("export_save")), "setup.export_save")
         self._export_save_btn.clicked.connect(self._on_export_save_clicked)
         btn_bar.addWidget(self._export_save_btn)
 
-        self._duplicate_save_btn = QPushButton(tr("duplicate_save"))
+        self._duplicate_save_btn = doc(QPushButton(tr("duplicate_save")), "setup.duplicate_save")
         self._duplicate_save_btn.clicked.connect(self._on_duplicate_save_clicked)
         btn_bar.addWidget(self._duplicate_save_btn)
 
-        self._rename_save_btn = QPushButton(tr("rename_save"))
+        self._rename_save_btn = doc(QPushButton(tr("rename_save")), "setup.rename_save")
         self._rename_save_btn.clicked.connect(self._on_rename_save_clicked)
         btn_bar.addWidget(self._rename_save_btn)
 
-        self._edit_save_btn = QPushButton(tr("edit_save"))
+        self._edit_save_btn = doc(QPushButton(tr("edit_save")), "setup.edit_save")
         self._edit_save_btn.clicked.connect(self._on_edit_save_clicked)
         btn_bar.addWidget(self._edit_save_btn)
 
-        self._del_save_btn = QPushButton(tr("delete_save"))
+        self._del_save_btn = doc(QPushButton(tr("delete_save")), "setup.delete_save")
         self._del_save_btn.setStyleSheet("color: #FF4B4B;")
         self._del_save_btn.clicked.connect(self._on_delete_save_clicked)
         btn_bar.addWidget(self._del_save_btn)
@@ -370,31 +380,36 @@ class SetupView(QWidget):
             self._saves_list.setCurrentRow(row - 1)
 
     def _setup_persona_tab(self) -> None:
+        from ui.help_system import doc
+
         layout = QVBoxLayout(self._persona_tab)
-        
+
         # Persona Selection
-        layout.addWidget(QLabel("<b>Select your Persona:</b>"))
-        self._persona_list = QListWidget()
+        self._select_persona_label = QLabel(f"<b>{tr('select_persona_label')}</b>")
+        layout.addWidget(self._select_persona_label)
+        self._persona_list = doc(QListWidget(), "setup.persona_list")
         self._persona_list.setStyleSheet("font-size: 14px;")
         layout.addWidget(self._persona_list)
-        
-        self._add_persona_btn = QPushButton("Add a Persona +")
+
+        self._add_persona_btn = doc(QPushButton(tr("add_persona_btn")), "setup.add_persona")
         self._add_persona_btn.setFixedHeight(35)
         self._add_persona_btn.clicked.connect(self._on_add_persona_clicked)
         layout.addWidget(self._add_persona_btn)
 
         layout.addSpacing(10)
-        
+
         # Character Metadata
         form = QFormLayout()
-        self._new_player_name = QLineEdit(tr("hero"))
-        form.addRow(tr("save_name"), self._new_player_name)
-        
-        self._difficulty_combo = QComboBox()
+        self._new_player_name = doc(QLineEdit(tr("hero")), "setup.player_name")
+        self._save_name_label = QLabel(tr("save_name"))
+        form.addRow(self._save_name_label, self._new_player_name)
+
+        self._difficulty_combo = doc(QComboBox(), "setup.difficulty")
         self._difficulty_combo.addItem(tr("normal"), "Normal")
         self._difficulty_combo.addItem(tr("hardcore"), "Hardcore")
         self._difficulty_combo.addItem(tr("companion"), "Companion")
-        form.addRow(tr("difficulty"), self._difficulty_combo)
+        self._difficulty_label = QLabel(tr("difficulty"))
+        form.addRow(self._difficulty_label, self._difficulty_combo)
         
         layout.addLayout(form)
         layout.addStretch()
@@ -412,6 +427,7 @@ class SetupView(QWidget):
         self._title_label.setText(tr("session_lobby"))
         self._back_btn.setText(tr("hub"))
         self._tabs.setTabText(0, tr("resume_save"))
+        self._tabs.setTabText(1, tr("tab_persona"))
         self._tabs.setTabText(2, tr("tab_setup"))
         self._launch_btn.setText(tr("launch_session"))
         self._del_save_btn.setText(tr("delete_save"))
@@ -421,6 +437,16 @@ class SetupView(QWidget):
         self._rename_save_btn.setText(tr("rename_save"))
         self._edit_save_btn.setText(tr("edit_save"))
         self._continuous_note.setText(tr("continuous_save_note"))
+        # Persona tab (these labels were missed before — they kept the
+        # language the view was built in).
+        self._select_persona_label.setText(f"<b>{tr('select_persona_label')}</b>")
+        self._add_persona_btn.setText(tr("add_persona_btn"))
+        self._save_name_label.setText(tr("save_name"))
+        self._difficulty_label.setText(tr("difficulty"))
+        for i in range(self._difficulty_combo.count()):
+            data = self._difficulty_combo.itemData(i)  # "Normal"/"Hardcore"/"Companion"
+            if data:
+                self._difficulty_combo.setItemText(i, tr(data.lower()))
 
     def load_universe(self, db_path: str) -> None:
         self._db_path = db_path

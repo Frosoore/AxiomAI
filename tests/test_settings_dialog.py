@@ -214,3 +214,13 @@ def test_settings_dialog_cloud_empty_models_fall_back_to_defaults(qtbot) -> None
     assert updated.fireworks_model == "accounts/fireworks/models/deepseek-v3p1"
     assert updated.openai_model == "gpt-4.1-mini"
     assert updated.openrouter_model == "openrouter/auto"
+
+
+def test_settings_dialog_doc_tooltips_toggle(qtbot) -> None:
+    """TICKET-057 follow-up: the hover-doc toggle loads and saves."""
+    dialog = SettingsDialog(AppConfig(doc_tooltips_enabled=False))
+    qtbot.addWidget(dialog)
+    assert dialog._doc_tooltips_cb.isChecked() is False
+
+    dialog._doc_tooltips_cb.setChecked(True)
+    assert dialog.collect_config().doc_tooltips_enabled is True

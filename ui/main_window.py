@@ -73,6 +73,11 @@ class MainWindow(QMainWindow):
         self._check_first_launch()
         self.show_hub()  # Populate library grid on launch
 
+        # TICKET-057 : honour the "doc tooltips on hover" settings toggle.
+        from PySide6.QtWidgets import QApplication
+        from ui.help_system import install_tooltip_gate
+        install_tooltip_gate(QApplication.instance())
+
     def _setup_volume_slider(self) -> None:
         """Add a volume slider to the status bar."""
         from PySide6.QtWidgets import QSizePolicy
@@ -100,6 +105,8 @@ class MainWindow(QMainWindow):
         self._volume_slider.setValue(50)
         self._volume_slider.setFixedWidth(80) # Keep slider compact
         self._volume_slider.valueChanged.connect(self._on_volume_changed)
+        from ui.help_system import doc
+        doc(self._volume_slider, "app.volume")
         layout.addWidget(self._volume_slider)
         
         self._status_bar.addPermanentWidget(self._volume_container)
@@ -117,6 +124,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_creator_view"): self._creator_view.retranslate_ui()
         if hasattr(self, "_tabletop_view"): self._tabletop_view.retranslate_ui()
         if hasattr(self, "_setup_view"): self._setup_view.retranslate_ui()
+
+        # TICKET-057 : every registered doc tooltip follows the language.
+        from ui.help_system import retranslate_tooltips
+        retranslate_tooltips()
 
     def _on_volume_changed(self, value: int) -> None:
         """Update audio output volume (0.0 to 1.0)."""
@@ -193,8 +204,18 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = menu_bar.addMenu(tr("menu_help"))
+        explain_action = QAction(tr("menu_explain_page"), self)
+        explain_action.setShortcut("F1")
+        explain_action.triggered.connect(self._explain_current_page)
+        help_menu.addAction(explain_action)
+        directory_action = QAction(tr("menu_doc_directory"), self)
+        directory_action.triggered.connect(self._show_doc_directory)
+        help_menu.addAction(directory_action)
+        tour_action = QAction(tr("menu_quick_tour"), self)
+        tour_action.triggered.connect(self._show_quick_tour)
+        help_menu.addAction(tour_action)
+        help_menu.addSeparator()
         about_action = QAction(tr("menu_about"), self)
-        about_action.setToolTip("Show information about Axiom AI.")
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
@@ -213,6 +234,8 @@ class MainWindow(QMainWindow):
         self._cancel_gen_btn = QPushButton(tr("cancel_generation"))
         self._cancel_gen_btn.setStyleSheet("color: #FF4B4B;")
         self._cancel_gen_btn.clicked.connect(self._on_cancel_generation)
+        from ui.help_system import doc
+        doc(self._cancel_gen_btn, "app.cancel_generation")
         self._cancel_gen_btn.hide()
         self._status_bar.addPermanentWidget(self._cancel_gen_btn)
 
@@ -366,12 +389,35 @@ class MainWindow(QMainWindow):
             tr("about_text"),
         )
 
+    # ------------------------------------------------------------------
+    # TICKET-057 : integrated documentation (Help menu)
+    # ------------------------------------------------------------------
+
+    _PAGE_BY_INDEX = {
+        _HUB_INDEX: "hub",
+        _CREATOR_INDEX: "creator",
+        _TABLETOP_INDEX: "tabletop",
+        _SETUP_INDEX: "setup",
+    }
+
+    def _current_doc_page(self) -> str:
+        return self._PAGE_BY_INDEX.get(self._stack.currentIndex(), "hub")
+
+    def _explain_current_page(self) -> None:
+        from ui.help_dialogs import ExplainPageDialog
+        ExplainPageDialog(self._current_doc_page(), self).exec()
+
+    def _show_doc_directory(self) -> None:
+        from ui.help_dialogs import DocDirectoryDialog
+        DocDirectoryDialog(self, current_page=self._current_doc_page()).exec()
+
+    def _show_quick_tour(self) -> None:
+        from ui.help_dialogs import QuickTourDialog
+        QuickTourDialog(self).exec()
+
     def _check_first_launch(self) -> None:
-        """Show a welcome message if this is the first time the app is launched."""
+        """First launch: show the quick tour (TICKET-057, replaces the old
+        welcome box — the tour's first steps cover the same ground)."""
         from axiom.paths import SETTINGS_FILE
         if not SETTINGS_FILE.exists():
-            QMessageBox.information(
-                self,
-                tr("welcome_title"),
-                tr("welcome_text"),
-            )
+            self._show_quick_tour()

@@ -103,6 +103,8 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
+        from ui.help_system import doc, doc_tab
+
         layout = QVBoxLayout(self)
 
         self._tabs = QTabWidget()
@@ -110,21 +112,19 @@ class SettingsDialog(QDialog):
         # ---- Universal API tab ----
         univ_widget = QWidget()
         univ_form = QFormLayout(univ_widget)
-        self._univ_url = QLineEdit()
+        self._univ_url = doc(QLineEdit(), "settings.base_url")
         self._univ_url.setPlaceholderText("http://localhost:11434/v1")
-        self._univ_key = QLineEdit()
+        self._univ_key = doc(QLineEdit(), "settings.api_key")
         self._univ_key.setEchoMode(QLineEdit.Password)
         self._univ_key.setPlaceholderText(tr("optional_key"))
-        self._univ_model = QLineEdit()
+        self._univ_model = doc(QLineEdit(), "settings.main_model")
         self._univ_model.setPlaceholderText("e.g. llama3.2 or gpt-4")
-        self._extraction_model = QLineEdit()
+        self._extraction_model = doc(QLineEdit(), "settings.extraction_model")
         self._extraction_model.setPlaceholderText("e.g. llama3.1:8b")
-        self._extraction_model.setToolTip("Model used strictly for JSON data extraction (e.g. Populate).")
-        self._time_model = QLineEdit()
+        self._time_model = doc(QLineEdit(), "settings.time_model")
         self._time_model.setPlaceholderText("e.g. llama3.2:1b")
-        self._time_model.setToolTip("Model used strictly for time estimation (Timekeeper).")
-        
-        self._univ_test_btn = QPushButton(tr("test_connection"))
+
+        self._univ_test_btn = doc(QPushButton(tr("test_connection")), "settings.test_connection")
         
         self._univ_status = QLabel("")
         
@@ -146,34 +146,33 @@ class SettingsDialog(QDialog):
         test_row.addStretch()
         univ_form.addRow(test_row)
         self._tabs.addTab(univ_widget, tr("tab_llm"))
+        doc_tab(self._tabs, 0, "settings.tab_llm")
 
-        # ---- Cloud tab (Gemini / Claude / Venice AI / Fireworks AI / OpenAI) ----
+        # ---- Cloud tab (Gemini / Claude / Venice / Fireworks / OpenAI / OpenRouter) ----
         cloud_widget = QWidget()
         self._cloud_form = QFormLayout(cloud_widget)
 
-        self._cloud_provider_combo = QComboBox()
+        self._cloud_provider_combo = doc(QComboBox(), "settings.cloud_provider")
         for label, provider in _CLOUD_PROVIDERS:
             self._cloud_provider_combo.addItem(label, provider)
         self._cloud_provider_label = QLabel(tr("cloud_provider"))
 
-        self._cloud_key = QLineEdit()
+        self._cloud_key = doc(QLineEdit(), "settings.cloud_key")
         self._cloud_key.setEchoMode(QLineEdit.Password)
-        self._cloud_model = QLineEdit()
-        self._cloud_test_btn = QPushButton(tr("test_connection"))
+        self._cloud_model = doc(QLineEdit(), "settings.cloud_model")
+        self._cloud_test_btn = doc(QPushButton(tr("test_connection")), "settings.test_connection")
         self._cloud_status = QLabel("")
 
         self._cloud_key_label = QLabel(tr("api_key"))
         self._cloud_model_label = QLabel(tr("model_name"))
 
         # TICKET-031 : résilience aux quotas (429) — spécifique Gemini.
-        self._gemini_fallback = QLineEdit()
+        self._gemini_fallback = doc(QLineEdit(), "settings.gemini_fallback")
         self._gemini_fallback.setPlaceholderText("e.g. gemini-2.0-flash-lite")
-        self._gemini_fallback.setToolTip(tr("gemini_fallback_tooltip"))
         self._gemini_fallback_label = QLabel(tr("gemini_fallback_label"))
-        self._llm_rpm_spin = QSpinBox()
+        self._llm_rpm_spin = doc(QSpinBox(), "settings.llm_rpm")
         self._llm_rpm_spin.setRange(0, 600)
         self._llm_rpm_spin.setSpecialValueText(tr("rpm_unlimited"))
-        self._llm_rpm_spin.setToolTip(tr("llm_rpm_tooltip"))
         self._llm_rpm_label = QLabel(tr("llm_rpm_label"))
 
         self._cloud_form.addRow(self._cloud_provider_label, self._cloud_provider_combo)
@@ -188,6 +187,7 @@ class SettingsDialog(QDialog):
         test_row2.addStretch()
         self._cloud_form.addRow(test_row2)
         self._tabs.addTab(cloud_widget, tr("tab_cloud"))
+        doc_tab(self._tabs, 1, "settings.tab_cloud")
 
         # Per-provider key/model values: the two QLineEdits are shared between
         # providers, this dict keeps each provider's text while another one is
@@ -197,15 +197,15 @@ class SettingsDialog(QDialog):
         }
         self._cloud_current_provider: str | None = None
         self._sync_cloud_fields()
-        
+
         # ---- Universe Parameters tab ----
         self._univ_params_widget = QWidget()
         univ_params_form = QFormLayout(self._univ_params_widget)
-        self._temp_spin = QDoubleSpinBox()
+        self._temp_spin = doc(QDoubleSpinBox(), "settings.llm_temp")
         self._temp_spin.setRange(0.0, 1.0)
         self._temp_spin.setSingleStep(0.05)
         self._temp_spin.setValue(0.7)
-        self._top_p_spin = QDoubleSpinBox()
+        self._top_p_spin = doc(QDoubleSpinBox(), "settings.llm_top_p")
         self._top_p_spin.setRange(0.0, 1.0)
         self._top_p_spin.setSingleStep(0.05)
         self._top_p_spin.setValue(1.0)
@@ -221,6 +221,7 @@ class SettingsDialog(QDialog):
         univ_params_form.addRow(self._univ_params_info)
         
         self._tabs.addTab(self._univ_params_widget, tr("univ_params"))
+        doc_tab(self._tabs, 2, "settings.tab_params")
         if not self._db_path:
             self._tabs.setTabEnabled(self._tabs.indexOf(self._univ_params_widget), False)
             self._univ_params_info.setText(f"<span style='color:#c0392b;'>{tr('no_universe_loaded')}</span>")
@@ -228,45 +229,46 @@ class SettingsDialog(QDialog):
         # ---- Personas tab ----
         self._persona_editor = PersonaEditorWidget()
         self._tabs.addTab(self._persona_editor, tr("persona_template").replace(":", ""))
+        doc_tab(self._tabs, 3, "settings.tab_personas")
 
         # ---- Image Generation tab ----
         self._image_widget = QWidget()
         image_form = QFormLayout(self._image_widget)
-        
-        self._image_enabled_cb = QCheckBox(tr("image_enable"))
-        self._image_backend_combo = QComboBox()
+
+        self._image_enabled_cb = doc(QCheckBox(tr("image_enable")), "settings.image_enable")
+        self._image_backend_combo = doc(QComboBox(), "settings.image_backend")
         self._image_backend_combo.addItem("Mock Generator", "mock")
         self._image_backend_combo.addItem("Stable Diffusion (WebUI)", "stable_diffusion")
         self._image_backend_combo.addItem("ComfyUI", "comfyui")
         self._image_backend_combo.addItem("Google Gemini (cloud)", "gemini")
 
-        self._image_url = QLineEdit()
+        self._image_url = doc(QLineEdit(), "settings.image_url")
         self._image_url.setPlaceholderText("e.g. http://127.0.0.1:7860")
 
-        self._image_gemini_model = QLineEdit()
+        self._image_gemini_model = doc(QLineEdit(), "settings.image_gemini_model")
         self._image_gemini_model.setPlaceholderText("gemini-2.5-flash-image")
-        
-        self._image_width_spin = QSpinBox()
+
+        self._image_width_spin = doc(QSpinBox(), "settings.image_size")
         self._image_width_spin.setRange(64, 4096)
         self._image_width_spin.setSingleStep(64)
-        
-        self._image_height_spin = QSpinBox()
+
+        self._image_height_spin = doc(QSpinBox(), "settings.image_size")
         self._image_height_spin.setRange(64, 4096)
         self._image_height_spin.setSingleStep(64)
-        
-        self._image_steps_spin = QSpinBox()
+
+        self._image_steps_spin = doc(QSpinBox(), "settings.image_steps")
         self._image_steps_spin.setRange(1, 150)
-        
-        self._image_cfg_spin = QDoubleSpinBox()
+
+        self._image_cfg_spin = doc(QDoubleSpinBox(), "settings.image_cfg")
         self._image_cfg_spin.setRange(1.0, 30.0)
         self._image_cfg_spin.setSingleStep(0.5)
 
-        self._image_timeout_spin = QSpinBox()
+        self._image_timeout_spin = doc(QSpinBox(), "settings.image_timeout")
         self._image_timeout_spin.setRange(10, 900)
         self._image_timeout_spin.setSingleStep(10)
         self._image_timeout_spin.setSuffix(" s")
-        
-        self._image_workflow = QLineEdit()
+
+        self._image_workflow = doc(QLineEdit(), "settings.image_workflow")
         self._image_workflow.setPlaceholderText("Path to workflow JSON file or raw JSON template")
         
         self._image_backend_label = QLabel(tr("image_backend"))
@@ -291,33 +293,36 @@ class SettingsDialog(QDialog):
         image_form.addRow(self._image_workflow_label, self._image_workflow)
 
         self._tabs.addTab(self._image_widget, tr("tab_image"))
+        doc_tab(self._tabs, 4, "settings.tab_image")
 
         layout.addWidget(self._tabs)
 
         # ---- General section ----
         self._general_group = QGroupBox(tr("tab_general"))
         general_form = QFormLayout(self._general_group)
-        
-        self._lang_combo = QComboBox()
+
+        self._lang_combo = doc(QComboBox(), "settings.language")
         for code, name in SUPPORTED_LANGUAGES.items():
             self._lang_combo.addItem(name, code)
-            
+
         # Chronicler interval is expressed in in-game minutes (the world clock),
         # not player turns (Pilier 5 / TICKET-018).
-        self._chronicler_spin = QSpinBox()
+        self._chronicler_spin = doc(QSpinBox(), "settings.chronicler")
         self._chronicler_spin.setRange(5, 100000)
         self._chronicler_spin.setSuffix(" min")
 
-        self._font_size_spin = QSpinBox()
+        self._font_size_spin = doc(QSpinBox(), "settings.font_size")
         self._font_size_spin.setRange(8, 36)
 
-        self._rag_chunk_spin = QSpinBox()
+        self._rag_chunk_spin = doc(QSpinBox(), "settings.rag_chunks")
         self._rag_chunk_spin.setRange(1, 20)
-        self._audio_cb = QCheckBox(tr("enable_audio"))
+        self._audio_cb = doc(QCheckBox(tr("enable_audio")), "settings.audio")
 
         # Toggle for the extra Timekeeper LLM call (Pilier 5 / TICKET-015).
-        self._timekeeper_cb = QCheckBox(tr("timekeeper_enabled"))
-        self._timekeeper_cb.setToolTip(tr("timekeeper_enabled_tooltip"))
+        self._timekeeper_cb = doc(QCheckBox(tr("timekeeper_enabled")), "settings.timekeeper")
+
+        # TICKET-057 : doc tooltips on hover can be turned off.
+        self._doc_tooltips_cb = doc(QCheckBox(tr("show_doc_tooltips")), "settings.doc_tooltips")
 
         self._lang_label = QLabel(tr("language"))
         self._chronicler_label = QLabel(tr("chronicler_minutes_label"))
@@ -330,16 +335,22 @@ class SettingsDialog(QDialog):
         general_form.addRow(self._rag_chunks_label, self._rag_chunk_spin)
         general_form.addRow("", self._audio_cb)
         general_form.addRow("", self._timekeeper_cb)
+        general_form.addRow("", self._doc_tooltips_cb)
         
         layout.addWidget(self._general_group)
 
         # ---- Buttons ----
         self._buttons = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.Help
         )
         self._buttons.button(QDialogButtonBox.Save).setText(tr("save"))
         self._buttons.button(QDialogButtonBox.Cancel).setText(tr("cancel"))
-        
+        # TICKET-057 : « expliquer cette page » pour le dialogue de réglages.
+        help_btn = self._buttons.button(QDialogButtonBox.Help)
+        help_btn.setText("?")
+        help_btn.setToolTip(tr("explain_page_btn"))
+        self._buttons.helpRequested.connect(self._show_help)
+
         self._buttons.accepted.connect(self._on_save)
         self._buttons.rejected.connect(self.reject)
         layout.addWidget(self._buttons)
@@ -431,7 +442,7 @@ class SettingsDialog(QDialog):
         self._rag_chunks_label.setText(tr("rag_chunks"))
         self._audio_cb.setText(tr("enable_audio"))
         self._timekeeper_cb.setText(tr("timekeeper_enabled"))
-        self._timekeeper_cb.setToolTip(tr("timekeeper_enabled_tooltip"))
+        self._doc_tooltips_cb.setText(tr("show_doc_tooltips"))
         
         # Image Generation tab
         img_tab_idx = self._tabs.indexOf(self._image_widget)
@@ -486,6 +497,7 @@ class SettingsDialog(QDialog):
         self._rag_chunk_spin.setValue(config.rag_chunk_count)
         self._audio_cb.setChecked(config.enable_audio)
         self._timekeeper_cb.setChecked(config.timekeeper_enabled)
+        self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
 
         # Image settings
         self._image_enabled_cb.setChecked(config.image_generation_enabled)
@@ -550,6 +562,7 @@ class SettingsDialog(QDialog):
             chronicler_minutes_interval=self._chronicler_spin.value(),
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),
+            doc_tooltips_enabled=self._doc_tooltips_cb.isChecked(),
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             # Image generation settings
@@ -624,6 +637,12 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    @Slot()
+    def _show_help(self) -> None:
+        """TICKET-057 : open the 'explain this page' dialog for Settings."""
+        from ui.help_dialogs import ExplainPageDialog
+        ExplainPageDialog("settings", self).exec()
 
     @Slot()
     def _on_save(self) -> None:

@@ -81,6 +81,8 @@ class AppConfig:
                              triggers exactly one off-screen simulation.
         ui_font_size:        Font size for the chat UI.
         enable_audio:        Whether background ambiance is enabled.
+        doc_tooltips_enabled: Whether the GUI shows the documentation tooltips
+                             when hovering interface elements (TICKET-057).
         rag_chunk_count:     Number of memory chunks to retrieve for RAG.
         llm_requests_per_minute: Soft rate limit applied to Gemini calls
                              (TICKET-031). 0 = unlimited. Free tier example:
@@ -128,6 +130,7 @@ class AppConfig:
     chronicler_minutes_interval: int = 720
     ui_font_size: int = 14
     enable_audio: bool = True
+    doc_tooltips_enabled: bool = True
     rag_chunk_count: int = 5
     language: str = "en"
     llm_requests_per_minute: int = 0

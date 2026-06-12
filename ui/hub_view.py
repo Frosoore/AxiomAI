@@ -93,15 +93,19 @@ class HubView(QWidget):
         toolbar.addWidget(self._header_label)
         toolbar.addStretch()
 
+        from ui.help_system import doc
+        from ui.help_dialogs import make_help_button
         self._import_st_btn = QPushButton(tr("import_st"))
-        self._import_st_btn.setToolTip("Import a character card from SillyTavern format.")
+        doc(self._import_st_btn, "hub.import_st")
         self._import_btn = QPushButton(tr("import"))
-        self._import_btn.setToolTip("Import an existing .axiom universe file.")
+        doc(self._import_btn, "hub.import")
         self._create_btn = QPushButton(tr("new_universe"))
-        self._create_btn.setToolTip("Create a brand new empty universe.")
+        doc(self._create_btn, "hub.create")
         toolbar.addWidget(self._import_st_btn)
         toolbar.addWidget(self._import_btn)
         toolbar.addWidget(self._create_btn)
+        self._help_btn = make_help_button("hub", self)
+        toolbar.addWidget(self._help_btn)
         layout.addLayout(toolbar)
 
         # Scroll area for universe cards
