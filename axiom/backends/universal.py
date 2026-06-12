@@ -25,12 +25,26 @@ class UniversalClient(LLMBackend):
         base_url:   The base URL (e.g., http://localhost:1234/v1).
         api_key:    Optional API key for authorization.
         model_name: The model identifier to request.
+        extra_headers: Optional headers merged into every request. Lets a
+                    provider use a non-Bearer auth scheme (e.g. Anthropic's
+                    x-api-key + anthropic-version) — pass api_key="" then.
+        max_stop_sequences: Optional cap on the number of stop sequences sent
+                    (OpenAI rejects more than 4; most providers have no limit).
     """
 
-    def __init__(self, base_url: str, api_key: str, model_name: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model_name: str,
+        extra_headers: dict[str, str] | None = None,
+        max_stop_sequences: int | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model_name = model_name
+        self.extra_headers = dict(extra_headers) if extra_headers else {}
+        self.max_stop_sequences = max_stop_sequences
         self._client = httpx.Client(
             base_url=self.base_url,
             headers=self._get_headers(),
@@ -41,7 +55,36 @@ class UniversalClient(LLMBackend):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        headers.update(self.extra_headers)
         return headers
+
+    @staticmethod
+    def _format_status_error(exc: httpx.HTTPStatusError) -> str:
+        """Build an error message that includes the provider's response body.
+
+        A bare "400 Bad Request" hides the actionable cause (unknown model,
+        rejected parameter…) — cloud providers put it in the JSON body.
+        """
+        try:
+            exc.response.read()  # streamed responses: body not read yet
+        except Exception:
+            pass
+        try:
+            body = " ".join(exc.response.text.split())[:300]
+        except Exception:
+            body = ""
+        message = (
+            f"LLM API error {exc.response.status_code} from "
+            f"{exc.request.url}: {body or exc}"
+        )
+        if exc.response.status_code == 404 and "chat/completions" in str(exc.request.url):
+            # Cloud providers answer 404 on generation when the model id is
+            # unknown/retired (the server itself is fine).
+            message += (
+                " — a 404 here usually means the configured model does not "
+                "exist on this provider. Check the Model field in Settings."
+            )
+        return message
 
     def _get_payload(self, messages: list[LLMMessage], stream: bool, temperature: float = 0.7, top_p: float = 1.0, response_format: str | None = None, stop_sequences: list[str] | None = None, max_tokens: int | None = None) -> dict:
         payload = {
@@ -57,7 +100,10 @@ class UniversalClient(LLMBackend):
         stops = ["</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
         if stop_sequences:
             stops.extend(stop_sequences)
-        payload["stop"] = list(dict.fromkeys(stops))
+        stops = list(dict.fromkeys(stops))
+        if self.max_stop_sequences is not None:
+            stops = stops[: self.max_stop_sequences]
+        payload["stop"] = stops
 
         if response_format == "json":
             payload["response_format"] = {"type": "json_object"}
@@ -90,6 +136,8 @@ class UniversalClient(LLMBackend):
                 tool_call=tool_call,
                 finish_reason=reason,
             )
+        except httpx.HTTPStatusError as exc:
+            raise LLMConnectionError(self._format_status_error(exc)) from exc
         except httpx.HTTPError as exc:
             raise LLMConnectionError(f"Universal API unreachable: {exc}") from exc
         except (KeyError, json.JSONDecodeError) as exc:
@@ -125,6 +173,8 @@ class UniversalClient(LLMBackend):
                                 yield content
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+        except httpx.HTTPStatusError as exc:
+            raise LLMConnectionError(self._format_status_error(exc)) from exc
         except httpx.HTTPError as exc:
             raise LLMConnectionError(f"Universal API streaming error: {exc}") from exc
 
@@ -135,3 +185,17 @@ class UniversalClient(LLMBackend):
             return response.status_code == 200
         except Exception:
             return False
+
+    def list_models(self) -> list[str]:
+        """Return the model ids exposed by the server's /models endpoint.
+
+        Empty list on any error — callers use this as a best-effort check
+        (e.g. the settings dialog verifying the configured model exists).
+        """
+        try:
+            response = self._client.get("/models", timeout=10.0)
+            response.raise_for_status()
+            data = response.json().get("data", [])
+            return [m["id"] for m in data if isinstance(m, dict) and "id" in m]
+        except Exception:
+            return []

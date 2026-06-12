@@ -46,12 +46,24 @@ class AppConfig:
     """User preferences for Axiom AI.
 
     Attributes:
-        llm_backend:         Active backend — "universal" or "gemini".
+        llm_backend:         Active backend — "universal", "gemini", or one of
+                             the OpenAI-compatible cloud providers: "claude",
+                             "venice", "fireworks", "openai", "openrouter".
         universal_base_url:  Base URL for Universal API (e.g. OpenAI-compatible).
         universal_api_key:   Optional API key for Universal API.
         universal_model:     Model identifier for Universal API.
         gemini_api_key:      Google Gemini API key (may be empty).
         gemini_model:        Gemini model identifier.
+        anthropic_api_key:   Anthropic API key for the "claude" backend.
+        anthropic_model:     Claude model identifier (e.g. claude-opus-4-8).
+        venice_api_key:      Venice AI API key for the "venice" backend.
+        venice_model:        Venice AI model identifier.
+        fireworks_api_key:   Fireworks AI API key for the "fireworks" backend.
+        fireworks_model:     Fireworks AI model identifier.
+        openai_api_key:      OpenAI API key for the "openai" backend.
+        openai_model:        OpenAI model identifier.
+        openrouter_api_key:  OpenRouter API key for the "openrouter" backend.
+        openrouter_model:    OpenRouter model identifier (e.g. openrouter/auto).
         extraction_model:    Model used specifically for data extraction (Populate).
         time_model:          Model used by the Timekeeper to deduce elapsed time.
         timekeeper_enabled:  When True, a dedicated second LLM call (the Timekeeper)
@@ -96,6 +108,19 @@ class AppConfig:
     universal_model: str = "llama3.2"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-4-8"
+    venice_api_key: str = ""
+    venice_model: str = "zai-org-glm-4.7"
+    fireworks_api_key: str = ""
+    # NB: Fireworks retires serverless models aggressively — deepseek-v3p1 is
+    # the id their own docs examples use. An unknown model = 404 on
+    # /chat/completions while /models still answers 200.
+    fireworks_model: str = "accounts/fireworks/models/deepseek-v3p1"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openrouter/auto"
     extraction_model: str = "llama3.1:8b"
     time_model: str = "llama3.2:1b"
     timekeeper_enabled: bool = True
@@ -119,6 +144,25 @@ class AppConfig:
     image_comfyui_workflow: str = ""
     image_gemini_model: str = "gemini-2.5-flash-image"
     image_timeout: int = 180
+
+
+# OpenAI-compatible cloud text providers selectable in the Cloud settings tab.
+# Gemini keeps its own native client (quota resilience, fallback model); every
+# provider below goes through UniversalClient with a preset base URL.
+# value = (base_url, api-key field name, model field name, max stop sequences)
+# Venice, Fireworks, OpenAI and OpenRouter all reject more than 4 "stop"
+# sequences with a 400 (their /models endpoint answers fine, so the connection
+# test passes and only real generation fails) — None = no documented limit.
+OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str, str, int | None]] = {
+    "claude": ("https://api.anthropic.com/v1", "anthropic_api_key", "anthropic_model", None),
+    "venice": ("https://api.venice.ai/api/v1", "venice_api_key", "venice_model", 4),
+    "fireworks": ("https://api.fireworks.ai/inference/v1", "fireworks_api_key", "fireworks_model", 4),
+    "openai": ("https://api.openai.com/v1", "openai_api_key", "openai_model", 4),
+    "openrouter": ("https://openrouter.ai/api/v1", "openrouter_api_key", "openrouter_model", 4),
+}
+
+# Every cloud backend (the Cloud tab of the settings dialog).
+CLOUD_BACKENDS: tuple[str, ...] = ("gemini", *OPENAI_COMPAT_PROVIDERS)
 
 
 # Cache de load_config (QA-042.1) : tr() et les chemins chauds rechargent la
@@ -206,28 +250,35 @@ def save_config(config: AppConfig) -> None:
     )
 
 
+def _cloud_main_model(config: AppConfig) -> str | None:
+    """Main model of the active cloud backend, or None on universal/local."""
+    backend = config.llm_backend.lower().strip()
+    if backend == "gemini":
+        return config.gemini_model
+    if backend in OPENAI_COMPAT_PROVIDERS:
+        return getattr(config, OPENAI_COMPAT_PROVIDERS[backend][2])
+    return None
+
+
 def resolve_extraction_model(config: AppConfig) -> str:
     """Pick the model name for auxiliary LLM calls (hero decision, extraction).
 
     `extraction_model` is an Ollama-style local model name; it only makes sense
-    for the universal/Ollama backend. On the Gemini backend there is no separate
-    local model, so sending `extraction_model` ("llama3.1:8b") to the Gemini API
-    yields a 404. Fall back to the configured `gemini_model` in that case.
+    for the universal/Ollama backend. On a cloud backend (Gemini, Claude,
+    Venice, Fireworks, OpenAI) there is no separate local model, so sending
+    `extraction_model` ("llama3.1:8b") to the provider yields a 404. Fall back
+    to the provider's main model in that case.
     """
-    if config.llm_backend.lower().strip() == "gemini":
-        return config.gemini_model
-    return config.extraction_model
+    return _cloud_main_model(config) or config.extraction_model
 
 
 def resolve_time_model(config: AppConfig) -> str:
     """Return the correct time model identifier based on the active backend.
-    
-    If the backend is Gemini, the local time_model identifier cannot be used,
-    so we fall back to the gemini_model.
+
+    On a cloud backend the local time_model identifier cannot be used, so we
+    fall back to the provider's main model.
     """
-    if config.llm_backend.lower().strip() == "gemini":
-        return config.gemini_model
-    return config.time_model
+    return _cloud_main_model(config) or config.time_model
 
 
 def build_llm_from_config(config: AppConfig, model_override: str | None = None) -> LLMBackend:
@@ -241,7 +292,9 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
         A concrete LLMBackend instance ready for use.
 
     Raises:
-        ValueError: If config.llm_backend is not "universal" or "gemini".
+        ValueError: If config.llm_backend is not "universal", "gemini", or one
+            of the OpenAI-compatible cloud providers (claude, venice,
+            fireworks, openai, openrouter).
     """
     from axiom.backends.universal import UniversalClient
     from axiom.backends.gemini import GeminiClient
@@ -256,11 +309,38 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
             model_name=model_override if model_override else config.universal_model,
         )
 
+    if backend in OPENAI_COMPAT_PROVIDERS:
+        base_url, key_field, model_field, max_stops = OPENAI_COMPAT_PROVIDERS[backend]
+        api_key = getattr(config, key_field).strip()
+        if not api_key:
+            raise ValueError(
+                f"'{backend}' backend selected but no API key is configured. "
+                "Add your key in File → Settings → Cloud."
+            )
+        extra_headers = None
+        if backend == "claude":
+            # Anthropic's OpenAI-compat layer accepts the native x-api-key on
+            # /chat/completions, and GET /models (connection test) accepts
+            # ONLY it (a bare Bearer is rejected) — authenticate natively and
+            # skip the Authorization header.
+            extra_headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+            api_key = ""
+        elif backend == "openrouter":
+            # Optional attribution headers (shown in OpenRouter dashboards).
+            extra_headers = {"X-Title": "Axiom AI"}
+        return UniversalClient(
+            base_url=base_url,
+            api_key=api_key,
+            model_name=model_override if model_override else getattr(config, model_field),
+            extra_headers=extra_headers,
+            max_stop_sequences=max_stops,
+        )
+
     if backend == "gemini":
         if not config.gemini_api_key:
             raise ValueError(
                 "Gemini backend selected but no API key is configured. "
-                "Add your key in File → Settings → Cloud (Gemini)."
+                "Add your key in File → Settings → Cloud."
             )
         return GeminiClient(
             api_key=config.gemini_api_key,
@@ -271,5 +351,5 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
 
     raise ValueError(
         f"Unknown LLM backend: '{config.llm_backend}'. "
-        "Expected 'universal' or 'gemini'."
+        f"Expected 'universal' or one of: {', '.join(CLOUD_BACKENDS)}."
     )

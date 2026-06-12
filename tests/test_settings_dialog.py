@@ -82,3 +82,135 @@ def test_settings_dialog_gemini_image_backend_selectable(qtbot) -> None:
     updated_cfg = dialog.collect_config()
     assert updated_cfg.image_backend == "gemini"
     assert updated_cfg.image_gemini_model == "gemini-2.5-flash-image"
+
+
+def test_settings_dialog_cloud_provider_dropdown(qtbot) -> None:
+    """The Cloud tab exposes the 5 text providers in the dropdown."""
+    dialog = SettingsDialog(AppConfig())
+    qtbot.addWidget(dialog)
+
+    providers = [
+        dialog._cloud_provider_combo.itemData(i)
+        for i in range(dialog._cloud_provider_combo.count())
+    ]
+    assert providers == ["gemini", "claude", "venice", "fireworks", "openai", "openrouter"]
+    # Default config (universal backend) shows the Gemini provider with its
+    # gemini-only rows visible.
+    assert dialog._cloud_provider_combo.currentData() == "gemini"
+    assert dialog._cloud_form.isRowVisible(dialog._gemini_fallback)
+
+
+def test_settings_dialog_cloud_provider_loads_and_collects(qtbot) -> None:
+    """A venice backend selects the provider, fills its fields, and switching
+    providers keeps every key (round-trip through collect_config)."""
+    cfg = AppConfig(
+        llm_backend="venice",
+        venice_api_key="venice-key",
+        venice_model="zai-org-glm-4.7",
+        gemini_api_key="gemini-key",
+        anthropic_api_key="claude-key",
+    )
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    # Loaded on the Cloud tab with venice selected and its values displayed
+    assert dialog._tabs.currentIndex() == 1
+    assert dialog._cloud_provider_combo.currentData() == "venice"
+    assert dialog._cloud_key.text() == "venice-key"
+    assert dialog._cloud_model.text() == "zai-org-glm-4.7"
+    # Gemini-only rows are hidden for the other providers
+    assert not dialog._cloud_form.isRowVisible(dialog._gemini_fallback)
+    assert not dialog._cloud_form.isRowVisible(dialog._llm_rpm_spin)
+
+    # Switch to claude: its stored key appears, venice's is stashed
+    idx = dialog._cloud_provider_combo.findData("claude")
+    dialog._cloud_provider_combo.setCurrentIndex(idx)
+    assert dialog._cloud_key.text() == "claude-key"
+    dialog._cloud_model.setText("claude-opus-4-8")
+
+    updated = dialog.collect_config()
+    assert updated.llm_backend == "claude"
+    assert updated.anthropic_api_key == "claude-key"
+    assert updated.anthropic_model == "claude-opus-4-8"
+    # Nothing lost on the other providers
+    assert updated.venice_api_key == "venice-key"
+    assert updated.venice_model == "zai-org-glm-4.7"
+    assert updated.gemini_api_key == "gemini-key"
+
+
+class _FakeListingLLM:
+    """Backend stub exposing the same surface ConnectionTestWorker probes."""
+
+    def __init__(self, model_name: str, ids: list[str]) -> None:
+        self.model_name = model_name
+        self._ids = ids
+
+    def is_available(self) -> bool:
+        return True
+
+    def list_models(self) -> list[str]:
+        return self._ids
+
+
+def test_connection_test_worker_flags_unknown_model() -> None:
+    """Server up + wrong model = the exact trap seen on Fireworks (404 only at
+    generation time): the test must fail with an explicit message."""
+    from workers.connection_test_worker import ConnectionTestWorker
+
+    worker = ConnectionTestWorker(
+        _FakeListingLLM("accounts/fireworks/models/gone", ["accounts/fireworks/models/deepseek-v3p1"])
+    )
+    msg = worker._check_model()
+    assert msg is not None and "gone" in msg
+
+
+def test_connection_test_worker_accepts_known_and_tagged_models() -> None:
+    from workers.connection_test_worker import ConnectionTestWorker
+
+    # Exact id
+    ok = ConnectionTestWorker(_FakeListingLLM("m1", ["m1", "m2"]))._check_model()
+    assert ok is None
+    # Ollama-style "name:tag" listing for a configured bare name
+    ok = ConnectionTestWorker(_FakeListingLLM("llama3.2", ["llama3.2:latest"]))._check_model()
+    assert ok is None
+    # Unlistable endpoint (empty list) stays permissive
+    ok = ConnectionTestWorker(_FakeListingLLM("anything", []))._check_model()
+    assert ok is None
+
+
+def test_connection_test_worker_probe_validates_with_real_completion() -> None:
+    """Cloud providers: /models is not authoritative (Fireworks lists only the
+    account's own models) — the test validates the model with a 1-token call."""
+    from workers.connection_test_worker import ConnectionTestWorker
+
+    class _OkLLM:
+        def is_available(self) -> bool:
+            return True
+
+        def complete(self, messages, **kwargs):
+            assert kwargs.get("max_tokens") == 1
+            return object()
+
+    assert ConnectionTestWorker(_OkLLM(), probe_model=True)._probe() is None
+
+    class _FailingLLM:
+        def is_available(self) -> bool:
+            return True
+
+        def complete(self, messages, **kwargs):
+            raise RuntimeError("LLM API error 404 from .../chat/completions: model not found")
+
+    msg = ConnectionTestWorker(_FailingLLM(), probe_model=True)._probe()
+    assert msg is not None and msg.startswith("✗") and "404" in msg
+
+
+def test_settings_dialog_cloud_empty_models_fall_back_to_defaults(qtbot) -> None:
+    dialog = SettingsDialog(AppConfig())
+    qtbot.addWidget(dialog)
+
+    updated = dialog.collect_config()
+    assert updated.anthropic_model == "claude-opus-4-8"
+    assert updated.venice_model == "zai-org-glm-4.7"
+    assert updated.fireworks_model == "accounts/fireworks/models/deepseek-v3p1"
+    assert updated.openai_model == "gpt-4.1-mini"
+    assert updated.openrouter_model == "openrouter/auto"

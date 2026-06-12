@@ -17,6 +17,8 @@
 | TICKET-058| 📋 **Chantier planifié** — Site de doc de la lib `axiomai-engine` en **Sphinx** (style devguide.python.org : quickstart, tutos, référence API autodoc), GitHub Pages | ✅ terminé (2026-06-12, cf. `maintenance/TICKET-058-doc-sphinx/`) — ⚠ activer Pages + push pour publier |
 | TICKET-059| Test threadé flaky : `test_generation_cancel.py::test_registre_cancel_active_generations` (passe en isolation, flanche sous charge) | ouvert — fiabilité de la suite |
 | TICKET-060| `axiom.help` (guide REPL publié dans le wheel) encore 100 % en français — angle mort des TICKET-055/056 | ✅ terminé (2026-06-12, cf. `maintenance/TICKET-060-help-english/`) |
+| TICKET-061| Backend `openai` : modèles reasoning (gpt-5/o-series) incompatibles avec le payload actuel (`max_tokens`→`max_completion_tokens`, `temperature` figée à 1) | ouvert — suite de `feature-cloud-text-providers` |
+| TICKET-062| Backend d'**images** Venice AI (`POST /image/generate`, clé `venice_api_key` déjà en config) | ouvert — idée feature |
 
 Tickets résolus/clos : voir `DONE.md` (001→012, TC1→TC5, 015→049 sauf 017, 051→052).
 
@@ -179,6 +181,38 @@ Vraie documentation publique de la lib `axiomai-engine`, façon `devguide.python
 **GitHub Pages**. **Outil tranché : Sphinx** (et non MkDocs) — pour matcher les sites de référence
 cités et générer l'API depuis les docstrings existantes. Chantier **autonome** (nouveau dossier
 `docs/`, ne touche aucun code → zéro conflit, zéro risque). Bon candidat pour démarrer le volet doc.
+
+---
+
+## TICKET-061 — Backend `openai` : modèles reasoning (gpt-5 / o-series) incompatibles
+
+**Constat (2026-06-12, en livrant `feature-cloud-text-providers`).** Le backend `openai` passe par
+`UniversalClient`, dont le payload utilise `max_tokens` et `temperature=0.7`. Les modèles
+« reasoning » d'OpenAI (famille gpt-5, o-series) **refusent ce payload en 400** : ils exigent
+`max_completion_tokens` à la place de `max_tokens` et n'acceptent que `temperature=1` (défaut).
+Le défaut livré (`gpt-4.1-mini`, paramètres classiques) fonctionne ; c'est le choix manuel d'un
+modèle reasoning qui casse.
+
+**Piste.** Détection du préfixe de modèle (`gpt-5`, `o1`/`o3`/`o4`) dans `UniversalClient` ou un
+paramètre de construction supplémentaire dans `build_llm_from_config` (comme `max_stop_sequences`) :
+basculer `max_tokens`→`max_completion_tokens` et omettre `temperature`/`top_p`.
+
+**Priorité :** basse tant que le défaut documenté reste un modèle classique.
+
+---
+
+## TICKET-062 — Backend d'images Venice AI
+
+**Idée (2026-06-12, sortie du malentendu initial de la session cloud-providers).** Venice AI expose
+une API d'images native `POST https://api.venice.ai/api/v1/image/generate` (Bearer, JSON
+`{model, prompt, negative_prompt, width≤1280, height≤1280, steps, cfg_scale, format, return_binary}`
+→ `{"images": ["<base64>"]}`), qui mappe **exactement** les paramètres existants de la config image
+(`image_width/height/steps/cfg_scale`). La clé `venice_api_key` existe déjà depuis
+`feature-cloud-text-providers`. Ajouter un backend `venice` dans `axiom/image_generator.py` (même
+patron que `_generate_gemini` : échec → None, TICKET-045) + entrée combo dans l'onglet Illustration
++ champ modèle (`image_venice_model`, ex. `venice-sd35`, steps max 30).
+
+**Priorité :** moyenne (feature, rend l'illustration utilisable sans GPU local ni clé Google).
 
 ---
 

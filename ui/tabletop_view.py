@@ -871,12 +871,26 @@ class TabletopView(HardcoreMixin, QWidget):
         """Display background error to the user."""
         self._chat.set_send_enabled(True)
         self._main_window.on_status_update(tr("error") + ": " + message)
-        
-        if "connection" in message.lower() or "404" in message:
+
+        lowered = message.lower()
+        if (
+            "llm unreachable" in lowered
+            or "llm api error" in lowered
+            or "connection" in lowered
+            or "404" in message
+        ):
+            # The "start Ollama" guide only makes sense on the local/universal
+            # backend; on a cloud provider it used to hide the real cause
+            # (e.g. a 400 from the API) — show the actual error instead.
+            backend = load_config().llm_backend.lower().strip()
+            if backend in ("universal", "ollama"):
+                detail = tr("ollama_guide")
+            else:
+                detail = message
             QMessageBox.critical(
-                self, 
+                self,
                 tr("error"),
-                f"{tr('llm_unreachable')}\n\n{tr('ollama_guide')}"
+                f"{tr('llm_unreachable')}\n\n{detail}"
             )
 
     @Slot(bool)

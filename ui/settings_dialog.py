@@ -32,11 +32,38 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 
-from axiom.config import AppConfig, build_llm_from_config, save_config, GLOBAL_DB_FILE, load_config
+from axiom.config import (
+    AppConfig,
+    CLOUD_BACKENDS,
+    OPENAI_COMPAT_PROVIDERS,
+    build_llm_from_config,
+    save_config,
+    GLOBAL_DB_FILE,
+    load_config,
+)
 from core.localization import tr, SUPPORTED_LANGUAGES
 from ui.widgets.persona_editor import PersonaEditorWidget
 from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker
+
+# Cloud tab dropdown: display label + placeholders per provider. The key
+# placeholder for "gemini" is localized (tr("gemini_key_placeholder")).
+_CLOUD_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("Google Gemini", "gemini"),
+    ("Anthropic Claude", "claude"),
+    ("Venice AI", "venice"),
+    ("Fireworks AI", "fireworks"),
+    ("OpenAI", "openai"),
+    ("OpenRouter", "openrouter"),
+)
+_CLOUD_MODEL_PLACEHOLDERS: dict[str, str] = {
+    "gemini": "e.g. gemini-2.0-flash",
+    "claude": "e.g. claude-opus-4-8",
+    "venice": "e.g. zai-org-glm-4.7",
+    "fireworks": "e.g. accounts/fireworks/models/deepseek-v3p1",
+    "openai": "e.g. gpt-4.1-mini",
+    "openrouter": "e.g. openrouter/auto",
+}
 
 
 class SettingsDialog(QDialog):
@@ -120,21 +147,25 @@ class SettingsDialog(QDialog):
         univ_form.addRow(test_row)
         self._tabs.addTab(univ_widget, tr("tab_llm"))
 
-        # ---- Gemini tab ----
-        gemini_widget = QWidget()
-        gemini_form = QFormLayout(gemini_widget)
-        self._gemini_key = QLineEdit()
-        self._gemini_key.setEchoMode(QLineEdit.Password)
-        self._gemini_key.setPlaceholderText(tr("gemini_key_placeholder"))
-        self._gemini_model = QLineEdit()
-        self._gemini_model.setPlaceholderText("e.g. gemini-2.0-flash")
-        self._gemini_test_btn = QPushButton(tr("test_connection"))
-        self._gemini_status = QLabel("")
-        
-        self._gemini_key_label = QLabel(tr("api_key"))
-        self._gemini_model_label = QLabel(tr("model_name"))
+        # ---- Cloud tab (Gemini / Claude / Venice AI / Fireworks AI / OpenAI) ----
+        cloud_widget = QWidget()
+        self._cloud_form = QFormLayout(cloud_widget)
 
-        # TICKET-031 : résilience aux quotas (429).
+        self._cloud_provider_combo = QComboBox()
+        for label, provider in _CLOUD_PROVIDERS:
+            self._cloud_provider_combo.addItem(label, provider)
+        self._cloud_provider_label = QLabel(tr("cloud_provider"))
+
+        self._cloud_key = QLineEdit()
+        self._cloud_key.setEchoMode(QLineEdit.Password)
+        self._cloud_model = QLineEdit()
+        self._cloud_test_btn = QPushButton(tr("test_connection"))
+        self._cloud_status = QLabel("")
+
+        self._cloud_key_label = QLabel(tr("api_key"))
+        self._cloud_model_label = QLabel(tr("model_name"))
+
+        # TICKET-031 : résilience aux quotas (429) — spécifique Gemini.
         self._gemini_fallback = QLineEdit()
         self._gemini_fallback.setPlaceholderText("e.g. gemini-2.0-flash-lite")
         self._gemini_fallback.setToolTip(tr("gemini_fallback_tooltip"))
@@ -145,17 +176,27 @@ class SettingsDialog(QDialog):
         self._llm_rpm_spin.setToolTip(tr("llm_rpm_tooltip"))
         self._llm_rpm_label = QLabel(tr("llm_rpm_label"))
 
-        gemini_form.addRow(self._gemini_key_label, self._gemini_key)
-        gemini_form.addRow(self._gemini_model_label, self._gemini_model)
-        gemini_form.addRow(self._gemini_fallback_label, self._gemini_fallback)
-        gemini_form.addRow(self._llm_rpm_label, self._llm_rpm_spin)
-        
+        self._cloud_form.addRow(self._cloud_provider_label, self._cloud_provider_combo)
+        self._cloud_form.addRow(self._cloud_key_label, self._cloud_key)
+        self._cloud_form.addRow(self._cloud_model_label, self._cloud_model)
+        self._cloud_form.addRow(self._gemini_fallback_label, self._gemini_fallback)
+        self._cloud_form.addRow(self._llm_rpm_label, self._llm_rpm_spin)
+
         test_row2 = QHBoxLayout()
-        test_row2.addWidget(self._gemini_test_btn)
-        test_row2.addWidget(self._gemini_status)
+        test_row2.addWidget(self._cloud_test_btn)
+        test_row2.addWidget(self._cloud_status)
         test_row2.addStretch()
-        gemini_form.addRow(test_row2)
-        self._tabs.addTab(gemini_widget, tr("cloud_gemini"))
+        self._cloud_form.addRow(test_row2)
+        self._tabs.addTab(cloud_widget, tr("tab_cloud"))
+
+        # Per-provider key/model values: the two QLineEdits are shared between
+        # providers, this dict keeps each provider's text while another one is
+        # displayed (switching never loses a key).
+        self._cloud_values: dict[str, dict[str, str]] = {
+            provider: {"key": "", "model": ""} for _, provider in _CLOUD_PROVIDERS
+        }
+        self._cloud_current_provider: str | None = None
+        self._sync_cloud_fields()
         
         # ---- Universe Parameters tab ----
         self._univ_params_widget = QWidget()
@@ -305,7 +346,45 @@ class SettingsDialog(QDialog):
 
         # Connections
         self._univ_test_btn.clicked.connect(self._test_universal)
-        self._gemini_test_btn.clicked.connect(self._test_gemini)
+        self._cloud_test_btn.clicked.connect(self._test_cloud)
+        self._cloud_provider_combo.currentIndexChanged.connect(
+            self._on_cloud_provider_changed
+        )
+
+    # ------------------------------------------------------------------
+    # Cloud provider helpers
+    # ------------------------------------------------------------------
+
+    def _stash_cloud_fields(self) -> None:
+        """Save the displayed key/model into the current provider's slot."""
+        provider = self._cloud_current_provider
+        if provider:
+            self._cloud_values[provider] = {
+                "key": self._cloud_key.text().strip(),
+                "model": self._cloud_model.text().strip(),
+            }
+
+    def _sync_cloud_fields(self) -> None:
+        """Load the selected provider's values + adjust per-provider widgets."""
+        provider = self._cloud_provider_combo.currentData()
+        self._cloud_current_provider = provider
+        values = self._cloud_values.get(provider, {"key": "", "model": ""})
+        self._cloud_key.setText(values["key"])
+        self._cloud_model.setText(values["model"])
+        self._cloud_key.setPlaceholderText(
+            tr("gemini_key_placeholder") if provider == "gemini" else tr("api_key").rstrip(" :")
+        )
+        self._cloud_model.setPlaceholderText(_CLOUD_MODEL_PLACEHOLDERS.get(provider, ""))
+        # Fallback model + RPM limit only exist on the Gemini client.
+        is_gemini = provider == "gemini"
+        self._cloud_form.setRowVisible(self._gemini_fallback, is_gemini)
+        self._cloud_form.setRowVisible(self._llm_rpm_spin, is_gemini)
+
+    @Slot()
+    def _on_cloud_provider_changed(self) -> None:
+        self._stash_cloud_fields()
+        self._cloud_status.setText("")
+        self._sync_cloud_fields()
 
     # ------------------------------------------------------------------
     # Public API
@@ -317,7 +396,7 @@ class SettingsDialog(QDialog):
         
         # Tabs
         self._tabs.setTabText(0, tr("tab_llm"))
-        self._tabs.setTabText(1, tr("cloud_gemini"))
+        self._tabs.setTabText(1, tr("tab_cloud"))
         self._tabs.setTabText(2, tr("univ_params"))
         self._tabs.setTabText(3, tr("persona_template").replace(":", ""))
         
@@ -330,11 +409,14 @@ class SettingsDialog(QDialog):
         self._univ_key.setPlaceholderText(tr("optional_key"))
         self._univ_test_btn.setText(tr("test_connection"))
         
-        # Gemini Tab
-        self._gemini_key_label.setText(tr("api_key"))
-        self._gemini_model_label.setText(tr("model_name"))
-        self._gemini_key.setPlaceholderText(tr("gemini_key_placeholder"))
-        self._gemini_test_btn.setText(tr("test_connection"))
+        # Cloud Tab
+        self._cloud_provider_label.setText(tr("cloud_provider"))
+        self._cloud_key_label.setText(tr("api_key"))
+        self._cloud_model_label.setText(tr("model_name"))
+        self._cloud_test_btn.setText(tr("test_connection"))
+        # Refresh the localized key placeholder without losing unsaved edits.
+        self._stash_cloud_fields()
+        self._sync_cloud_fields()
         
         # Univ Params
         self._llm_temp_label.setText(tr("llm_temp"))
@@ -383,8 +465,20 @@ class SettingsDialog(QDialog):
         self._univ_model.setText(config.universal_model)
         self._extraction_model.setText(config.extraction_model)
         self._time_model.setText(config.time_model)
-        self._gemini_key.setText(config.gemini_api_key)
-        self._gemini_model.setText(config.gemini_model)
+        self._cloud_values = {
+            "gemini": {"key": config.gemini_api_key, "model": config.gemini_model},
+            "claude": {"key": config.anthropic_api_key, "model": config.anthropic_model},
+            "venice": {"key": config.venice_api_key, "model": config.venice_model},
+            "fireworks": {"key": config.fireworks_api_key, "model": config.fireworks_model},
+            "openai": {"key": config.openai_api_key, "model": config.openai_model},
+            "openrouter": {"key": config.openrouter_api_key, "model": config.openrouter_model},
+        }
+        provider = config.llm_backend if config.llm_backend in CLOUD_BACKENDS else "gemini"
+        self._cloud_current_provider = None  # don't stash stale text on the way
+        idx = self._cloud_provider_combo.findData(provider)
+        if idx >= 0:
+            self._cloud_provider_combo.setCurrentIndex(idx)
+        self._sync_cloud_fields()
         self._gemini_fallback.setText(config.gemini_fallback_model)
         self._llm_rpm_spin.setValue(config.llm_requests_per_minute)
         self._chronicler_spin.setValue(config.chronicler_minutes_interval)
@@ -411,7 +505,7 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._lang_combo.setCurrentIndex(idx)
 
-        if config.llm_backend == "gemini":
+        if config.llm_backend in CLOUD_BACKENDS:
             self._tabs.setCurrentIndex(1)
         else:
             self._tabs.setCurrentIndex(0)
@@ -420,15 +514,29 @@ class SettingsDialog(QDialog):
         """Read all form fields and return an updated AppConfig."""
         backend = "universal"
         if self._tabs.currentIndex() == 1:
-            backend = "gemini"
+            backend = self._cloud_provider_combo.currentData()
+
+        self._stash_cloud_fields()
+        cloud = self._cloud_values
 
         return AppConfig(
             llm_backend=backend,
             universal_base_url=self._univ_url.text().strip() or "http://localhost:11434/v1",
             universal_api_key=self._univ_key.text().strip(),
             universal_model=self._univ_model.text().strip() or "llama3.2",
-            gemini_api_key=self._gemini_key.text().strip(),
-            gemini_model=self._gemini_model.text().strip() or "gemini-2.0-flash",
+            gemini_api_key=cloud["gemini"]["key"],
+            gemini_model=cloud["gemini"]["model"] or "gemini-2.0-flash",
+            anthropic_api_key=cloud["claude"]["key"],
+            anthropic_model=cloud["claude"]["model"] or "claude-opus-4-8",
+            venice_api_key=cloud["venice"]["key"],
+            venice_model=cloud["venice"]["model"] or "zai-org-glm-4.7",
+            fireworks_api_key=cloud["fireworks"]["key"],
+            fireworks_model=cloud["fireworks"]["model"]
+            or "accounts/fireworks/models/deepseek-v3p1",
+            openai_api_key=cloud["openai"]["key"],
+            openai_model=cloud["openai"]["model"] or "gpt-4.1-mini",
+            openrouter_api_key=cloud["openrouter"]["key"],
+            openrouter_model=cloud["openrouter"]["model"] or "openrouter/auto",
             gemini_fallback_model=self._gemini_fallback.text().strip(),
             llm_requests_per_minute=self._llm_rpm_spin.value(),
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
@@ -548,20 +656,24 @@ class SettingsDialog(QDialog):
         self._test_worker.start()
 
     @Slot()
-    def _test_gemini(self) -> None:
-        self._gemini_status.setText(tr("testing"))
-        self._gemini_test_btn.setEnabled(False)
+    def _test_cloud(self) -> None:
+        self._cloud_status.setText(tr("testing"))
+        self._cloud_test_btn.setEnabled(False)
         cfg = self.collect_config()
-        cfg.llm_backend = "gemini"
+        cfg.llm_backend = self._cloud_provider_combo.currentData()
         try:
             llm = build_llm_from_config(cfg)
         except ValueError as exc:
-            self._gemini_status.setText(f"{tr('failed')} {exc}")
-            self._gemini_test_btn.setEnabled(True)
+            self._cloud_status.setText(f"{tr('failed')} {exc}")
+            self._cloud_test_btn.setEnabled(True)
             return
-        self._test_worker = ConnectionTestWorker(llm)
+        # OpenAI-compat providers: validate the model with a 1-token call —
+        # their /models listing is not authoritative. Gemini keeps the plain
+        # reachability check (its client retries 429s with long sleeps).
+        probe = cfg.llm_backend in OPENAI_COMPAT_PROVIDERS
+        self._test_worker = ConnectionTestWorker(llm, probe_model=probe)
         self._test_worker.result_ready.connect(
-            lambda ok, msg: self._on_test_result(ok, msg, self._gemini_status, self._gemini_test_btn)
+            lambda ok, msg: self._on_test_result(ok, msg, self._cloud_status, self._cloud_test_btn)
         )
         self._test_worker.start()
 

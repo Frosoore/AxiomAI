@@ -13,9 +13,11 @@ import pytest
 
 from axiom.config import (
     AppConfig,
+    OPENAI_COMPAT_PROVIDERS,
     build_llm_from_config,
     load_config,
     resolve_extraction_model,
+    resolve_time_model,
     save_config,
 )
 
@@ -184,6 +186,127 @@ class TestBuildLlmFromConfig:
         assert llm.model_name == "mistral"
 
 
+class TestOpenAICompatCloudProviders:
+    """The claude/venice/fireworks/openai backends reuse UniversalClient with
+    a preset base URL (Cloud settings tab dropdown)."""
+
+    def test_venice_backend_builds_universal_client(self) -> None:
+        from axiom.backends.universal import UniversalClient
+        cfg = AppConfig(
+            llm_backend="venice", venice_api_key="vk", venice_model="zai-org-glm-4.7"
+        )
+        llm = build_llm_from_config(cfg)
+        assert isinstance(llm, UniversalClient)
+        assert llm.base_url == "https://api.venice.ai/api/v1"
+        assert llm.api_key == "vk"
+        assert llm.model_name == "zai-org-glm-4.7"
+
+    def test_fireworks_backend_builds_universal_client(self) -> None:
+        cfg = AppConfig(llm_backend="fireworks", fireworks_api_key="fk")
+        llm = build_llm_from_config(cfg)
+        assert llm.base_url == "https://api.fireworks.ai/inference/v1"
+
+    def test_openrouter_backend_builds_universal_client(self) -> None:
+        cfg = AppConfig(llm_backend="openrouter", openrouter_api_key="ork")
+        llm = build_llm_from_config(cfg)
+        assert llm.base_url == "https://openrouter.ai/api/v1"
+        assert llm.api_key == "ork"
+        assert llm.model_name == "openrouter/auto"
+
+    def test_claude_backend_uses_native_anthropic_headers(self) -> None:
+        """Anthropic's /v1/models rejects a bare Bearer: the claude provider
+        authenticates with x-api-key + anthropic-version instead."""
+        cfg = AppConfig(llm_backend="claude", anthropic_api_key="sk-ant-test")
+        llm = build_llm_from_config(cfg)
+        assert llm.base_url == "https://api.anthropic.com/v1"
+        headers = llm._get_headers()
+        assert headers["x-api-key"] == "sk-ant-test"
+        assert headers["anthropic-version"] == "2023-06-01"
+        assert "Authorization" not in headers
+
+    def test_stop_sequences_capped_where_documented(self) -> None:
+        """Venice, Fireworks, OpenAI and OpenRouter reject more than 4 stop
+        sequences with a 400 (their /models works, so the connection test
+        passed but generation failed — bug rapporté sur Fireworks). Claude's
+        compat layer has no such limit: full list kept there."""
+        keys = {
+            "venice": {"venice_api_key": "k"},
+            "fireworks": {"fireworks_api_key": "k"},
+            "openai": {"openai_api_key": "k"},
+            "openrouter": {"openrouter_api_key": "k"},
+        }
+        for provider, kwargs in keys.items():
+            llm = build_llm_from_config(AppConfig(llm_backend=provider, **kwargs))
+            payload = llm._get_payload([{"role": "user", "content": "hi"}], stream=False)
+            assert len(payload["stop"]) <= 4, provider
+
+        claude = build_llm_from_config(
+            AppConfig(llm_backend="claude", anthropic_api_key="k")
+        )
+        payload = claude._get_payload([{"role": "user", "content": "hi"}], stream=False)
+        assert len(payload["stop"]) > 4
+
+    def test_missing_api_key_raises_for_each_provider(self) -> None:
+        for provider in OPENAI_COMPAT_PROVIDERS:
+            cfg = AppConfig(llm_backend=provider)
+            with pytest.raises(ValueError, match="no API key"):
+                build_llm_from_config(cfg)
+
+    def test_status_error_message_includes_provider_body(self) -> None:
+        """HTTP 4xx/5xx from a provider must surface the response body (the
+        actionable cause) instead of a bare '400 Bad Request'."""
+        import httpx
+        from axiom.backends.universal import UniversalClient
+
+        request = httpx.Request(
+            "POST", "https://api.fireworks.ai/inference/v1/chat/completions"
+        )
+        response = httpx.Response(
+            400, request=request, text='{"error": "stop: at most 4 items"}'
+        )
+        exc = httpx.HTTPStatusError("Bad Request", request=request, response=response)
+        msg = UniversalClient._format_status_error(exc)
+        assert "400" in msg
+        assert "stop: at most 4 items" in msg
+
+    def test_status_error_404_hints_at_unknown_model(self) -> None:
+        """A 404 on /chat/completions means the model id is unknown/retired —
+        the message must say so (the server itself answers, /models is 200)."""
+        import httpx
+        from axiom.backends.universal import UniversalClient
+
+        request = httpx.Request(
+            "POST", "https://api.fireworks.ai/inference/v1/chat/completions"
+        )
+        response = httpx.Response(404, request=request, text="")
+        exc = httpx.HTTPStatusError("Not Found", request=request, response=response)
+        msg = UniversalClient._format_status_error(exc)
+        assert "404" in msg
+        assert "model" in msg.lower()
+        assert "Settings" in msg
+
+    def test_model_override_wins(self) -> None:
+        cfg = AppConfig(llm_backend="venice", venice_api_key="vk")
+        llm = build_llm_from_config(cfg, model_override="qwen3-next-80b")
+        assert llm.model_name == "qwen3-next-80b"
+
+    def test_cloud_provider_keys_round_trip(self, config_dir) -> None:
+        """New per-provider key/model fields persist through save/load."""
+        save_config(AppConfig(
+            llm_backend="venice",
+            venice_api_key="vk",
+            anthropic_api_key="ak",
+            fireworks_api_key="fwk",
+            openai_api_key="ok",
+        ))
+        loaded = load_config()
+        assert loaded.llm_backend == "venice"
+        assert loaded.venice_api_key == "vk"
+        assert loaded.anthropic_api_key == "ak"
+        assert loaded.fireworks_api_key == "fwk"
+        assert loaded.openai_api_key == "ok"
+
+
 class TestResolveExtractionModel:
     """resolve_extraction_model picks a backend-appropriate auxiliary model.
 
@@ -204,3 +327,15 @@ class TestResolveExtractionModel:
             extraction_model="llama3.1:8b",
         )
         assert resolve_extraction_model(cfg) == "gemini-2.0-flash"
+
+    def test_openai_compat_backend_falls_back_to_provider_model(self) -> None:
+        """Same 404 trap on the OpenAI-compatible cloud providers: the local
+        extraction/time model names are replaced by the provider's model."""
+        cfg = AppConfig(
+            llm_backend="venice",
+            venice_model="zai-org-glm-4.7",
+            extraction_model="llama3.1:8b",
+            time_model="llama3.2:1b",
+        )
+        assert resolve_extraction_model(cfg) == "zai-org-glm-4.7"
+        assert resolve_time_model(cfg) == "zai-org-glm-4.7"
