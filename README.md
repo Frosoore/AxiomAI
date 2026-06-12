@@ -3,12 +3,13 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Qt 6](https://img.shields.io/badge/Qt-6-green.svg)](https://www.qt.io/)
 [![PyPI](https://img.shields.io/pypi/v/axiomai-engine.svg)](https://pypi.org/project/axiomai-engine/)
+[![Documentation](https://img.shields.io/badge/docs-EN%20%7C%20FR-blue.svg)](https://frosoore.github.io/AxiomAI/)
 
 **Axiom AI** is a local-first, deterministic sandbox RPG engine that bridges the gap between the narrative freedom of Large Language Models (LLMs) and the strict, mathematical logic of traditional RPGs.
 
 No cloud servers. No data collection. Absolute player sovereignty.
 
-The game engine is also a standalone **Python library**: [`pip install axiomai-engine`](https://pypi.org/project/axiomai-engine/) — embed Axiom worlds in your own scripts, bots or web apps, no GUI required (see [The Python Library](#the-python-library-axiomai-engine)).
+The game engine is also a standalone **Python library**: [`pip install axiomai-engine`](https://pypi.org/project/axiomai-engine/) — embed Axiom worlds in your own scripts, bots or web apps, no GUI required (see [The Python Library](#the-python-library-axiomai-engine)). Full guides and API reference: **[documentation site](https://frosoore.github.io/AxiomAI/)** (EN/FR).
 
 ---
 <table border="0" style="width: 100%;">
@@ -126,6 +127,8 @@ axiom dev                  # hot-reload a universe while you edit it
 ```
 
 Package name is `axiomai-engine`; import name is simply `axiom`. The engine never depends on Qt.
+
+📚 **Documentation: <https://frosoore.github.io/AxiomAI/>** — quickstart, guides (Universe-as-Code, CLI, saves, populate, LLM backends, images) and full API reference, in English and French.
 
 ## Key Features
 

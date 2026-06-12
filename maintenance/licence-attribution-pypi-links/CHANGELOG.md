@@ -30,3 +30,14 @@
 **Accord de Frosoore obtenu le 2026-06-11** (confirmé par l'utilisateur). Reste : la
 republication PyPI par l'utilisateur (token en main, commandes `export_engine.py --bump patch
 --build` + `twine upload` fournies — la 0.1.0 en ligne n'a ni NOTICE ni liens).
+
+## 2026-06-12 — page PyPI en anglais + lien Documentation
+
+- `pyproject.toml` : `description` traduite FR→EN ; `Documentation = https://frosoore.github.io/AxiomAI/`
+  ajoutée à `[project.urls]` (4 liens désormais).
+- `export_engine.py` : `_README_TEMPLATE` (= la description longue de la page PyPI) traduit
+  FR→EN + section « Documentation » avec le lien vers le site (TICKET-058, vérifié en ligne, 200).
+- `README.md` du repo : badge docs EN|FR + lien dans l'intro et dans la section
+  « The Python Library ».
+- Vérifié : 15 tests packaging verts ; wheel construit → `Summary` EN, 4 `Project-URL`,
+  description longue 100 % EN. Republier (`--bump patch` → 0.1.3) pour mettre la page à jour.

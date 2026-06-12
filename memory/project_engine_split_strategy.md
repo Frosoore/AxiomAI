@@ -35,4 +35,8 @@ actif). Tout le portage features app→moteur était déjà fini (B4, table « n
   vs `axiom-ai` — la règle de similarité PyPI ignore les tirets et ne se teste qu'à l'upload) ;
   le nom d'import reste `axiom`. **0.1.0 PUBLIÉE le 2026-06-10** et vérifiée depuis l'extérieur
   (`pip install axiomai-engine` → import + CLI OK). README + ARCHITECTURE.md documentent le packaging.
+- **2026-06-12 :** page PyPI passée **en anglais** (description courte dans `pyproject.toml` +
+  `_README_TEMPLATE` d'`export_engine.py`) et **lien Documentation** ajouté partout
+  (`[project.urls]`, README PyPI, README repo) → `https://frosoore.github.io/AxiomAI/` (en ligne).
+  En ligne = 0.1.2 (page FR) ; republier 0.1.3 pour basculer la page.
 - Voir [[feedback-user-handles-git]] (l'utilisateur gère ses commits).

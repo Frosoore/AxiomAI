@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "axiomai-engine"
 dynamic = ["version"]
-description = "Moteur de jeu narratif piloté par LLM (headless) : univers persistants SQLite, arbitrage LLM, event-sourcing/rewind, mémoire vectorielle."
+description = "Headless LLM-driven narrative game engine: persistent SQLite universes, LLM-arbitrated turns, event sourcing/rewind, vector memory."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
@@ -45,6 +45,7 @@ dependencies = [
 # de retrouver le repo (l'app GUI vit dans le même mono-repo que le moteur).
 [project.urls]
 Homepage = "https://github.com/Frosoore/AxiomAI"
+Documentation = "https://frosoore.github.io/AxiomAI/"
 Repository = "https://github.com/Frosoore/AxiomAI"
 Issues = "https://github.com/Frosoore/AxiomAI/issues"
 

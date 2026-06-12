@@ -53,14 +53,14 @@ _FORBIDDEN_IMPORT_RE = re.compile(
 _README_TEMPLATE = """\
 # axiomai-engine
 
-Moteur de jeu narratif piloté par LLM, **headless** (aucune interface graphique requise).
+LLM-driven narrative game engine, **headless** (no GUI required).
 
-- Univers persistants en SQLite, versionnables en arborescence texte (« Universe-as-Code »)
-- Narration arbitrée par LLM (Gemini, Ollama, ou tout endpoint OpenAI-compatible)
-- Event-sourcing : chaque tour est rejouable, le temps de jeu est *rembobinable* (`rewind`)
-- Mémoire vectorielle long-terme (ChromaDB + sentence-transformers)
-- Modes de jeu : Normal, Hardcore (mort permanente), Companion (héros co-piloté par IA)
-- CLI complet : `axiom play`, `axiom compile`, `axiom populate`, `axiom save-*` …
+- Persistent SQLite universes, versionable as a plain-text tree ("Universe-as-Code")
+- LLM-arbitrated narration (Gemini, Ollama, or any OpenAI-compatible endpoint)
+- Event sourcing: every turn is replayable, in-game time can be *rewound* (`rewind`)
+- Long-term vector memory (ChromaDB + sentence-transformers)
+- Game modes: Normal, Hardcore (permadeath), Companion (AI co-piloted hero)
+- Full CLI: `axiom play`, `axiom compile`, `axiom populate`, `axiom save-*` …
 
 ## Installation
 
@@ -68,11 +68,11 @@ Moteur de jeu narratif piloté par LLM, **headless** (aucune interface graphique
 pip install axiomai-engine
 ```
 
-## Démarrage rapide
+## Quick start
 
 ```python
 import axiom
-axiom.help()   # guide intégré : API, modules, CLI
+axiom.help()   # built-in guide: API, modules, CLI
 ```
 
 ```python
@@ -80,25 +80,31 @@ from axiom.config import load_config, build_llm_from_config
 from axiom.db_helpers import create_new_save
 
 llm = build_llm_from_config(load_config())
-save_id = create_new_save("MonUnivers.db", "Alice", "Normal")
+save_id = create_new_save("MyUniverse.db", "Alice", "Normal")
 
-s = axiom.Session("MonUnivers.db", save_id, llm=llm)
-result = s.take_turn("J'ouvre la porte de la taverne.")
+s = axiom.Session("MyUniverse.db", save_id, llm=llm)
+result = s.take_turn("I push open the tavern door.")
 print(result.narrative_text)
 ```
 
-## Projet
+## Documentation
 
-Code source, application graphique (vitrine du moteur) et suivi des bugs :
+Guides (Universe-as-Code, CLI, saves, populate, backends, images) and full API
+reference, in English and French:
+**https://frosoore.github.io/AxiomAI/**
+
+## Project
+
+Source code, GUI application (the engine's showcase) and issue tracker:
 **https://github.com/Frosoore/AxiomAI**
 
-## Licence
+## License
 
-AGPL-3.0-or-later — voir `LICENSE`. Citation de l'origine requise en cas de
-redistribution (terme additionnel AGPLv3 §7(b)) — voir `NOTICE`.
+AGPL-3.0-or-later — see `LICENSE`. Attribution is required when redistributing
+(AGPLv3 §7(b) additional term) — see `NOTICE`.
 
-*Ce package est développé dans le mono-repo [Axiom AI](https://github.com/Frosoore/AxiomAI),
-dont l'application graphique sert de vitrine au moteur. Version {version}.*
+*This package is developed in the [Axiom AI](https://github.com/Frosoore/AxiomAI)
+mono-repo, whose GUI application showcases the engine. Version {version}.*
 """
 
 
