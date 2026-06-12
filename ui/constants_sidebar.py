@@ -86,6 +86,10 @@ class ConstantsSidebar(QWidget):
         self._tabs.addTab(self._stats_scroll, tr("stats"))
         self._tabs.addTab(self._inv_scroll, tr("inventory"))
         self._tabs.addTab(self._time_scroll, tr("timeline"))
+        from ui.help_system import doc_tab
+        doc_tab(self._tabs, 0, "tabletop.sidebar_stats")
+        doc_tab(self._tabs, 1, "tabletop.sidebar_inventory")
+        doc_tab(self._tabs, 2, "tabletop.sidebar_timeline")
         layout.addWidget(self._tabs)
 
     def retranslate_ui(self) -> None:

@@ -135,12 +135,15 @@ class TabletopView(HardcoreMixin, QWidget):
         top_bar = QHBoxLayout(top_bar_container)
         top_bar.setContentsMargins(10, 5, 10, 5)
 
+        from ui.help_system import doc
+        from ui.help_dialogs import make_help_button
+
         # 1. Left Section
         left_layout = QHBoxLayout()
-        self._save_label = QLabel(tr("no_sessions"))
+        self._save_label = doc(QLabel(tr("no_sessions")), "tabletop.turn_time")
         self._save_label.setStyleSheet("font-weight: bold; color: #aaa;")
-        self._turn_label = QLabel(tr("turn_fmt", count=0))
-        self._time_label = QLabel(tr("day_fmt", count=1) + ", 00:00")
+        self._turn_label = doc(QLabel(tr("turn_fmt", count=0)), "tabletop.turn_time")
+        self._time_label = doc(QLabel(tr("day_fmt", count=1) + ", 00:00"), "tabletop.turn_time")
         self._time_label.setStyleSheet("color: #4CAF50; font-family: monospace; font-size: 14px;")
         
         left_layout.addWidget(self._save_label)
@@ -157,7 +160,7 @@ class TabletopView(HardcoreMixin, QWidget):
         player_layout.setSpacing(5)
         self._active_player_label = QLabel(tr("active_player"))
         player_layout.addWidget(self._active_player_label)
-        self._player_selector = QComboBox()
+        self._player_selector = doc(QComboBox(), "tabletop.player_selector")
         self._player_selector.setFixedWidth(120)
         self._player_selector.addItem("player_1") # Fallback
         player_layout.addWidget(self._player_selector)
@@ -179,7 +182,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._verb_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) # Compact label
         right_layout.addWidget(self._verb_label)
         
-        self._verbosity_slider = QSlider(Qt.Horizontal)
+        self._verbosity_slider = doc(QSlider(Qt.Horizontal), "tabletop.verbosity")
         self._verbosity_slider.setRange(0, 2)
         self._verbosity_slider.setValue(1)
         self._verbosity_slider.setFixedWidth(70) # Keep slider compact
@@ -195,26 +198,24 @@ class TabletopView(HardcoreMixin, QWidget):
         
         # TICKET-030 : canonisation de l'histoire vers l'univers (OFF par défaut).
         from PySide6.QtWidgets import QCheckBox
-        self._canon_auto_check = QCheckBox(tr("canon_auto"))
+        self._canon_auto_check = doc(QCheckBox(tr("canon_auto")), "tabletop.canon_auto")
         self._canon_auto_check.setChecked(False)
-        self._canon_auto_check.setToolTip(tr("canon_auto_tooltip"))
         right_layout.addWidget(self._canon_auto_check)
-        self._canonize_btn = QPushButton(tr("canonize_btn"))
-        self._canonize_btn.setToolTip(tr("canonize_tooltip"))
+        self._canonize_btn = doc(QPushButton(tr("canonize_btn")), "tabletop.canonize")
         self._canonize_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         right_layout.addWidget(self._canonize_btn)
         right_layout.addSpacing(15)
 
         # Buttons (Dynamic size based on content)
-        self._rewind_btn = QPushButton(tr("rewind"))
-        self._rewind_btn.setToolTip("Go back to a previous checkpoint in time.")
-        self._hub_btn = QPushButton(tr("hub"))
-        self._hub_btn.setToolTip("Return to the main menu (saves automatically).")
+        self._rewind_btn = doc(QPushButton(tr("rewind")), "tabletop.rewind")
+        self._hub_btn = doc(QPushButton(tr("hub")), "tabletop.back")
         self._rewind_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._hub_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         right_layout.addWidget(self._rewind_btn)
         right_layout.addWidget(self._hub_btn)
-        
+        self._help_btn = make_help_button("tabletop", self)
+        right_layout.addWidget(self._help_btn)
+
         top_bar.addLayout(right_layout)
         layout.addWidget(top_bar_container)
         
@@ -262,12 +263,11 @@ class TabletopView(HardcoreMixin, QWidget):
         self._verb_label.setText(tr("verbosity"))
         self._verbosity_status_label.setText(tr(self._llm_verbosity).capitalize())
         self._rewind_btn.setText(tr("rewind"))
-        self._rewind_btn.setToolTip(f"{tr('rewind')} (Ctrl+Z)")
         self._hub_btn.setText(tr("hub"))
         self._canon_auto_check.setText(tr("canon_auto"))
-        self._canon_auto_check.setToolTip(tr("canon_auto_tooltip"))
         self._canonize_btn.setText(tr("canonize_btn"))
-        self._canonize_btn.setToolTip(tr("canonize_tooltip"))
+        # NB: les tooltips (doc intégrée) sont retraduits globalement par
+        # ui.help_system.retranslate_tooltips() via MainWindow.retranslate_ui().
 
         # Sub-widgets
         if hasattr(self._sidebar, "retranslate_ui"): self._sidebar.retranslate_ui()
