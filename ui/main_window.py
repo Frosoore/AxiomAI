@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from axiom.config import load_config
-from axiom.localization import tr
+from core.localization import tr
 
 
 class MainWindow(QMainWindow):

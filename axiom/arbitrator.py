@@ -668,7 +668,7 @@ class ArbitratorEngine:
         if self._stats_cache is not None:
             return self._stats_cache
 
-        from axiom.localization import fmt_num
+        from axiom.textfmt import fmt_num
         with get_connection(self._db_path) as conn:
             stat_rows = conn.execute(
                 "SELECT entity_id, stat_key, stat_value FROM State_Cache WHERE save_id = ?;",

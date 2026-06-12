@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
-from axiom.localization import tr
+from core.localization import tr
 from axiom.db_helpers import read_universe_card_metadata
 
 

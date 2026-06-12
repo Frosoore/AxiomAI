@@ -61,7 +61,7 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
     """
     src_dir = Path(src_dir)
     if not (src_dir / _V2_MARKER).exists():
-        raise PackageError(f"Arborescence source invalide (pas de universe.toml) : {src_dir}")
+        raise PackageError(f"Invalid source tree (no universe.toml): {src_dir}")
 
     compile_universe(src_dir)  # garantit un cache à jour à embarquer
     cache_rel = f"{CACHE_DIRNAME}/{CACHE_DB_NAME}"
@@ -146,7 +146,7 @@ def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
     """
     db_path = Path(db_path)
     if not db_path.is_file():
-        raise PackageError(f"Base univers introuvable : {db_path}")
+        raise PackageError(f"Universe database not found: {db_path}")
 
     from axiom.decompile import DecompileError, decompile_universe
 
@@ -155,7 +155,7 @@ def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
         try:
             decompile_universe(db_path, src)
         except DecompileError as exc:
-            raise PackageError(f"Décompilation impossible : {exc}") from exc
+            raise PackageError(f"Decompilation failed: {exc}") from exc
         return pack_universe(src, output_path)
 
 
@@ -169,12 +169,12 @@ def detect_format(axiom_path: str | Path) -> str:
         with zipfile.ZipFile(str(axiom_path), "r") as zf:
             names = set(zf.namelist())
     except (zipfile.BadZipFile, OSError) as exc:
-        raise PackageError(f"Archive .axiom illisible : {exc}") from exc
+        raise PackageError(f"Unreadable .axiom archive: {exc}") from exc
     if _V2_MARKER in names:
         return "v2"
     if any(m in names for m in _V1_MARKERS):
         return "v1"
-    raise PackageError("Format .axiom non reconnu (ni v2 ni v1).")
+    raise PackageError("Unrecognized .axiom format (neither v2 nor v1).")
 
 
 def unpack_universe(axiom_path: str | Path, dest_root: str | Path) -> Path:
@@ -276,7 +276,7 @@ def _import_v1(axiom_path: Path, dest_root: Path, name: str) -> Path:
                 if (tmp / "lore_book.json").exists() else []
             )
         except (json.JSONDecodeError, OSError, KeyError) as exc:
-            raise PackageError(f".axiom v1 corrompu : {exc}") from exc
+            raise PackageError(f"Corrupt .axiom v1: {exc}") from exc
 
         v1_db = tmp / "_v1.db"
         create_universe_db(str(v1_db))

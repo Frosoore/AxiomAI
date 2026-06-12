@@ -80,7 +80,7 @@ class ModifierProcessor:
                 # Non-numeric stat — skip this modifier
                 continue
             new_val = current + delta
-            from axiom.localization import fmt_num
+            from axiom.textfmt import fmt_num
             result[stat_key] = fmt_num(new_val)
 
         return result

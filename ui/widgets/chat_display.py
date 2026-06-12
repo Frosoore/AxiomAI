@@ -7,7 +7,7 @@ from PySide6.QtGui import QTextCursor, QTextCharFormat, QTextBlockFormat, QColor
 from PySide6.QtCore import Signal, QUrl, Qt
 
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from axiom.localization import tr
+from core.localization import tr
 
 class _RichTextBrowser(QTextBrowser):
     def __init__(self, parent=None):

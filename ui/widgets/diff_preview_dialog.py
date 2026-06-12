@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from axiom.localization import tr
+from core.localization import tr
 
 _STATUS_PREFIX = {"added": "+ ", "modified": "± ", "removed": "− "}
 _STATUS_COLOR = {"added": "#4CAF50", "modified": "#FFC107", "removed": "#FF4B4B"}

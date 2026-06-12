@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from axiom.db_helpers import load_saves
 from workers.hardcore_worker import HardcoreWorker
-from axiom.localization import tr
+from core.localization import tr
 
 
 class HardcoreMixin:

@@ -330,7 +330,7 @@ class TestWatch:
         watch_universe(source_tree, interval=0.01, on_event=events.append,
                        should_stop=should_stop)
         assert (source_tree / CACHE_DIRNAME / CACHE_DB_NAME).exists()
-        assert any("compilée" in e or "rechargée" in e for e in events)
+        assert any("compiled" in e or "reloaded" in e for e in events)
 
     def test_cli_dev_refuse_un_dossier_sans_universe_toml(self, tmp_path: Path, capsys):
         from axiom.cli.main import main

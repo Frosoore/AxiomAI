@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from axiom.config import AppConfig, build_llm_from_config, save_config, GLOBAL_DB_FILE, load_config
-from axiom.localization import tr, SUPPORTED_LANGUAGES
+from core.localization import tr, SUPPORTED_LANGUAGES
 from ui.widgets.persona_editor import PersonaEditorWidget
 from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker

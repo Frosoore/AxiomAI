@@ -311,7 +311,7 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
     """
     db_path = Path(db_path)
     if not db_path.exists():
-        raise DecompileError(f"Univers introuvable : {db_path}")
+        raise DecompileError(f"Universe not found: {db_path}")
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,28 @@ Allows custom minutes per hour, hours per day, and named months.
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field
+from typing import NamedTuple
+
+# Libellés anglais par défaut des phases (dev / CLI / lib). Le moteur n'émet pas de
+# texte traduit : il expose la CLÉ de phase, et le frontend la localise (TICKET-054).
+_PHASE_LABELS_EN = {
+    "dawn": "Dawn", "morning": "Morning", "afternoon": "Afternoon",
+    "dusk": "Dusk", "night": "Night",
+}
+
+
+class TimeComponents(NamedTuple):
+    """Décomposition d'un instant en données brutes (zéro présentation/traduction).
+
+    `phase_key` est une clé stable parmi dawn/morning/afternoon/dusk/night ;
+    `month_name` provient du calendrier de l'univers (donnée, pas une traduction).
+    """
+    year: int
+    month_name: str
+    day: int
+    hour: int
+    minute: int
+    phase_key: str
 
 @dataclass
 class CalendarConfig:
@@ -64,21 +86,25 @@ class TimeSystem:
     def __init__(self, config: CalendarConfig | None = None) -> None:
         self.config = config or CalendarConfig()
 
-    def get_time_string(self, total_minutes: int) -> str:
-        """Format total cumulative minutes into a human-readable calendar string."""
+    def get_time_components(self, total_minutes: int) -> TimeComponents:
+        """Décompose des minutes cumulées en (année, mois, jour, h, min, clé de phase).
+
+        Données brutes uniquement : aucune traduction. Le frontend localise l'affichage
+        à partir de ces champs (cf. `core.localization.format_time`).
+        """
         cfg = self.config
-        
+
         # Adjust by start time
         start_offset = ((cfg.start_day - 1) * cfg.minutes_per_day) + \
                        (cfg.start_hour * cfg.minutes_per_hour) + \
                        cfg.start_minute
-        
+
         abs_mins = total_minutes + start_offset
-        
+
         # Calculate Year
         year = (abs_mins // cfg.minutes_per_year) + 1
         rem_mins = abs_mins % cfg.minutes_per_year
-        
+
         # Calculate Month and Day
         month_idx = 0
         mins_in_month = [d * cfg.minutes_per_day for d in cfg.days_per_month]
@@ -87,25 +113,34 @@ class TimeSystem:
                 month_idx = i
                 break
             rem_mins -= m_mins
-        
+
         day = (rem_mins // cfg.minutes_per_day) + 1
         rem_mins %= cfg.minutes_per_day
-        
+
         hour = rem_mins // cfg.minutes_per_hour
         minute = rem_mins % cfg.minutes_per_hour
-        
-        month_name = cfg.month_names[month_idx] if month_idx < len(cfg.month_names) else "Unknown"
-        
-        # Simple phase detection based on fractional day
-        from axiom.localization import tr
-        day_progress = (hour * cfg.minutes_per_hour + minute) / cfg.minutes_per_day
-        if 0.2 < day_progress < 0.35: phase = tr("dawn")
-        elif 0.35 <= day_progress < 0.5: phase = tr("morning")
-        elif 0.5 <= day_progress < 0.7: phase = tr("afternoon")
-        elif 0.7 <= day_progress < 0.85: phase = tr("dusk")
-        else: phase = tr("night")
 
-        return tr("time_fmt", year=year, month=month_name, day=day, hour=f"{hour:02d}", minute=f"{minute:02d}", phase=phase)
+        month_name = cfg.month_names[month_idx] if month_idx < len(cfg.month_names) else "Unknown"
+
+        # Simple phase detection based on fractional day → clé stable (non traduite).
+        day_progress = (hour * cfg.minutes_per_hour + minute) / cfg.minutes_per_day
+        if 0.2 < day_progress < 0.35: phase_key = "dawn"
+        elif 0.35 <= day_progress < 0.5: phase_key = "morning"
+        elif 0.5 <= day_progress < 0.7: phase_key = "afternoon"
+        elif 0.7 <= day_progress < 0.85: phase_key = "dusk"
+        else: phase_key = "night"
+
+        return TimeComponents(year, month_name, day, hour, minute, phase_key)
+
+    def get_time_string(self, total_minutes: int) -> str:
+        """Rendu anglais par défaut (dev / CLI / lib). Zéro localisation côté moteur.
+
+        Le GUI ne passe PAS par ici : il formate via `core.localization.format_time`
+        pour obtenir l'affichage dans la langue de l'utilisateur.
+        """
+        c = self.get_time_components(total_minutes)
+        phase = _PHASE_LABELS_EN.get(c.phase_key, c.phase_key)
+        return f"Year {c.year}, {c.month_name} {c.day}, {c.hour:02d}:{c.minute:02d} ({phase})"
 
     def components_to_minutes(self, day: int, hour: int, minute: int) -> int:
         """Convert a simplified (Day, Hour, Min) UI input back to cumulative session minutes."""

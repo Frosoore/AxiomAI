@@ -100,13 +100,13 @@ def _load_toml(path: Path) -> dict[str, Any]:
         with path.open("rb") as fh:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
-        raise CompileError(f"TOML invalide : {path} — {exc}") from exc
+        raise CompileError(f"Invalid TOML: {path} — {exc}") from exc
 
 
 def _require(data: dict, key: str, ctx: str) -> Any:
     """Récupère une clé requise ou lève CompileError."""
     if key not in data:
-        raise CompileError(f"Champ requis manquant '{key}' dans {ctx}")
+        raise CompileError(f"Required field '{key}' missing in {ctx}")
     return data[key]
 
 
@@ -120,7 +120,7 @@ def _resolve_text(src_dir: Path, data: dict, inline_key: str, file_key: str) -> 
             with target.open("r", encoding="utf-8", newline="") as fh:
                 return fh.read()
         except OSError as exc:
-            raise CompileError(f"Fichier référencé introuvable : {target} — {exc}") from exc
+            raise CompileError(f"Referenced file not found: {target} — {exc}") from exc
     return str(data.get(inline_key, ""))
 
 
@@ -146,7 +146,7 @@ def _parse_universe(src_dir: Path) -> tuple[dict[str, str], set[str]]:
     """
     path = src_dir / "universe.toml"
     if not path.exists():
-        raise CompileError(f"universe.toml requis introuvable dans {src_dir}")
+        raise CompileError(f"Required universe.toml not found in {src_dir}")
 
     data = _load_toml(path)
     meta: dict[str, str] = {}
@@ -329,7 +329,7 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
     try:
         return tomllib.loads(front_text), body
     except tomllib.TOMLDecodeError as exc:
-        raise CompileError(f"Frontmatter TOML invalide — {exc}") from exc
+        raise CompileError(f"Invalid TOML frontmatter — {exc}") from exc
 
 
 def _parse_events(src_dir: Path) -> list[tuple]:
@@ -487,7 +487,7 @@ def compile_universe(
     """
     src_dir = Path(src_dir)
     if not src_dir.is_dir():
-        raise CompileError(f"Dossier source introuvable : {src_dir}")
+        raise CompileError(f"Source folder not found: {src_dir}")
 
     if output_db is None:
         output_db = src_dir / CACHE_DIRNAME / CACHE_DB_NAME

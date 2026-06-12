@@ -206,7 +206,7 @@ def new_save_container(universe_db: str | Path) -> Path:
     """
     universe_db = Path(universe_db)
     if not universe_db.is_file():
-        raise SaveStoreError(f"Base univers introuvable : {universe_db}")
+        raise SaveStoreError(f"Universe database not found: {universe_db}")
 
     out_dir = saves_dir_for(universe_db)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -274,7 +274,7 @@ def _copy_definition(universe_db: Path, save_db: Path) -> None:
     migrate_location_tables(str(universe_db))
 
     if save_db.exists():
-        raise SaveStoreError(f"Save db déjà existante : {save_db}")
+        raise SaveStoreError(f"Save db already exists: {save_db}")
     create_universe_db(str(save_db))
 
     conn = sqlite3.connect(str(save_db))
@@ -447,7 +447,7 @@ def extract_save(universe_db: str | Path, save_id: str) -> Path:
         ).fetchone()[0]
         if not copied:
             conn.rollback()
-            raise SaveStoreError(f"Save introuvable dans l'univers : {save_id}")
+            raise SaveStoreError(f"Save not found in universe: {save_id}")
         conn.commit()
         conn.execute("DETACH DATABASE universe;")
     finally:
@@ -468,7 +468,7 @@ def pack_save(universe_db: str | Path, save_id: str, output_path: str | Path) ->
     universe_db = Path(universe_db)
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
-        raise SaveStoreError(f"Save introuvable : {save_id}")
+        raise SaveStoreError(f"Save not found: {save_id}")
 
     cleanup: Path | None = None
     if not is_separated_save_db(db_path):
@@ -534,7 +534,7 @@ def unpack_save(
         with zipfile.ZipFile(str(archive_path), "r") as zf:
             names = set(zf.namelist())
             if _ARCHIVE_DB_NAME not in names or _MANIFEST_NAME not in names:
-                raise SaveStoreError("Archive .axiomsave invalide (save.db/manifest manquant).")
+                raise SaveStoreError("Invalid .axiomsave archive (missing save.db/manifest).")
             manifest = tomllib.loads(zf.read(_MANIFEST_NAME).decode("utf-8"))
             db_bytes = zf.read(_ARCHIVE_DB_NAME)
             # Illustrations embarquées (TICKET-048) ; absentes des archives
@@ -548,14 +548,14 @@ def unpack_save(
                 and n.endswith(".png")
             }
     except (zipfile.BadZipFile, OSError, tomllib.TOMLDecodeError) as exc:
-        raise SaveStoreError(f"Archive .axiomsave illisible : {exc}") from exc
+        raise SaveStoreError(f"Unreadable .axiomsave archive: {exc}") from exc
 
     src_key = str(manifest.get("universe_key", ""))
     dst_key = universe_key(universe_db)
     if src_key and src_key != dst_key and not force:
         raise SaveStoreError(
-            f"Cette save vient de l'univers '{src_key}', pas de '{dst_key}'. "
-            "Utiliser force pour importer quand même."
+            f"This save comes from universe '{src_key}', not '{dst_key}'. "
+            "Use force to import anyway."
         )
 
     save_id = str(manifest.get("save_id", ""))
@@ -649,7 +649,7 @@ def duplicate_save(
 
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
-        raise SaveStoreError(f"Save introuvable : {save_id}")
+        raise SaveStoreError(f"Save not found: {save_id}")
 
     if not is_separated_save_db(db_path):
         from axiom.saves import fork_save

@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from axiom.config import load_config, GLOBAL_DB_FILE
-from axiom.localization import tr
+from core.localization import tr
 from workers.db_worker import DbWorker
 
 if TYPE_CHECKING:

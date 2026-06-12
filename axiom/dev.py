@@ -65,7 +65,7 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
     """
     src_dir = Path(src_dir)
     if not src_dir.is_dir():
-        raise CompileError(f"Dossier source introuvable : {src_dir}")
+        raise CompileError(f"Source folder not found: {src_dir}")
     if db_path is None:
         db_path = src_dir / CACHE_DIRNAME / CACHE_DB_NAME
     db_path = Path(db_path)
@@ -378,11 +378,11 @@ def watch_universe(
         try:
             last_hash, refreshed = poll_once(src_dir, db_path, last_hash)
             if refreshed:
-                msg = "Définition compilée" if first else "Modification détectée — définition rechargée"
+                msg = "Definition compiled" if first else "Change detected — definition reloaded"
                 on_event(f"{msg} → {target}")
         except CompileError as exc:
             # Hash mémorisé : on ne re-tente que si la source change à nouveau.
             last_hash = getattr(exc, "src_hash", last_hash)
-            on_event(f"Source invalide (en attente de correction) : {exc}")
+            on_event(f"Invalid source (awaiting fix): {exc}")
         first = False
         time.sleep(interval)

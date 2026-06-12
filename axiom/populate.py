@@ -347,7 +347,7 @@ def populate_entities(
         if cancel is not None and cancel.is_set():
             _sync_source(db_path)
             raise GenerationCancelled(
-                f"Populate annulé ({inserted_count} entité(s) conservée(s), "
+                f"Populate cancelled ({inserted_count} entity(ies) kept, "
                 f"chunk {i + 1}/{len(chunks)})."
             )
         on_status(f"Processing chunk {i + 1}/{len(chunks)}...")
@@ -360,9 +360,9 @@ def populate_entities(
             if inserted_count:
                 _sync_source(db_path)
                 raise LLMConnectionError(
-                    f"{exc}\n\n[{inserted_count} entité(s) déjà insérée(s) avant l'arrêt "
-                    f"(chunk {i + 1}/{len(chunks)}). Relancer le Populate reprendra ici : "
-                    "les entités existantes sont ignorées.]"
+                    f"{exc}\n\n[{inserted_count} entity(ies) already inserted before stopping "
+                    f"(chunk {i + 1}/{len(chunks)}). Re-running Populate will resume here: "
+                    "existing entities are skipped.]"
                 ) from exc
             raise
 

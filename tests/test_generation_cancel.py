@@ -120,7 +120,7 @@ def test_populate_entities_annule_entre_chunks(tmp_path: Path):
             return SimpleNamespace(tool_call={"entities": [
                 {"name": "Le Forgeron", "entity_type": "npc"}]})
 
-    with pytest.raises(GenerationCancelled, match="conservée"):
+    with pytest.raises(GenerationCancelled, match="kept"):
         populate_entities(str(db), llm=FakeLLM(), cancel=cancel)
 
     # Le chunk 1, déjà commité, est conservé.

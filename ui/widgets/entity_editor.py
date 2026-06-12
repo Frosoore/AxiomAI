@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QInputDialog,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 
 class EntityEditorWidget(QWidget):

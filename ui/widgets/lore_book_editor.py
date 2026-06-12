@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMessageBox,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 
 class LoreBookEditorWidget(QWidget):

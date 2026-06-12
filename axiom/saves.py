@@ -61,7 +61,7 @@ def resolve_point(
     - aucun : dernier tour de la save.
     """
     if at_turn is not None and at_minute is not None:
-        raise SaveError("Préciser soit at_turn, soit at_minute, pas les deux.")
+        raise SaveError("Specify either at_turn or at_minute, not both.")
     with get_connection(db_path) as conn:
         if at_turn is not None:
             return int(at_turn)
@@ -111,7 +111,7 @@ def materialize_state(
             (save_id,),
         ).fetchone()
         if save_row is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
         # Stats de base (définition d'univers) par entité active.
         base: dict[str, dict[str, str]] = {}
@@ -230,7 +230,7 @@ def _load_state_toml(path: str | Path) -> dict[str, Any]:
         with open(path, "rb") as fh:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
-        raise SaveError(f"save_state.toml invalide : {exc}") from exc
+        raise SaveError(f"Invalid save_state.toml: {exc}") from exc
 
 
 def import_save_state(
@@ -287,11 +287,11 @@ def import_save_state(
             conn.execute(
                 "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
                 "VALUES (?, ?, ?, ?);",
-                (save_id, 0, in_game_minutes, "Save importée"),
+                (save_id, 0, in_game_minutes, "Save imported"),
             )
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
-        raise SaveError(f"Import impossible (référence invalide ?) : {exc}") from exc
+        raise SaveError(f"Import failed (invalid reference?): {exc}") from exc
 
     sourcer.take_snapshot(save_id, 0)
     return save_id
@@ -329,7 +329,7 @@ def apply_correction(
 
     with get_connection(db_path) as conn:
         if conn.execute("SELECT 1 FROM Saves WHERE save_id = ?;", (save_id,)).fetchone() is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
     events: list[tuple[str, int, str, str, dict]] = []
     for eid, stats in patch.get("entities", {}).items():
@@ -366,7 +366,7 @@ def apply_correction(
                 )
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
-        raise SaveError(f"Correction impossible (référence invalide ?) : {exc}") from exc
+        raise SaveError(f"Correction failed (invalid reference?): {exc}") from exc
 
     sourcer.rebuild_state_cache(save_id)
     return turn_id
@@ -459,7 +459,7 @@ def fork_save(
             (save_id,),
         ).fetchone()
         if src is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
     new_id = create_new_save(
         db_path,

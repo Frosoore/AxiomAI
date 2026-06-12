@@ -163,13 +163,13 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
 
     db_path = Path(db_path)
     if not db_path.is_file():
-        raise LibraryError(f"Univers introuvable : {db_path}")
+        raise LibraryError(f"Universe not found: {db_path}")
     if db_path.parent.name == CACHE_DIRNAME:
-        raise LibraryError("Cet univers est déjà un univers-dossier.")
+        raise LibraryError("This universe is already a folder universe.")
 
     root = db_path.parent / db_path.stem
     if root.exists():
-        raise LibraryError(f"Le dossier existe déjà : {root}")
+        raise LibraryError(f"Folder already exists: {root}")
 
     # 0. Provenance : AVANT extraction et décompilation, marquer 'runtime' les
     # entités joueur d'un db d'avant la colonne `origin` — sinon le joueur
@@ -199,7 +199,7 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
         _strip_runtime_entity_files(db_path, root)
         cache_db = compile_universe(root)
     except (DecompileError, CompileError) as exc:
-        raise LibraryError(f"Conversion impossible : {exc}") from exc
+        raise LibraryError(f"Conversion failed: {exc}") from exc
 
     # 3. Les saves extraites pointent vers la nouvelle source (resync §7.6).
     src_hash = hash_directory(root)

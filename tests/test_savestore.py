@@ -233,7 +233,7 @@ class TestCliOnSeparatedSaves:
         parser = build_parser()
         args = parser.parse_args(["save-show", str(source_tree), "ghost"])
         assert args.func(args) == 2
-        assert "introuvable" in capsys.readouterr().err
+        assert "not found" in capsys.readouterr().err
 
 
 class TestPackUnpack:

@@ -1,7 +1,7 @@
 """
 tests/test_localization.py
 
-Unit tests for axiom.localization — the tr() translation helper, the supported
+Unit tests for core.localization — the tr() translation helper, the supported
 language table, and number formatting.
 
 Migrated (TICKET-001) from the print-only debug script debug/test_translations.py
@@ -10,7 +10,7 @@ into proper assertion-based pytest coverage; localization had no tests/ coverage
 
 import pytest
 
-from axiom.localization import (
+from core.localization import (
     SUPPORTED_LANGUAGES,
     fmt_num,
     get_translations_dict,
@@ -71,21 +71,21 @@ class TestCanonicalVerbosity:
     """TICKET-032 : normalisation des niveaux de verbosité stockés localisés."""
 
     def test_canonique_passe_tel_quel(self) -> None:
-        from axiom.localization import canonical_verbosity
+        from core.localization import canonical_verbosity
         assert canonical_verbosity("balanced") == "balanced"
         assert canonical_verbosity("short") == "short"
         assert canonical_verbosity("Talkative") == "talkative"
 
     def test_valeurs_historiques_localisees(self) -> None:
         """Les textes affichés stockés par l'ancien Studio sont reconnus."""
-        from axiom.localization import canonical_verbosity
+        from core.localization import canonical_verbosity
         assert canonical_verbosity("équilibré") == "balanced"   # fr
         assert canonical_verbosity("bavard") == "talkative"     # fr
         assert canonical_verbosity("Equilibrada") == "balanced"  # es
         assert canonical_verbosity("Gesprächig") == "talkative"  # de
 
     def test_inconnu_et_vide_retombent_sur_balanced(self) -> None:
-        from axiom.localization import canonical_verbosity
+        from core.localization import canonical_verbosity
         assert canonical_verbosity("n'importe quoi") == "balanced"
         assert canonical_verbosity("") == "balanced"
         assert canonical_verbosity(None) == "balanced"

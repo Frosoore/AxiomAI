@@ -98,7 +98,7 @@ def test_play_loop_survives_llm_connection_error():
     sess = FakeSession(raise_exc=LLMConnectionError("429 quota"))
     # Après l'échec du 1er tour, la boucle doit continuer (2e saisie traitée).
     play_loop(sess, read=_reader(["action", "/quit"]), out=out, err=err)
-    assert "LLM injoignable" in err.getvalue()
+    assert "LLM unreachable" in err.getvalue()
     assert len(sess.calls) == 1  # le tour a bien été tenté
 
 
@@ -106,7 +106,7 @@ def test_play_loop_survives_generic_error():
     err = io.StringIO()
     sess = FakeSession(raise_exc=RuntimeError("boom"))
     play_loop(sess, read=_reader(["action", "/quit"]), out=io.StringIO(), err=err)
-    assert "Erreur pendant le tour" in err.getvalue()
+    assert "Error during turn" in err.getvalue()
 
 
 def test_handle_command_quit():
@@ -143,7 +143,7 @@ def test_handle_command_rewind_requires_numeric_arg():
 def test_handle_command_unknown():
     err = io.StringIO()
     assert _handle_command("/wat", FakeSession(), io.StringIO(), err) == "continue"
-    assert "inconnue" in err.getvalue()
+    assert "Unknown command" in err.getvalue()
 
 
 def test_build_parser_play_subcommand():

@@ -162,7 +162,7 @@ class GeminiClient(LLMBackend):
                 time.sleep(slice_s)
 
     def _call_with_quota_retry(self, request: Callable[[str], T]) -> T:
-        """Exécute `request(model)` avec pacing, retries 429 et modèle de secours.
+        """Exécute `request(model)` avec pacing, retries 429  and fallback model.
 
         Pour chaque modèle candidat : jusqu'à `_MAX_QUOTA_RETRIES` reprises en
         respectant le délai suggéré par l'API (backoff sinon). Quota toujours
@@ -207,8 +207,8 @@ class GeminiClient(LLMBackend):
                 self._notify(f"Quota still exhausted on '{model}' "
                              f"— switching to fallback model '{self._fallback_model}'")
         raise LLMConnectionError(
-            f"Gemini API error (quota épuisé après retries"
-            f"{' et modèle de secours' if self._fallback_model else ''}): {last_exc}"
+            f"Gemini API error (quota exhausted after retries"
+            f"{' and fallback model' if self._fallback_model else ''}): {last_exc}"
         ) from last_exc
 
     # ------------------------------------------------------------------
