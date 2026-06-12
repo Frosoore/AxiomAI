@@ -19,10 +19,10 @@ _PHASE_LABELS_EN = {
 
 
 class TimeComponents(NamedTuple):
-    """Décomposition d'un instant en données brutes (zéro présentation/traduction).
+    """Decomposition of an instant into raw data (zero presentation/translation).
 
-    `phase_key` est une clé stable parmi dawn/morning/afternoon/dusk/night ;
-    `month_name` provient du calendrier de l'univers (donnée, pas une traduction).
+    `phase_key` is a stable key among dawn/morning/afternoon/dusk/night;
+    `month_name` comes from the universe calendar (data, not a translation).
     """
     year: int
     month_name: str
@@ -87,10 +87,10 @@ class TimeSystem:
         self.config = config or CalendarConfig()
 
     def get_time_components(self, total_minutes: int) -> TimeComponents:
-        """Décompose des minutes cumulées en (année, mois, jour, h, min, clé de phase).
+        """Decompose cumulative minutes into (year, month, day, h, min, phase key).
 
-        Données brutes uniquement : aucune traduction. Le frontend localise l'affichage
-        à partir de ces champs (cf. `core.localization.format_time`).
+        Raw data only: no translation. The frontend localises the display from
+        these fields.
         """
         cfg = self.config
 
@@ -133,10 +133,10 @@ class TimeSystem:
         return TimeComponents(year, month_name, day, hour, minute, phase_key)
 
     def get_time_string(self, total_minutes: int) -> str:
-        """Rendu anglais par défaut (dev / CLI / lib). Zéro localisation côté moteur.
+        """Default English rendering (dev / CLI / library). Zero engine-side localisation.
 
-        Le GUI ne passe PAS par ici : il formate via `core.localization.format_time`
-        pour obtenir l'affichage dans la langue de l'utilisateur.
+        The GUI does NOT go through here: it formats through its own localisation
+        layer to display in the user's language.
         """
         c = self.get_time_components(total_minutes)
         phase = _PHASE_LABELS_EN.get(c.phase_key, c.phase_key)

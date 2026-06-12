@@ -1,0 +1,298 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/content.md:1
+msgid "Content generation"
+msgstr "Génération de contenu"
+
+#: ../../api/content.md:3
+msgid "`axiom.populate`"
+msgstr ""
+
+#: axiom.populate:1 of
+msgid "axiom.populate — LLM universe authoring."
+msgstr "axiom.populate — création de contenu d'univers par LLM."
+
+#: axiom.populate:3 of
+msgid ""
+"The seven Creator Studio \"Populate\" generators, engine-side: each one "
+"reads the universe context from the `.db`, queries the extraction LLM and "
+"inserts the new content **idempotently** (already-known ids/names are "
+"skipped). After every write, the text source of a folder universe is "
+"resynchronised (the text stays the source of truth)."
+msgstr ""
+"Les sept générateurs « Populate » du Creator Studio, côté moteur : chacun "
+"lit le contexte de l'univers dans le `.db`, interroge le LLM d'extraction et"
+" insère le contenu nouveau de façon **idempotente** (les ids/noms déjà "
+"connus sont sautés). Après chaque écriture, la source texte d'un univers-"
+"dossier est resynchronisée (le texte reste la source de vérité)."
+
+#: axiom.populate:9 of
+msgid ""
+"Zero Qt dependency. The LLM is injectable (`llm=`) for tests and "
+"composition; by default it is built from the user config with the extraction"
+" model. Progress messages go through `on_status` (optional callback) — the "
+"Qt tasks plug it into their signals."
+msgstr ""
+"Zéro dépendance Qt. Le LLM est injectable (`llm=`) pour les tests et la "
+"composition ; par défaut il est construit depuis la config utilisateur avec "
+"le modèle d'extraction. Les messages de progression passent par `on_status` "
+"(callback optionnel) — les tâches Qt le branchent sur leurs signaux."
+
+#: axiom.populate:14 of
+msgid ""
+"`populate_entities` specificity (TICKET-031): the context is processed in "
+"chunks and each chunk is **committed immediately** — an LLM failure mid-"
+"batch (429 quota exhausted despite the backend retries) keeps the work "
+"already done, and re-running resumes where it stopped."
+msgstr ""
+"Particularité de `populate_entities` (TICKET-031) : le contexte est traité "
+"par chunks et chaque chunk est **commité immédiatement** — un échec LLM en "
+"plein lot (quota 429 épuisé malgré les retries du backend) conserve le "
+"travail déjà fait, et relancer reprend là où ça s'était arrêté."
+
+#: axiom.populate.entity_id_for:1 of
+msgid "Stable id derived from an entity name."
+msgstr "Id stable dérivé d'un nom d'entité."
+
+#: axiom.populate.entity_id_for:3 of
+msgid ""
+"A 100% non-Latin name (Cyrillic, CJK…) would yield an empty `_safe_id` — the"
+" entity would then be silently skipped. **Deterministic** fallback (hash of "
+"the name): the Populate idempotency (re-run = resume, known ids skipped) "
+"requires ids that are stable from one run to the next."
+msgstr ""
+"Un nom 100 % non latin (cyrillique, CJK…) donnerait un `_safe_id` vide — "
+"l'entité serait alors silencieusement sautée. Repli **déterministe** (hash "
+"du nom) : l'idempotence des Populate (relance = reprise, ids connus sautés) "
+"exige des ids stables d'une exécution à l'autre."
+
+#: ../../api/content.md axiom.image_generator.closest_aspect_ratio
+#: axiom.populate.entity_id_for axiom.populate.populate_entities
+#: axiom.populate.populate_events axiom.populate.populate_lore
+#: axiom.populate.populate_map axiom.populate.populate_meta
+#: axiom.populate.populate_rules axiom.populate.populate_stats
+#: axiom.regenerate.append_variant axiom.regenerate.history_to_messages
+#: axiom.regenerate.regenerate_variant of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: ../../api/content.md axiom.image_generator.closest_aspect_ratio
+#: axiom.populate.entity_id_for axiom.populate.populate_entities
+#: axiom.populate.populate_events axiom.populate.populate_lore
+#: axiom.populate.populate_map axiom.populate.populate_meta
+#: axiom.populate.populate_rules axiom.populate.populate_stats
+#: axiom.regenerate.append_variant axiom.regenerate.history_to_messages
+#: axiom.regenerate.regenerate_variant of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.populate.populate_meta:1 of
+msgid "Refine the metadata (name, global lore, system prompt, first message)."
+msgstr "Raffine les métadonnées (nom, lore global, prompt système, premier message)."
+
+#: axiom.populate.populate_stats:1 of
+msgid "Generate stat definitions. Returns the number inserted."
+msgstr "Génère des définitions de stats. Retourne le nombre inséré."
+
+#: axiom.populate.populate_rules:1 of
+msgid "Generate game rules. Returns the number inserted."
+msgstr "Génère des règles de jeu. Retourne le nombre inséré."
+
+#: axiom.populate.populate_events:1 of
+msgid "Schedule world events. Returns the number inserted."
+msgstr "Planifie des événements de monde. Retourne le nombre inséré."
+
+#: axiom.populate.populate_entities:1 of
+msgid "Generate NPCs/factions from the context (or a free-form instruction)."
+msgstr "Génère des PNJ/factions depuis le contexte (ou une consigne libre)."
+
+#: axiom.populate.populate_entities:3 of
+msgid ""
+"The context is split into chunks (global lore + each lore entry); each chunk"
+" is inserted and **committed immediately** (TICKET-031): an LLM failure mid-"
+"batch keeps the work already done, re-running resumes (existing ids are "
+"skipped). Returns the number inserted."
+msgstr ""
+"Le contexte est découpé en chunks (lore global + chaque entrée de lore) ; "
+"chaque chunk est inséré et **commité immédiatement** (TICKET-031) : un échec"
+" LLM en plein lot conserve le travail déjà fait, relancer reprend (les ids "
+"existants sont sautés). Retourne le nombre inséré."
+
+#: axiom.populate.populate_lore:1 of
+msgid "Extend the Lore Book. Returns the number of inserted entries."
+msgstr "Étend le livre de lore. Retourne le nombre d'entrées insérées."
+
+#: axiom.populate.populate_map:1 of
+#, python-brace-format
+msgid ""
+"Extend the map (Locations + Connections). Returns {\"added_locs\", "
+"\"added_conns\"}."
+msgstr ""
+"Étend la carte (Locations + Connections). Retourne {\"added_locs\", "
+"\"added_conns\"}."
+
+#: ../../api/content.md:10
+msgid "`axiom.regenerate`"
+msgstr ""
+
+#: axiom.regenerate:1 of
+msgid "axiom.regenerate — regenerating a narrative variant."
+msgstr "axiom.regenerate — régénération d'une variante narrative."
+
+#: axiom.regenerate:3 of
+#, python-brace-format
+msgid ""
+"Replays turn `turn_id` with the same player message to produce a **new "
+"variant** of the narrative text (without re-evaluating rules or stats), then"
+" appends it to the turn's multiverse payload in the `Event_Log` "
+"(`{\"active\": idx, \"variants\": [...]}`)."
+msgstr ""
+"Rejoue le tour `turn_id` avec le même message joueur pour produire une "
+"**nouvelle variante** du texte narratif (sans réévaluer règles ni stats), "
+"puis l'ajoute au payload multivers du tour dans l'`Event_Log` (`{\"active\":"
+" idx, \"variants\": [...]}`)."
+
+#: axiom.regenerate:8 of
+msgid "Zero Qt dependency. Streaming is surfaced through the `on_token` callback."
+msgstr "Zéro dépendance Qt. Le streaming remonte par le callback `on_token`."
+
+#: axiom.regenerate.history_to_messages:1 of
+msgid ""
+"Convert the event-sourced history (user_input / narrative_text) into LLM "
+"messages (the active variant is authoritative for the narrative)."
+msgstr ""
+"Convertit l'historique event-sourcé (user_input / narrative_text) en "
+"messages LLM (la variante active fait foi pour le narratif)."
+
+#: axiom.regenerate.regenerate_variant:1 of
+msgid "Generate an alternative variant of turn `turn_id` and record it."
+msgstr "Génère une variante alternative du tour `turn_id` et l'enregistre."
+
+#: axiom.regenerate.regenerate_variant:3 of
+msgid ""
+"The new variant is appended to the turn's `narrative_text` payload and "
+"becomes the **active** variant. Returns the generated text."
+msgstr ""
+"La nouvelle variante est ajoutée au payload `narrative_text` du tour et "
+"devient la variante **active**. Retourne le texte généré."
+
+#: axiom.regenerate.append_variant:1 of
+msgid "Append `text` as the active variant of a turn's `narrative_text`."
+msgstr "Ajoute `text` comme variante active du `narrative_text` d'un tour."
+
+#: axiom.regenerate.append_variant:3 of
+msgid ""
+"A historical non-multiverse payload is converted on the way. Returns False "
+"when the turn has no narrative event (nothing is written)."
+msgstr ""
+"Un payload historique non multivers est converti au passage. Retourne False "
+"quand le tour n'a pas d'événement narratif (rien n'est écrit)."
+
+#: ../../api/content.md:17
+msgid "`axiom.image_generator`"
+msgstr ""
+
+#: axiom.image_generator:1 of
+msgid "axiom/image_generator.py"
+msgstr ""
+
+#: axiom.image_generator:3 of
+msgid ""
+"Image generator engine for Axiom AI. Translates game/narrative context into "
+"visual prompts using the LLM and calls local image generation APIs (Stable "
+"Diffusion WebUI, ComfyUI, or mock)."
+msgstr ""
+"Moteur de génération d'images d'Axiom AI. Traduit le contexte de "
+"jeu/narratif en prompts visuels via le LLM et appelle des API locales de "
+"génération d'images (Stable Diffusion WebUI, ComfyUI, ou mock)."
+
+#: axiom.image_generator.closest_aspect_ratio:1 of
+msgid "Return the supported Gemini aspect ratio closest to width/height."
+msgstr ""
+"Retourne le ratio d'aspect Gemini pris en charge le plus proche de "
+"largeur/hauteur."
+
+#: axiom.image_generator.ImageGenerator:1 of
+msgid ""
+"Handles prompt generation and communication with local image generation "
+"backends."
+msgstr ""
+"Gère la génération de prompts et la communication avec les backends locaux "
+"de génération d'images."
+
+#: axiom.image_generator.ImageGenerator:5 of
+msgid "The AppConfig instance containing image settings."
+msgstr "L'instance AppConfig contenant les réglages d'image."
+
+#: axiom.image_generator.ImageGenerator:9 of
+msgid "The LLMBackend instance used for prompt engineering."
+msgstr "L'instance LLMBackend utilisée pour l'ingénierie de prompt."
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:1 of
+msgid "Use the auxiliary LLM to extract a visual prompt from the narrative turn."
+msgstr "Utilise le LLM auxiliaire pour extraire un prompt visuel du tour narratif."
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:3 of
+msgid "Prose description of the scene."
+msgstr "Description en prose de la scène."
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:4 of
+msgid "Optional description of the location/environment."
+msgstr "Description optionnelle du lieu/environnement."
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:5 of
+msgid "Optional description of characters present."
+msgstr "Description optionnelle des personnages présents."
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:6 of
+msgid "Optional mood tag (exploration, combat, dialogue, tension)."
+msgstr "Étiquette d'ambiance optionnelle (exploration, combat, dialogue, tension)."
+
+#: ../../api/content.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.image_generator.ImageGenerator.generate_prompt:8 of
+msgid "A comma-separated visual prompt optimized for Stable Diffusion."
+msgstr "Un prompt visuel séparé par des virgules, optimisé pour Stable Diffusion."
+
+#: axiom.image_generator.ImageGenerator.generate_image:1 of
+msgid "Call the configured backend to generate and save an image."
+msgstr "Appelle le backend configuré pour générer et enregistrer une image."
+
+#: axiom.image_generator.ImageGenerator.generate_image:3 of
+msgid "Visual prompt."
+msgstr "Prompt visuel."
+
+#: axiom.image_generator.ImageGenerator.generate_image:4 of
+msgid "Path to directory where the image should be saved."
+msgstr "Chemin du dossier où l'image doit être enregistrée."
+
+#: axiom.image_generator.ImageGenerator.generate_image:5 of
+msgid "File name to save under (should end with .png)."
+msgstr "Nom de fichier d'enregistrement (devrait finir par .png)."
+
+#: axiom.image_generator.ImageGenerator.generate_image:7 of
+msgid "The absolute path to the generated image file, or None if generation failed."
+msgstr "Le chemin absolu du fichier image généré, ou None si la génération a échoué."
+

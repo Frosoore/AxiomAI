@@ -1,0 +1,720 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 03:07+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/universe-as-code.md:1
+msgid "Universe-as-Code"
+msgstr ""
+
+#: ../../api/universe-as-code.md:3
+msgid "`axiom.compile`"
+msgstr ""
+
+#: axiom.compile:1 of
+msgid "axiom.compile — Universe-as-Code: compiling a source tree into a `.db` cache."
+msgstr ""
+"axiom.compile — Universe-as-Code : compilation d'une arborescence source en "
+"cache `.db`."
+
+#: axiom.compile:3 of
+msgid ""
+"A universe is defined as a versionable **tree of text files** (TOML/MD); the"
+" SQLite `.db` is only a **compiled cache** derived from the text. The text "
+"is the source of truth. This module reads the tree and populates a runtime "
+"`.db`."
+msgstr ""
+"Un univers est défini comme une **arborescence de fichiers texte** "
+"versionnable (TOML/MD) ; le `.db` SQLite n'est qu'un **cache compilé** "
+"dérivé du texte. Le texte est la source de vérité. Ce module lit "
+"l'arborescence et peuple un `.db` runtime."
+
+#: axiom.compile:7 of
+msgid "Zero Qt dependency: pure engine, drivable from the CLI (`axiom compile`)."
+msgstr "Zéro dépendance Qt : moteur pur, pilotable depuis le CLI (`axiom compile`)."
+
+#: axiom.compile:9 of
+msgid ""
+"Boundary: only the **definition tables** are produced here. The runtime/save"
+" tables (Saves, Event_Log, State_Cache, Snapshots, Timeline, …) stay empty "
+"in the cache — they do not belong to the universe definition."
+msgstr ""
+"Frontière : seules les **tables de définition** sont produites ici. Les "
+"tables runtime/save (Saves, Event_Log, State_Cache, Snapshots, Timeline, …) "
+"restent vides dans le cache — elles n'appartiennent pas à la définition "
+"d'univers."
+
+#: axiom.compile:13 of
+msgid "TOML reading: `tomllib` (stdlib). Writing (decompile) uses `tomlkit`."
+msgstr "Lecture TOML : `tomllib` (stdlib). L'écriture (decompile) utilise `tomlkit`."
+
+#: axiom.compile.CompileError:1 of
+msgid "Universe compilation error (malformed source, missing required field)."
+msgstr "Erreur de compilation d'univers (source malformée, champ requis manquant)."
+
+#: axiom.compile.hash_directory:1 of
+msgid "Stable hash of the source content (relative path + bytes of each file)."
+msgstr "Hash stable du contenu source (chemin relatif + octets de chaque fichier)."
+
+#: ../../api/universe-as-code.md axiom.compile.hash_directory
+#: axiom.decompile.read_definition axiom.library.apply_staged_source
+#: axiom.library.sync_source_from_db axiom.library.universe_root_for
+#: axiom.package.detect_format of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: ../../api/universe-as-code.md axiom.compile.hash_directory
+#: axiom.decompile.read_definition axiom.library.apply_staged_source
+#: axiom.library.sync_source_from_db axiom.library.universe_root_for
+#: axiom.package.detect_format of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.compile.compile_universe:1 of
+msgid "Compile a source tree into a runtime SQLite database."
+msgstr "Compile une arborescence source en base SQLite runtime."
+
+#: axiom.compile.compile_universe:3 axiom.dev.refresh_definition:6
+#: axiom.package.pack_universe:11 of
+msgid "Universe source folder (contains universe.toml)."
+msgstr "Dossier source de l'univers (contient universe.toml)."
+
+#: axiom.compile.compile_universe:4 of
+msgid ""
+"Path of the `.db` to produce. Defaults to `<src_dir>/.axiom-"
+"cache/universe.db`."
+msgstr "Chemin du `.db` à produire. Par défaut `<src_dir>/.axiom-cache/universe.db`."
+
+#: axiom.compile.compile_universe:6 of
+msgid "Recompile even if the source hash is unchanged."
+msgstr "Recompile même si le hash source est inchangé."
+
+#: ../../api/universe-as-code.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.compile.compile_universe:8 of
+msgid "The path of the compiled `.db`."
+msgstr "Le chemin du `.db` compilé."
+
+#: ../../api/universe-as-code.md:10
+msgid "`axiom.decompile`"
+msgstr ""
+
+#: axiom.decompile:1 of
+msgid "axiom.decompile — Universe-as-Code: decompiling a `.db` into a source tree."
+msgstr ""
+"axiom.decompile — Universe-as-Code : décompilation d'un `.db` en "
+"arborescence source."
+
+#: axiom.decompile:3 of
+msgid ""
+"The inverse of `axiom.compile`: reads an existing SQLite universe and "
+"regenerates the equivalent tree of text files (TOML/MD). Also used to "
+"migrate v1 `.db` universes to the versionable text format."
+msgstr ""
+"L'inverse d'`axiom.compile` : lit un univers SQLite existant et régénère "
+"l'arborescence de fichiers texte (TOML/MD) équivalente. Sert aussi à migrer "
+"les univers `.db` v1 vers le format texte versionnable."
+
+#: axiom.decompile:7 of
+msgid ""
+"Preserves: entity_ids, rule_ids, calendar, full lore, locations + "
+"connections, scheduled events, story setup, item & stat definitions, "
+"personas."
+msgstr ""
+"Préserve : entity_ids, rule_ids, calendrier, lore complet, lieux + "
+"connexions, événements programmés, story setup, définitions d'objets et de "
+"stats, personas."
+
+#: axiom.decompile:10 of
+msgid ""
+"TOML writing: `tomlkit` (keeps the formatting clean, helpful for human "
+"editing). Zero Qt dependency."
+msgstr ""
+"Écriture TOML : `tomlkit` (garde un formatage propre, utile pour l'édition "
+"humaine). Zéro dépendance Qt."
+
+#: axiom.decompile.DecompileError:1 of
+msgid "Universe decompilation error."
+msgstr "Erreur de décompilation d'univers."
+
+#: axiom.decompile.read_definition:1 of
+msgid "Read all the **definition** tables of a universe into normalised structures."
+msgstr ""
+"Lit toutes les tables de **définition** d'un univers en structures "
+"normalisées."
+
+#: axiom.decompile.read_definition:3 of
+msgid ""
+"Never reads the runtime/save tables. Used by the decompilation and by the "
+"round-trip tests (semantic comparison)."
+msgstr ""
+"Ne lit jamais les tables runtime/save. Utilisé par la décompilation et par "
+"les tests d'aller-retour (comparaison sémantique)."
+
+#: axiom.decompile.decompile_universe:1 of
+msgid "Decompile a `.db` universe into a text source tree."
+msgstr "Décompile un univers `.db` en arborescence source texte."
+
+#: axiom.decompile.decompile_universe:3 of
+msgid "Path of the universe `.db` to read."
+msgstr "Chemin du `.db` univers à lire."
+
+#: axiom.decompile.decompile_universe:4 of
+msgid "Destination folder (created if missing)."
+msgstr "Dossier de destination (créé s'il n'existe pas)."
+
+#: axiom.decompile.decompile_universe:6 of
+msgid "The path of the generated source folder."
+msgstr "Le chemin du dossier source généré."
+
+#: ../../api/universe-as-code.md:17
+msgid "`axiom.package`"
+msgstr ""
+
+#: axiom.package:1 of
+msgid "axiom.package — Universe-as-Code: `.axiom` v2 packaging + v1 compat."
+msgstr "axiom.package — Universe-as-Code : packaging `.axiom` v2 + compat v1."
+
+#: axiom.package:3 of
+msgid ""
+"A `.axiom` v2 archive is a **zip of the source tree** (TOML/MD) including "
+"the compiled cache `.axiom-cache/universe.db` for instant loading."
+msgstr ""
+"Une archive `.axiom` v2 est un **zip de l'arborescence source** (TOML/MD) "
+"incluant le cache compilé `.axiom-cache/universe.db` pour un chargement "
+"instantané."
+
+#: axiom.package:6 of
+msgid ""
+"Backward compatibility: old `.axiom` v1 archives (zip of JSON files) are "
+"detected and converted on the fly (v1 -> .db -> decompile -> v2 tree -> "
+"recompile)."
+msgstr ""
+"Rétrocompatibilité : les anciennes archives `.axiom` v1 (zip de fichiers "
+"JSON) sont détectées et converties à la volée (v1 -> .db -> decompile -> "
+"arbo v2 -> recompile)."
+
+#: axiom.package:10 of
+msgid ""
+"Zero Qt dependency: pure engine. The Qt worker `import_export_worker.py` is "
+"a thin shell calling these functions."
+msgstr ""
+"Zéro dépendance Qt : moteur pur. Le worker Qt `import_export_worker.py` est "
+"une coquille fine appelant ces fonctions."
+
+#: axiom.package.PackageError:1 of
+msgid "Error while packing/unpacking a `.axiom` archive."
+msgstr "Erreur d'empaquetage/dépaquetage d'une archive `.axiom`."
+
+#: axiom.package.pack_universe:1 of
+msgid "Pack a source tree into a `.axiom` v2 archive."
+msgstr "Empaquette une arborescence source en archive `.axiom` v2."
+
+#: axiom.package.pack_universe:3 of
+msgid ""
+"Recompiles the cache (`.axiom-cache/universe.db`) first so it ships in the "
+"archive, then zips the tree. An archive only publishes the **definition** "
+"(same contract as exporting a flat `.db`, TICKET-039):"
+msgstr ""
+"Recompile d'abord le cache (`.axiom-cache/universe.db`) pour qu'il voyage "
+"dans l'archive, puis zippe l'arborescence. Une archive ne publie que la "
+"**définition** (même contrat que l'export d'un `.db` plat, TICKET-039) :"
+
+#: axiom.package.pack_universe:7 of
+msgid "`.git/` and the WAL sidecars (`-wal`/`-shm`) are excluded;"
+msgstr "`.git/` et les sidecars WAL (`-wal`/`-shm`) sont exclus ;"
+
+#: axiom.package.pack_universe:8 of
+msgid ""
+"the embedded cache is a copy **purged of the runtime tables** (legacy "
+"embedded saves — private play history — do not travel)."
+msgstr ""
+"le cache embarqué est une copie **purgée des tables runtime** (les saves "
+"embarquées legacy — historique de jeu privé — ne voyagent pas)."
+
+#: axiom.package.export_db_to_axiom:9 axiom.package.pack_universe:12 of
+msgid "Path of the `.axiom` archive to produce."
+msgstr "Chemin de l'archive `.axiom` à produire."
+
+#: axiom.package.export_db_to_axiom:11 axiom.package.pack_universe:14 of
+msgid "The path of the created archive."
+msgstr "Le chemin de l'archive créée."
+
+#: axiom.package.export_db_to_axiom:1 of
+msgid "Export a `.db` universe to a `.axiom` v2 archive (decompile -> pack)."
+msgstr "Exporte un univers `.db` en archive `.axiom` v2 (decompile -> pack)."
+
+#: axiom.package.export_db_to_axiom:3 of
+msgid ""
+"For universes that still only exist as a `.db` (legacy GUI). The archive "
+"only contains the **definition** (the decompiled tree + its recompiled "
+"cache): saves embedded in the `.db` are not exported — same contract as the "
+"v1 export."
+msgstr ""
+"Pour les univers qui n'existent encore que sous forme `.db` (GUI legacy). "
+"L'archive ne contient que la **définition** (l'arborescence décompilée + son"
+" cache recompilé) : les saves embarquées dans le `.db` ne sont pas exportées"
+" — même contrat que l'export v1."
+
+#: axiom.package.export_db_to_axiom:8 of
+msgid "Path of the universe `.db` to export."
+msgstr "Chemin du `.db` univers à exporter."
+
+#: axiom.package.detect_format:1 of
+msgid "Return 'v2' or 'v1', or raise PackageError, depending on the archive content."
+msgstr "Retourne 'v2' ou 'v1', ou lève PackageError, selon le contenu de l'archive."
+
+#: axiom.package.unpack_universe:1 of
+msgid "Unpack a `.axiom` (v1 or v2) into a playable source tree."
+msgstr "Dépaquette un `.axiom` (v1 ou v2) en arborescence source jouable."
+
+#: axiom.package.unpack_universe:3 of
+msgid ""
+"v2: unzip, check the hash — keep the embedded `.db` if valid, recompile "
+"otherwise. v1: convert (JSON -> .db -> decompile -> v2 tree -> compile)."
+msgstr ""
+"v2 : dézippe, vérifie le hash — garde le `.db` embarqué si valide, recompile"
+" sinon. v1 : convertit (JSON -> .db -> decompile -> arbo v2 -> compile)."
+
+#: axiom.package.unpack_universe:6 of
+msgid "Path of the `.axiom` archive."
+msgstr "Chemin de l'archive `.axiom`."
+
+#: axiom.package.unpack_universe:7 of
+msgid "Root folder where the universe is materialised (in a <name>/ subfolder)."
+msgstr "Dossier racine où matérialiser l'univers (dans un sous-dossier <name>/)."
+
+#: axiom.package.unpack_universe:10 of
+msgid "The path of the universe source folder (containing universe.toml + cache)."
+msgstr "Le chemin du dossier source de l'univers (contenant universe.toml + cache)."
+
+#: ../../api/universe-as-code.md:24
+msgid "`axiom.library`"
+msgstr ""
+
+#: axiom.library:1 of
+msgid "axiom.library — Universe-as-Code: discovery of installed universes."
+msgstr "axiom.library — Universe-as-Code : découverte des univers installés."
+
+#: axiom.library:3 of
+msgid ""
+"The Hub historically listed flat `*.db` files in `~/AxiomAI/universes/`. "
+"With Universe-as-Code, an imported universe (`.axiom` v2) or one created in "
+"source mode lives in a **folder** `universes/<name>/` (universe.toml + "
+"`.axiom-cache/universe.db`). This module provides the unified discovery of "
+"both forms, engine-side (zero Qt) — the Hub's `DbWorker` is just a shell on "
+"top."
+msgstr ""
+"Le Hub listait historiquement les `*.db` à plat dans `~/AxiomAI/universes/`."
+" Avec Universe-as-Code, un univers importé (`.axiom` v2) ou créé en mode "
+"source vit dans un **dossier** `universes/<name>/` (universe.toml + `.axiom-"
+"cache/universe.db`). Ce module fournit la découverte unifiée des deux "
+"formes, côté moteur (zéro Qt) — le `DbWorker` du Hub n'est qu'une coquille "
+"au-dessus."
+
+#: axiom.library.LibraryError:1 of
+msgid "Universe library management error."
+msgstr "Erreur de gestion de la bibliothèque d'univers."
+
+#: axiom.library.universe_root_for:1 of
+msgid "Return a universe's source folder when `db_path` is its compiled cache."
+msgstr ""
+"Retourne le dossier source d'un univers quand `db_path` est son cache "
+"compilé."
+
+#: axiom.library.universe_root_for:3 of
+msgid ""
+"`universes/<name>/.axiom-cache/universe.db` maps to `universes/<name>/`. "
+"Returns None for a flat `.db` (legacy) or any other path."
+msgstr ""
+"`universes/<name>/.axiom-cache/universe.db` correspond à "
+"`universes/<name>/`. Retourne None pour un `.db` plat (legacy) ou tout autre"
+" chemin."
+
+#: axiom.library.discover_universes:1 of
+msgid "List the playable universes of a library folder."
+msgstr "Liste les univers jouables d'un dossier bibliothèque."
+
+#: axiom.library.discover_universes:3 of
+msgid "Two forms are recognised:"
+msgstr "Deux formes sont reconnues :"
+
+#: axiom.library.discover_universes:5 of
+msgid "flat `*.db` (legacy);"
+msgstr "`*.db` à plat (legacy) ;"
+
+#: axiom.library.discover_universes:6 of
+msgid ""
+"a subfolder containing `universe.toml` (Universe-as-Code), compiled on "
+"demand when the cache is missing/stale (no-op when the hash is unchanged)."
+msgstr ""
+"un sous-dossier contenant `universe.toml` (Universe-as-Code), compilé à la "
+"demande quand le cache est absent/périmé (no-op quand le hash est inchangé)."
+
+#: axiom.library.discover_universes:10 of
+msgid ""
+"A malformed source folder is skipped (warning logged): it must not prevent "
+"the Hub from showing the rest of the library."
+msgstr ""
+"Un dossier source malformé est sauté (warning journalisé) : il ne doit pas "
+"empêcher le Hub d'afficher le reste de la bibliothèque."
+
+#: axiom.library.discover_universes:13 of
+#, python-brace-format
+msgid ""
+"List of dicts {db_path, source_dir, name, last_updated, difficulty}, sorted "
+"by file/folder name. `source_dir` is None for a flat `.db`."
+msgstr ""
+"Liste de dicts {db_path, source_dir, name, last_updated, difficulty}, triée "
+"par nom de fichier/dossier. `source_dir` vaut None pour un `.db` plat."
+
+#: axiom.library.diff_source_trees:1 of
+msgid "Text diff between two source trees (protected areas excluded)."
+msgstr "Diff texte entre deux arborescences source (zones protégées exclues)."
+
+#: axiom.library.diff_source_trees:3 of
+msgid ""
+"Used for previews: `before_dir` is the real source, `after_dir` a temporary "
+"tree reflecting what the source would become."
+msgstr ""
+"Sert aux prévisualisations : `before_dir` est la source réelle, `after_dir` "
+"un arbre temporaire reflétant ce que la source deviendrait."
+
+#: axiom.library.diff_source_trees:6 of
+msgid ""
+"A list of dicts with keys path, status ('added' | 'modified' | 'removed') "
+"and diff — a unified diff, sorted by path."
+msgstr ""
+"Une liste de dicts avec les clés path, status ('added' | 'modified' | "
+"'removed') et diff — un diff unifié, trié par chemin."
+
+#: axiom.library.apply_staged_source:1 of
+msgid "Apply a validated source tree: mirror it to the source + recompile."
+msgstr "Applique un arbre source validé : miroir vers la source + recompilation."
+
+#: axiom.library.apply_staged_source:3 of
+msgid ""
+"`staged_dir` is a full snapshot of the future source (produced by the "
+"preview sandbox): it replaces the source — protected areas (`.axiom-cache/`,"
+" `.git/`) untouched — then the definition is recompiled **in-place** into "
+"`db_path` (runtime intact)."
+msgstr ""
+"`staged_dir` est un instantané complet de la future source (produit par la "
+"sandbox de prévisualisation) : il remplace la source — zones protégées "
+"(`.axiom-cache/`, `.git/`) intactes — puis la définition est recompilée "
+"**in-place** dans `db_path` (runtime intact)."
+
+#: axiom.library.convert_flat_db_to_folder:1 of
+msgid "Convert a flat legacy `.db` into a Universe-as-Code folder universe."
+msgstr "Convertit un `.db` plat legacy en univers-dossier Universe-as-Code."
+
+#: axiom.library.convert_flat_db_to_folder:3 of
+msgid ""
+"the definition is decompiled to `<parent>/<stem>/` (same universe key: the "
+"saves keep their `saves/<stem>/` folder);"
+msgstr ""
+"la définition est décompilée vers `<parent>/<stem>/` (même clé d'univers : "
+"les saves gardent leur dossier `saves/<stem>/`) ;"
+
+#: axiom.library.convert_flat_db_to_folder:5 of
+msgid ""
+"every embedded save is extracted to its own separate file, then linked to "
+"the new source (resynchronised on open);"
+msgstr ""
+"chaque save embarquée est extraite vers son propre fichier séparé, puis "
+"reliée à la nouvelle source (resynchronisée à l'ouverture) ;"
+
+#: axiom.library.convert_flat_db_to_folder:7 of
+msgid "the source is compiled (`.axiom-cache/universe.db` cache);"
+msgstr "la source est compilée (cache `.axiom-cache/universe.db`) ;"
+
+#: axiom.library.convert_flat_db_to_folder:8 of
+msgid ""
+"the original is kept as `<name>.db.bak` (manual recovery stays possible, and"
+" it disappears from the Hub discovery — no duplicate)."
+msgstr ""
+"l'original est conservé en `<name>.db.bak` (la récupération manuelle reste "
+"possible, et il disparaît de la découverte du Hub — pas de doublon)."
+
+#: axiom.library.convert_flat_db_to_folder:11 of
+msgid "A dict with keys source_dir and db_path — db_path is the new cache."
+msgstr "Un dict avec les clés source_dir et db_path — db_path est le nouveau cache."
+
+#: axiom.library.sync_source_if_any:1 of
+msgid ""
+"After a definition write (Creator Studio, Populate): when the `.db` is the "
+"cache of a folder universe, rewrite the text tree so it stays the source of "
+"truth (TICKET-027)."
+msgstr ""
+"Après une écriture de définition (Creator Studio, Populate) : quand le `.db`"
+" est le cache d'un univers-dossier, réécrit l'arborescence texte pour "
+"qu'elle reste la source de vérité (TICKET-027)."
+
+#: axiom.library.sync_source_if_any:5 of
+msgid ""
+"Never raises: a Studio save must not fail because the text mirror failed "
+"(warning logged)."
+msgstr ""
+"Ne lève jamais : une sauvegarde Studio ne doit pas échouer parce que le "
+"miroir texte a échoué (warning journalisé)."
+
+#: axiom.library.sync_source_if_any:8 of
+msgid "True when a source was resynchronised."
+msgstr "True quand une source a été resynchronisée."
+
+#: axiom.library.sync_source_from_db:1 of
+msgid "Rewrite a universe's source tree from its `.db` (mirror)."
+msgstr "Réécrit l'arborescence source d'un univers depuis son `.db` (miroir)."
+
+#: axiom.library.sync_source_from_db:3 of
+msgid ""
+"Decompiles to a temporary folder then aligns `src_dir` on it: files are "
+"added/overwritten, orphan files removed (definition removed in the Studio "
+"also disappears from the text). `.axiom-cache/` and `.git/` are never "
+"touched. Entities with `origin='runtime'` (the player, NPCs born in game) "
+"are not exported to the source."
+msgstr ""
+"Décompile vers un dossier temporaire puis aligne `src_dir` dessus : fichiers"
+" ajoutés/écrasés, fichiers orphelins supprimés (la définition retirée dans "
+"le Studio disparaît aussi du texte). `.axiom-cache/` et `.git/` ne sont "
+"jamais touchés. Les entités `origin='runtime'` (le joueur, les PNJ nés en "
+"jeu) ne sont pas exportées vers la source."
+
+#: axiom.library.sync_source_from_db:9 of
+msgid ""
+"The cache hash is updated: the `.db` that was just written IS the "
+"compilation of the freshly rewritten source (lossless round-trip)."
+msgstr ""
+"Le hash de cache est mis à jour : le `.db` qui vient d'être écrit EST la "
+"compilation de la source fraîchement réécrite (aller-retour sans perte)."
+
+#: ../../api/universe-as-code.md:31
+msgid "`axiom.dev`"
+msgstr ""
+
+#: axiom.dev:1 of
+msgid "axiom.dev — Universe-as-Code: dev mode with hot reload."
+msgstr "axiom.dev — Universe-as-Code : mode dev avec rechargement à chaud."
+
+#: axiom.dev:3 of
+msgid ""
+"`axiom dev <src_dir>` watches the source tree and, on every change, "
+"recompiles the **definition** into the target `.db`. The real \"modder\" "
+"mode: edit `entities/bob.toml` in an editor and see the effect on the next "
+"turn."
+msgstr ""
+"`axiom dev <src_dir>` surveille l'arborescence source et, à chaque "
+"modification, recompile la **définition** dans le `.db` cible. Le vrai mode "
+"« moddeur » : éditer `entities/bob.toml` dans un éditeur et voir l'effet au "
+"tour suivant."
+
+#: axiom.dev:7 of
+msgid ""
+"Key point: legacy saves may live in the **same `.db`** as the definition. A "
+"full `compile_universe` rebuilds the file from scratch and would destroy "
+"games in progress. Hot reload therefore goes through `refresh_definition`: "
+"an **in-place** update of the definition tables only, in a single "
+"transaction, runtime tables untouched (Saves, Event_Log, State_Cache, "
+"Snapshots, Timeline, Items_Inventory, Active_Modifiers, "
+"Fired_Scheduled_Events)."
+msgstr ""
+"Point clé : des saves legacy peuvent vivre dans le **même `.db`** que la "
+"définition. Un `compile_universe` complet reconstruit le fichier à neuf et "
+"détruirait les parties en cours. Le rechargement à chaud passe donc par "
+"`refresh_definition` : une mise à jour **in-place** des seules tables de "
+"définition, dans une transaction unique, tables runtime intactes (Saves, "
+"Event_Log, State_Cache, Snapshots, Timeline, Items_Inventory, "
+"Active_Modifiers, Fired_Scheduled_Events)."
+
+#: axiom.dev:15 of
+msgid ""
+"FK constraint: three definition tables have runtime children with `ON DELETE"
+" CASCADE` — `Entities` (Items_Inventory, Active_Modifiers), "
+"`Item_Definitions` (Items_Inventory), `Scheduled_Events` "
+"(Fired_Scheduled_Events). For those, the sync uses targeted "
+"UPDATE/INSERT/DELETE statements (a delete-all-then-reinsert would purge the "
+"children of kept rows). A row removed from the source loses its runtime "
+"children: that is intended (the text is the truth)."
+msgstr ""
+"Contrainte FK : trois tables de définition ont des enfants runtime en `ON "
+"DELETE CASCADE` — `Entities` (Items_Inventory, Active_Modifiers), "
+"`Item_Definitions` (Items_Inventory), `Scheduled_Events` "
+"(Fired_Scheduled_Events). Pour celles-ci, la synchro passe par des "
+"UPDATE/INSERT/DELETE ciblés (un tout-supprimer-réinsérer purgerait les "
+"enfants des lignes conservées). Une ligne retirée de la source perd ses "
+"enfants runtime : c'est voulu (le texte est la vérité)."
+
+#: axiom.dev:23 of
+msgid ""
+"Zero Qt dependency: pure engine, drivable from the CLI. The watch is a "
+"`hash_directory` polling loop (no watchdog dependency; universe trees are "
+"small, hashing is instant)."
+msgstr ""
+"Zéro dépendance Qt : moteur pur, pilotable depuis le CLI. La surveillance "
+"est une boucle de scrutation de `hash_directory` (pas de dépendance watchdog"
+" ; les arborescences d'univers sont petites, le hash est instantané)."
+
+#: axiom.dev.refresh_definition:1 of
+msgid "Recompile the universe definition into an existing `.db`, in place."
+msgstr "Recompile la définition de l'univers dans un `.db` existant, in-place."
+
+#: axiom.dev.refresh_definition:3 of
+msgid ""
+"Runtime/save tables are not touched. When the `.db` does not exist yet, this"
+" is equivalent to `compile_universe(force=True)`."
+msgstr ""
+"Les tables runtime/save ne sont pas touchées. Quand le `.db` n'existe pas "
+"encore, équivaut à un `compile_universe(force=True)`."
+
+#: axiom.dev.refresh_definition:7 of
+msgid "Target `.db`. Defaults to `<src_dir>/.axiom-cache/universe.db`."
+msgstr "`.db` cible. Par défaut `<src_dir>/.axiom-cache/universe.db`."
+
+#: axiom.dev.refresh_definition:9 of
+msgid "The path of the refreshed `.db`."
+msgstr "Le chemin du `.db` rafraîchi."
+
+#: ../../api/universe-as-code.md
+msgid "Raises"
+msgstr "Lève"
+
+#: axiom.dev.refresh_definition:11 of
+msgid ""
+"malformed source (the `.db` is left unchanged, the transaction is rolled "
+"back)."
+msgstr "source malformée (le `.db` reste inchangé, la transaction est annulée)."
+
+#: axiom.dev.ensure_compiled:1 of
+msgid "Guarantee an up-to-date compiled cache **without ever destroying saves**."
+msgstr "Garantit un cache compilé à jour **sans jamais détruire les saves**."
+
+#: axiom.dev.ensure_compiled:3 of
+msgid ""
+"Use this wherever a folder universe must be made playable (Hub, `axiom "
+"play`): missing cache -> full compilation; stale cache -> in-place "
+"`refresh_definition` (a full `compile_universe` would rebuild the file and "
+"erase any saves it contains); fresh cache -> no-op."
+msgstr ""
+"À utiliser partout où un univers-dossier doit être rendu jouable (Hub, "
+"`axiom play`) : cache absent -> compilation complète ; cache périmé -> "
+"`refresh_definition` in-place (un `compile_universe` complet reconstruirait "
+"le fichier et effacerait les saves qu'il contient) ; cache à jour -> no-op."
+
+#: axiom.dev.ensure_compiled:8 of
+msgid "The path of the playable `.db`."
+msgstr "Le chemin du `.db` jouable."
+
+#: axiom.dev.poll_once:1 of
+msgid "One watch iteration: recompile when the source changed since `last_hash`."
+msgstr ""
+"Une itération de surveillance : recompile quand la source a changé depuis "
+"`last_hash`."
+
+#: axiom.dev.poll_once:3 of
+msgid "Watched source folder."
+msgstr "Dossier source surveillé."
+
+#: axiom.dev.poll_once:4 of
+msgid "Target `.db` (None = default cache)."
+msgstr "`.db` cible (None = cache par défaut)."
+
+#: axiom.dev.poll_once:5 of
+msgid "Hash from the previous iteration (None = first pass)."
+msgstr "Hash de l'itération précédente (None = premier passage)."
+
+#: axiom.dev.poll_once:7 of
+msgid "Tuple (current hash, True when a refresh was performed)."
+msgstr "Tuple (hash courant, True quand un rafraîchissement a été effectué)."
+
+#: axiom.dev.poll_once:9 of
+msgid ""
+"the source changed but is malformed. The current hash is carried by the "
+"exception (`src_hash` attribute) so the caller can record it and avoid "
+"retrying the same content in a loop."
+msgstr ""
+"la source a changé mais est malformée. Le hash courant est porté par "
+"l'exception (attribut `src_hash`) pour que l'appelant puisse l'enregistrer "
+"et éviter de retenter le même contenu en boucle."
+
+#: axiom.dev.watch_universe:1 of
+msgid "Watch the source tree and recompile the definition on every change."
+msgstr ""
+"Surveille l'arborescence source et recompile la définition à chaque "
+"modification."
+
+#: axiom.dev.watch_universe:3 of
+msgid ""
+"A momentarily malformed source (mid-typing save, invalid TOML) is reported "
+"through `on_event` but does not kill the loop: the next fix triggers a "
+"refresh again."
+msgstr ""
+"Une source momentanément malformée (sauvegarde à mi-frappe, TOML invalide) "
+"est signalée via `on_event` mais ne tue pas la boucle : la correction "
+"suivante redéclenche un rafraîchissement."
+
+#: axiom.dev.watch_universe:7 of
+msgid "Universe source folder."
+msgstr "Dossier source de l'univers."
+
+#: axiom.dev.watch_universe:8 of
+msgid "Target `.db` (None = `<src>/.axiom-cache/universe.db`)."
+msgstr "`.db` cible (None = `<src>/.axiom-cache/universe.db`)."
+
+#: axiom.dev.watch_universe:9 of
+msgid "Polling period in seconds."
+msgstr "Période de scrutation en secondes."
+
+#: axiom.dev.watch_universe:10 of
+msgid "Log callback (one line per event)."
+msgstr "Callback de log (une ligne par événement)."
+
+#: axiom.dev.watch_universe:11 of
+msgid ""
+"Optional predicate tested at each iteration (for tests / integration); None "
+"= loop until KeyboardInterrupt."
+msgstr ""
+"Prédicat optionnel testé à chaque itération (pour tests / intégration) ; "
+"None = boucle jusqu'à KeyboardInterrupt."
+
+#~ msgid ""
+#~ "\"added\"|\"modified\"|\"removed\", \"diff\"} dicts —"
+#~ " `diff` is a unified diff, sorted "
+#~ "by path."
+#~ msgstr ""
+
+#~ msgid "str, \"db_path\": str} — `db_path` is the new cache."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "malformed source (the `.db` is left "
+#~ "unchanged, the     transaction is rolled "
+#~ "back)."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "the source changed but is malformed. "
+#~ "The current hash is     carried by "
+#~ "the exception (`src_hash` attribute) so the"
+#~ " caller can     record it and avoid "
+#~ "retrying the same content in a loop."
+#~ msgstr ""
+

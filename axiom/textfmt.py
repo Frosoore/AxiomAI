@@ -1,8 +1,8 @@
-"""axiom.textfmt — formatage de texte langue-neutre côté moteur.
+"""axiom.textfmt — language-neutral text formatting, engine-side.
 
-`fmt_num` n'est PAS de la traduction : c'est un nettoyage d'affichage des nombres
-(évite « 3.0 » ou « 0.1000000001 »). Le moteur en a besoin indépendamment de toute
-langue ; la localisation, elle, vit côté frontend (cf. `core.localization`, TICKET-054).
+`fmt_num` is NOT translation: it is display cleanup for numbers (avoids
+"3.0" or "0.1000000001"). The engine needs it regardless of any language;
+localisation itself lives on the frontend side (see `core.localization`).
 """
 
 from __future__ import annotations

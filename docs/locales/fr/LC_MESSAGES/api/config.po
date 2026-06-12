@@ -1,0 +1,427 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/config.md:1
+msgid "Configuration and paths"
+msgstr "Configuration et chemins"
+
+#: ../../api/config.md:3
+msgid "`axiom.config`"
+msgstr ""
+
+#: axiom.config:1 of
+msgid "core/config.py"
+msgstr ""
+
+#: axiom.config:3 of
+msgid "Application configuration model for Axiom AI."
+msgstr "Modèle de configuration applicative d'Axiom AI."
+
+#: axiom.config:5 of
+msgid ""
+"Stores user preferences (LLM backend, model names, API keys, Chronicler "
+"interval) in a JSON file at ~/.config/AxiomAI/settings.json."
+msgstr ""
+"Stocke les préférences utilisateur (backend LLM, noms de modèles, clés API, "
+"intervalle du Chroniqueur) dans un fichier JSON à "
+"~/.config/AxiomAI/settings.json."
+
+#: axiom.config:8 of
+msgid ""
+"This module is pure Python with no UI dependencies — it can be imported by "
+"workers and backend code safely."
+msgstr ""
+"Ce module est du pur Python sans dépendance UI — il peut être importé sans "
+"risque par les workers et le code backend."
+
+#: axiom.config.AppConfig:1 of
+msgid "User preferences for Axiom AI."
+msgstr "Préférences utilisateur d'Axiom AI."
+
+#: ../../api/config.md axiom.config.resolve_extraction_model
+#: axiom.config.resolve_time_model of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: axiom.config.AppConfig:5 of
+msgid "Active backend — \"universal\" or \"gemini\"."
+msgstr "Backend actif — \"universal\" ou \"gemini\"."
+
+#: axiom.config.AppConfig of
+msgid "type"
+msgstr ""
+
+#: axiom.config.AppConfig:7 axiom.config.AppConfig:13 axiom.config.AppConfig:19
+#: axiom.config.AppConfig:25 axiom.config.AppConfig:31 axiom.config.AppConfig:37
+#: axiom.config.AppConfig:43 axiom.config.AppConfig:49 axiom.config.AppConfig:112
+#: axiom.config.AppConfig:124 axiom.config.AppConfig:130
+#: axiom.config.AppConfig:160 axiom.config.AppConfig:166 of
+msgid "str"
+msgstr ""
+
+#: axiom.config.AppConfig:11 of
+msgid "Base URL for Universal API (e.g. OpenAI-compatible)."
+msgstr "URL de base de l'API Universal (ex. compatible OpenAI)."
+
+#: axiom.config.AppConfig:17 of
+msgid "Optional API key for Universal API."
+msgstr "Clé API optionnelle pour l'API Universal."
+
+#: axiom.config.AppConfig:23 of
+msgid "Model identifier for Universal API."
+msgstr "Identifiant de modèle pour l'API Universal."
+
+#: axiom.config.AppConfig:29 of
+msgid "Google Gemini API key (may be empty)."
+msgstr "Clé API Google Gemini (peut être vide)."
+
+#: axiom.config.AppConfig:35 of
+msgid "Gemini model identifier."
+msgstr "Identifiant du modèle Gemini."
+
+#: axiom.config.AppConfig:41 of
+msgid "Model used specifically for data extraction (Populate)."
+msgstr "Modèle utilisé spécifiquement pour l'extraction de données (Populate)."
+
+#: axiom.config.AppConfig:47 of
+msgid "Model used by the Timekeeper to deduce elapsed time."
+msgstr "Modèle utilisé par le Timekeeper pour déduire le temps écoulé."
+
+#: axiom.config.AppConfig:53 of
+msgid ""
+"When True, a dedicated second LLM call (the Timekeeper) deduces the in-game "
+"minutes elapsed each turn. When False, that extra call is skipped and the "
+"time is estimated from the scene pace alone (cheaper, less precise). See "
+"Pilier 5 / TICKET-015."
+msgstr ""
+"Si True, un second appel LLM dédié (le Timekeeper) déduit les minutes in-"
+"game écoulées à chaque tour. Si False, cet appel supplémentaire est sauté et"
+" le temps est estimé d'après le seul rythme de la scène (moins cher, moins "
+"précis). Voir Pilier 5 / TICKET-015."
+
+#: axiom.config.AppConfig:59 axiom.config.AppConfig:89 axiom.config.AppConfig:118
+#: of
+msgid "bool"
+msgstr ""
+
+#: axiom.config.AppConfig:63 of
+msgid ""
+"LEGACY — player turns between Chronicler runs. No longer used for triggering"
+" (the Chronicler is now driven by in-game minutes); kept for backward "
+"compatibility with older settings files."
+msgstr ""
+"HÉRITÉ — tours joueur entre deux passages du Chroniqueur. N'est plus utilisé"
+" pour le déclenchement (le Chroniqueur est désormais piloté par les minutes "
+"in-game) ; conservé pour la compatibilité avec les anciens fichiers de "
+"réglages."
+
+#: axiom.config.AppConfig:68 axiom.config.AppConfig:77 axiom.config.AppConfig:83
+#: axiom.config.AppConfig:95 axiom.config.AppConfig:103 axiom.config.AppConfig:136
+#: axiom.config.AppConfig:142 axiom.config.AppConfig:148
+#: axiom.config.AppConfig:173 of
+msgid "int"
+msgstr ""
+
+#: axiom.config.AppConfig:72 of
+msgid ""
+"In-game minutes between Chronicler runs. The Chronicler fires once whenever "
+"the world clock crosses a multiple of this value, so a single long time-skip"
+" triggers exactly one off-screen simulation."
+msgstr ""
+"Minutes in-game entre deux passages du Chroniqueur. Le Chroniqueur se "
+"déclenche une fois chaque fois que l'horloge du monde franchit un multiple "
+"de cette valeur, donc un unique long saut temporel ne déclenche qu'une seule"
+" simulation hors-champ."
+
+#: axiom.config.AppConfig:81 of
+msgid "Font size for the chat UI."
+msgstr "Taille de police de l'interface de chat."
+
+#: axiom.config.AppConfig:87 of
+msgid "Whether background ambiance is enabled."
+msgstr "Active ou non l'ambiance sonore de fond."
+
+#: axiom.config.AppConfig:93 of
+msgid "Number of memory chunks to retrieve for RAG."
+msgstr "Nombre de fragments de mémoire à récupérer pour le RAG."
+
+#: axiom.config.AppConfig:99 of
+msgid ""
+"Soft rate limit applied to Gemini calls (TICKET-031). 0 = unlimited. Free "
+"tier example: 10 req/min per model — set 9 to stay under it."
+msgstr ""
+"Limite de débit douce appliquée aux appels Gemini (TICKET-031). 0 = "
+"illimité. Exemple palier gratuit : 10 req/min par modèle — mettre 9 pour "
+"rester dessous."
+
+#: axiom.config.AppConfig:107 of
+msgid ""
+"Model tried when the primary Gemini model is still quota-exhausted (429) "
+"after retries. Google quotas are per-model, so a different model usually "
+"still has budget. Empty = no fallback."
+msgstr ""
+"Modèle tenté quand le modèle Gemini principal reste à quota épuisé (429) "
+"après les retries. Les quotas Google sont par modèle, donc un modèle "
+"différent a souvent encore du budget. Vide = pas de repli."
+
+#: axiom.config.AppConfig:116 of
+msgid "Whether narrative image generation is enabled."
+msgstr "Active ou non la génération d'images narratives."
+
+#: axiom.config.AppConfig:122 of
+msgid "Image generation backend (\"mock\", \"stable_diffusion\", or \"comfyui\")."
+msgstr ""
+"Backend de génération d'images (\"mock\", \"stable_diffusion\" ou "
+"\"comfyui\")."
+
+#: axiom.config.AppConfig:128 of
+msgid "API base URL for the local image generator."
+msgstr "URL de base de l'API du générateur d'images local."
+
+#: axiom.config.AppConfig:134 of
+msgid "Generated image width in pixels."
+msgstr "Largeur des images générées, en pixels."
+
+#: axiom.config.AppConfig:140 of
+msgid "Generated image height in pixels."
+msgstr "Hauteur des images générées, en pixels."
+
+#: axiom.config.AppConfig:146 of
+msgid "Denoising steps for the image generation."
+msgstr "Nombre d'étapes de débruitage pour la génération d'images."
+
+#: axiom.config.AppConfig:152 of
+msgid "Classifier Free Guidance scale."
+msgstr "Échelle de Classifier Free Guidance."
+
+#: axiom.config.AppConfig:154 of
+msgid "float"
+msgstr ""
+
+#: axiom.config.AppConfig:158 of
+msgid ""
+"Optional path to a ComfyUI workflow JSON file or a serialized workflow JSON "
+"string."
+msgstr ""
+"Chemin optionnel vers un fichier JSON de workflow ComfyUI, ou chaîne JSON du"
+" workflow sérialisé."
+
+#: axiom.config.AppConfig:164 of
+msgid "Gemini image model used by the \"gemini\" image backend."
+msgstr "Modèle d'image Gemini utilisé par le backend d'images \"gemini\"."
+
+#: axiom.config.AppConfig:170 of
+msgid ""
+"Max seconds to wait for a local image backend (SD WebUI request / ComfyUI "
+"polling) per image."
+msgstr ""
+"Nombre maximal de secondes à attendre un backend d'images local (requête SD "
+"WebUI / scrutation ComfyUI) par image."
+
+#: axiom.config.load_config:1 of
+msgid "Load configuration from the settings file."
+msgstr "Charge la configuration depuis le fichier de réglages."
+
+#: axiom.config.load_config:3 of
+msgid ""
+"Returns sensible defaults if the file does not exist or is malformed. Never "
+"raises. The result is cached as long as the file's mtime does not change "
+"(`save_config` goes through the file: automatic invalidation)."
+msgstr ""
+"Retourne des défauts raisonnables si le fichier n'existe pas ou est "
+"malformé. Ne lève jamais. Le résultat est mis en cache tant que le mtime du "
+"fichier ne change pas (`save_config` passe par le fichier : invalidation "
+"automatique)."
+
+#: ../../api/config.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.config.load_config:7 of
+msgid "AppConfig populated from disk, or a default AppConfig on any error."
+msgstr ""
+"AppConfig peuplé depuis le disque, ou un AppConfig par défaut en cas "
+"d'erreur."
+
+#: ../../api/config.md axiom.config.resolve_extraction_model
+#: axiom.config.resolve_time_model axiom.paths.get_app_cache_dir
+#: axiom.paths.get_app_config_dir axiom.paths.get_app_data_dir
+#: axiom.paths.get_assets_dir axiom.paths.get_config_dir axiom.paths.get_log_dir
+#: axiom.paths.get_saves_dir axiom.paths.get_vector_dir
+#: axiom.paths.has_config_override axiom.paths.reset of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.config.save_config:1 of
+msgid "Persist an AppConfig to the settings file."
+msgstr "Persiste un AppConfig dans le fichier de réglages."
+
+#: axiom.config.save_config:3 of
+msgid "Creates the config directory if it does not exist."
+msgstr "Crée le dossier de configuration s'il n'existe pas."
+
+#: axiom.config.save_config:5 of
+msgid "The configuration to save."
+msgstr "La configuration à enregistrer."
+
+#: ../../api/config.md
+msgid "Raises"
+msgstr "Lève"
+
+#: axiom.config.save_config:7 of
+msgid "If the file cannot be written (propagated to the caller)."
+msgstr "Si le fichier ne peut pas être écrit (propagée à l'appelant)."
+
+#: axiom.config.resolve_extraction_model:1 of
+msgid "Pick the model name for auxiliary LLM calls (hero decision, extraction)."
+msgstr ""
+"Choisit le nom du modèle pour les appels LLM auxiliaires (décision du héros,"
+" extraction)."
+
+#: axiom.config.resolve_extraction_model:3 of
+msgid ""
+"`extraction_model` is an Ollama-style local model name; it only makes sense "
+"for the universal/Ollama backend. On the Gemini backend there is no separate"
+" local model, so sending `extraction_model` (\"llama3.1:8b\") to the Gemini "
+"API yields a 404. Fall back to the configured `gemini_model` in that case."
+msgstr ""
+"`extraction_model` est un nom de modèle local façon Ollama ; il n'a de sens "
+"que pour le backend universal/Ollama. Sur le backend Gemini il n'y a pas de "
+"modèle local séparé, donc envoyer `extraction_model` (\"llama3.1:8b\") à "
+"l'API Gemini donne un 404. Dans ce cas, repli sur le `gemini_model` "
+"configuré."
+
+#: axiom.config.resolve_time_model:1 of
+msgid "Return the correct time model identifier based on the active backend."
+msgstr "Retourne l'identifiant correct du modèle de temps selon le backend actif."
+
+#: axiom.config.resolve_time_model:3 of
+msgid ""
+"If the backend is Gemini, the local time_model identifier cannot be used, so"
+" we fall back to the gemini_model."
+msgstr ""
+"Si le backend est Gemini, l'identifiant local time_model est inutilisable, "
+"donc repli sur le gemini_model."
+
+#: axiom.config.build_llm_from_config:1 of
+msgid "Instantiate and return the correct LLMBackend for the given config."
+msgstr "Instancie et retourne le bon LLMBackend pour la config donnée."
+
+#: axiom.config.build_llm_from_config:3 of
+msgid "The current AppConfig."
+msgstr "L'AppConfig courant."
+
+#: axiom.config.build_llm_from_config:4 of
+msgid "Optional model identifier to use instead of the default."
+msgstr "Identifiant de modèle optionnel à utiliser à la place du défaut."
+
+#: axiom.config.build_llm_from_config:6 of
+msgid "A concrete LLMBackend instance ready for use."
+msgstr "Une instance concrète de LLMBackend prête à l'emploi."
+
+#: axiom.config.build_llm_from_config:8 of
+msgid "If config.llm_backend is not \"universal\" or \"gemini\"."
+msgstr "Si config.llm_backend n'est ni \"universal\" ni \"gemini\"."
+
+#: ../../api/config.md:10
+msgid "`axiom.paths`"
+msgstr ""
+
+#: axiom.paths:1 of
+msgid "core/paths.py"
+msgstr ""
+
+#: axiom.paths:3 of
+msgid ""
+"Centralised path management for Axiom AI. Ensures cross-platform "
+"compatibility by using OS-specific standard directories."
+msgstr ""
+"Gestion centralisée des chemins d'Axiom AI. Garantit la compatibilité multi-"
+"plateforme en utilisant les dossiers standards de chaque OS."
+
+#: axiom.paths.get_app_config_dir:1 of
+msgid "Return the standard directory for application configuration files."
+msgstr "Retourne le dossier standard des fichiers de configuration de l'application."
+
+#: axiom.paths.get_app_cache_dir:1 of
+msgid "Return the standard directory for non-essential data (logs, etc)."
+msgstr "Retourne le dossier standard des données non essentielles (logs, etc)."
+
+#: axiom.paths.get_app_data_dir:1 of
+msgid "Return the standard directory for user-created content (universes, saves)."
+msgstr ""
+"Retourne le dossier standard du contenu créé par l'utilisateur (univers, "
+"sauvegardes)."
+
+#: axiom.paths.configure:1 of
+msgid "Inject path roots. Only the arguments provided are changed."
+msgstr "Injecte des racines de chemins. Seuls les arguments fournis sont modifiés."
+
+#: axiom.paths.configure:3 of
+msgid "Root for per-game data (vector, logs). None leaves it."
+msgstr "Racine des données par partie (vector, logs). None la laisse en l'état."
+
+#: axiom.paths.configure:4 of
+msgid "Root for cross-cutting config (settings.json, global.db)."
+msgstr "Racine de la config transverse (settings.json, global.db)."
+
+#: axiom.paths.reset:1 of
+msgid "Clear all injected overrides (back to defaults / env). Used by tests."
+msgstr ""
+"Efface toutes les surcharges injectées (retour aux défauts / env). Utilisé "
+"par les tests."
+
+#: axiom.paths.has_config_override:1 of
+msgid "True if a config root was injected (via configure or env var)."
+msgstr ""
+"True si une racine de config a été injectée (via configure ou variable "
+"d'env)."
+
+#: axiom.paths.get_vector_dir:1 of
+msgid "Vector store root, honouring an injected/env data_dir."
+msgstr "Racine du magasin vectoriel, honorant un data_dir injecté/env."
+
+#: axiom.paths.get_saves_dir:1 of
+msgid "Root of the separate saves, honours injected/env data_dir."
+msgstr "Racine des sauvegardes séparées, honore un data_dir injecté/env."
+
+#: axiom.paths.get_assets_dir:1 of
+msgid ""
+"Root of the generated images (`assets/<save_id>/turn_<n>.png`), honours "
+"injected/env data_dir."
+msgstr ""
+"Racine des images générées (`assets/<save_id>/turn_<n>.png`), honore un "
+"data_dir injecté/env."
+
+#: axiom.paths.get_log_dir:1 of
+msgid ""
+"Log directory. Defaults to the machine-global cache root (legacy location); "
+"under an injected/env data_dir, logs move to ``<data_dir>/logs``."
+msgstr ""
+"Dossier des logs. Par défaut la racine de cache globale de la machine "
+"(emplacement historique) ; sous un data_dir injecté/env, les logs vont dans "
+"``<data_dir>/logs``."
+
+#: axiom.paths.get_config_dir:1 of
+msgid "Config directory, honouring an injected/env config_dir."
+msgstr "Dossier de configuration, honorant un config_dir injecté/env."
+

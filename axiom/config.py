@@ -133,8 +133,8 @@ def load_config() -> AppConfig:
     """Load configuration from the settings file.
 
     Returns sensible defaults if the file does not exist or is malformed.
-    Never raises. Le résultat est mis en cache tant que le mtime du fichier
-    ne change pas (`save_config` passe par le fichier : invalidation auto).
+    Never raises. The result is cached as long as the file's mtime does not
+    change (`save_config` goes through the file: automatic invalidation).
 
     Returns:
         AppConfig populated from disk, or a default AppConfig on any error.

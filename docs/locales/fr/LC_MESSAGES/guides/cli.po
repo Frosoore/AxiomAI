@@ -1,0 +1,255 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/cli.md:1
+msgid "The `axiom` command line"
+msgstr "La ligne de commande `axiom`"
+
+#: ../../guides/cli.md:3
+msgid ""
+"Installing `axiomai-engine` provides the `axiom` command (also reachable as "
+"`python -m axiom.cli`). Run `axiom --help` or `axiom <command> --help` for "
+"the authoritative usage; this page is the annotated tour."
+msgstr ""
+"Installer `axiomai-engine` fournit la commande `axiom` (aussi accessible via"
+" `python -m axiom.cli`). Lancez `axiom --help` ou `axiom <commande> --help` "
+"pour l'usage faisant foi ; cette page est la visite commentée."
+
+#: ../../guides/cli.md:7
+msgid ""
+"Wherever a command takes a *universe* argument, it accepts a `.db` file, a "
+"source folder (compiled on the fly when needed) or a `.axiom` archive."
+msgstr ""
+"Partout où une commande prend un argument *univers*, elle accepte un fichier"
+" `.db`, un dossier source (compilé à la volée si besoin) ou une archive "
+"`.axiom`."
+
+#: ../../guides/cli.md:10
+msgid "Playing"
+msgstr "Jouer"
+
+#: ../../guides/cli.md:12
+msgid "`axiom play`"
+msgstr "`axiom play`"
+
+#: ../../guides/cli.md:14
+msgid "Play a universe interactively in the terminal:"
+msgstr "Jouer un univers de façon interactive dans le terminal :"
+
+#: ../../guides/cli.md
+msgid "Option"
+msgstr "Option"
+
+#: ../../guides/cli.md
+msgid "Effect"
+msgstr "Effet"
+
+#: ../../guides/cli.md
+msgid "`--save SAVE_ID`"
+msgstr "`--save SAVE_ID`"
+
+#: ../../guides/cli.md
+msgid "Resume an existing save."
+msgstr "Reprendre une sauvegarde existante."
+
+#: ../../guides/cli.md
+msgid "`--new`"
+msgstr "`--new`"
+
+#: ../../guides/cli.md
+msgid "Force a new game."
+msgstr "Forcer une nouvelle partie."
+
+#: ../../guides/cli.md
+msgid "`--name NAME`"
+msgstr "`--name NOM`"
+
+#: ../../guides/cli.md
+msgid "Player name for a new game (default `Hero`)."
+msgstr "Nom du joueur pour une nouvelle partie (défaut `Hero`)."
+
+#: ../../guides/cli.md
+#, python-brace-format
+msgid "`--difficulty {Normal,Hardcore,Companion}`"
+msgstr "`--difficulty {Normal,Hardcore,Companion}`"
+
+#: ../../guides/cli.md
+msgid "Game mode for a new game."
+msgstr "Mode de jeu pour une nouvelle partie."
+
+#: ../../guides/cli.md
+msgid "`--temperature F` / `--top-p F`"
+msgstr "`--temperature F` / `--top-p F`"
+
+#: ../../guides/cli.md
+msgid "LLM sampling settings."
+msgstr "Réglages d'échantillonnage du LLM."
+
+#: ../../guides/cli.md
+#, python-brace-format
+msgid "`--verbosity {short,balanced,talkative}`"
+msgstr "`--verbosity {short,balanced,talkative}`"
+
+#: ../../guides/cli.md
+msgid "Narration length."
+msgstr "Longueur de la narration."
+
+#: ../../guides/cli.md:29
+msgid "The universe path is also searched in `~/AxiomAI/universes/`."
+msgstr "Le chemin de l'univers est aussi cherché dans `~/AxiomAI/universes/`."
+
+#: ../../guides/cli.md:31
+msgid "Authoring (Universe-as-Code)"
+msgstr "Création (Universe-as-Code)"
+
+#: ../../guides/cli.md:33
+msgid "`axiom compile`"
+msgstr "`axiom compile`"
+
+#: ../../guides/cli.md:35
+msgid ""
+"Compile a source tree into a `.db` cache (see [the format](universe-"
+"format.md)):"
+msgstr ""
+"Compiler une arborescence source en cache `.db` (voir [le format](universe-"
+"format.md)) :"
+
+#: ../../guides/cli.md:42
+msgid "`axiom decompile`"
+msgstr "`axiom decompile`"
+
+#: ../../guides/cli.md:44
+msgid "The inverse — turn an existing `.db` universe into an editable text tree:"
+msgstr ""
+"L'inverse — transformer un univers `.db` existant en arborescence texte "
+"éditable :"
+
+#: ../../guides/cli.md:50
+msgid "`axiom dev`"
+msgstr "`axiom dev`"
+
+#: ../../guides/cli.md:52
+msgid ""
+"Authoring loop: watch a source tree and hot-recompile on every change "
+"(`--interval` sets the polling period, default 1 s; `--db` overrides the "
+"target cache path):"
+msgstr ""
+"Boucle de création : surveiller une arborescence source et recompiler à "
+"chaud à chaque changement (`--interval` règle la période de scrutation, "
+"défaut 1 s ; `--db` remplace le chemin du cache cible) :"
+
+#: ../../guides/cli.md:60
+msgid "`axiom pack` / `axiom import`"
+msgstr "`axiom pack` / `axiom import`"
+
+#: ../../guides/cli.md:62
+msgid "Share universes as single-file `.axiom` archives:"
+msgstr "Partager des univers en archives `.axiom` mono-fichier :"
+
+#: ../../guides/cli.md:69
+msgid "`axiom populate`"
+msgstr "`axiom populate`"
+
+#: ../../guides/cli.md:71
+msgid ""
+"Generate universe content with the configured LLM. Repeat `-t` for several "
+"targets among `meta`, `stats`, `entities`, `rules`, `events`, `lore`, `map`:"
+msgstr ""
+"Générer du contenu d'univers avec le LLM configuré. Répétez `-t` pour "
+"plusieurs cibles parmi `meta`, `stats`, `entities`, `rules`, `events`, "
+"`lore`, `map` :"
+
+#: ../../guides/cli.md:78
+msgid ""
+"Without `--text`, the generation is inferred from the existing lore. See "
+"[Populating a universe](populate.md)."
+msgstr ""
+"Sans `--text`, la génération s'inspire du lore existant. Voir [Peupler un "
+"univers](populate.md)."
+
+#: ../../guides/cli.md:81
+msgid "Saves"
+msgstr "Sauvegardes"
+
+#: ../../guides/cli.md:83
+msgid ""
+"All `save-*` commands operate on a universe and a save identifier. See "
+"[Saves, rewind and sharing](saves.md) for the concepts."
+msgstr ""
+"Toutes les commandes `save-*` opèrent sur un univers et un identifiant de "
+"sauvegarde. Voir [Sauvegardes, rewind et partage](saves.md) pour les "
+"concepts."
+
+#: ../../guides/cli.md:86
+msgid "`axiom save-show`"
+msgstr "`axiom save-show`"
+
+#: ../../guides/cli.md:88
+msgid ""
+"Inspect a save's state, optionally at a past point (`--turn N` or `--minute "
+"M`):"
+msgstr ""
+"Inspecter l'état d'une sauvegarde, éventuellement à un point passé (`--turn "
+"N` ou `--minute M`) :"
+
+#: ../../guides/cli.md:95
+msgid "`axiom save-export` / `axiom save-import`"
+msgstr "`axiom save-export` / `axiom save-import`"
+
+#: ../../guides/cli.md:97
+msgid "Round-trip a save through an editable `save_state.toml`:"
+msgstr "Faire l'aller-retour d'une sauvegarde via un `save_state.toml` éditable :"
+
+#: ../../guides/cli.md:104
+msgid "`axiom save-fork`"
+msgstr "`axiom save-fork`"
+
+#: ../../guides/cli.md:106
+msgid ""
+"Fork a save into a new one, truncating the journal at a point (`--turn` / "
+"`--minute`) — an alternate timeline:"
+msgstr ""
+"Forker une sauvegarde en une nouvelle, avec le journal tronqué à un point "
+"(`--turn` / `--minute`) — une chronologie alternative :"
+
+#: ../../guides/cli.md:113
+msgid "`axiom save-edit`"
+msgstr "`axiom save-edit`"
+
+#: ../../guides/cli.md:115
+msgid ""
+"Fix an existing save in place by applying a correction TOML (stat patches "
+"under `[state.<entity_id>]`, plus `[[inventory]]` and `[[modifiers]]` "
+"entries); `--turn` targets a past point:"
+msgstr ""
+"Corriger une sauvegarde existante en place en appliquant un TOML de "
+"correction (patchs de stats sous `[state.<entity_id>]`, plus des entrées "
+"`[[inventory]]` et `[[modifiers]]`) ; `--turn` vise un point passé :"
+
+#: ../../guides/cli.md:123
+msgid "`axiom save-pack` / `axiom save-unpack`"
+msgstr "`axiom save-pack` / `axiom save-unpack`"
+
+#: ../../guides/cli.md:125
+msgid "Share a single save as a `.axiomsave` archive:"
+msgstr "Partager une sauvegarde seule en archive `.axiomsave` :"
+

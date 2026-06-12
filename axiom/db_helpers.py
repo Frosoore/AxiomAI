@@ -434,14 +434,11 @@ def get_spatial_context(db_path: str, location_id: str) -> dict:
 
 
 def create_player_entity(db_path: str, name: str, description: str = "") -> str:
-    """Crée une entité joueur (origin='runtime') avec ses stats par défaut.
-
-    Porté de `workers/db_tasks.py::CreatePlayerEntityTask` (B4) — la version
-    Qt avait un corps dupliqué dont la définition active référençait
-    `datetime` sans import (NameError latent sur nom vide ou collision d'id).
+    """Create a player entity (origin='runtime') with its default stats.
 
     Returns:
-        L'entity_id créé (dérivé du nom, désambiguïsé si collision).
+        The created entity_id (derived from the name, disambiguated on
+        collision).
     """
     import re
 

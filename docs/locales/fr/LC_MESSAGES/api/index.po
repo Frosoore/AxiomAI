@@ -1,0 +1,47 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/index.md:1
+msgid "API reference"
+msgstr "Référence d'API"
+
+#: ../../api/index.md:3
+msgid ""
+"The public Python API of the `axiom` package, generated from the source "
+"docstrings."
+msgstr ""
+"L'API Python publique du paquet `axiom`, générée depuis les docstrings du "
+"code."
+
+#: ../../api/index.md:6
+#, python-brace-format
+msgid ""
+"The two entry points most applications need are "
+"{py:class}`axiom.session.Session` (the game loop) and "
+"{py:class}`axiom.universe.Universe` (universe metadata); both are importable"
+" directly from `axiom`. Everything else supports them."
+msgstr ""
+"Les deux points d'entrée dont la plupart des applications ont besoin sont "
+"{py:class}`axiom.session.Session` (la boucle de jeu) et "
+"{py:class}`axiom.universe.Universe` (les métadonnées d'univers) ; les deux "
+"s'importent directement depuis `axiom`. Tout le reste est à leur service."
+

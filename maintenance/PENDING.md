@@ -14,8 +14,9 @@
 | TICKET-054| i18n : sortir la traduction du moteur (moteur = données/anglais, app = i18n) | ✅ code terminé (2026-06-12) — ⚠ validation GUI en attente (cf. `maintenance/TICKET-054-i18n-engine-gui-split/`) |
 | TICKET-056| Messages user-facing du moteur encore en français (event `axiom dev`, exceptions) → anglais | ✅ terminé (2026-06-12, cf. `maintenance/TICKET-056-engine-english/`) |
 | TICKET-057| 📋 **Chantier planifié** — Doc intégrée à l'app GUI (tooltips, bouton « explique cette page », quick tour, annuaire cherchable), 10 langues, « tout d'un bloc » | à faire (feature, pas un bug ; cf. [[project-doc-chantier]]) |
-| TICKET-058| 📋 **Chantier planifié** — Site de doc de la lib `axiomai-engine` en **Sphinx** (style devguide.python.org : quickstart, tutos, référence API autodoc), GitHub Pages | à faire (feature, pas un bug ; cf. [[project-doc-chantier]]) |
+| TICKET-058| 📋 **Chantier planifié** — Site de doc de la lib `axiomai-engine` en **Sphinx** (style devguide.python.org : quickstart, tutos, référence API autodoc), GitHub Pages | ✅ terminé (2026-06-12, cf. `maintenance/TICKET-058-doc-sphinx/`) — ⚠ activer Pages + push pour publier |
 | TICKET-059| Test threadé flaky : `test_generation_cancel.py::test_registre_cancel_active_generations` (passe en isolation, flanche sous charge) | ouvert — fiabilité de la suite |
+| TICKET-060| `axiom.help` (guide REPL publié dans le wheel) encore 100 % en français — angle mort des TICKET-055/056 | ✅ terminé (2026-06-12, cf. `maintenance/TICKET-060-help-english/`) |
 
 Tickets résolus/clos : voir `DONE.md` (001→012, TC1→TC5, 015→049 sauf 017, 051→052).
 
@@ -164,14 +165,34 @@ Prérequis (i18n propre) **fait**. Périmètre = `ui/` (+ `core/locales/`).
 
 ## TICKET-058 — 📋 Chantier planifié : site de doc de la librairie (Sphinx)
 
-**Ce n'est pas un bug — c'est une feature planifiée** (décidée le 2026-06-12, cf.
-[[project-doc-chantier]]). Vraie documentation publique de la lib `axiomai-engine`, façon
-`devguide.python.org` / PySide6 : **quickstart, tutoriels, guides, + référence d'API auto-générée
-depuis les docstrings**. Destinée à **GitHub Pages**.
+**✅ TERMINÉ (2026-06-12).** Site Sphinx complet livré dans `docs/` : **anglais + français**
+(sélecteur de langue, gettext `.po`, fallback EN pour le non-traduit), thème Furo, pages en
+Markdown (MyST), quickstart + 6 guides + référence d'API autodoc, workflow GitHub Pages
+(`.github/workflows/docs.yml`, build strict `-W`, deps lourdes mockées). Au passage : ~100
+docstrings publiques du moteur traduites FR→EN (la réf API est en anglais), warnings reST corrigés.
+**Reste côté utilisateur :** activer Pages (Settings → Pages → Source « GitHub Actions ») et merger
+dans `main`. Détails : `maintenance/TICKET-058-doc-sphinx/`. Constat d'origine ci-dessous.
 
-**Outil tranché : Sphinx** (et non MkDocs) — pour matcher les sites de référence cités et générer
-l'API depuis les docstrings existantes. Chantier **autonome** (nouveau dossier `docs/`, ne touche
-aucun code → zéro conflit, zéro risque). Bon candidat pour démarrer le volet doc.
+**Constat d'origine.** Feature planifiée (décidée le 2026-06-12, cf. [[project-doc-chantier]]).
+Vraie documentation publique de la lib `axiomai-engine`, façon `devguide.python.org` / PySide6 :
+**quickstart, tutoriels, guides, + référence d'API auto-générée depuis les docstrings**. Destinée à
+**GitHub Pages**. **Outil tranché : Sphinx** (et non MkDocs) — pour matcher les sites de référence
+cités et générer l'API depuis les docstrings existantes. Chantier **autonome** (nouveau dossier
+`docs/`, ne touche aucun code → zéro conflit, zéro risque). Bon candidat pour démarrer le volet doc.
+
+---
+
+## TICKET-060 — `axiom.help` encore en français (angle mort de 055/056)
+
+**✅ TERMINÉ (2026-06-12).** `_HELP_TEXT` + docstrings de module/`_Help` de `axiom/__init__.py`
+traduits FR→EN, lien vers le site de doc (TICKET-058) ajouté en pied de guide ; aucun test
+n'assertait le texte FR (`test_packaging.py` 15 verts). Détail :
+`maintenance/TICKET-060-help-english/`.
+
+**Constat d'origine (2026-06-12, en démarrant TICKET-058).** Le guide REPL `axiom.help`
+(`axiom/__init__.py::_HELP_TEXT`, affiché par `axiom.help()` / `print(axiom.help)`) était **publié
+dans le wheel** et toujours **100 % en français**. Les TICKET-055 (CLI) et 056 (exceptions/events)
+ne couvraient pas ce texte. Même principe : le moteur publié parle anglais.
 
 ---
 

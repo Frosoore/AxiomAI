@@ -1,0 +1,18 @@
+.sidebar-language {
+  padding: 0 var(--sidebar-item-spacing-horizontal, 1rem);
+  margin: 0.5rem 0;
+  font-size: var(--sidebar-item-font-size, 0.875rem);
+}
+
+.sidebar-language a {
+  color: var(--color-sidebar-link-text, inherit);
+  text-decoration: none;
+}
+
+.sidebar-language a:hover {
+  text-decoration: underline;
+}
+
+.sidebar-language a.current-lang {
+  font-weight: 700;
+}

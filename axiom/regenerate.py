@@ -1,11 +1,11 @@
-"""axiom.regenerate — régénération d'une variante narrative (portage B4).
+"""axiom.regenerate — regenerating a narrative variant.
 
-Logique extraite de `workers/regenerate_worker.py` : rejouer le tour `turn_id`
-avec le même message joueur pour produire une **nouvelle variante** du texte
-narratif (sans réévaluer les règles ni les stats), puis l'ajouter au payload
-multiverse de l'`Event_Log` (`{"active": idx, "variants": [...]}`).
+Replays turn `turn_id` with the same player message to produce a **new
+variant** of the narrative text (without re-evaluating rules or stats), then
+appends it to the turn's multiverse payload in the `Event_Log`
+(`{"active": idx, "variants": [...]}`).
 
-Zéro dépendance Qt. Le streaming remonte par callback `on_token`.
+Zero Qt dependency. Streaming is surfaced through the `on_token` callback.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ _VERBOSITY_TO_TOKENS = {"short": 150, "balanced": 400, "talkative": 1024}
 
 
 def history_to_messages(history: list[dict]) -> list[dict]:
-    """Convertit l'historique event-sourcé (user_input / narrative_text) en
-    messages LLM (la variante active fait foi pour le narratif)."""
+    """Convert the event-sourced history (user_input / narrative_text) into LLM
+    messages (the active variant is authoritative for the narrative).
+    """
     messages: list[dict] = []
     for h in history:
         payload = h.get("payload", "")
@@ -53,10 +54,10 @@ def regenerate_variant(
     player_id: str = "player_1",
     on_token: Callable[[str], None] | None = None,
 ) -> str:
-    """Génère une variante alternative du tour `turn_id` et l'enregistre.
+    """Generate an alternative variant of turn `turn_id` and record it.
 
-    La nouvelle variante est ajoutée au payload `narrative_text` du tour et
-    devient la variante **active**. Retourne le texte généré.
+    The new variant is appended to the turn's `narrative_text` payload and
+    becomes the **active** variant. Returns the generated text.
     """
     llm_history = history_to_messages(history)
 
@@ -98,10 +99,10 @@ def regenerate_variant(
 
 
 def append_variant(db_path: str, save_id: str, turn_id: int, text: str) -> bool:
-    """Ajoute `text` comme variante active du `narrative_text` d'un tour.
+    """Append `text` as the active variant of a turn's `narrative_text`.
 
-    Un payload historique non-multiverse est converti au passage. Retourne
-    False si le tour n'a pas d'événement narratif (rien n'est écrit).
+    A historical non-multiverse payload is converted on the way. Returns False
+    when the turn has no narrative event (nothing is written).
     """
     with get_connection(db_path) as conn:
         row = conn.execute(

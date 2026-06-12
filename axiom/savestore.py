@@ -1,25 +1,26 @@
-"""axiom.savestore — Universe-as-Code §7.6 : saves séparées de l'univers.
+"""axiom.savestore — saves stored separately from the universe.
 
-L'arborescence (et son cache compilé) est la **définition** de l'univers ; les
-parties vivent dans des bases dédiées :
+The source tree (and its compiled cache) is the universe **definition**;
+play-throughs live in dedicated databases::
 
     ~/AxiomAI/
-    ├── universes/<nom>/…                  ← définition (source + cache)
-    └── saves/<clé univers>/save_<uuid>.db ← une partie (état runtime)
+    |-- universes/<name>/...                   definition (source + cache)
+    `-- saves/<universe key>/save_<uuid>.db    one game (runtime state)
 
-Modèle retenu : chaque save db est **autonome** — schéma complet, avec une
-**copie des tables de définition** prise à la création. Avantages :
-- `Session` et tout le moteur fonctionnent inchangés (un seul chemin de DB) ;
-- patcher l'univers ne brique pas les parties (elles gardent leur définition,
-  resynchronisée à l'ouverture via `refresh_definition` — in-place, les
-  entités runtime et l'état de jeu survivent) ;
-- une save = un fichier portable (export/import trivial).
+Each save db is **self-contained** — full schema, with a **copy of the
+definition tables** taken at creation. Benefits:
 
-Compat ascendante : les saves historiques embarquées dans le `.db` univers
-restent listées et jouables telles quelles (`storage='embedded'`). Seules les
-**nouvelles** saves sont créées en fichiers séparés.
+- `Session` and the whole engine work unchanged (a single DB path);
+- patching the universe does not brick the games (they keep their own
+  definition, resynchronised on open via `refresh_definition` — in-place,
+  runtime entities and game state survive);
+- one save = one portable file (trivial export/import).
 
-Zéro dépendance Qt : pur moteur.
+Backward compatibility: historical saves embedded in the universe `.db`
+remain listed and playable as-is (`storage='embedded'`). Only **new** saves
+are created as separate files.
+
+Zero Qt dependency: pure engine.
 """
 
 from __future__ import annotations
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS Save_Meta (
 
 
 class SaveStoreError(Exception):
-    """Erreur du magasin de sauvegardes séparées."""
+    """Error from the separate-save store."""
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +72,14 @@ class SaveStoreError(Exception):
 # ---------------------------------------------------------------------------
 
 def assets_dir_for_save(save_id: str) -> Path:
-    """Dossier des illustrations d'une save (non créé s'il n'existe pas)."""
+    """A save's illustrations folder (not created if missing)."""
     from axiom.paths import get_assets_dir
 
     return get_assets_dir() / save_id
 
 
 def copy_save_assets(src_save_id: str, dst_save_id: str) -> int:
-    """Copie les illustrations d'une save vers une autre. Retourne le nombre copié."""
+    """Copy one save's illustrations to another. Returns the number copied."""
     import shutil
 
     src = assets_dir_for_save(src_save_id)
@@ -94,7 +95,7 @@ def copy_save_assets(src_save_id: str, dst_save_id: str) -> int:
 
 
 def delete_save_assets(save_id: str) -> None:
-    """Supprime le dossier d'illustrations d'une save (no-op s'il n'existe pas)."""
+    """Delete a save's illustrations folder (no-op if missing)."""
     import shutil
 
     d = assets_dir_for_save(save_id)
@@ -103,16 +104,17 @@ def delete_save_assets(save_id: str) -> None:
 
 
 def truncate_save_assets(save_id: str, last_kept_turn_id: int) -> int:
-    """Purge les `turn_<n>.png` avec n > `last_kept_turn_id` (rewind).
+    """Purge the `turn_<n>.png` files with n > `last_kept_turn_id` (rewind).
 
-    Retourne le nombre de fichiers supprimés. Les noms non conformes sont ignorés.
+    Returns the number of deleted files. Non-conforming names are ignored.
     """
     return truncate_assets_in(assets_dir_for_save(save_id), last_kept_turn_id)
 
 
 def truncate_assets_in(assets_dir: Path, last_kept_turn_id: int) -> int:
-    """Variante de `truncate_save_assets` sur un dossier explicite (Session
-    avec data_dir injecté)."""
+    """Variant of `truncate_save_assets` on an explicit folder (Session with an
+    injected data_dir).
+    """
     import re
 
     if not assets_dir.is_dir():
@@ -131,12 +133,12 @@ def truncate_assets_in(assets_dir: Path, last_kept_turn_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 def universe_key(universe_db: str | Path) -> str:
-    """Clé stable d'un univers pour le rangement des saves.
+    """Stable key of a universe, used to file its saves.
 
-    Univers-dossier : nom du dossier source. `.db` plat : stem du fichier.
-    Basée sur la **forme du chemin** uniquement (pas sur l'existence de
-    universe.toml) : la clé doit rester identique même si la source est
-    momentanément absente/cassée, sinon les saves deviennent introuvables.
+    Folder universe: name of the source folder. Flat `.db`: file stem. Based
+    on the **shape of the path** only (not on universe.toml existing): the key
+    must stay identical even when the source is momentarily missing/broken,
+    otherwise the saves become unreachable.
     """
     from axiom.compile import CACHE_DIRNAME
 
@@ -147,14 +149,14 @@ def universe_key(universe_db: str | Path) -> str:
 
 
 def saves_dir_for(universe_db: str | Path) -> Path:
-    """Dossier des saves séparées d'un univers (non créé s'il n'existe pas)."""
+    """A universe's separate-saves folder (not created if missing)."""
     from axiom.paths import get_saves_dir
 
     return get_saves_dir() / universe_key(universe_db)
 
 
 def is_separated_save_db(db_path: str | Path) -> bool:
-    """True si `db_path` est une save séparée (porte une table Save_Meta)."""
+    """True when `db_path` is a separate save (carries a Save_Meta table)."""
     db_path = Path(db_path)
     if not db_path.is_file():
         return False
@@ -178,15 +180,15 @@ def create_save(
     difficulty: str,
     player_persona: str = "",
 ) -> dict:
-    """Crée une nouvelle partie dans sa propre base `saves/<univers>/save_<uuid>.db`.
+    """Create a new game in its own `saves/<universe>/save_<uuid>.db` database.
 
-    La définition de l'univers est copiée dans la save db (autonome). Le lien
-    vers l'univers (db + source éventuelle) est consigné dans `Save_Meta` pour
-    la resynchronisation à l'ouverture.
+    The universe definition is copied into the save db (self-contained). The
+    link to the universe (db + optional source) is recorded in `Save_Meta` for
+    resynchronisation on open.
 
     Returns:
-        {"save_id": str, "db_path": str} — `db_path` est la base à passer à
-        `Session` (et aux helpers moteur) pour jouer cette partie.
+        A dict with keys save_id and db_path — db_path is the database to
+        hand to `Session` (and to the engine helpers) to play this game.
     """
     # La ligne Saves elle-même (et les migrations runtime habituelles).
     from axiom.db_helpers import create_new_save as _create_row
@@ -198,11 +200,11 @@ def create_save(
 
 
 def new_save_container(universe_db: str | Path) -> Path:
-    """Prépare une save db vierge (définition copiée + Save_Meta, aucune ligne Saves).
+    """Prepare a blank save db (definition copied + Save_Meta, no Saves row).
 
-    Brique commune de `create_save` et de l'import (`save-import`,
-    `save-unpack`) : l'appelant y crée/importe ensuite sa ou ses lignes Saves,
-    puis appelle `finalize_save_container`.
+    Common building block of `create_save` and of the imports (`save-import`,
+    `save-unpack`): the caller then creates/imports its Saves row(s) and calls
+    `finalize_save_container`.
     """
     universe_db = Path(universe_db)
     if not universe_db.is_file():
@@ -236,11 +238,11 @@ def new_save_container(universe_db: str | Path) -> Path:
 
 
 def finalize_save_container(container: Path, save_id: str) -> Path:
-    """Nomme définitivement un conteneur de save sur son save_id réel.
+    """Rename a save container to its real save_id, definitively.
 
-    Vide le WAL dans le fichier principal AVANT le rename (sinon les sidecars
-    -wal/-shm resteraient attachés à l'ancien nom et les dernières écritures
-    seraient perdues).
+    Flushes the WAL into the main file BEFORE the rename (otherwise the
+    -wal/-shm sidecars would stay attached to the old name and the last
+    writes would be lost).
     """
     conn = sqlite3.connect(str(container))
     try:
@@ -298,12 +300,13 @@ def _copy_definition(universe_db: Path, save_db: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def list_saves(universe_db: str | Path) -> list[dict]:
-    """Liste toutes les parties d'un univers, séparées **et** embarquées (legacy).
+    """List all the games of a universe, separate **and** embedded (legacy).
 
     Returns:
-        Liste de dicts au format de `db_helpers.load_saves`, enrichis de
-        `db_path` (la base à ouvrir pour cette save) et `storage`
-        ('separated' | 'embedded'), triée par `last_updated` décroissant.
+        List of dicts in the `db_helpers.load_saves` format, enriched with
+        `db_path` (the database to open for this save) and `storage`
+        ('separated' | 'embedded'), sorted by `last_updated`, most recent
+        first.
     """
     from axiom.db_helpers import load_saves as _load_rows
 
@@ -333,7 +336,7 @@ def list_saves(universe_db: str | Path) -> list[dict]:
 
 
 def resolve_save_db(universe_db: str | Path, save_id: str) -> str | None:
-    """Retourne la base contenant `save_id` (séparée ou l'univers lui-même)."""
+    """Return the database containing `save_id` (separate, or the universe itself)."""
     for row in list_saves(universe_db):
         if row.get("save_id") == save_id:
             return row["db_path"]
@@ -341,16 +344,17 @@ def resolve_save_db(universe_db: str | Path, save_id: str) -> str | None:
 
 
 def prepare_save_for_play(universe_db: str | Path, save_id: str) -> str | None:
-    """Résout la base d'une save et resynchronise sa définition si la source a changé.
+    """Resolve a save's database and resync its definition if the source changed.
 
-    Pour une save séparée liée à un univers-dossier : si le hash de la source
-    diffère de celui consigné, `refresh_definition` est appliqué **à la save db**
-    (in-place : journal, entités runtime et état de jeu intacts) puis le hash
-    consigné est mis à jour. Une source disparue/cassée n'est pas bloquante :
-    la save garde sa définition embarquée (elle est autonome).
+    For a separate save linked to a folder universe: when the source hash
+    differs from the recorded one, `refresh_definition` is applied **to the
+    save db** (in-place: journal, runtime entities and game state intact) and
+    the recorded hash is updated. A missing/broken source is not blocking:
+    the save keeps its embedded definition (it is self-contained).
 
     Returns:
-        Le chemin de la base à passer à `Session`, ou None si save inconnue.
+        The path of the database to hand to `Session`, or None for an unknown
+        save.
     """
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
@@ -360,10 +364,11 @@ def prepare_save_for_play(universe_db: str | Path, save_id: str) -> str | None:
 
 
 def refresh_save_definition(save_db: str | Path) -> bool:
-    """Resynchronise la définition d'une save séparée depuis sa source univers.
+    """Resynchronise a separate save's definition from its universe source.
 
-    No-op (False) pour une save embarquée, sans source liée, ou déjà à jour.
-    Une source malformée est ignorée (la save reste jouable telle quelle).
+    No-op (False) for an embedded save, a save with no linked source, or one
+    already up to date. A malformed source is ignored (the save stays
+    playable as-is).
     """
     save_db = Path(save_db)
     if not is_separated_save_db(save_db):
@@ -419,14 +424,14 @@ _ARCHIVE_ASSETS_PREFIX = "assets/"
 
 
 def extract_save(universe_db: str | Path, save_id: str) -> Path:
-    """Extrait une save **embarquée** (legacy) vers son propre fichier séparé.
+    """Extract an **embedded** (legacy) save to its own separate file.
 
-    Copie la définition courante de l'univers + toutes les lignes runtime de
-    cette save. La save d'origine reste intacte dans le `.db` univers (c'est
-    une copie, pas un déplacement).
+    Copies the universe's current definition + all this save's runtime rows.
+    The original save stays intact in the universe `.db` (it is a copy, not a
+    move).
 
     Returns:
-        Le chemin du nouveau fichier `saves/<univers>/save_<id>.db`.
+        The path of the new `saves/<universe>/save_<id>.db` file.
     """
     universe_db = Path(universe_db)
     container = new_save_container(universe_db)
@@ -456,11 +461,11 @@ def extract_save(universe_db: str | Path, save_id: str) -> Path:
 
 
 def pack_save(universe_db: str | Path, save_id: str, output_path: str | Path) -> Path:
-    """Exporte une save en archive `.axiomsave` (zip : save.db autonome + manifest).
+    """Export a save to a `.axiomsave` archive (zip: self-contained save.db + manifest).
 
-    Une save séparée est zippée telle quelle ; une save embarquée (legacy) est
-    d'abord extraite vers un fichier autonome (copie, l'original reste).
-    La mémoire vectorielle ne voyage pas (décision D3 : vide à l'import).
+    A separate save is zipped as-is; an embedded (legacy) save is first
+    extracted to a self-contained file (a copy — the original stays). The
+    vector memory does not travel (empty on import).
     """
     import tempfile
     import zipfile
@@ -515,15 +520,15 @@ def unpack_save(
     universe_db: str | Path,
     force: bool = False,
 ) -> dict:
-    """Importe une archive `.axiomsave` dans le magasin de saves d'un univers.
+    """Import a `.axiomsave` archive into a universe's save store.
 
-    Par défaut, refuse une archive issue d'un autre univers (`universe_key`
-    différente) — `force=True` pour passer outre. Si le `save_id` existe déjà
-    ici, la save importée est **ré-identifiée** (nouvel uuid) pour ne jamais
-    écraser une partie.
+    By default, refuses an archive coming from another universe (different
+    `universe_key`) — pass `force=True` to override. When the `save_id`
+    already exists here, the imported save is **re-identified** (new uuid) so
+    an existing game is never overwritten.
 
     Returns:
-        {"save_id": str, "db_path": str}
+        A dict with keys save_id and db_path.
     """
     import tomllib
     import zipfile
@@ -634,15 +639,15 @@ def duplicate_save(
     save_id: str,
     player_name: str | None = None,
 ) -> dict:
-    """Duplique une partie telle quelle (journal complet préservé).
+    """Duplicate a game as-is (full journal preserved).
 
-    Save séparée : copie du fichier ré-identifiée (nouvel uuid) — le modèle
-    « une save = un fichier » est conservé, contrairement à un `fork_save`
-    dans le même fichier. Save embarquée (legacy) : fork au dernier tour dans
-    la même base, comme avant.
+    Separate save: re-identified file copy (new uuid) — the "one save = one
+    file" model is preserved, unlike a `fork_save` within the same file.
+    Embedded (legacy) save: fork at the last turn in the same database, as
+    before.
 
     Returns:
-        {"save_id": str, "db_path": str}
+        A dict with keys save_id and db_path.
     """
     import shutil
     from datetime import datetime
@@ -695,10 +700,10 @@ def duplicate_save(
 # ---------------------------------------------------------------------------
 
 def delete_save(universe_db: str | Path, save_id: str) -> bool:
-    """Supprime une partie. Une save séparée dont la base se vide est effacée du disque.
+    """Delete a game. A separate save whose database becomes empty is removed from disk.
 
     Returns:
-        True si une save a été supprimée.
+        True when a save was deleted.
     """
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
@@ -715,8 +720,9 @@ def delete_save(universe_db: str | Path, save_id: str) -> bool:
 
 
 def delete_universe_saves(universe_db: str | Path) -> None:
-    """Supprime le dossier de saves séparées d'un univers (avec l'univers),
-    illustrations comprises."""
+    """Delete a universe's separate-saves folder (along with the universe),
+    illustrations included.
+    """
     import shutil
 
     for row in list_saves(universe_db):

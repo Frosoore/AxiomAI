@@ -1,20 +1,20 @@
-"""axiom.populate — authoring LLM d'univers (migration B3 depuis workers/db_tasks.py).
+"""axiom.populate — LLM universe authoring.
 
-Les sept générateurs « Populate » du Creator Studio, côté moteur : chacun lit le
-contexte de l'univers dans le `.db`, interroge le LLM d'extraction et insère le
-contenu nouveau de façon **idempotente** (les ids/noms déjà connus sont sautés).
-Après chaque écriture, la source texte d'un univers-dossier est resynchronisée
-(TICKET-027 : le texte reste la vérité).
+The seven Creator Studio "Populate" generators, engine-side: each one reads
+the universe context from the `.db`, queries the extraction LLM and inserts
+the new content **idempotently** (already-known ids/names are skipped).
+After every write, the text source of a folder universe is resynchronised
+(the text stays the source of truth).
 
-Zéro dépendance Qt. Le LLM est injectable (`llm=`) pour les tests et la
-composition ; par défaut il est construit depuis la config utilisateur avec le
-modèle d'extraction. Les messages de progression passent par `on_status`
-(callback optionnel) — les tâches Qt le branchent sur leurs signaux.
+Zero Qt dependency. The LLM is injectable (`llm=`) for tests and
+composition; by default it is built from the user config with the extraction
+model. Progress messages go through `on_status` (optional callback) — the Qt
+tasks plug it into their signals.
 
-Particularité `populate_entities` (TICKET-031) : le contexte est traité par
-chunks et chaque chunk est **commité immédiatement** — un échec LLM en plein
-lot (quota 429 épuisé malgré les retries du backend) conserve le travail déjà
-fait, et relancer reprend là où ça s'est arrêté.
+`populate_entities` specificity (TICKET-031): the context is processed in
+chunks and each chunk is **committed immediately** — an LLM failure
+mid-batch (429 quota exhausted despite the backend retries) keeps the work
+already done, and re-running resumes where it stopped.
 """
 
 from __future__ import annotations
@@ -71,12 +71,12 @@ def _safe_id(raw: str) -> str:
 
 
 def entity_id_for(name: str) -> str:
-    """Id stable dérivé d'un nom d'entité.
+    """Stable id derived from an entity name.
 
-    Un nom 100 % non-latin (cyrillique, CJK…) donnerait un `_safe_id` vide —
-    l'entité serait alors silencieusement sautée. Fallback **déterministe**
-    (hash du nom) : l'idempotence des Populate (relance = reprise, ids connus
-    sautés) exige des ids stables d'un run à l'autre.
+    A 100% non-Latin name (Cyrillic, CJK…) would yield an empty `_safe_id` —
+    the entity would then be silently skipped. **Deterministic** fallback (hash
+    of the name): the Populate idempotency (re-run = resume, known ids skipped)
+    requires ids that are stable from one run to the next.
     """
     sid = _safe_id(name)
     if sid:
@@ -98,7 +98,7 @@ def populate_meta(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> bool:
-    """Raffine les métadonnées (nom, lore global, system prompt, 1er message)."""
+    """Refine the metadata (name, global lore, system prompt, first message)."""
     from axiom.prompts import build_populate_meta_prompt
 
     on_status("Initializing AI backend...")
@@ -141,7 +141,7 @@ def populate_stats(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> int:
-    """Génère des définitions de stats. Retourne le nombre inséré."""
+    """Generate stat definitions. Returns the number inserted."""
     from axiom.prompts import build_populate_stats_prompt
 
     llm = _hook_llm(llm or _default_llm(), on_status, cancel)
@@ -196,7 +196,7 @@ def populate_rules(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> int:
-    """Génère des règles de jeu. Retourne le nombre inséré."""
+    """Generate game rules. Returns the number inserted."""
     from axiom.prompts import build_populate_rules_prompt
 
     llm = _hook_llm(llm or _default_llm(), on_status, cancel)
@@ -243,7 +243,7 @@ def populate_events(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> int:
-    """Planifie des événements de monde. Retourne le nombre inséré."""
+    """Schedule world events. Returns the number inserted."""
     from axiom.prompts import build_populate_events_prompt
 
     llm = _hook_llm(llm or _default_llm(), on_status, cancel)
@@ -293,12 +293,12 @@ def populate_entities(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> int:
-    """Génère des PNJ/factions depuis le contexte (ou une consigne libre).
+    """Generate NPCs/factions from the context (or a free-form instruction).
 
-    Le contexte est découpé en chunks (lore global + chaque entrée de lore) ;
-    chaque chunk est inséré et **commité immédiatement** (TICKET-031) : un
-    échec LLM en plein lot conserve le travail déjà fait, relancer reprend
-    (les ids existants sont sautés). Retourne le nombre inséré.
+    The context is split into chunks (global lore + each lore entry); each
+    chunk is inserted and **committed immediately** (TICKET-031): an LLM
+    failure mid-batch keeps the work already done, re-running resumes
+    (existing ids are skipped). Returns the number inserted.
     """
     from axiom.prompts import build_populate_prompt
 
@@ -418,7 +418,7 @@ def populate_lore(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> int:
-    """Étend le Lore Book. Retourne le nombre d'entrées insérées."""
+    """Extend the Lore Book. Returns the number of inserted entries."""
     from axiom.prompts import build_populate_lore_prompt
 
     on_status("Initializing AI backend...")
@@ -469,7 +469,7 @@ def populate_map(
     on_status: StatusCallback = _noop_status,
     cancel: "threading.Event | None" = None,
 ) -> dict:
-    """Étend la carte (Locations + Connections). Retourne {"added_locs", "added_conns"}."""
+    """Extend the map (Locations + Connections). Returns {"added_locs", "added_conns"}."""
     from axiom.prompts import build_populate_map_prompt
 
     on_status("Initializing AI backend...")

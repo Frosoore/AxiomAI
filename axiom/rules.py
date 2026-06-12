@@ -6,37 +6,37 @@ JSON-based Rules Engine for Axiom AI.
 The engine evaluates a set of creator-defined rules against an entity's
 current stats and returns the list of actions that should be applied.
 
-Canonical Rule JSON schema
---------------------------
-{
-    "rule_id": "str",
-    "priority": int,                  // lower number = higher priority
-    "target_entity": "str | '*'",     // '*' means applies to any entity
-    "conditions": {
-        "operator": "AND" | "OR",
-        "clauses": [
+Canonical Rule JSON schema::
+
+    {
+        "rule_id": "str",
+        "priority": int,                  // lower number = higher priority
+        "target_entity": "str | '*'",     // '*' means applies to any entity
+        "conditions": {
+            "operator": "AND" | "OR",
+            "clauses": [
+                {
+                    "stat": "str",
+                    "comparator": "<=" | ">=" | "==" | "!=" | "<" | ">",
+                    "value": number | "str"
+                },
+                // nested condition groups are also supported:
+                {
+                    "operator": "AND" | "OR",
+                    "clauses": [ ... ]
+                }
+            ]
+        },
+        "actions": [
             {
-                "stat": "str",
-                "comparator": "<=" | ">=" | "==" | "!=" | "<" | ">",
-                "value": number | "str"
-            },
-            // nested condition groups are also supported:
-            {
-                "operator": "AND" | "OR",
-                "clauses": [ ... ]
+                "type": "stat_change" | "stat_set" | "trigger_event" | "set_status",
+                "target": "str",          // entity_id to affect
+                "stat": "str",            // stat key (for stat_change / stat_set)
+                "delta": number,          // signed delta (for stat_change)
+                "value": "str" | number   // absolute value (for stat_set / set_status)
             }
         ]
-    },
-    "actions": [
-        {
-            "type": "stat_change" | "stat_set" | "trigger_event" | "set_status",
-            "target": "str",          // entity_id to affect
-            "stat": "str",            // stat key (for stat_change / stat_set)
-            "delta": number,          // signed delta (for stat_change)
-            "value": "str" | number   // absolute value (for stat_set / set_status)
-        }
-    ]
-}
+    }
 
 Notes
 -----
@@ -114,11 +114,12 @@ class RulesEngine:
         This is a pure function.  The original stats dict is not mutated.
 
         Supported action types:
-            stat_change — adds 'delta' (float) to an existing or zero-valued stat.
-            stat_set    — unconditionally sets a stat to the string form of 'value'.
-            set_status  — alias for stat_set; sets 'stat' to string 'value'.
-            trigger_event — no immediate stat mutation; included in output for the
-                            caller to dispatch as a new Event_Log entry.
+
+        - stat_change — adds 'delta' (float) to an existing or zero-valued stat.
+        - stat_set — unconditionally sets a stat to the string form of 'value'.
+        - set_status — alias for stat_set; sets 'stat' to string 'value'.
+        - trigger_event — no immediate stat mutation; included in output for
+          the caller to dispatch as a new Event_Log entry.
 
         Args:
             actions: List of action dicts (typically from evaluate()).

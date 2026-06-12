@@ -5,16 +5,17 @@ The ArbitratorEngine — Axiom AI's deterministic firewall between LLM creativit
 the game's mathematical state.
 
 On every narrative turn the ArbitratorEngine:
-  1. Fetches current entity stats from State_Cache + applies modifier overlay.
-  2. Retrieves relevant narrative memories from VectorMemory (RAG).
-  3. Builds the full narrative prompt (injecting any pending correction).
-  4. Calls the LLM and parses its response.
-  5. Validates every proposed state change against current stats.
-  6. Persists valid changes via EventSourcer; queues corrections for invalids.
-  7. Runs the Rules Engine for each mutated entity; persists triggered actions.
-  8. Ticks modifier durations.
-  9. Embeds the narrative chunk into VectorMemory.
- 10. Returns an ArbitratorResult with full detail for the UI / tests.
+
+1. Fetches current entity stats from State_Cache + applies modifier overlay.
+2. Retrieves relevant narrative memories from VectorMemory (RAG).
+3. Builds the full narrative prompt (injecting any pending correction).
+4. Calls the LLM and parses its response.
+5. Validates every proposed state change against current stats.
+6. Persists valid changes via EventSourcer; queues corrections for invalids.
+7. Runs the Rules Engine for each mutated entity; persists triggered actions.
+8. Ticks modifier durations.
+9. Embeds the narrative chunk into VectorMemory.
+10. Returns an ArbitratorResult with full detail for the UI / tests.
 
 The Correction Loop (spec §4-B)
 ---------------------------------

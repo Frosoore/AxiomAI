@@ -13,13 +13,19 @@ volets indépendants.
 les 10 langues** via le système `tr()` (cf. [[project-test-env]] et le rework i18n). Décision
 utilisateur : on la fera **« tout d'un bloc »** (conception des 4 briques ensemble), **plus tard**.
 
-**Volet 2 — Site de doc de la librairie `axiomai-engine`**, façon `devguide.python.org` / PySide6
-(tutos, quick guide, référence d'API auto-générée), destiné à **GitHub Pages**. Outil tranché :
-**Sphinx** (et non MkDocs) — pour matcher les sites de référence cités et générer la référence d'API
-depuis les docstrings existantes. Pas encore commencé.
+**Volet 2 — Site de doc de la librairie `axiomai-engine`** : **✅ FAIT (TICKET-058, 2026-06-12,
+branche `dev-documentation`)**. Projet **Sphinx** dans `docs/` (Furo, pages Markdown/MyST,
+autodoc) ; **EN + FR** (décision utilisateur : « anglais et un menu des langues vers le
+français, le reste après ») via gettext `.po` + sélecteur de langue maison ; quickstart,
+6 guides, référence d'API. Au passage **~100 docstrings publiques du moteur traduites FR→EN**
+(règle désormais : docstring publique = anglais). Déploiement GitHub Pages :
+`.github/workflows/docs.yml` (build strict `-W`, deps lourdes mockées). ⚠ Reste à l'utilisateur :
+**activer Pages (Settings → Pages → Source « GitHub Actions ») + merger `main`**. Traduction FR
+de la réf API (~800 chaînes) et autres langues = plus tard. Mode d'emploi :
+`maintenance/TICKET-058-doc-sphinx/DOC.md`.
 
-**Ordre décidé :** i18n d'abord (fait, [[—]] TICKET-053), puis (au choix de l'utilisateur ensuite)
-le site Sphinx et/ou la doc intégrée.
+**Ordre décidé :** i18n d'abord (fait, TICKET-053/054), puis le site Sphinx (fait, TICKET-058),
+puis la doc intégrée (TICKET-057, en attente).
 
 **Prérequis traité (i18n) :** TICKET-053 (rework : traductions externalisées en TOML par langue,
 10 langues complétées à 295/295) **puis** TICKET-054 (séparation des couches) — tous deux le

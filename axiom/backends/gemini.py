@@ -8,8 +8,8 @@ internal list[LLMMessage] format to Gemini's Content objects: the first
 system-role message becomes the model's system_instruction, and the
 remaining turns become the contents list.
 
-Typical usage
--------------
+Typical usage::
+
     from axiom.backends.gemini import GeminiClient
 
     llm = GeminiClient(api_key="YOUR_KEY", model_name="gemini-2.0-flash")
@@ -76,10 +76,11 @@ class _RateLimiter:
         self._next_slot: dict[str, float] = {}
 
     def reserve_turn(self, key: str, min_interval: float) -> float:
-        """Réserve le prochain créneau et retourne le délai à attendre (0 = passe).
+        """Reserve the next slot and return the delay to wait (0 = go).
 
-        L'attente est laissée à l'appelant : elle peut ainsi être interruptible
-        (annulation, TICKET-033)."""
+        Waiting is left to the caller, so it can stay interruptible
+        (cancellation, TICKET-033).
+        """
         if min_interval <= 0:
             return 0.0
         with self._lock:
@@ -116,9 +117,10 @@ class GeminiClient(LLMBackend):
         api_key:    Google Generative AI API key.
         model_name: Gemini model identifier.
                     Defaults to "gemini-2.0-flash".
-        requests_per_minute: Ralentisseur (TICKET-031). 0 = illimité.
-        fallback_model: Modèle tenté quand le quota du modèle principal
-                    persiste après les retries (quotas par modèle). "" = aucun.
+        requests_per_minute: Soft rate limiter (TICKET-031). 0 = unlimited.
+        fallback_model: Model tried when the primary model's quota is still
+                    exhausted after the retries (quotas are per-model).
+                    "" = none.
     """
 
     def __init__(

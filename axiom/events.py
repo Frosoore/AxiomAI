@@ -278,8 +278,8 @@ class EventSourcer:
         It does NOT use snapshots.
 
         Returns:
-            Tuple of (passed: bool, mismatches: dict).
-            mismatches is {entity_id: {stat_key: (cached_val, actual_val)}}.
+            A (passed, mismatches) tuple — mismatches maps entity_id to a
+            dict of stat_key to (cached_val, actual_val) pairs.
         """
         # 1. Get current cache from DB
         with get_connection(self._db_path) as conn:
