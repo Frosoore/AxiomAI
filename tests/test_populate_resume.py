@@ -70,7 +70,7 @@ def test_echec_en_plein_lot_conserve_les_chunks_commites(universe_db, monkeypatc
 
     # Le travail du chunk 1 est en base, et l'erreur explique la reprise.
     assert "le_forgeron" in _entity_ids(universe_db)
-    assert "1 entité(s) déjà insérée(s)" in str(exc.value)
+    assert "1 entity(ies) already inserted" in str(exc.value)
 
 
 def test_relance_reprend_sans_doublon(universe_db, monkeypatch):
@@ -95,4 +95,4 @@ def test_echec_au_premier_chunk_erreur_brute(universe_db, monkeypatch):
     with pytest.raises(LLMConnectionError) as exc:
         _run_populate(universe_db, llm, monkeypatch)
     # Rien d'inséré → pas de message de reprise trompeur.
-    assert "déjà insérée" not in str(exc.value)
+    assert "already inserted" not in str(exc.value)

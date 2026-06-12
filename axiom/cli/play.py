@@ -20,13 +20,13 @@ from typing import Callable, TextIO
 from axiom.backends.base import LLMConnectionError
 
 _HELP_TEXT = """\
-Commandes :
-  /help                ce message
-  /stats               afficher les stats matérialisées courantes
-  /checkpoints         lister les tours avec un checkpoint
-  /rewind <turn_id>    revenir à l'état d'un tour antérieur
-  /quit                quitter
-Toute autre saisie est jouée comme une action du joueur.
+Commands:
+  /help                this message
+  /stats               show current materialized stats
+  /checkpoints         list turns that have a checkpoint
+  /rewind <turn_id>    go back to a previous turn's state
+  /quit                quit
+Any other input is played as a player action.
 """
 
 
@@ -38,16 +38,16 @@ def add_play_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de la sous-commande `play`."""
     parser.add_argument(
         "universe",
-        help="Chemin du fichier univers (.axiom/.db). Cherché aussi dans ~/AxiomAI/universes.",
+        help="Path to the universe file (.axiom/.db). Also searched in ~/AxiomAI/universes.",
     )
-    parser.add_argument("--save", metavar="SAVE_ID", help="Reprendre une sauvegarde existante.")
-    parser.add_argument("--new", action="store_true", help="Forcer une nouvelle partie.")
-    parser.add_argument("--name", default="Hero", help="Nom du joueur (nouvelle partie).")
+    parser.add_argument("--save", metavar="SAVE_ID", help="Resume an existing save.")
+    parser.add_argument("--new", action="store_true", help="Force a new game.")
+    parser.add_argument("--name", default="Hero", help="Player name (new game).")
     parser.add_argument(
         "--difficulty",
         default="Normal",
         choices=["Normal", "Hardcore", "Companion"],
-        help="Mode de jeu (nouvelle partie). Défaut : Normal.",
+        help="Game mode (new game). Default: Normal.",
     )
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=1.0)
@@ -161,7 +161,7 @@ def _handle_command(line: str, session, out: TextIO, err: TextIO) -> str:
     if cmd == "stats":
         stats = session.current_stats()
         if not stats:
-            out.write("(aucune stat matérialisée)\n")
+            out.write("(no materialized stats)\n")
         for entity_id, kv in stats.items():
             out.write(f"{entity_id}:\n")
             for key, value in kv.items():
@@ -171,22 +171,22 @@ def _handle_command(line: str, session, out: TextIO, err: TextIO) -> str:
 
     if cmd in ("checkpoints", "saves"):
         cps = session.list_checkpoints()
-        out.write(f"Checkpoints (tours) : {cps}\n" if cps else "Aucun checkpoint.\n")
+        out.write(f"Checkpoints (turns): {cps}\n" if cps else "No checkpoint.\n")
         out.flush()
         return "continue"
 
     if cmd == "rewind":
         if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
-            err.write("Usage : /rewind <turn_id>\n")
+            err.write("Usage: /rewind <turn_id>\n")
             err.flush()
             return "continue"
         summary = session.rewind(int(parts[1]))
-        out.write(f"Rembobiné. {summary}\n")
-        out.write(f"Tour courant : {session.turn_id}\n")
+        out.write(f"Rewound. {summary}\n")
+        out.write(f"Current turn: {session.turn_id}\n")
         out.flush()
         return "continue"
 
-    err.write(f"Commande inconnue : /{cmd} (voir /help)\n")
+    err.write(f"Unknown command: /{cmd} (see /help)\n")
     err.flush()
     return "continue"
 
@@ -219,7 +219,7 @@ def play_loop(
     if first_message and session.turn_id == 0:
         out.write(first_message.strip() + "\n")
         out.flush()
-    out.write("\n(Tapez /help pour les commandes, /quit pour sortir.)\n")
+    out.write("\n(Type /help for commands, /quit to exit.)\n")
     out.flush()
 
     while True:
@@ -260,11 +260,11 @@ def play_loop(
             out.flush()
         except LLMConnectionError as exc:
             err.write(
-                f"\n[LLM injoignable] Vérifiez votre serveur Ollama ou votre clé API.\n{exc}\n"
+                f"\n[LLM unreachable] Check your Ollama server or your API key.\n{exc}\n"
             )
             err.flush()
         except Exception as exc:  # ne jamais casser la boucle sur une erreur de tour
-            err.write(f"\n[Erreur pendant le tour] {exc}\n")
+            err.write(f"\n[Error during turn] {exc}\n")
             err.flush()
 
 
@@ -284,14 +284,14 @@ def run_play(args: argparse.Namespace) -> int:
     try:
         universe_db = _resolve_playable_db(args.universe)
     except (CompileError, PackageError) as exc:
-        print(f"Impossible de préparer l'univers : {exc}", file=sys.stderr)
+        print(f"Could not prepare the universe: {exc}", file=sys.stderr)
         return 2
     if universe_db is None:
-        print(f"Univers introuvable : {args.universe}", file=sys.stderr)
+        print(f"Universe not found: {args.universe}", file=sys.stderr)
         return 2
 
     universe = Universe.load(universe_db)
-    print(f"Univers : {universe.name}  ({universe_db})")
+    print(f"Universe: {universe.name}  ({universe_db})")
 
     # --- Choix de la sauvegarde (§7.6 : séparées + legacy embarquées) ---
     saves = list_saves(universe_db)
@@ -303,7 +303,7 @@ def run_play(args: argparse.Namespace) -> int:
         save_id = args.save
         match = next((s for s in saves if s["save_id"] == save_id), None)
         if not match:
-            print(f"Sauvegarde {save_id} introuvable dans cet univers.", file=sys.stderr)
+            print(f"Save {save_id} not found in this universe.", file=sys.stderr)
             return 2
         mode = match["difficulty"] or mode
         # Resynchronise la définition de la save si la source a été patchée.
@@ -312,20 +312,20 @@ def run_play(args: argparse.Namespace) -> int:
         info = create_save(universe_db, args.name, args.difficulty)
         save_id = info["save_id"]
         db_path = info["db_path"]
-        print(f"Nouvelle partie créée (save_id={save_id}, mode={args.difficulty}).")
+        print(f"New game created (save_id={save_id}, mode={args.difficulty}).")
     else:
         # Reprend la sauvegarde la plus récente (list_saves trie desc).
         save_id = saves[0]["save_id"]
         mode = saves[0]["difficulty"] or mode
         db_path = prepare_save_for_play(universe_db, save_id)
-        print(f"Reprise de la sauvegarde la plus récente : {saves[0]['player_name']} ({save_id}).")
+        print(f"Resuming the most recent save: {saves[0]['player_name']} ({save_id}).")
 
     # --- LLM ---
     cfg = load_config()
     llm = build_llm_from_config(cfg)
     if hasattr(llm, "is_available") and not llm.is_available():
         print(
-            "Avertissement : le backend LLM ne répond pas (clé API / serveur local ?).",
+            "Warning: the LLM backend is not responding (API key / local server?).",
             file=sys.stderr,
         )
 
@@ -339,5 +339,5 @@ def run_play(args: argparse.Namespace) -> int:
         top_p=args.top_p,
         verbosity=args.verbosity,
     )
-    print("\nPartie suspendue. À bientôt.")
+    print("\nGame suspended. See you soon.")
     return 0

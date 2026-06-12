@@ -13,16 +13,16 @@ import sys
 
 def add_compile_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom compile`."""
-    parser.add_argument("src_dir", help="Dossier source de l'univers (contient universe.toml).")
+    parser.add_argument("src_dir", help="Universe source folder (contains universe.toml).")
     parser.add_argument(
         "-o", "--output",
         metavar="DB",
-        help="Chemin du .db à produire (défaut : <src_dir>/.axiom-cache/universe.db).",
+        help="Path of the .db to produce (default: <src_dir>/.axiom-cache/universe.db).",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Recompiler même si le hash source est inchangé.",
+        help="Recompile even if the source hash is unchanged.",
     )
 
 
@@ -33,9 +33,9 @@ def run_compile(args: argparse.Namespace) -> int:
     try:
         out = compile_universe(args.src_dir, args.output, force=args.force)
     except CompileError as exc:
-        print(f"Échec de compilation : {exc}", file=sys.stderr)
+        print(f"Compilation failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Univers compilé : {out}")
+    print(f"Universe compiled: {out}")
     return 0
 
 
@@ -43,9 +43,9 @@ def add_pack_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom pack`."""
     parser.add_argument(
         "source",
-        help="Univers à empaqueter : dossier source (universe.toml) ou .db (décompilé à la volée).",
+        help="Universe to pack: source folder (universe.toml) or .db (decompiled on the fly).",
     )
-    parser.add_argument("output", help="Chemin de l'archive .axiom à produire.")
+    parser.add_argument("output", help="Path of the .axiom archive to produce.")
 
 
 def run_pack(args: argparse.Namespace) -> int:
@@ -60,19 +60,19 @@ def run_pack(args: argparse.Namespace) -> int:
         else:
             out = pack_universe(args.source, args.output)
     except PackageError as exc:
-        print(f"Échec du packaging : {exc}", file=sys.stderr)
+        print(f"Packaging failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Archive créée : {out}")
+    print(f"Archive created: {out}")
     return 0
 
 
 def add_import_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom import`."""
-    parser.add_argument("axiom_file", help="Archive .axiom à importer (v1 ou v2).")
+    parser.add_argument("axiom_file", help="The .axiom archive to import (v1 or v2).")
     parser.add_argument(
         "dest_root",
         nargs="?",
-        help="Dossier racine de destination (défaut : ~/AxiomAI/universes).",
+        help="Destination root folder (default: ~/AxiomAI/universes).",
     )
 
 
@@ -88,26 +88,26 @@ def run_import(args: argparse.Namespace) -> int:
     try:
         out = unpack_universe(args.axiom_file, dest_root)
     except PackageError as exc:
-        print(f"Échec de l'import : {exc}", file=sys.stderr)
+        print(f"Import failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Univers importé : {out}")
+    print(f"Universe imported: {out}")
     return 0
 
 
 def add_dev_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom dev`."""
-    parser.add_argument("src_dir", help="Dossier source de l'univers à surveiller.")
+    parser.add_argument("src_dir", help="Universe source folder to watch.")
     parser.add_argument(
         "--db",
         metavar="DB",
-        help="Chemin du .db cible (défaut : <src_dir>/.axiom-cache/universe.db).",
+        help="Path of the target .db (default: <src_dir>/.axiom-cache/universe.db).",
     )
     parser.add_argument(
         "--interval",
         type=float,
         default=1.0,
         metavar="S",
-        help="Période de polling en secondes (défaut : 1.0).",
+        help="Polling interval in seconds (default: 1.0).",
     )
 
 
@@ -119,14 +119,14 @@ def run_dev(args: argparse.Namespace) -> int:
 
     if not (Path(args.src_dir) / "universe.toml").exists():
         print(
-            f"Arborescence source invalide (pas de universe.toml) : {args.src_dir}",
+            f"Invalid source tree (no universe.toml): {args.src_dir}",
             file=sys.stderr,
         )
         return 1
 
     # flush=True : les événements doivent apparaître immédiatement, même si
     # stdout est redirigé (sinon ils restent dans le buffer process).
-    print(f"Mode dev — surveillance de {args.src_dir} (Ctrl-C pour arrêter)", flush=True)
+    print(f"Dev mode — watching {args.src_dir} (Ctrl-C to stop)", flush=True)
     try:
         watch_universe(
             args.src_dir,
@@ -135,14 +135,14 @@ def run_dev(args: argparse.Namespace) -> int:
             on_event=lambda msg: print(msg, flush=True),
         )
     except KeyboardInterrupt:
-        print("\nArrêt du mode dev.")
+        print("\nDev mode stopped.")
     return 0
 
 
 def add_decompile_arguments(parser: argparse.ArgumentParser) -> None:
     """Déclare les arguments de `axiom decompile`."""
-    parser.add_argument("db_path", help="Chemin du .db univers à décompiler.")
-    parser.add_argument("output_dir", help="Dossier de destination de l'arborescence texte.")
+    parser.add_argument("db_path", help="Path of the universe .db to decompile.")
+    parser.add_argument("output_dir", help="Destination folder for the text source tree.")
 
 
 def run_decompile(args: argparse.Namespace) -> int:
@@ -152,7 +152,7 @@ def run_decompile(args: argparse.Namespace) -> int:
     try:
         out = decompile_universe(args.db_path, args.output_dir)
     except DecompileError as exc:
-        print(f"Échec de décompilation : {exc}", file=sys.stderr)
+        print(f"Decompilation failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Univers décompilé : {out}")
+    print(f"Universe decompiled: {out}")
     return 0

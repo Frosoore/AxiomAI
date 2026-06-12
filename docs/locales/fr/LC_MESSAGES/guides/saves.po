@@ -1,0 +1,183 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/saves.md:1
+msgid "Saves, rewind and sharing"
+msgstr "Sauvegardes, rewind et partage"
+
+#: ../../guides/saves.md:3
+msgid ""
+"Axiom is **event-sourced**: every turn appends events (player input, "
+"narrative text, stat changes, time…) to a journal, the `Event_Log`. The "
+"visible game state is *derived* from that journal. This one design decision "
+"buys most of the engine's tricks:"
+msgstr ""
+"Axiom est **event-sourcé** : chaque tour ajoute des événements (saisie du "
+"joueur, texte narratif, changements de stats, temps…) à un journal, "
+"l'`Event_Log`. L'état de jeu visible est *dérivé* de ce journal. Cette seule"
+" décision de conception offre la plupart des tours de magie du moteur :"
+
+#: ../../guides/saves.md:8
+msgid ""
+"**Rewind** — drop the events after turn *N* and rebuild the state: you are "
+"back at turn *N*."
+msgstr ""
+"**Rewind** — supprimer les événements après le tour *N* et reconstruire "
+"l'état : vous êtes revenu au tour *N*."
+
+#: ../../guides/saves.md:10
+msgid ""
+"**Fork** — copy a save with its journal truncated at a point: an alternate "
+"timeline."
+msgstr ""
+"**Fork** — copier une sauvegarde avec son journal tronqué à un point : une "
+"chronologie alternative."
+
+#: ../../guides/saves.md:12
+msgid ""
+"**Inspect anywhere** — materialise the state at any past turn or in-game "
+"minute without touching the save."
+msgstr ""
+"**Inspecter n'importe où** — matérialiser l'état à n'importe quel tour ou "
+"minute in-game passés sans toucher à la sauvegarde."
+
+#: ../../guides/saves.md:14
+msgid ""
+"**Edit safely** — corrections are applied on top of the journal, never by "
+"mutating derived state."
+msgstr ""
+"**Éditer sans risque** — les corrections s'appliquent par-dessus le journal,"
+" jamais en mutant l'état dérivé."
+
+#: ../../guides/saves.md:17
+msgid "Where saves live"
+msgstr "Où vivent les sauvegardes"
+
+#: ../../guides/saves.md:19
+msgid "The universe definition and the play-throughs are separate things:"
+msgstr "La définition de l'univers et les parties jouées sont deux choses séparées :"
+
+#: ../../guides/saves.md:27
+msgid ""
+"Each save database is **self-contained**: it carries a copy of the universe "
+"definition taken at creation time. Patching the universe never breaks an "
+"existing save — the definition copy is resynchronised when the save is "
+"opened, while the runtime state survives. A save is therefore a single "
+"portable file."
+msgstr ""
+"Chaque base de sauvegarde est **autonome** : elle embarque une copie de la "
+"définition de l'univers prise à sa création. Patcher l'univers ne casse "
+"jamais une sauvegarde existante — la copie de définition est resynchronisée "
+"à l'ouverture, et l'état runtime survit. Une sauvegarde est donc un fichier "
+"unique portable."
+
+#: ../../guides/saves.md:33
+msgid ""
+"(Saves created by very old versions live *inside* the universe `.db`; they "
+"remain listed and playable as-is.)"
+msgstr ""
+"(Les sauvegardes créées par de très anciennes versions vivent *dans* le "
+"`.db` de l'univers ; elles restent listées et jouables telles quelles.)"
+
+#: ../../guides/saves.md:36
+msgid "Rewind and checkpoints"
+msgstr "Rewind et checkpoints"
+
+#: ../../guides/saves.md:38
+msgid "From Python, rewind is one call on the session:"
+msgstr "Depuis Python, le rewind est un seul appel sur la session :"
+
+#: ../../guides/saves.md:45
+msgid "In **Hardcore** mode, death deletes the save — that is the point of Hardcore."
+msgstr ""
+"En mode **Hardcore**, la mort supprime la sauvegarde — c'est tout l'intérêt "
+"du Hardcore."
+
+#: ../../guides/saves.md:47
+msgid "Inspecting and editing a save"
+msgstr "Inspecter et éditer une sauvegarde"
+
+#: ../../guides/saves.md:49
+msgid ""
+"The `axiom save-*` commands (see [the CLI guide](cli.md)) expose the editing"
+" toolbox. Points in time are selected by turn (`--turn N`) or by in-game "
+"minutes (`--minute M`)."
+msgstr ""
+"Les commandes `axiom save-*` (voir [le guide du CLI](cli.md)) exposent la "
+"boîte à outils d'édition. Les points dans le temps se choisissent par tour "
+"(`--turn N`) ou par minutes in-game (`--minute M`)."
+
+#: ../../guides/saves.md:61
+msgid "The editable `save_state.toml` format:"
+msgstr "Le format éditable `save_state.toml` :"
+
+#: ../../guides/saves.md:89
+msgid "Two rules keep editing safe:"
+msgstr "Deux règles gardent l'édition sûre :"
+
+#: ../../guides/saves.md:91
+msgid ""
+"The journal stays the source of truth. Imports create a *new* save whose "
+"journal starts with \"genesis\" events at turn 0; exports materialise the "
+"state by replaying the journal."
+msgstr ""
+"Le journal reste la source de vérité. Les imports créent une *nouvelle* "
+"sauvegarde dont le journal commence par des événements « genèse » au tour 0 "
+"; les exports matérialisent l'état en rejouant le journal."
+
+#: ../../guides/saves.md:94
+msgid ""
+"An imported save starts with an empty vector memory — it fills up again as "
+"you play."
+msgstr ""
+"Une sauvegarde importée démarre avec une mémoire vectorielle vide — elle se "
+"remplit à nouveau en jouant."
+
+#: ../../guides/saves.md:97
+msgid "Sharing a save"
+msgstr "Partager une sauvegarde"
+
+#: ../../guides/saves.md:99
+msgid ""
+"Pack a save (journal, state, illustrations metadata) into a single "
+"`.axiomsave` archive and import it next to any copy of the same universe:"
+msgstr ""
+"Empaquetez une sauvegarde (journal, état, métadonnées des illustrations) en "
+"une archive `.axiomsave` unique et importez-la auprès de n'importe quelle "
+"copie du même univers :"
+
+#: ../../guides/saves.md:107
+msgid "From Python"
+msgstr "Depuis Python"
+
+#: ../../guides/saves.md:109
+#, python-brace-format
+msgid ""
+"The same operations are exposed by {py:mod}`axiom.savestore` (separate save "
+"files, archives) and {py:mod}`axiom.saves` (materialise / fork / import / "
+"edit), with {py:class}`axiom.checkpoint.CheckpointManager` underneath."
+msgstr ""
+"Les mêmes opérations sont exposées par {py:mod}`axiom.savestore` (fichiers "
+"de sauvegarde séparés, archives) et {py:mod}`axiom.saves` (matérialiser / "
+"forker / importer / éditer), avec "
+"{py:class}`axiom.checkpoint.CheckpointManager` en dessous."
+

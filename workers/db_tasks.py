@@ -488,7 +488,7 @@ def _stage_source_change(universe_db: str, mutate: Callable[[str], Any]) -> dict
     from pathlib import Path
 
     from axiom.library import diff_source_trees, sync_source_from_db, universe_root_for
-    from axiom.localization import tr
+    from core.localization import tr
 
     src_root = universe_root_for(universe_db)
     if src_root is None:
@@ -660,7 +660,7 @@ class CanonizeStoryTask(BaseDbTask):
 
     def _resolve_universe_db(self) -> str:
         from axiom.library import universe_root_for
-        from axiom.localization import tr
+        from core.localization import tr
         from axiom.savestore import is_separated_save_db
         from pathlib import Path
 

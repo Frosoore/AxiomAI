@@ -113,13 +113,14 @@ def get_vector_dir() -> Path:
 
 
 def get_saves_dir() -> Path:
-    """Racine des sauvegardes séparées (§7.6), honore data_dir injecté/env."""
+    """Root of the separate saves, honours injected/env data_dir."""
     return _data_root() / "saves"
 
 
 def get_assets_dir() -> Path:
-    """Racine des images générées (`assets/<save_id>/turn_<n>.png`),
-    honore data_dir injecté/env."""
+    """Root of the generated images (`assets/<save_id>/turn_<n>.png`),
+    honours injected/env data_dir.
+    """
     return _data_root() / "assets"
 
 

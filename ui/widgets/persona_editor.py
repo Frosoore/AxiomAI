@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 class PersonaEditorWidget(QWidget):
     """Visual editor for defining player personas."""

@@ -1,0 +1,978 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 03:07+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/saves.md:1
+msgid "Saves and event sourcing"
+msgstr "Sauvegardes et event sourcing"
+
+#: ../../api/saves.md:3
+msgid "`axiom.savestore`"
+msgstr ""
+
+#: axiom.savestore:1 of
+msgid "axiom.savestore — saves stored separately from the universe."
+msgstr "axiom.savestore — sauvegardes stockées séparément de l'univers."
+
+#: axiom.savestore:3 of
+msgid ""
+"The source tree (and its compiled cache) is the universe **definition**; "
+"play-throughs live in dedicated databases::"
+msgstr ""
+"L'arborescence source (et son cache compilé) est la **définition** de "
+"l'univers ; les parties vivent dans des bases dédiées ::"
+
+#: axiom.savestore:10 of
+msgid ""
+"Each save db is **self-contained** — full schema, with a **copy of the "
+"definition tables** taken at creation. Benefits:"
+msgstr ""
+"Chaque base de save est **autonome** — schéma complet, avec une **copie des "
+"tables de définition** prise à la création. Avantages :"
+
+#: axiom.savestore:13 of
+msgid "`Session` and the whole engine work unchanged (a single DB path);"
+msgstr "`Session` et tout le moteur fonctionnent inchangés (un seul chemin de base) ;"
+
+#: axiom.savestore:14 of
+msgid ""
+"patching the universe does not brick the games (they keep their own "
+"definition, resynchronised on open via `refresh_definition` — in-place, "
+"runtime entities and game state survive);"
+msgstr ""
+"patcher l'univers ne brique pas les parties (elles gardent leur propre "
+"définition, resynchronisée à l'ouverture via `refresh_definition` — in-"
+"place, les entités runtime et l'état de jeu survivent) ;"
+
+#: axiom.savestore:17 of
+msgid "one save = one portable file (trivial export/import)."
+msgstr "une save = un fichier portable (export/import trivial)."
+
+#: axiom.savestore:19 of
+msgid ""
+"Backward compatibility: historical saves embedded in the universe `.db` "
+"remain listed and playable as-is (`storage='embedded'`). Only **new** saves "
+"are created as separate files."
+msgstr ""
+"Rétrocompatibilité : les saves historiques embarquées dans le `.db` univers "
+"restent listées et jouables telles quelles (`storage='embedded'`). Seules "
+"les **nouvelles** saves sont créées en fichiers séparés."
+
+#: axiom.savestore:23 of
+msgid "Zero Qt dependency: pure engine."
+msgstr "Zéro dépendance Qt : moteur pur."
+
+#: axiom.savestore.SaveStoreError:1 of
+msgid "Error from the separate-save store."
+msgstr "Erreur du magasin de sauvegardes séparées."
+
+#: axiom.savestore.assets_dir_for_save:1 of
+msgid "A save's illustrations folder (not created if missing)."
+msgstr "Dossier des illustrations d'une save (non créé s'il n'existe pas)."
+
+#: ../../api/saves.md axiom.events.EventSourcer.append_event
+#: axiom.events.EventSourcer.rebuild_state_cache
+#: axiom.events.EventSourcer.state_at axiom.events.EventSourcer.take_snapshot
+#: axiom.saves.apply_correction_file axiom.saves.export_save_state
+#: axiom.saves.fork_save axiom.saves.import_save_state
+#: axiom.saves.materialize_state axiom.savestore.assets_dir_for_save
+#: axiom.savestore.copy_save_assets axiom.savestore.delete_save_assets
+#: axiom.savestore.delete_universe_saves axiom.savestore.finalize_save_container
+#: axiom.savestore.is_separated_save_db axiom.savestore.new_save_container
+#: axiom.savestore.pack_save axiom.savestore.refresh_save_definition
+#: axiom.savestore.resolve_save_db axiom.savestore.saves_dir_for
+#: axiom.savestore.truncate_assets_in axiom.savestore.truncate_save_assets
+#: axiom.savestore.universe_key of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: ../../api/saves.md axiom.events.EventSourcer.append_event
+#: axiom.events.EventSourcer.rebuild_state_cache
+#: axiom.events.EventSourcer.state_at axiom.events.EventSourcer.take_snapshot
+#: axiom.saves.apply_correction_file axiom.saves.export_save_state
+#: axiom.saves.fork_save axiom.saves.import_save_state
+#: axiom.saves.materialize_state axiom.savestore.assets_dir_for_save
+#: axiom.savestore.copy_save_assets axiom.savestore.delete_save_assets
+#: axiom.savestore.delete_universe_saves axiom.savestore.finalize_save_container
+#: axiom.savestore.is_separated_save_db axiom.savestore.new_save_container
+#: axiom.savestore.pack_save axiom.savestore.refresh_save_definition
+#: axiom.savestore.resolve_save_db axiom.savestore.saves_dir_for
+#: axiom.savestore.truncate_assets_in axiom.savestore.truncate_save_assets
+#: axiom.savestore.universe_key of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.savestore.copy_save_assets:1 of
+msgid "Copy one save's illustrations to another. Returns the number copied."
+msgstr "Copie les illustrations d'une save vers une autre. Retourne le nombre copié."
+
+#: axiom.savestore.delete_save_assets:1 of
+msgid "Delete a save's illustrations folder (no-op if missing)."
+msgstr "Supprime le dossier d'illustrations d'une save (no-op s'il n'existe pas)."
+
+#: axiom.savestore.truncate_save_assets:1 of
+msgid "Purge the `turn_<n>.png` files with n > `last_kept_turn_id` (rewind)."
+msgstr "Purge les fichiers `turn_<n>.png` avec n > `last_kept_turn_id` (rewind)."
+
+#: axiom.savestore.truncate_save_assets:3 of
+msgid "Returns the number of deleted files. Non-conforming names are ignored."
+msgstr ""
+"Retourne le nombre de fichiers supprimés. Les noms non conformes sont "
+"ignorés."
+
+#: axiom.savestore.truncate_assets_in:1 of
+msgid ""
+"Variant of `truncate_save_assets` on an explicit folder (Session with an "
+"injected data_dir)."
+msgstr ""
+"Variante de `truncate_save_assets` sur un dossier explicite (Session avec "
+"data_dir injecté)."
+
+#: axiom.savestore.universe_key:1 of
+msgid "Stable key of a universe, used to file its saves."
+msgstr "Clé stable d'un univers, utilisée pour ranger ses saves."
+
+#: axiom.savestore.universe_key:3 of
+msgid ""
+"Folder universe: name of the source folder. Flat `.db`: file stem. Based on "
+"the **shape of the path** only (not on universe.toml existing): the key must"
+" stay identical even when the source is momentarily missing/broken, "
+"otherwise the saves become unreachable."
+msgstr ""
+"Univers-dossier : nom du dossier source. `.db` plat : stem du fichier. "
+"Fondée sur la **forme du chemin** uniquement (pas sur l'existence de "
+"universe.toml) : la clé doit rester identique même quand la source est "
+"momentanément absente/cassée, sinon les saves deviennent introuvables."
+
+#: axiom.savestore.saves_dir_for:1 of
+msgid "A universe's separate-saves folder (not created if missing)."
+msgstr "Dossier des saves séparées d'un univers (non créé s'il n'existe pas)."
+
+#: axiom.savestore.is_separated_save_db:1 of
+msgid "True when `db_path` is a separate save (carries a Save_Meta table)."
+msgstr "True quand `db_path` est une save séparée (porte une table Save_Meta)."
+
+#: axiom.savestore.create_save:1 of
+msgid "Create a new game in its own `saves/<universe>/save_<uuid>.db` database."
+msgstr ""
+"Crée une nouvelle partie dans sa propre base "
+"`saves/<universe>/save_<uuid>.db`."
+
+#: axiom.savestore.create_save:3 of
+msgid ""
+"The universe definition is copied into the save db (self-contained). The "
+"link to the universe (db + optional source) is recorded in `Save_Meta` for "
+"resynchronisation on open."
+msgstr ""
+"La définition de l'univers est copiée dans la base de save (autonome). Le "
+"lien vers l'univers (db + source éventuelle) est consigné dans `Save_Meta` "
+"pour la resynchronisation à l'ouverture."
+
+#: ../../api/saves.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.savestore.create_save:7 of
+msgid ""
+"A dict with keys save_id and db_path — db_path is the database to hand to "
+"`Session` (and to the engine helpers) to play this game."
+msgstr ""
+"Un dict avec les clés save_id et db_path — db_path est la base à passer à "
+"`Session` (et aux helpers moteur) pour jouer cette partie."
+
+#: axiom.savestore.new_save_container:1 of
+msgid "Prepare a blank save db (definition copied + Save_Meta, no Saves row)."
+msgstr ""
+"Prépare une base de save vierge (définition copiée + Save_Meta, aucune ligne"
+" Saves)."
+
+#: axiom.savestore.new_save_container:3 of
+msgid ""
+"Common building block of `create_save` and of the imports (`save-import`, "
+"`save-unpack`): the caller then creates/imports its Saves row(s) and calls "
+"`finalize_save_container`."
+msgstr ""
+"Brique commune de `create_save` et des imports (`save-import`, `save-"
+"unpack`) : l'appelant y crée/importe ensuite sa ou ses lignes Saves, puis "
+"appelle `finalize_save_container`."
+
+#: axiom.savestore.finalize_save_container:1 of
+msgid "Rename a save container to its real save_id, definitively."
+msgstr "Renomme définitivement un conteneur de save sur son save_id réel."
+
+#: axiom.savestore.finalize_save_container:3 of
+msgid ""
+"Flushes the WAL into the main file BEFORE the rename (otherwise the "
+"-wal/-shm sidecars would stay attached to the old name and the last writes "
+"would be lost)."
+msgstr ""
+"Vide le WAL dans le fichier principal AVANT le renommage (sinon les sidecars"
+" -wal/-shm resteraient attachés à l'ancien nom et les dernières écritures "
+"seraient perdues)."
+
+#: axiom.savestore.list_saves:1 of
+msgid "List all the games of a universe, separate **and** embedded (legacy)."
+msgstr "Liste toutes les parties d'un univers, séparées **et** embarquées (legacy)."
+
+#: axiom.savestore.list_saves:3 of
+msgid ""
+"List of dicts in the `db_helpers.load_saves` format, enriched with `db_path`"
+" (the database to open for this save) and `storage` ('separated' | "
+"'embedded'), sorted by `last_updated`, most recent first."
+msgstr ""
+"Liste de dicts au format de `db_helpers.load_saves`, enrichis de `db_path` "
+"(la base à ouvrir pour cette save) et `storage` ('separated' | 'embedded'), "
+"triée par `last_updated`, plus récent d'abord."
+
+#: axiom.savestore.resolve_save_db:1 of
+msgid "Return the database containing `save_id` (separate, or the universe itself)."
+msgstr "Retourne la base contenant `save_id` (séparée, ou l'univers lui-même)."
+
+#: axiom.savestore.prepare_save_for_play:1 of
+msgid "Resolve a save's database and resync its definition if the source changed."
+msgstr ""
+"Résout la base d'une save et resynchronise sa définition si la source a "
+"changé."
+
+#: axiom.savestore.prepare_save_for_play:3 of
+msgid ""
+"For a separate save linked to a folder universe: when the source hash "
+"differs from the recorded one, `refresh_definition` is applied **to the save"
+" db** (in-place: journal, runtime entities and game state intact) and the "
+"recorded hash is updated. A missing/broken source is not blocking: the save "
+"keeps its embedded definition (it is self-contained)."
+msgstr ""
+"Pour une save séparée liée à un univers-dossier : quand le hash de la source"
+" diffère de celui consigné, `refresh_definition` est appliqué **à la base de"
+" save** (in-place : journal, entités runtime et état de jeu intacts) puis le"
+" hash consigné est mis à jour. Une source absente/cassée n'est pas bloquante"
+" : la save garde sa définition embarquée (elle est autonome)."
+
+#: axiom.savestore.prepare_save_for_play:9 of
+msgid "The path of the database to hand to `Session`, or None for an unknown save."
+msgstr "Le chemin de la base à passer à `Session`, ou None pour une save inconnue."
+
+#: axiom.savestore.refresh_save_definition:1 of
+msgid "Resynchronise a separate save's definition from its universe source."
+msgstr "Resynchronise la définition d'une save séparée depuis sa source univers."
+
+#: axiom.savestore.refresh_save_definition:3 of
+msgid ""
+"No-op (False) for an embedded save, a save with no linked source, or one "
+"already up to date. A malformed source is ignored (the save stays playable "
+"as-is)."
+msgstr ""
+"No-op (False) pour une save embarquée, une save sans source liée, ou déjà à "
+"jour. Une source malformée est ignorée (la save reste jouable telle quelle)."
+
+#: axiom.savestore.extract_save:1 of
+msgid "Extract an **embedded** (legacy) save to its own separate file."
+msgstr "Extrait une save **embarquée** (legacy) vers son propre fichier séparé."
+
+#: axiom.savestore.extract_save:3 of
+msgid ""
+"Copies the universe's current definition + all this save's runtime rows. The"
+" original save stays intact in the universe `.db` (it is a copy, not a "
+"move)."
+msgstr ""
+"Copie la définition courante de l'univers + toutes les lignes runtime de "
+"cette save. La save d'origine reste intacte dans le `.db` univers (c'est une"
+" copie, pas un déplacement)."
+
+#: axiom.savestore.extract_save:7 of
+msgid "The path of the new `saves/<universe>/save_<id>.db` file."
+msgstr "Le chemin du nouveau fichier `saves/<universe>/save_<id>.db`."
+
+#: axiom.savestore.pack_save:1 of
+msgid ""
+"Export a save to a `.axiomsave` archive (zip: self-contained save.db + "
+"manifest)."
+msgstr ""
+"Exporte une save en archive `.axiomsave` (zip : save.db autonome + "
+"manifeste)."
+
+#: axiom.savestore.pack_save:3 of
+msgid ""
+"A separate save is zipped as-is; an embedded (legacy) save is first "
+"extracted to a self-contained file (a copy — the original stays). The vector"
+" memory does not travel (empty on import)."
+msgstr ""
+"Une save séparée est zippée telle quelle ; une save embarquée (legacy) est "
+"d'abord extraite vers un fichier autonome (une copie — l'original reste). La"
+" mémoire vectorielle ne voyage pas (vide à l'import)."
+
+#: axiom.savestore.unpack_save:1 of
+msgid "Import a `.axiomsave` archive into a universe's save store."
+msgstr "Importe une archive `.axiomsave` dans le magasin de saves d'un univers."
+
+#: axiom.savestore.unpack_save:3 of
+msgid ""
+"By default, refuses an archive coming from another universe (different "
+"`universe_key`) — pass `force=True` to override. When the `save_id` already "
+"exists here, the imported save is **re-identified** (new uuid) so an "
+"existing game is never overwritten."
+msgstr ""
+"Par défaut, refuse une archive issue d'un autre univers (`universe_key` "
+"différente) — passer `force=True` pour outrepasser. Quand le `save_id` "
+"existe déjà ici, la save importée est **ré-identifiée** (nouvel uuid) pour "
+"ne jamais écraser une partie existante."
+
+#: axiom.savestore.duplicate_save:8 axiom.savestore.unpack_save:8 of
+msgid "A dict with keys save_id and db_path."
+msgstr "Un dict avec les clés save_id et db_path."
+
+#: axiom.savestore.duplicate_save:1 of
+msgid "Duplicate a game as-is (full journal preserved)."
+msgstr "Duplique une partie telle quelle (journal complet préservé)."
+
+#: axiom.savestore.duplicate_save:3 of
+msgid ""
+"Separate save: re-identified file copy (new uuid) — the \"one save = one "
+"file\" model is preserved, unlike a `fork_save` within the same file. "
+"Embedded (legacy) save: fork at the last turn in the same database, as "
+"before."
+msgstr ""
+"Save séparée : copie du fichier ré-identifiée (nouvel uuid) — le modèle « "
+"une save = un fichier » est conservé, contrairement à un `fork_save` dans le"
+" même fichier. Save embarquée (legacy) : fork au dernier tour dans la même "
+"base, comme avant."
+
+#: axiom.savestore.delete_save:1 of
+msgid ""
+"Delete a game. A separate save whose database becomes empty is removed from "
+"disk."
+msgstr ""
+"Supprime une partie. Une save séparée dont la base se vide est effacée du "
+"disque."
+
+#: axiom.savestore.delete_save:3 of
+msgid "True when a save was deleted."
+msgstr "True quand une save a été supprimée."
+
+#: axiom.savestore.delete_universe_saves:1 of
+msgid ""
+"Delete a universe's separate-saves folder (along with the universe), "
+"illustrations included."
+msgstr ""
+"Supprime le dossier de saves séparées d'un univers (avec l'univers), "
+"illustrations comprises."
+
+#: ../../api/saves.md:10
+msgid "`axiom.saves`"
+msgstr ""
+
+#: axiom.saves:1 of
+msgid "axiom.saves — save editing (creatable/editable by humans or LLMs)."
+msgstr ""
+"axiom.saves — édition de sauvegardes (créables/modifiables par humain ou "
+"LLM)."
+
+#: axiom.saves:3 of
+msgid "Design decisions:"
+msgstr "Décisions de conception :"
+
+#: axiom.saves:5 of
+msgid ""
+"**D1**: the `Event_Log` journal stays the **source of truth** (it powers the"
+" rewind). Editing happens *on top of it*: the state is **materialised** at a"
+" point (replay), **forked** (truncated journal), and an edited state is "
+"**imported** as a **new** save (\"genesis\" events at turn 0). Derived data "
+"(State_Cache/Snapshots) is never edited directly."
+msgstr ""
+"**D1** : le journal `Event_Log` reste la **source de vérité** (il fait "
+"tourner le rewind). L'édition se fait *par-dessus* : l'état est "
+"**matérialisé** à un point (replay), **forké** (journal tronqué), et un état"
+" édité est **importé** comme une **nouvelle** save (événements « genèse » au"
+" tour 0). Les données dérivées (State_Cache/Snapshots) ne sont jamais "
+"éditées directement."
+
+#: axiom.saves:10 of
+msgid ""
+"**D3**: an imported save starts with an **empty vector memory** (it fills up"
+" as you play)."
+msgstr ""
+"**D3** : une save importée démarre avec une **mémoire vectorielle vide** "
+"(elle se remplit en jouant)."
+
+#: axiom.saves:13 of
+msgid ""
+"Point selector: by **turn** (`at_turn`) or by **in-game time in minutes** "
+"(`at_minute`, resolved through the `Timeline` table). Zero Qt dependency."
+msgstr ""
+"Sélecteur de point : par **tour** (`at_turn`) ou par **temps in-game en "
+"minutes** (`at_minute`, résolu via la table `Timeline`). Zéro dépendance Qt."
+
+#: axiom.saves:16 of
+msgid "Editable text format, `save_state.toml`::"
+msgstr "Format texte éditable, `save_state.toml` ::"
+
+#: axiom.saves.SaveError:1 of
+msgid "Save editing/reading error."
+msgstr "Erreur d'édition/lecture de sauvegarde."
+
+#: axiom.saves.resolve_point:1 of
+msgid "Resolve a selector (turn or in-game minute) into a `turn_id`."
+msgstr "Résout un sélecteur (tour ou minute in-game) en `turn_id`."
+
+#: axiom.saves.resolve_point:3 of
+msgid "`at_turn`: used as-is."
+msgstr "`at_turn` : utilisé tel quel."
+
+#: axiom.saves.resolve_point:4 of
+msgid "`at_minute`: last turn whose `Timeline.in_game_time <= at_minute`."
+msgstr "`at_minute` : dernier tour dont `Timeline.in_game_time <= at_minute`."
+
+#: axiom.saves.resolve_point:5 of
+msgid "neither: last turn of the save."
+msgstr "aucun des deux : dernier tour de la save."
+
+#: axiom.saves.materialize_state:1 of
+msgid "Materialise a save's state at a given point (by replaying the journal)."
+msgstr "Matérialise l'état d'une save à un point donné (en rejouant le journal)."
+
+#: axiom.saves.materialize_state:3 of
+msgid ""
+"Per-entity stats = the universe's base stats (`Entity_Stats`) overlaid with "
+"the state replayed up to the point (logical `State_Cache`). Inventory and "
+"modifiers are the current state (tables that are not event-sourced)."
+msgstr ""
+"Stats par entité = stats de base de l'univers (`Entity_Stats`) recouvertes "
+"par l'état rejoué jusqu'au point (`State_Cache` logique). L'inventaire et "
+"les modificateurs sont l'état courant (tables non event-sourcées)."
+
+#: axiom.saves.export_save_state:1 of
+msgid "Export a save's materialised state to an editable `save_state.toml`."
+msgstr "Exporte l'état matérialisé d'une save vers un `save_state.toml` éditable."
+
+#: axiom.saves.import_save_state:1 of
+msgid "Create a **new** playable save from a `save_state.toml`."
+msgstr "Crée une **nouvelle** save jouable à partir d'un `save_state.toml`."
+
+#: axiom.saves.import_save_state:3 of
+msgid ""
+"Seeds the state through \"genesis\" events at turn 0 (entity_create + "
+"stat_set), then materialises State_Cache, the inventory, the modifiers and a"
+" Timeline entry. Empty vector memory. Returns the new save_id."
+msgstr ""
+"Sème l'état via des événements « genèse » au tour 0 (entity_create + "
+"stat_set), puis matérialise State_Cache, l'inventaire, les modificateurs et "
+"une entrée Timeline. Mémoire vectorielle vide. Retourne le nouveau save_id."
+
+#: axiom.saves.apply_correction:1 of
+msgid "Apply a correction to an **existing** save without rewriting the past."
+msgstr "Applique une correction à une save **existante** sans réécrire le passé."
+
+#: axiom.saves.apply_correction:3 of
+msgid ""
+"Stat changes become `manual_edit` events (at the chosen turn, default = last"
+" turn) — the journal stays consistent and append-only, the rewind is "
+"preserved, and the edit is traceable. Inventory and modifiers (not event-"
+"sourced) are written directly."
+msgstr ""
+"Les changements de stats deviennent des événements `manual_edit` (au tour "
+"choisi, défaut = dernier tour) — le journal reste cohérent et append-only, "
+"le rewind est préservé, et l'édition est traçable. L'inventaire et les "
+"modificateurs (non event-sourcés) sont écrits directement."
+
+#: axiom.saves.apply_correction:8 of
+msgid "The `patch` dict has the shape::"
+msgstr "Le dict `patch` a la forme ::"
+
+#: axiom.saves.apply_correction:16 of
+msgid "The `turn_id` the correction was appended at."
+msgstr "Le `turn_id` auquel la correction a été apposée."
+
+#: axiom.saves.diff_save_states:1 of
+msgid "Compute the correction patch between two parsed `save_state.toml` states."
+msgstr "Calcule le patch de correction entre deux états `save_state.toml` parsés."
+
+#: axiom.saves.diff_save_states:3 of
+msgid ""
+"Supports the \"edit the save\" flow: the state is exported, the user edits "
+"the TOML, and only the **differences** are appended via `apply_correction` "
+"(otherwise every unchanged stat would become a spurious `manual_edit` "
+"event)."
+msgstr ""
+"Sert au flux « éditer la save » : l'état est exporté, l'utilisateur modifie "
+"le TOML, et seules les **différences** sont apposées via `apply_correction` "
+"(sinon chaque stat inchangée deviendrait un événement `manual_edit` "
+"parasite)."
+
+#: axiom.saves.diff_save_states:8 of
+msgid ""
+"stats: changed or added values (removing a stat does not exist in the "
+"correction model — ignored);"
+msgstr ""
+"stats : valeurs modifiées ou ajoutées (la suppression d'une stat n'existe "
+"pas dans le modèle de correction — ignorée) ;"
+
+#: axiom.saves.diff_save_states:10 of
+msgid ""
+"inventory: changed/added quantities; a vanished line means quantity 0 (= "
+"removal);"
+msgstr ""
+"inventaire : quantités modifiées/ajoutées ; une ligne disparue signifie "
+"quantité 0 (= retrait) ;"
+
+#: axiom.saves.diff_save_states:12 of
+msgid "modifiers: only **new** ones are kept (a correction can only add modifiers)."
+msgstr ""
+"modificateurs : seuls les **nouveaux** sont retenus (une correction ne sait "
+"qu'ajouter des modificateurs)."
+
+#: axiom.saves.apply_correction_file:1 of
+msgid ""
+"Load a TOML file (same sections as save_state.toml) and apply it as a "
+"correction."
+msgstr ""
+"Charge un fichier TOML (mêmes sections que save_state.toml) et l'applique en"
+" correction."
+
+#: axiom.saves.fork_save:1 of
+msgid "Create a new save = `save_id`'s journal **truncated** at the chosen point."
+msgstr "Crée une nouvelle save = le journal de `save_id` **tronqué** au point choisi."
+
+#: axiom.saves.fork_save:3 of
+msgid ""
+"The full journal up to the point is copied (rewind/audit preserved); current"
+" inventory and modifiers are copied as-is. Returns the new save_id."
+msgstr ""
+"Le journal complet jusqu'au point est copié (rewind/audit préservés) ; "
+"l'inventaire et les modificateurs courants sont copiés tels quels. Retourne "
+"le nouveau save_id."
+
+#: ../../api/saves.md:17
+msgid "`axiom.checkpoint`"
+msgstr ""
+
+#: axiom.checkpoint:1 of
+msgid "database/checkpoint.py"
+msgstr ""
+
+#: axiom.checkpoint:3 of
+msgid "Checkpoint and rewind management for Axiom AI saves."
+msgstr "Gestion des checkpoints et du rewind pour les sauvegardes d'Axiom AI."
+
+#: axiom.checkpoint:5 of
+msgid ""
+"The CheckpointManager exposes the rewind primitive (deleting future events "
+"and rebuilding the State_Cache), a save listing helper, and the destructive "
+"Hardcore-mode save deletion."
+msgstr ""
+"Le CheckpointManager expose la primitive de rewind (suppression des "
+"événements futurs et reconstruction du State_Cache), un helper de listage "
+"des saves, et la suppression destructive du mode Hardcore."
+
+#: axiom.checkpoint.CheckpointManager:1 of
+msgid "Manages save checkpoints, rewinds, and Hardcore deletion for one universe."
+msgstr "Gère les checkpoints, rewinds et la suppression Hardcore pour un univers."
+
+#: axiom.checkpoint.CheckpointManager:3 axiom.events.EventSourcer:4 of
+msgid ""
+"Filesystem path to an existing universe .db file created by "
+"database.schema.create_universe_db()."
+msgstr ""
+"Chemin de fichier d'un `.db` univers existant créé par "
+"database.schema.create_universe_db()."
+
+#: axiom.checkpoint.CheckpointManager.rewind:1 of
+msgid "Revert a save to its state at target_turn_id."
+msgstr "Ramène une save à son état au tour target_turn_id."
+
+#: axiom.checkpoint.CheckpointManager.rewind:3 of
+msgid "Steps:"
+msgstr "Étapes :"
+
+#: axiom.checkpoint.CheckpointManager.rewind:4 of
+msgid "Count how many future events will be deleted (for the summary)."
+msgstr "Compter combien d'événements futurs seront supprimés (pour le résumé)."
+
+#: axiom.checkpoint.CheckpointManager.rewind:5 of
+msgid "DELETE all Event_Log rows where turn_id > target_turn_id."
+msgstr "Supprimer (DELETE) toutes les lignes Event_Log où turn_id > target_turn_id."
+
+#: axiom.checkpoint.CheckpointManager.rewind:6 of
+msgid "Rebuild State_Cache from the surviving events."
+msgstr "Reconstruire le State_Cache depuis les événements survivants."
+
+#: axiom.checkpoint.CheckpointManager.rewind:8 of
+msgid "The save to rewind."
+msgstr "La save à rembobiner."
+
+#: axiom.checkpoint.CheckpointManager.rewind:9 of
+msgid ""
+"The turn to revert to (inclusive).  All events with turn_id strictly greater"
+" than this value are permanently removed."
+msgstr ""
+"Le tour auquel revenir (inclus).  Tous les événements dont le turn_id est "
+"strictement supérieur à cette valeur sont définitivement supprimés."
+
+#: axiom.checkpoint.CheckpointManager.rewind:13 of
+msgid "A dict with keys deleted_events and rebuilt_to_turn."
+msgstr "Un dict avec les clés deleted_events et rebuilt_to_turn."
+
+#: ../../api/saves.md
+msgid "Raises"
+msgstr "Lève"
+
+#: axiom.checkpoint.CheckpointManager.delete_save:12
+#: axiom.checkpoint.CheckpointManager.list_checkpoints:11
+#: axiom.checkpoint.CheckpointManager.rewind:16
+#: axiom.events.EventSourcer.get_current_stats:9 of
+msgid "On any database failure."
+msgstr "Sur tout échec de base de données."
+
+#: axiom.checkpoint.CheckpointManager.list_checkpoints:1 of
+msgid "Return the distinct turn IDs present in Event_Log for a save, ascending."
+msgstr ""
+"Retourne les turn_id distincts présents dans Event_Log pour une save, "
+"croissants."
+
+#: axiom.checkpoint.CheckpointManager.list_checkpoints:3 of
+msgid ""
+"This list represents the turns the player could rewind to.  The UI can use "
+"it to populate a \"rewind to turn …\" selector."
+msgstr ""
+"Cette liste représente les tours vers lesquels le joueur peut rembobiner.  "
+"L'UI peut s'en servir pour remplir un sélecteur « rembobiner au tour… »."
+
+#: axiom.checkpoint.CheckpointManager.list_checkpoints:6 of
+msgid "The save whose checkpoint turns are requested."
+msgstr "La save dont les tours de checkpoint sont demandés."
+
+#: axiom.checkpoint.CheckpointManager.list_checkpoints:8 of
+msgid ""
+"Sorted list of unique turn_id integers.  Empty list if the save has no "
+"recorded events."
+msgstr ""
+"Liste triée de turn_id entiers uniques.  Liste vide si la save n'a aucun "
+"événement enregistré."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:1 of
+msgid "Irrevocably delete a save and its associated universe directory."
+msgstr "Supprime irrévocablement une save et le dossier d'univers associé."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:3 of
+msgid "Intended exclusively for Hardcore mode upon player death.  This method:"
+msgstr "Destiné exclusivement au mode Hardcore à la mort du joueur.  Cette méthode :"
+
+#: axiom.checkpoint.CheckpointManager.delete_save:4 of
+msgid "Removes the save row from the database (cascades to Event_Log, etc)."
+msgstr "Supprime la ligne de save de la base (cascade vers Event_Log, etc)."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:5 of
+msgid "Attempts to delete the universe_dir from the filesystem."
+msgstr "Tente de supprimer le universe_dir du système de fichiers."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:7 of
+msgid "The save to erase from the database."
+msgstr "La save à effacer de la base."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:8 of
+msgid "Absolute path to the universe directory to delete."
+msgstr "Chemin absolu du dossier d'univers à supprimer."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:10 of
+msgid "If the directory cannot be deleted after multiple retries."
+msgstr "Si le dossier ne peut pas être supprimé après plusieurs tentatives."
+
+#: axiom.checkpoint.CheckpointManager.delete_save:11 of
+msgid "If universe_dir does not exist."
+msgstr "Si universe_dir n'existe pas."
+
+#: ../../api/saves.md:24
+msgid "`axiom.events`"
+msgstr ""
+
+#: axiom.events:1 of
+msgid "database/event_sourcing.py"
+msgstr ""
+
+#: axiom.events:3 of
+msgid "Core Event Sourcing implementation for Axiom AI."
+msgstr "Implémentation centrale de l'event sourcing d'Axiom AI."
+
+#: axiom.events:5 of
+msgid ""
+"Every state change in the game is recorded as an immutable event in "
+"Event_Log.  The State_Cache is a performance materialisation derived by "
+"replaying those events.  This module is the authoritative bridge between the"
+" two."
+msgstr ""
+"Chaque changement d'état du jeu est enregistré comme un événement immuable "
+"dans Event_Log.  Le State_Cache est une matérialisation de performance "
+"dérivée en rejouant ces événements.  Ce module est le pont de référence "
+"entre les deux."
+
+#: axiom.events:10 of
+msgid "Supported event_type values (non-exhaustive; the engine is extensible):"
+msgstr ""
+"Valeurs d'event_type prises en charge (non exhaustif ; le moteur est "
+"extensible) :"
+
+#: axiom.events:11 of
+#, python-brace-format
+msgid ""
+"'entity_create'  payload: {\"entity_id\": str, \"entity_type\": str, "
+"\"name\": str}"
+msgstr ""
+
+#: axiom.events:12 of
+#, python-brace-format
+msgid ""
+"'stat_change'    payload: {\"entity_id\": str, \"stat_key\": str, \"delta\":"
+" float}"
+msgstr ""
+
+#: axiom.events:13 of
+#, python-brace-format
+msgid "OR {\"entity_id\": str, \"stat_key\": str, \"value\": str}"
+msgstr ""
+
+#: axiom.events:14 of
+#, python-brace-format
+msgid ""
+"'stat_set'       payload: {\"entity_id\": str, \"stat_key\": str, \"value\":"
+" str}"
+msgstr ""
+
+#: axiom.events:15 of
+#, python-brace-format
+msgid ""
+"'dialogue'       payload: {\"speaker\": str, \"text\": str}   (no cache "
+"mutation)"
+msgstr ""
+
+#: axiom.events:16 of
+#, python-brace-format
+msgid ""
+"'combat_roll'    payload: {\"entity_id\": str, ...}         (no cache "
+"mutation)"
+msgstr ""
+
+#: axiom.events.EventSourcer:1 of
+msgid ""
+"Manages event appending, querying, and State_Cache reconstruction for a "
+"single Axiom AI universe database."
+msgstr ""
+"Gère l'ajout d'événements, leur interrogation et la reconstruction du "
+"State_Cache pour une base d'univers Axiom AI."
+
+#: axiom.events.EventSourcer.append_event:1 of
+msgid "Insert a new event into Event_Log and return its auto-generated event_id."
+msgstr ""
+"Insère un nouvel événement dans Event_Log et retourne son event_id auto-"
+"généré."
+
+#: axiom.events.EventSourcer.append_events_batch:1 of
+msgid "Insert multiple events in a single transaction."
+msgstr "Insère plusieurs événements dans une seule transaction."
+
+#: axiom.events.EventSourcer.append_events_batch:3 of
+msgid "List of (save_id, turn_id, event_type, target_entity, payload) tuples."
+msgstr "Liste de tuples (save_id, turn_id, event_type, target_entity, payload)."
+
+#: axiom.events.EventSourcer.get_events:1 of
+msgid "Fetch events for a save, ordered chronologically."
+msgstr "Récupère les événements d'une save, par ordre chronologique."
+
+#: axiom.events.EventSourcer.get_events:3 of
+msgid "The save whose events are requested."
+msgstr "La save dont les événements sont demandés."
+
+#: axiom.events.EventSourcer.get_events:4 of
+msgid "Only events with turn_id > this value are returned."
+msgstr "Seuls les événements avec turn_id > cette valeur sont retournés."
+
+#: axiom.events.EventSourcer.get_events:5 of
+msgid ""
+"If provided, only events with turn_id <= this value are returned.  None "
+"means all future events."
+msgstr ""
+"Si fourni, seuls les événements avec turn_id <= cette valeur sont retournés."
+"  None signifie tous les événements futurs."
+
+#: axiom.events.EventSourcer.rebuild_state_cache:1 of
+msgid "Flush and rebuild State_Cache for a save by replaying Event_Log."
+msgstr "Vide et reconstruit le State_Cache d'une save en rejouant Event_Log."
+
+#: axiom.events.EventSourcer.rebuild_state_cache:3 of
+msgid "The save whose cache is being rebuilt."
+msgstr "La save dont le cache est reconstruit."
+
+#: axiom.events.EventSourcer.rebuild_state_cache:4 of
+msgid ""
+"If provided, only events up to this turn are replayed.  None means the full "
+"history."
+msgstr ""
+"Si fourni, seuls les événements jusqu'à ce tour sont rejoués.  None signifie"
+" l'historique complet."
+
+#: axiom.events.EventSourcer.rebuild_state_cache:6 of
+msgid ""
+"If True, ignores all snapshots and replays the entire history from turn 0.  "
+"Use this to fix cache corruption."
+msgstr ""
+"Si True, ignore tous les snapshots et rejoue l'historique entier depuis le "
+"tour 0.  À utiliser pour réparer une corruption de cache."
+
+#: axiom.events.EventSourcer.rebuild_state_cache:10 of
+msgid ""
+"Optimized to start from the nearest previous snapshot if one exists, unless "
+"force_full=True."
+msgstr ""
+"Optimisé pour démarrer du snapshot précédent le plus proche s'il en existe "
+"un, sauf si force_full=True."
+
+#: axiom.events.EventSourcer.update_state_cache:1 of
+msgid "Incrementally apply a just-appended batch of events to State_Cache."
+msgstr ""
+"Applique incrémentalement un lot d'événements tout juste ajoutés au "
+"State_Cache."
+
+#: axiom.events.EventSourcer.update_state_cache:3 of
+msgid ""
+"State_Cache is a materialised view of the base stats derived from Event_Log."
+"  rebuild_state_cache() replays the entire history (or from the nearest "
+"snapshot); this method instead applies *only* the given batch on top of the "
+"affected entities' current cached values, keeping the cache fresh after each"
+" turn without an O(history) replay."
+msgstr ""
+"State_Cache est une vue matérialisée des stats de base dérivée d'Event_Log."
+"  rebuild_state_cache() rejoue l'historique entier (ou depuis le snapshot le"
+" plus proche) ; cette méthode applique au contraire *seulement* le lot donné"
+" par-dessus les valeurs en cache des entités concernées, gardant le cache "
+"frais après chaque tour sans replay en O(historique)."
+
+#: axiom.events.EventSourcer.update_state_cache:9 of
+msgid ""
+"This is what keeps DB reads (the sidebar's load_full_game_state / load_stats"
+" tasks, which read State_Cache) in sync with the changes a turn just "
+"produced — see TICKET-002."
+msgstr ""
+"C'est ce qui garde les lectures de base (les tâches load_full_game_state / "
+"load_stats de la barre latérale, qui lisent State_Cache) synchronisées avec "
+"les changements qu'un tour vient de produire — voir TICKET-002."
+
+#: axiom.events.EventSourcer.update_state_cache:13 of
+msgid "The save whose cache is being updated."
+msgstr "La save dont le cache est mis à jour."
+
+#: axiom.events.EventSourcer.update_state_cache:14 of
+msgid ""
+"List of (save_id, turn_id, event_type, target_entity, payload) tuples, in "
+"the same shape as append_events_batch().  Only entity_create / stat_change /"
+" stat_set events mutate the cache; all others are ignored."
+msgstr ""
+"Liste de tuples (save_id, turn_id, event_type, target_entity, payload), de "
+"même forme que append_events_batch().  Seuls les événements entity_create / "
+"stat_change / stat_set mutent le cache ; tous les autres sont ignorés."
+
+#: axiom.events.EventSourcer.validate_integrity:1 of
+msgid "Verify that the current State_Cache matches a fresh replay of history."
+msgstr ""
+"Vérifie que le State_Cache courant correspond à un replay frais de "
+"l'historique."
+
+#: axiom.events.EventSourcer.validate_integrity:3 of
+msgid ""
+"This is a diagnostic tool to detect corruption in the materialised cache. It"
+" does NOT use snapshots."
+msgstr ""
+"C'est un outil de diagnostic pour détecter la corruption du cache "
+"matérialisé. Il n'utilise PAS les snapshots."
+
+#: axiom.events.EventSourcer.validate_integrity:6 of
+msgid ""
+"A (passed, mismatches) tuple — mismatches maps entity_id to a dict of "
+"stat_key to (cached_val, actual_val) pairs."
+msgstr ""
+"Un tuple (passed, mismatches) — mismatches fait correspondre entity_id à un "
+"dict de stat_key vers des paires (cached_val, actual_val)."
+
+#: axiom.events.EventSourcer.state_at:1 of
+msgid "Compute the materialised state by replaying events, without touching the DB."
+msgstr ""
+"Calcule l'état matérialisé en rejouant les événements, sans toucher à la "
+"base."
+
+#: axiom.events.EventSourcer.state_at:3 of
+#, python-brace-format
+msgid ""
+"Pure read: replays Event_Log (optionally up to a turn) and returns the "
+"resulting `entity_id -> {stat_key: stat_value}` map. Used by snapshotting "
+"and by the save editor (`axiom.saves`) to materialise state at any point."
+msgstr ""
+"Lecture pure : rejoue Event_Log (éventuellement jusqu'à un tour) et retourne"
+" la correspondance `entity_id -> {stat_key: stat_value}` résultante. Utilisé"
+" par le snapshotting et par l'éditeur de saves (`axiom.saves`) pour "
+"matérialiser l'état à n'importe quel point."
+
+#: axiom.events.EventSourcer.take_snapshot:1 of
+msgid "Capture the current materialised state and store it in Snapshots."
+msgstr "Capture l'état matérialisé courant et le stocke dans Snapshots."
+
+#: axiom.events.EventSourcer.take_snapshot:3 of
+msgid ""
+"This is an expensive operation (JSON-serialising the full state) and should "
+"be called sparingly."
+msgstr ""
+"C'est une opération coûteuse (sérialisation JSON de l'état complet), à "
+"appeler avec parcimonie."
+
+#: axiom.events.EventSourcer.get_current_stats:1 of
+msgid "Read the current materialised stats for one entity from State_Cache."
+msgstr "Lit les stats matérialisées courantes d'une entité depuis le State_Cache."
+
+#: axiom.events.EventSourcer.get_current_stats:3 of
+msgid "The active save identifier."
+msgstr "L'identifiant de la save active."
+
+#: axiom.events.EventSourcer.get_current_stats:4 of
+msgid "The entity whose stats are requested."
+msgstr "L'entité dont les stats sont demandées."
+
+#: axiom.events.EventSourcer.get_current_stats:6 of
+msgid ""
+"Dict mapping stat_key -> stat_value strings.  Empty dict if the entity has "
+"no cached stats or does not exist."
+msgstr ""
+"Dict de stat_key -> stat_value (chaînes).  Dict vide si l'entité n'a pas de "
+"stats en cache ou n'existe pas."
+
+#~ msgid ""
+#~ "str, \"db_path\": str} — `db_path` is "
+#~ "the database to hand to `Session` "
+#~ "(and to the engine helpers) to play"
+#~ " this game."
+#~ msgstr ""
+
+#~ msgid "str, \"db_path\": str}"
+#~ msgstr ""
+
+#~ msgid "{\"deleted_events\": int, \"rebuilt_to_turn\": int}."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "bool, mismatches: dict). mismatches is "
+#~ "{entity_id: {stat_key: (cached_val, actual_val)}}."
+#~ msgstr ""
+

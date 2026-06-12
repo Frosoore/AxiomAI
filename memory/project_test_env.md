@@ -41,3 +41,8 @@ local (`extraction_model = llama3.1:8b`) cassaient en Gemini (cf. [[—]] TICKET
   sous pytest). → **lancer par sous-ensembles de fichiers** (`pytest tests/test_arbitrator.py …`).
   Les tests moteur non-Qt passent ainsi sans souci. Éviter de regrouper avec les tests
   vectoriels/Qt (`test_vector_*`, `test_phase6`, `test_ambiance_*`).
+- **Tests (2026-06-12) :** en environnement **headless / sans serveur d'affichage** (ex. sandbox de
+  l'agent), `conftest.py` crée un `QApplication` → **toute** la suite pytest abortait
+  (`QMessageLogger::fatal`, même sur des fichiers purs comme `test_config`). Contournement qui
+  débloque tout : **`QT_QPA_PLATFORM=offscreen pytest …`**. À utiliser pour valider sans GUI. (Sur la
+  machine de bureau réelle de l'utilisateur, avec affichage, pytest tourne normalement.)

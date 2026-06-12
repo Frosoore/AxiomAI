@@ -1,0 +1,243 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 03:07+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/core.md:1
+msgid "Core: sessions and universes"
+msgstr "Cœur : sessions et univers"
+
+#: ../../api/core.md:3
+msgid "`axiom.session`"
+msgstr ""
+
+#: axiom.session:1 of
+msgid "axiom/session.py"
+msgstr ""
+
+#: axiom.session:3 of
+msgid "High-level public API of the Axiom engine (headless, zero Qt)."
+msgstr "API publique de haut niveau du moteur Axiom (headless, zéro Qt)."
+
+#: axiom.session:5 of
+msgid ""
+"A `Session` composes the engine building blocks (Arbitrator, EventSourcer, "
+"CheckpointManager, VectorMemory) and exposes a synchronous game loop that "
+"any application (GUI, CLI, server) can drive::"
+msgstr ""
+"Une `Session` compose les briques du moteur (Arbitrator, EventSourcer, "
+"CheckpointManager, VectorMemory) et expose une boucle de jeu synchrone que "
+"n'importe quelle application (GUI, CLI, serveur) peut piloter ::"
+
+#: axiom.session:16 of
+msgid ""
+"Streaming happens through the `on_token` callback. The method is "
+"synchronous: on the GUI side, the app wraps it in a QThread (see "
+"workers/narrative_worker.py)."
+msgstr ""
+"Le streaming passe par le callback `on_token`. La méthode est synchrone : "
+"côté GUI, l'app l'enveloppe dans un QThread (voir "
+"workers/narrative_worker.py)."
+
+#: axiom.session.Session:1 of
+msgid "High-level wrapper to play one save of a universe."
+msgstr "Enveloppe de haut niveau pour jouer une sauvegarde d'un univers."
+
+#: ../../api/core.md axiom.session.Session.resolve_tick
+#: axiom.session.Session.rewind axiom.session.Session.submit_intent
+#: axiom.session.Session.take_turn of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: axiom.session.Session:3 axiom.universe.Universe:5 of
+msgid "Path of the universe file (.axiom / SQLite .db)."
+msgstr "Chemin du fichier univers (.axiom / .db SQLite)."
+
+#: axiom.session.Session:4 of
+msgid "Identifier of the active save."
+msgstr "Identifiant de la sauvegarde active."
+
+#: axiom.session.Session:5 of
+msgid "Pre-built LLM backend (see build_llm_from_config)."
+msgstr "Backend LLM déjà construit (voir build_llm_from_config)."
+
+#: axiom.session.Session:6 of
+msgid ""
+"Vector memory. If None, a `VectorMemory` is created under "
+"`<data_dir>/vector/<save_id>` (or the app's default vector folder when "
+"data_dir is None)."
+msgstr ""
+"Mémoire vectorielle. Si None, une `VectorMemory` est créée sous "
+"`<data_dir>/vector/<save_id>` (ou le dossier vector par défaut de l'app "
+"quand data_dir est None)."
+
+#: axiom.session.Session:9 of
+msgid ""
+"Optional data root for path injection (only used for the default "
+"VectorMemory)."
+msgstr ""
+"Racine de données optionnelle pour l'injection de chemins (utilisée "
+"seulement pour la VectorMemory par défaut)."
+
+#: axiom.session.Session:11 of
+msgid "Game mode ('Normal', 'Hardcore', 'Companion')."
+msgstr "Mode de jeu ('Normal', 'Hardcore', 'Companion')."
+
+#: axiom.session.Session:12 of
+msgid ""
+"Optional backend for the hero's decision (Companion mode). If None, lazily "
+"built from the config (local `extraction_model`), like the worker does."
+msgstr ""
+"Backend optionnel pour la décision du héros (mode Compagnon). Si None, "
+"construit paresseusement depuis la config (modèle local `extraction_model`),"
+" comme le fait le worker."
+
+#: axiom.session.Session.turn_id:1 of
+msgid "Number of the last played turn (0 if the game has not started)."
+msgstr "Numéro du dernier tour joué (0 si la partie n'a pas commencé)."
+
+#: axiom.session.Session.submit_intent:1 of
+msgid "Submit an action intent to the pool for the current turn."
+msgstr "Soumet une intention d'action au pool pour le tour courant."
+
+#: ../../api/core.md axiom.session.Session.list_checkpoints
+#: axiom.session.Session.resolve_tick axiom.session.Session.rewind
+#: axiom.session.Session.submit_intent axiom.session.Session.take_turn
+#: axiom.universe.Universe.list_saves of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.session.Session.resolve_tick:1 of
+msgid "Resolve every intent currently in the pool as a single tick."
+msgstr "Résout toutes les intentions actuellement dans le pool en un seul tick."
+
+#: axiom.session.Session.take_turn:1 of
+msgid "Run a full turn (synchronously) and return the result."
+msgstr "Exécute un tour complet (de façon synchrone) et retourne le résultat."
+
+#: axiom.session.Session.take_turn:3 of
+msgid "Wraps `submit_intent` and `resolve_tick` for backward compatibility."
+msgstr "Enveloppe `submit_intent` et `resolve_tick` pour la rétrocompatibilité."
+
+#: axiom.session.Session.rewind:1 of
+msgid "Bring the save back to its state at turn `target_turn_id`."
+msgstr "Ramène la sauvegarde à son état au tour `target_turn_id`."
+
+#: axiom.session.Session.rewind:3 of
+msgid ""
+"Invalidates the Arbitrator's stats cache and resynchronises `turn_id`. "
+"Returns the summary provided by `CheckpointManager.rewind`."
+msgstr ""
+"Invalide le cache de stats de l'Arbitrator et resynchronise `turn_id`. "
+"Retourne le résumé fourni par `CheckpointManager.rewind`."
+
+#: axiom.session.Session.list_checkpoints:1 of
+msgid "List the turns for which a checkpoint (snapshot) exists."
+msgstr "Liste les tours pour lesquels un checkpoint (snapshot) existe."
+
+#: axiom.session.Session.regenerate_variant:1 of
+msgid "Regenerate a variant of turn `turn_id`'s narrative text."
+msgstr "Régénère une variante du texte narratif du tour `turn_id`."
+
+#: axiom.session.Session.regenerate_variant:3 of
+msgid ""
+"Replays the same player message to produce an alternative text (without re-"
+"evaluating rules or stats); the variant is appended to the turn's multiverse"
+" payload and becomes active. Delegates to `axiom.regenerate`."
+msgstr ""
+"Rejoue le même message joueur pour produire un texte alternatif (sans "
+"réévaluer règles ni stats) ; la variante est ajoutée au payload multivers du"
+" tour et devient active. Délègue à `axiom.regenerate`."
+
+#: axiom.session.Session.regenerate_variant:8 of
+msgid ""
+"event-sourced history (`user_input`/`narrative_text`) up to the previous "
+"turn."
+msgstr ""
+"historique event-sourcé (`user_input`/`narrative_text`) jusqu'au tour "
+"précédent."
+
+#: axiom.session.Session.current_stats:1 of
+msgid "Current materialised stats per entity (rebuilds the State_Cache)."
+msgstr "Stats matérialisées courantes par entité (reconstruit le State_Cache)."
+
+#: ../../api/core.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.session.Session.current_stats:3 of
+msgid "Mapping of entity_id to a dict of stat_key to stat_value strings."
+msgstr "Correspondance entity_id → dict de stat_key vers stat_value (chaînes)."
+
+#: ../../api/core.md:10
+msgid "`axiom.universe`"
+msgstr ""
+
+#: axiom.universe:1 of
+msgid "axiom/universe.py"
+msgstr ""
+
+#: axiom.universe:3 of
+msgid ""
+"Headless representation of an Axiom universe (a `.axiom` file = SQLite "
+"database)."
+msgstr ""
+"Représentation headless d'un univers Axiom (un fichier `.axiom` = base "
+"SQLite)."
+
+#: axiom.universe:5 of
+msgid ""
+"Exposes the metadata (name, system prompt) and the list of saves, with no Qt"
+" dependency whatsoever. Entry point: `Universe.load(path)`."
+msgstr ""
+"Expose les métadonnées (nom, prompt système) et la liste des sauvegardes, "
+"sans la moindre dépendance Qt. Point d'entrée : `Universe.load(path)`."
+
+#: axiom.universe.Universe:1 of
+msgid "A loaded universe (read-only view of its metadata)."
+msgstr "Un univers chargé (vue en lecture seule de ses métadonnées)."
+
+#: axiom.universe.Universe:9 of
+msgid "Display name of the universe."
+msgstr "Nom affiché de l'univers."
+
+#: axiom.universe.Universe:13 of
+msgid "Founding system prompt handed to the narrator."
+msgstr "Prompt système fondateur transmis au narrateur."
+
+#: axiom.universe.Universe.load:1 of
+msgid "Load a universe from its SQLite file."
+msgstr "Charge un univers depuis son fichier SQLite."
+
+#: axiom.universe.Universe.load:3 of
+msgid "Path to the existing universe file."
+msgstr "Chemin vers le fichier univers existant."
+
+#: axiom.universe.Universe.load:5 of
+msgid "A `Universe` instance populated from `Universe_Meta`."
+msgstr "Une instance `Universe` peuplée depuis `Universe_Meta`."
+
+#: axiom.universe.Universe.list_saves:1 of
+msgid "List this universe's saves (separate save files + embedded legacy ones)."
+msgstr "Liste les sauvegardes de cet univers (fichiers séparés + legacy embarquées)."
+
+#~ msgid "stat_value} dict."
+#~ msgstr ""
+

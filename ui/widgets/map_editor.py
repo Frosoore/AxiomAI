@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from axiom.localization import tr
+from core.localization import tr
 
 SCALES = ["universe", "galaxy", "world", "country", "zone", "city", "district", "building", "room", "poi"]
 

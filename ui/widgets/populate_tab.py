@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QButtonGroup,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 
 class PopulateTabWidget(QWidget):

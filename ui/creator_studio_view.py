@@ -38,7 +38,7 @@ from ui.widgets.map_editor import MapEditorWidget
 from ui.widgets.universe_files_tab import UniverseFilesTabWidget
 from workers.db_worker import DbWorker
 from axiom.config import load_config
-from axiom.localization import tr
+from core.localization import tr
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
@@ -392,7 +392,7 @@ class CreatorStudioView(QWidget):
         self._top_p_spin.setValue(float(meta.get("llm_top_p", "1.0")))
         
         # TICKET-032 : normalise les valeurs historiques stockées localisées.
-        from axiom.localization import canonical_verbosity
+        from core.localization import canonical_verbosity
         v = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
         self._verbosity_combo.setCurrentIndex(max(0, self._verbosity_combo.findData(v)))
 

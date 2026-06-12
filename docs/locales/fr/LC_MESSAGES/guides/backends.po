@@ -1,0 +1,198 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/backends.md:1
+msgid "LLM backends and configuration"
+msgstr "Backends LLM et configuration"
+
+#: ../../guides/backends.md:3
+#, python-brace-format
+msgid ""
+"The engine talks to LLMs through a small backend interface "
+"({py:class}`axiom.backends.base.LLMBackend`). Two implementations ship with "
+"it:"
+msgstr ""
+"Le moteur parle aux LLM via une petite interface de backend "
+"({py:class}`axiom.backends.base.LLMBackend`). Deux implémentations sont "
+"fournies :"
+
+#: ../../guides/backends.md:7
+msgid ""
+"**`universal`** — any **OpenAI-compatible** HTTP API: a local "
+"[Ollama](https://ollama.com) server, LM Studio, llama.cpp, vLLM, or a hosted"
+" service."
+msgstr ""
+"**`universal`** — n'importe quelle API HTTP **compatible OpenAI** : un "
+"serveur [Ollama](https://ollama.com) local, LM Studio, llama.cpp, vLLM, ou "
+"un service hébergé."
+
+#: ../../guides/backends.md:10
+msgid ""
+"**`gemini`** — the **Google Gemini** API, with quota-aware retries, an "
+"optional fallback model and an optional rate limiter."
+msgstr ""
+"**`gemini`** — l'API **Google Gemini**, avec retries conscients des quotas, "
+"un modèle de repli optionnel et un limiteur de débit optionnel."
+
+#: ../../guides/backends.md:13
+msgid "The settings file"
+msgstr "Le fichier de réglages"
+
+#: ../../guides/backends.md:15
+#, python-brace-format
+msgid ""
+"Configuration lives in `~/.config/AxiomAI/settings.json` and is loaded by "
+"{py:func}`axiom.config.load_config` into an "
+"{py:class}`axiom.config.AppConfig`. Defaults are sensible; unknown keys are "
+"ignored."
+msgstr ""
+"La configuration vit dans `~/.config/AxiomAI/settings.json` et est chargée "
+"par {py:func}`axiom.config.load_config` dans un "
+"{py:class}`axiom.config.AppConfig`. Les défauts sont raisonnables ; les clés"
+" inconnues sont ignorées."
+
+#: ../../guides/backends.md:41
+msgid "The narration model and the helper models"
+msgstr "Le modèle de narration et les modèles auxiliaires"
+
+#: ../../guides/backends.md:43
+msgid ""
+"The main model (`gemini_model` or `universal_model`) narrates the story. Two"
+" auxiliary roles can use cheaper models:"
+msgstr ""
+"Le modèle principal (`gemini_model` ou `universal_model`) narre l'histoire. "
+"Deux rôles auxiliaires peuvent utiliser des modèles moins chers :"
+
+#: ../../guides/backends.md:46
+msgid ""
+"**`extraction_model`** — structured-output jobs (content generation, the "
+"Companion hero's decisions)."
+msgstr ""
+"**`extraction_model`** — les tâches à sortie structurée (génération de "
+"contenu, décisions du héros en mode Compagnon)."
+
+#: ../../guides/backends.md:48
+msgid ""
+"**`time_model`** — the *Timekeeper*, a small extra call that deduces how "
+"many in-game minutes each turn took. Disable it with "
+"`\"timekeeper_enabled\": false` to save a call per turn (time is then "
+"estimated from the scene pace alone)."
+msgstr ""
+"**`time_model`** — le *Timekeeper*, un petit appel supplémentaire qui déduit"
+" combien de minutes in-game chaque tour a duré. Désactivez-le avec "
+"`\"timekeeper_enabled\": false` pour économiser un appel par tour (le temps "
+"est alors estimé d'après le rythme de la scène)."
+
+#: ../../guides/backends.md:53
+msgid ""
+"Both auxiliary names are local-model identifiers; on the Gemini backend they"
+" are ignored and `gemini_model` is used instead."
+msgstr ""
+"Ces deux noms auxiliaires sont des identifiants de modèles locaux ; sur le "
+"backend Gemini ils sont ignorés et `gemini_model` est utilisé à la place."
+
+#: ../../guides/backends.md:56
+msgid "Gemini specifics"
+msgstr "Spécificités Gemini"
+
+#: ../../guides/backends.md:58
+msgid ""
+"`llm_requests_per_minute` — soft rate limit (0 = unlimited). The Gemini free"
+" tier allows ~10 requests/min per model; set 9 to stay under it."
+msgstr ""
+"`llm_requests_per_minute` — limite de débit douce (0 = illimité). Le palier "
+"gratuit de Gemini autorise ~10 requêtes/min par modèle ; mettez 9 pour "
+"rester dessous."
+
+#: ../../guides/backends.md:60
+msgid ""
+"`gemini_fallback_model` — tried when the primary model is still quota-"
+"exhausted (HTTP 429) after retries. Google quotas are per-model, so a "
+"different model usually still has budget."
+msgstr ""
+"`gemini_fallback_model` — tenté quand le modèle principal reste à quota "
+"épuisé (HTTP 429) après les retries. Les quotas Google sont par modèle, donc"
+" un autre modèle a souvent encore du budget."
+
+#: ../../guides/backends.md:63
+msgid ""
+"A model with **zero free-tier quota** answers 429 with a misleading \"retry "
+"in N s\" — if that happens consistently, the model needs billing, not "
+"patience; pick another model."
+msgstr ""
+"Un modèle avec **zéro quota gratuit** répond 429 avec un « retry in N s » "
+"trompeur — si ça arrive systématiquement, le modèle exige une facturation, "
+"pas de la patience ; prenez un autre modèle."
+
+#: ../../guides/backends.md:67
+msgid "The Chronicler"
+msgstr "Le Chroniqueur"
+
+#: ../../guides/backends.md:69
+msgid ""
+"`chronicler_minutes_interval` (in-game minutes, default 720 = 12 h) paces "
+"the **Chronicler**, the background pass that simulates the off-screen world "
+"each time the in-game clock crosses the interval — one long time-skip "
+"triggers exactly one simulation."
+msgstr ""
+"`chronicler_minutes_interval` (minutes in-game, défaut 720 = 12 h) cadence "
+"le **Chroniqueur**, la passe d'arrière-plan qui simule le monde hors-champ "
+"chaque fois que l'horloge in-game franchit l'intervalle — un long saut "
+"temporel ne déclenche qu'une seule simulation."
+
+#: ../../guides/backends.md:74
+msgid "Building backends from Python"
+msgstr "Construire des backends depuis Python"
+
+#: ../../guides/backends.md:84
+msgid "Or construct one directly — useful to plug the engine into your own stack:"
+msgstr ""
+"Ou construisez-en un directement — utile pour brancher le moteur dans votre "
+"propre pile :"
+
+#: ../../guides/backends.md:97
+#, python-brace-format
+msgid ""
+"{py:class}`axiom.session.Session` also accepts separate `hero_llm` and "
+"`time_llm` backends if you want different models per role."
+msgstr ""
+"{py:class}`axiom.session.Session` accepte aussi des backends `hero_llm` et "
+"`time_llm` séparés si vous voulez un modèle différent par rôle."
+
+#: ../../guides/backends.md:100
+msgid "Environment overrides"
+msgstr "Surcharges par variables d'environnement"
+
+#: ../../guides/backends.md:102
+msgid ""
+"`AXIOM_CONFIG_DIR` — where `settings.json` lives (default "
+"`~/.config/AxiomAI/`)."
+msgstr "`AXIOM_CONFIG_DIR` — où vit `settings.json` (défaut `~/.config/AxiomAI/`)."
+
+#: ../../guides/backends.md:104
+msgid ""
+"`AXIOM_DATA_DIR` — the data root for universes, saves, vector memory and "
+"generated assets (default `~/AxiomAI/`)."
+msgstr ""
+"`AXIOM_DATA_DIR` — la racine de données pour les univers, sauvegardes, "
+"mémoire vectorielle et images générées (défaut `~/AxiomAI/`)."
+

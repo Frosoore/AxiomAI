@@ -7,8 +7,8 @@ Ollama exposes an OpenAI-compatible REST API.  This client targets the
 /api/chat endpoint for multi-turn conversation and /api/tags for the
 health check.  Both streaming and non-streaming modes are supported.
 
-Typical usage
--------------
+Typical usage::
+
     from axiom.backends.ollama import OllamaClient
 
     llm = OllamaClient(base_url="http://localhost:11434", model_name="llama3.2")

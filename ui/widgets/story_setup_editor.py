@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QSpinBox,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 
 class StorySetupEditorWidget(QWidget):

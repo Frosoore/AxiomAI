@@ -1,0 +1,183 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/universe-format.md:1
+msgid "The Universe-as-Code format"
+msgstr "Le format Universe-as-Code"
+
+#: ../../guides/universe-format.md:3
+msgid ""
+"An Axiom universe can be defined entirely as a **tree of plain-text files** "
+"(TOML and Markdown). The text is the source of truth; the SQLite `.db` the "
+"engine actually runs on is a **compiled cache**, regenerated whenever the "
+"source changes. This makes universes diff-able, reviewable and shareable on "
+"Git, like code."
+msgstr ""
+"Un univers Axiom peut être défini entièrement comme une **arborescence de "
+"fichiers texte** (TOML et Markdown). Le texte est la source de vérité ; le "
+"`.db` SQLite sur lequel tourne réellement le moteur est un **cache "
+"compilé**, régénéré dès que la source change. Les univers deviennent ainsi "
+"diffables, relisibles et partageables sur Git, comme du code."
+
+#: ../../guides/universe-format.md:15
+msgid ""
+"Only the **definition** of the universe lives in the source tree (entities, "
+"rules, lore, map…). Player saves are runtime data, stored separately — see "
+"[Saves, rewind and sharing](saves.md)."
+msgstr ""
+"Seule la **définition** de l'univers vit dans l'arborescence source "
+"(entités, règles, lore, carte…). Les sauvegardes des joueurs sont des "
+"données runtime, stockées à part — voir [Sauvegardes, rewind et "
+"partage](saves.md)."
+
+#: ../../guides/universe-format.md:19
+msgid "Layout"
+msgstr "Organisation"
+
+#: ../../guides/universe-format.md:46
+msgid ""
+"Every folder except `universe.toml` is optional. Files named `_index.toml` "
+"are ignored, and so is anything under `.axiom-cache/` and `.git/`."
+msgstr ""
+"Tous les dossiers sont optionnels, sauf `universe.toml`. Les fichiers nommés"
+" `_index.toml` sont ignorés, ainsi que tout ce qui se trouve sous `.axiom-"
+"cache/` et `.git/`."
+
+#: ../../guides/universe-format.md:49
+msgid "`universe.toml`"
+msgstr "`universe.toml`"
+
+#: ../../guides/universe-format.md:79
+msgid ""
+"`global_lore` / `first_message` may be given inline or via a `*_file` path; "
+"referenced files are excluded from the lore book."
+msgstr ""
+"`global_lore` / `first_message` peuvent être donnés inline ou via un chemin "
+"`*_file` ; les fichiers référencés sont exclus du livre de lore."
+
+#: ../../guides/universe-format.md:82
+msgid "Entities — `entities/*.toml`"
+msgstr "Entités — `entities/*.toml`"
+
+#: ../../guides/universe-format.md:84
+msgid "One file per entity:"
+msgstr "Un fichier par entité :"
+
+#: ../../guides/universe-format.md:99
+msgid "Stat definitions — `stats/definitions.toml`"
+msgstr "Définitions de stats — `stats/definitions.toml`"
+
+#: ../../guides/universe-format.md:110
+msgid "Rules — `rules/*.toml`"
+msgstr "Règles — `rules/*.toml`"
+
+#: ../../guides/universe-format.md:112
+msgid ""
+"One file per rule. Conditions and actions are stored as JSON-compatible "
+"structures and evaluated by the engine each turn:"
+msgstr ""
+"Un fichier par règle. Les conditions et actions sont stockées en structures "
+"compatibles JSON et évaluées par le moteur à chaque tour :"
+
+#: ../../guides/universe-format.md:130
+msgid "Locations — `locations/map.toml`"
+msgstr "Lieux — `locations/map.toml`"
+
+#: ../../guides/universe-format.md:148
+msgid "Lore book — `lore/**/*.md`"
+msgstr "Livre de lore — `lore/**/*.md`"
+
+#: ../../guides/universe-format.md:150
+msgid ""
+"Every Markdown file under `lore/` (recursively) becomes a lore-book entry, "
+"except files referenced from `universe.toml`. An optional **TOML "
+"frontmatter** between `+++` delimiters carries the metadata:"
+msgstr ""
+"Chaque fichier Markdown sous `lore/` (récursivement) devient une entrée du "
+"livre de lore, sauf les fichiers référencés depuis `universe.toml`. Un "
+"**frontmatter TOML** optionnel entre délimiteurs `+++` porte les métadonnées"
+" :"
+
+#: ../../guides/universe-format.md:164
+msgid ""
+"Without frontmatter, the `entry_id` is derived from the relative path and "
+"the name from the file name. The body is preserved byte-for-byte (compile → "
+"decompile round-trips are lossless)."
+msgstr ""
+"Sans frontmatter, l'`entry_id` est dérivé du chemin relatif et le nom du nom"
+" de fichier. Le corps est préservé octet pour octet (les allers-retours "
+"compile → decompile sont sans perte)."
+
+#: ../../guides/universe-format.md:168
+msgid "Scheduled events — `events/*.toml`"
+msgstr "Événements programmés — `events/*.toml`"
+
+#: ../../guides/universe-format.md:170
+msgid "Events fire when the in-game clock reaches `trigger_minute`:"
+msgstr ""
+"Les événements se déclenchent quand l'horloge in-game atteint "
+"`trigger_minute` :"
+
+#: ../../guides/universe-format.md:179
+msgid "Items — `items/*.toml`"
+msgstr "Objets — `items/*.toml`"
+
+#: ../../guides/universe-format.md:190
+msgid "Story setup — `setup/questions.toml`"
+msgstr "Mise en place de l'histoire — `setup/questions.toml`"
+
+#: ../../guides/universe-format.md:192
+msgid "Questions asked when a new game starts:"
+msgstr "Questions posées au démarrage d'une nouvelle partie :"
+
+#: ../../guides/universe-format.md:204
+msgid "Compilation and the cache"
+msgstr "Compilation et cache"
+
+#: ../../guides/universe-format.md:206
+msgid ""
+"`axiom compile my-world/` hashes the whole source tree and writes the "
+"compiled database to `my-world/.axiom-cache/universe.db`, plus the hash, so "
+"unchanged sources are not recompiled (`--force` overrides this; `-o` chooses"
+" another output path). During authoring, `axiom dev my-world/` watches the "
+"tree and recompiles on every change."
+msgstr ""
+"`axiom compile my-world/` hashe toute l'arborescence source et écrit la base"
+" compilée dans `my-world/.axiom-cache/universe.db`, plus le hash, pour ne "
+"pas recompiler une source inchangée (`--force` outrepasse ; `-o` choisit un "
+"autre chemin de sortie). Pendant l'écriture, `axiom dev my-world/` surveille"
+" l'arborescence et recompile à chaque changement."
+
+#: ../../guides/universe-format.md:212
+msgid "To **share** a universe, pack it into a single `.axiom` archive:"
+msgstr "Pour **partager** un univers, empaquetez-le en une archive `.axiom` unique :"
+
+#: ../../guides/universe-format.md:219
+#, python-brace-format
+msgid ""
+"From Python, the same operations are available in {py:mod}`axiom.compile`, "
+"{py:mod}`axiom.decompile`, {py:mod}`axiom.package` and {py:mod}`axiom.dev`."
+msgstr ""
+"Depuis Python, les mêmes opérations sont disponibles dans "
+"{py:mod}`axiom.compile`, {py:mod}`axiom.decompile`, {py:mod}`axiom.package` "
+"et {py:mod}`axiom.dev`."
+

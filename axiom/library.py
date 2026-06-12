@@ -1,10 +1,11 @@
-"""axiom.library — Universe-as-Code : découverte des univers installés.
+"""axiom.library — Universe-as-Code: discovery of installed universes.
 
-Le Hub listait historiquement les `*.db` à plat dans `~/AxiomAI/universes/`.
-Avec le Pilier 2, un univers importé (`.axiom` v2) ou créé en mode source vit
-dans un **dossier** `universes/<name>/` (universe.toml + `.axiom-cache/universe.db`).
-Ce module fournit la découverte unifiée des deux formes, côté moteur (zéro Qt) —
-le `DbWorker` du Hub n'est qu'une coquille au-dessus.
+The Hub historically listed flat `*.db` files in `~/AxiomAI/universes/`. With
+Universe-as-Code, an imported universe (`.axiom` v2) or one created in source
+mode lives in a **folder** `universes/<name>/` (universe.toml +
+`.axiom-cache/universe.db`). This module provides the unified discovery of
+both forms, engine-side (zero Qt) — the Hub's `DbWorker` is just a shell on
+top.
 """
 
 from __future__ import annotations
@@ -21,14 +22,14 @@ _SOURCE_MARKER = "universe.toml"
 
 
 class LibraryError(Exception):
-    """Erreur de gestion de la bibliothèque d'univers."""
+    """Universe library management error."""
 
 
 def universe_root_for(db_path: str | Path) -> Path | None:
-    """Retourne le dossier source d'un univers si `db_path` est son cache compilé.
+    """Return a universe's source folder when `db_path` is its compiled cache.
 
-    `universes/<name>/.axiom-cache/universe.db` → `universes/<name>/`.
-    Retourne None pour un `.db` plat (legacy) ou un chemin quelconque.
+    `universes/<name>/.axiom-cache/universe.db` maps to `universes/<name>/`.
+    Returns None for a flat `.db` (legacy) or any other path.
     """
     db_path = Path(db_path)
     if db_path.parent.name != CACHE_DIRNAME:
@@ -38,20 +39,21 @@ def universe_root_for(db_path: str | Path) -> Path | None:
 
 
 def discover_universes(library_dir: str | Path) -> list[dict]:
-    """Liste les univers jouables d'un dossier bibliothèque.
+    """List the playable universes of a library folder.
 
-    Deux formes reconnues :
-    - `*.db` à plat (legacy) ;
-    - sous-dossier contenant `universe.toml` (Universe-as-Code), compilé à la
-      demande si le cache est absent/périmé (no-op si le hash est inchangé).
+    Two forms are recognised:
 
-    Un dossier source malformé est ignoré (log warning) : il ne doit pas
-    empêcher le Hub d'afficher le reste de la bibliothèque.
+    - flat `*.db` (legacy);
+    - a subfolder containing `universe.toml` (Universe-as-Code), compiled on
+      demand when the cache is missing/stale (no-op when the hash is
+      unchanged).
+
+    A malformed source folder is skipped (warning logged): it must not prevent
+    the Hub from showing the rest of the library.
 
     Returns:
-        Liste de dicts {db_path, source_dir, name, last_updated, difficulty},
-        triée par nom de fichier/dossier. `source_dir` vaut None pour un `.db`
-        plat.
+        List of dicts {db_path, source_dir, name, last_updated, difficulty},
+        sorted by file/folder name. `source_dir` is None for a flat `.db`.
     """
     library_dir = Path(library_dir)
     entries: list[dict] = []
@@ -81,14 +83,14 @@ def discover_universes(library_dir: str | Path) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def diff_source_trees(before_dir: str | Path, after_dir: str | Path) -> list[dict]:
-    """Diff texte entre deux arborescences source (zones protégées exclues).
+    """Text diff between two source trees (protected areas excluded).
 
-    Sert à la prévisualisation : `before_dir` = source réelle, `after_dir` =
-    arbre temporaire reflétant ce que la source deviendrait.
+    Used for previews: `before_dir` is the real source, `after_dir` a temporary
+    tree reflecting what the source would become.
 
     Returns:
-        [{"path": str, "status": "added"|"modified"|"removed", "diff": str}]
-        — `diff` est un diff unifié, trié par chemin.
+        A list of dicts with keys path, status ('added' | 'modified' |
+        'removed') and diff — a unified diff, sorted by path.
     """
     import difflib
 
@@ -124,12 +126,12 @@ def diff_source_trees(before_dir: str | Path, after_dir: str | Path) -> list[dic
 
 def apply_staged_source(staged_dir: str | Path, src_dir: str | Path,
                         db_path: str | Path) -> Path:
-    """Applique un arbre source validé : miroir vers la source + recompilation.
+    """Apply a validated source tree: mirror it to the source + recompile.
 
-    `staged_dir` est un instantané complet de la future source (produit par la
-    sandbox de prévisualisation) : il remplace la source — zones protégées
-    (`.axiom-cache/`, `.git/`) intactes — puis la définition est recompilée
-    **in-place** dans `db_path` (runtime intact).
+    `staged_dir` is a full snapshot of the future source (produced by the
+    preview sandbox): it replaces the source — protected areas
+    (`.axiom-cache/`, `.git/`) untouched — then the definition is recompiled
+    **in-place** into `db_path` (runtime intact).
     """
     from axiom.dev import refresh_definition
 
@@ -142,18 +144,18 @@ def apply_staged_source(staged_dir: str | Path, src_dir: str | Path,
 # ---------------------------------------------------------------------------
 
 def convert_flat_db_to_folder(db_path: str | Path) -> dict:
-    """Convertit un `.db` plat (legacy) en univers-dossier Universe-as-Code.
+    """Convert a flat legacy `.db` into a Universe-as-Code folder universe.
 
-    - la définition est décompilée vers `<parent>/<stem>/` (même clé d'univers :
-      les saves gardent leur dossier `saves/<stem>/`) ;
-    - chaque save embarquée est extraite vers son propre fichier séparé, puis
-      reliée à la nouvelle source (resync à l'ouverture, §7.6) ;
-    - la source est compilée (cache `.axiom-cache/universe.db`) ;
-    - l'original est conservé en `<nom>.db.bak` (récupération manuelle possible,
-      et il disparaît de la découverte du Hub — pas de doublon).
+    - the definition is decompiled to `<parent>/<stem>/` (same universe key:
+      the saves keep their `saves/<stem>/` folder);
+    - every embedded save is extracted to its own separate file, then linked
+      to the new source (resynchronised on open);
+    - the source is compiled (`.axiom-cache/universe.db` cache);
+    - the original is kept as `<name>.db.bak` (manual recovery stays possible,
+      and it disappears from the Hub discovery — no duplicate).
 
     Returns:
-        {"source_dir": str, "db_path": str} — `db_path` est le nouveau cache.
+        A dict with keys source_dir and db_path — db_path is the new cache.
     """
     import sqlite3
 
@@ -163,13 +165,13 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
 
     db_path = Path(db_path)
     if not db_path.is_file():
-        raise LibraryError(f"Univers introuvable : {db_path}")
+        raise LibraryError(f"Universe not found: {db_path}")
     if db_path.parent.name == CACHE_DIRNAME:
-        raise LibraryError("Cet univers est déjà un univers-dossier.")
+        raise LibraryError("This universe is already a folder universe.")
 
     root = db_path.parent / db_path.stem
     if root.exists():
-        raise LibraryError(f"Le dossier existe déjà : {root}")
+        raise LibraryError(f"Folder already exists: {root}")
 
     # 0. Provenance : AVANT extraction et décompilation, marquer 'runtime' les
     # entités joueur d'un db d'avant la colonne `origin` — sinon le joueur
@@ -199,7 +201,7 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
         _strip_runtime_entity_files(db_path, root)
         cache_db = compile_universe(root)
     except (DecompileError, CompileError) as exc:
-        raise LibraryError(f"Conversion impossible : {exc}") from exc
+        raise LibraryError(f"Conversion failed: {exc}") from exc
 
     # 3. Les saves extraites pointent vers la nouvelle source (resync §7.6).
     src_hash = hash_directory(root)
@@ -240,15 +242,15 @@ _PROTECTED_TOP_LEVEL = (CACHE_DIRNAME, ".git")
 
 
 def sync_source_if_any(db_path: str | Path) -> bool:
-    """Après une écriture de définition (Creator Studio, Populate) : si le `.db`
-    est le cache d'un univers-dossier, réécrit l'arbo texte pour qu'elle reste
-    la vérité (TICKET-027).
+    """After a definition write (Creator Studio, Populate): when the `.db` is
+    the cache of a folder universe, rewrite the text tree so it stays the
+    source of truth (TICKET-027).
 
-    Ne lève jamais : une sauvegarde Studio ne doit pas échouer parce que le
-    miroir texte a échoué (log warning).
+    Never raises: a Studio save must not fail because the text mirror failed
+    (warning logged).
 
     Returns:
-        True si une source a été resynchronisée.
+        True when a source was resynchronised.
     """
     root = universe_root_for(db_path)
     if root is None:
@@ -325,16 +327,16 @@ def _strip_runtime_entity_files(db_path: Path, tree: Path) -> None:
 
 
 def sync_source_from_db(db_path: str | Path, src_dir: str | Path) -> None:
-    """Réécrit l'arborescence source d'un univers depuis son `.db` (miroir).
+    """Rewrite a universe's source tree from its `.db` (mirror).
 
-    Décompile vers un dossier temporaire puis aligne `src_dir` dessus :
-    fichiers ajoutés/écrasés, fichiers orphelins supprimés (la définition
-    retirée dans le Studio disparaît aussi du texte). `.axiom-cache/` et
-    `.git/` ne sont jamais touchés. Les entités `origin='runtime'` (joueur,
-    PNJ nés en jeu) ne sont pas exportées vers la source.
+    Decompiles to a temporary folder then aligns `src_dir` on it: files are
+    added/overwritten, orphan files removed (definition removed in the Studio
+    also disappears from the text). `.axiom-cache/` and `.git/` are never
+    touched. Entities with `origin='runtime'` (the player, NPCs born in game)
+    are not exported to the source.
 
-    Le hash de cache est mis à jour : le `.db` qui vient d'être écrit EST la
-    compilation de la source fraîchement réécrite (round-trip lossless).
+    The cache hash is updated: the `.db` that was just written IS the
+    compilation of the freshly rewritten source (lossless round-trip).
     """
     import tempfile
 

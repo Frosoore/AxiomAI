@@ -1,14 +1,14 @@
-"""axiom.decompile — Universe-as-Code : décompilation d'un `.db` en arborescence source.
+"""axiom.decompile — Universe-as-Code: decompiling a `.db` into a source tree.
 
-Pilier 2 (doc §7.10 + annexe C.1). L'inverse de `axiom.compile` : lit un univers
-SQLite existant et régénère l'arborescence de fichiers texte (TOML/MD) équivalente.
-Sert à migrer les univers `.db` v1 vers le format texte versionnable.
+The inverse of `axiom.compile`: reads an existing SQLite universe and
+regenerates the equivalent tree of text files (TOML/MD). Also used to migrate
+v1 `.db` universes to the versionable text format.
 
-Préserve : entity_ids, rule_ids, calendrier, lore complet, locations + connections,
+Preserves: entity_ids, rule_ids, calendar, full lore, locations + connections,
 scheduled events, story setup, item & stat definitions, personas.
 
-Écriture TOML : `tomlkit` (préserve un formatage propre, utile pour l'édition humaine).
-Zéro dépendance Qt.
+TOML writing: `tomlkit` (keeps the formatting clean, helpful for human editing).
+Zero Qt dependency.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ _FIRST_MESSAGE_FILE = "lore/_first_message.md"
 
 
 class DecompileError(Exception):
-    """Erreur de décompilation d'un univers."""
+    """Universe decompilation error."""
 
 
 def _nl(text: str) -> str:
@@ -60,10 +60,10 @@ def _write_text(path: Path, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 def read_definition(db_path: str | Path) -> dict[str, Any]:
-    """Lit toutes les tables de **définition** d'un univers en structures normalisées.
+    """Read all the **definition** tables of a universe into normalised structures.
 
-    Ne lit jamais les tables runtime/save. Utilisé par la décompilation et par les
-    tests de round-trip (comparaison sémantique).
+    Never reads the runtime/save tables. Used by the decompilation and by the
+    round-trip tests (semantic comparison).
     """
     path = str(db_path)
     with get_connection(path) as conn:
@@ -300,18 +300,18 @@ class _UniqueNames:
 # ---------------------------------------------------------------------------
 
 def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
-    """Décompile un univers `.db` en arborescence source texte.
+    """Decompile a `.db` universe into a text source tree.
 
     Args:
-        db_path:    Chemin du `.db` univers à lire.
-        output_dir: Dossier de destination (créé s'il n'existe pas).
+        db_path:    Path of the universe `.db` to read.
+        output_dir: Destination folder (created if missing).
 
     Returns:
-        Le chemin du dossier source généré.
+        The path of the generated source folder.
     """
     db_path = Path(db_path)
     if not db_path.exists():
-        raise DecompileError(f"Univers introuvable : {db_path}")
+        raise DecompileError(f"Universe not found: {db_path}")
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

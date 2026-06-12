@@ -1,21 +1,21 @@
 """
 axiom/session.py
 
-API publique de haut niveau du moteur Axiom (headless, zéro Qt).
+High-level public API of the Axiom engine (headless, zero Qt).
 
-Une `Session` compose les briques du moteur (Arbitrator, EventSourcer,
-CheckpointManager, VectorMemory) et expose une boucle de jeu synchrone qu'une
-app (GUI, CLI, serveur) peut piloter :
+A `Session` composes the engine building blocks (Arbitrator, EventSourcer,
+CheckpointManager, VectorMemory) and exposes a synchronous game loop that any
+application (GUI, CLI, server) can drive::
 
     from axiom.session import Session
     from axiom.config import load_config, build_llm_from_config
 
     llm = build_llm_from_config(load_config())
     sess = Session("universes/my_world.axiom", save_id, llm=llm)
-    result = sess.take_turn("J'ouvre la porte.", on_token=print)
+    result = sess.take_turn("I open the door.", on_token=print)
 
-Le streaming se fait via le callback `on_token`. La méthode est synchrone :
-côté GUI, l'app l'enveloppe dans un QThread (cf. workers/narrative_worker.py).
+Streaming happens through the `on_token` callback. The method is synchronous:
+on the GUI side, the app wraps it in a QThread (see workers/narrative_worker.py).
 """
 
 from __future__ import annotations
@@ -46,21 +46,21 @@ def _emit(callback: Callable[[str], None] | None, message: str) -> None:
 
 
 class Session:
-    """Wrapper de haut niveau pour jouer une sauvegarde d'un univers.
+    """High-level wrapper to play one save of a universe.
 
     Args:
-        universe_path:  Chemin du fichier univers (.axiom / .db SQLite).
-        save_id:        Identifiant de la sauvegarde active.
-        llm:            Backend LLM déjà construit (cf. build_llm_from_config).
-        vector_memory:  Mémoire vectorielle. Si None, une `VectorMemory` est
-                        créée sous `<data_dir>/vector/<save_id>` (ou le dossier
-                        vector par défaut de l'app si data_dir est None).
-        data_dir:       Racine de données optionnelle pour l'injection de chemins
-                        (utilisée seulement pour la VectorMemory par défaut).
-        mode:           Mode de jeu ('Normal', 'Hardcore', 'Companion').
-        hero_llm:       Backend optionnel pour la décision du héros (mode
-                        Companion). Si None, construit paresseusement depuis la
-                        config (modèle local `extraction_model`), comme le worker.
+        universe_path:  Path of the universe file (.axiom / SQLite .db).
+        save_id:        Identifier of the active save.
+        llm:            Pre-built LLM backend (see build_llm_from_config).
+        vector_memory:  Vector memory. If None, a `VectorMemory` is created
+                        under `<data_dir>/vector/<save_id>` (or the app's
+                        default vector folder when data_dir is None).
+        data_dir:       Optional data root for path injection (only used for
+                        the default VectorMemory).
+        mode:           Game mode ('Normal', 'Hardcore', 'Companion').
+        hero_llm:       Optional backend for the hero's decision (Companion
+                        mode). If None, lazily built from the config (local
+                        `extraction_model`), like the worker does.
     """
 
     def __init__(
@@ -138,11 +138,11 @@ class Session:
 
     @property
     def turn_id(self) -> int:
-        """Numéro du dernier tour joué (0 si la partie n'a pas commencé)."""
+        """Number of the last played turn (0 if the game has not started)."""
         return self._turn_id
 
     def submit_intent(self, entity_id: str, intent_text: str) -> None:
-        """Soumet une intention d'action au Pool pour le tour courant."""
+        """Submit an action intent to the pool for the current turn."""
         self._intent_pool[entity_id] = intent_text
 
     def resolve_tick(
@@ -155,7 +155,7 @@ class Session:
         verbosity_level: str = "balanced",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
-        """Résout toutes les intentions actuellement dans le Pool en un seul Tick."""
+        """Resolve every intent currently in the pool as a single tick."""
         self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
         history = self._load_history()
@@ -275,7 +275,8 @@ class Session:
         hero_action: str | None = None,
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
-        """Exécute un tour complet (synchrone) et retourne le résultat.
+        """Run a full turn (synchronously) and return the result.
+
         Wraps `submit_intent` and `resolve_tick` for backward compatibility.
         """
         self._intent_pool.clear()
@@ -305,10 +306,10 @@ class Session:
         )
 
     def rewind(self, target_turn_id: int) -> dict[str, int]:
-        """Ramène la sauvegarde à son état au tour `target_turn_id`.
+        """Bring the save back to its state at turn `target_turn_id`.
 
-        Invalide le cache de stats de l'Arbitrator et resynchronise `turn_id`.
-        Retourne le résumé fourni par `CheckpointManager.rewind`.
+        Invalidates the Arbitrator's stats cache and resynchronises `turn_id`.
+        Returns the summary provided by `CheckpointManager.rewind`.
         """
         summary = self._checkpoints.rewind(self._save_id, target_turn_id)
         self._arbitrator.invalidate_stats_cache()
@@ -320,7 +321,7 @@ class Session:
         return summary
 
     def list_checkpoints(self) -> list[int]:
-        """Liste les tours pour lesquels un checkpoint (snapshot) existe."""
+        """List the turns for which a checkpoint (snapshot) exists."""
         return self._checkpoints.list_checkpoints(self._save_id)
 
     def regenerate_variant(
@@ -334,15 +335,16 @@ class Session:
         player_id: str = "player_1",
         on_token: Callable[[str], None] | None = None,
     ) -> str:
-        """Régénère une variante du texte narratif du tour `turn_id` (B4).
+        """Regenerate a variant of turn `turn_id`'s narrative text.
 
-        Rejoue le même message joueur pour produire un texte alternatif (sans
-        réévaluer règles ni stats) ; la variante est ajoutée au payload
-        multiverse du tour et devient active. Délègue à `axiom.regenerate`.
+        Replays the same player message to produce an alternative text
+        (without re-evaluating rules or stats); the variant is appended to the
+        turn's multiverse payload and becomes active. Delegates to
+        `axiom.regenerate`.
 
         Args:
-            history: historique event-sourcé (`user_input`/`narrative_text`)
-                     jusqu'au tour précédent.
+            history: event-sourced history (`user_input`/`narrative_text`)
+                     up to the previous turn.
         """
         from axiom.regenerate import regenerate_variant
 
@@ -362,10 +364,10 @@ class Session:
         )
 
     def current_stats(self) -> dict[str, dict[str, str]]:
-        """Stats matérialisées courantes par entité (reconstruit le State_Cache).
+        """Current materialised stats per entity (rebuilds the State_Cache).
 
         Returns:
-            dict `entity_id -> {stat_key: stat_value}`.
+            Mapping of entity_id to a dict of stat_key to stat_value strings.
         """
         from axiom.schema import get_connection
 

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QFormLayout, QLineEdit, QSplitter
 )
 from axiom.time_system import CalendarConfig, TimeSystem
-from axiom.localization import tr
+from core.localization import tr, format_time
 
 class ScheduledEventsEditorWidget(QWidget):
     """Widget for managing world events and the universe's calendar."""
@@ -251,7 +251,7 @@ class ScheduledEventsEditorWidget(QWidget):
         minute = int(min_w.value())
         
         total_mins = self._time_system.components_to_minutes(day, hour, minute)
-        time_str = self._time_system.get_time_string(total_mins)
+        time_str = format_time(self._time_system, total_mins)
         
         it_title = self._table.item(row, 3)
         if it_title:
@@ -260,7 +260,7 @@ class ScheduledEventsEditorWidget(QWidget):
     def _update_preview_all(self) -> None:
         for r in range(self._table.rowCount()):
             self._update_preview(r)
-        self._preview_label.setText(self._time_system.get_time_string(0))
+        self._preview_label.setText(format_time(self._time_system, 0))
 
     @Slot()
     def _on_cal_changed(self) -> None:
@@ -282,7 +282,7 @@ class ScheduledEventsEditorWidget(QWidget):
             if m_spin: m_spin.setRange(0, max(0, self._calendar.minutes_per_hour - 1))
             self._update_preview(r)
         
-        self._preview_label.setText(self._time_system.get_time_string(0))
+        self._preview_label.setText(format_time(self._time_system, 0))
         self.changed.emit()
 
     @Slot()

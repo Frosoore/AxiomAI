@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from axiom.localization import tr
+from core.localization import tr
 
 
 class ConstantsSidebar(QWidget):
@@ -98,7 +98,7 @@ class ConstantsSidebar(QWidget):
     @Slot(list)
     def refresh(self, entity_snapshots: list[dict]) -> None:
         """Rebuild the stats display from fresh entity snapshot data."""
-        from axiom.localization import tr, fmt_num
+        from core.localization import tr, fmt_num
         # Remove all existing widgets (except the trailing stretch)
         while self._entities_layout.count() > 1:
             item = self._entities_layout.takeAt(0)

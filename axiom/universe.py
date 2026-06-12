@@ -1,10 +1,10 @@
 """
 axiom/universe.py
 
-Représentation headless d'un univers Axiom (un fichier `.axiom` = base SQLite).
+Headless representation of an Axiom universe (a `.axiom` file = SQLite database).
 
-Expose les métadonnées (nom, system prompt) et la liste des sauvegardes, sans
-aucune dépendance Qt. Point d'entrée : `Universe.load(path)`.
+Exposes the metadata (name, system prompt) and the list of saves, with no Qt
+dependency whatsoever. Entry point: `Universe.load(path)`.
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from axiom.schema import get_connection
 
 
 class Universe:
-    """Un univers chargé (lecture seule des métadonnées).
+    """A loaded universe (read-only view of its metadata).
 
     Attributes:
-        path:          Chemin du fichier univers (.axiom / .db SQLite).
-        name:          Nom affiché de l'univers.
-        system_prompt: Prompt système fondateur passé au narrateur.
+        path:          Path of the universe file (.axiom / SQLite .db).
+        name:          Display name of the universe.
+        system_prompt: Founding system prompt handed to the narrator.
     """
 
     def __init__(self, path: str, name: str, system_prompt: str) -> None:
@@ -30,13 +30,13 @@ class Universe:
 
     @classmethod
     def load(cls, universe_path: str | Path) -> "Universe":
-        """Charge un univers depuis son fichier SQLite.
+        """Load a universe from its SQLite file.
 
         Args:
-            universe_path: Chemin vers le fichier univers existant.
+            universe_path: Path to the existing universe file.
 
         Returns:
-            Une instance `Universe` peuplée depuis `Universe_Meta`.
+            A `Universe` instance populated from `Universe_Meta`.
         """
         path = str(universe_path)
         with get_connection(path) as conn:
@@ -49,6 +49,6 @@ class Universe:
         return cls(path, name, system_prompt)
 
     def list_saves(self) -> list[dict]:
-        """Liste les sauvegardes de cet univers (séparées §7.6 + embarquées)."""
+        """List this universe's saves (separate save files + embedded legacy ones)."""
         from axiom.savestore import list_saves
         return list_saves(self.path)

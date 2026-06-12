@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from axiom.localization import tr
+from core.localization import tr
 
 # Fichiers texte éditables de l'arbo source. Le cache compilé et .git sont
 # exclus de l'affichage (zones protégées, cf. axiom.library).

@@ -1,0 +1,79 @@
+# Build & deploy the axiomai-engine documentation site (docs/) to GitHub Pages.
+#
+# Builds both languages (en + fr) and publishes:
+#   https://<owner>.github.io/AxiomAI/        -> redirects to /en/
+#   https://<owner>.github.io/AxiomAI/en/     English site
+#   https://<owner>.github.io/AxiomAI/fr/     French site
+#
+# One-time setup: in the repo Settings -> Pages, set "Source" to
+# "GitHub Actions". Nothing else to do; every push to main redeploys.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "axiom/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Heavy runtime deps (chromadb, torch, the Gemini SDK...) are NOT
+      # installed: docs/conf.py mocks them for autodoc.
+      - name: Install Sphinx toolchain
+        run: pip install sphinx furo myst-parser
+
+      - name: Build English site
+        run: sphinx-build -b html -W docs site/en
+
+      - name: Build French site
+        run: sphinx-build -b html -W -D language=fr docs site/fr
+
+      - name: Root redirect to /en/
+        run: |
+          cat > site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0; url=en/">
+              <link rel="canonical" href="en/">
+              <title>Axiom Engine documentation</title>
+            </head>
+            <body><a href="en/">Axiom Engine documentation (English)</a></body>
+          </html>
+          EOF
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

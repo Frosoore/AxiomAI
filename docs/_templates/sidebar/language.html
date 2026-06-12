@@ -1,0 +1,18 @@
+<div class="sidebar-language" role="navigation" aria-label="Language switcher">
+  <a href="#" data-lang="en" {% if language == "en" %}class="current-lang"{% endif %}>English</a>
+  <span aria-hidden="true">·</span>
+  <a href="#" data-lang="fr" {% if language == "fr" %}class="current-lang"{% endif %}>Français</a>
+</div>
+<script>
+  // The site is published as /<base>/en/... and /<base>/fr/... — swap the
+  // language segment of the current URL to reach the same page in the other
+  // language. Falls back to the language root if no segment is found.
+  (function () {
+    document.querySelectorAll(".sidebar-language a[data-lang]").forEach(function (link) {
+      var lang = link.getAttribute("data-lang");
+      var path = window.location.pathname;
+      var swapped = path.replace(/\/(en|fr)\//, "/" + lang + "/");
+      link.href = swapped !== path ? swapped : "../" + lang + "/";
+    });
+  })();
+</script>

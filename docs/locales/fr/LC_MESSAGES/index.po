@@ -1,0 +1,188 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../index.md:54
+msgid "Getting started"
+msgstr "Premiers pas"
+
+#: ../../index.md:61
+msgid "Guides"
+msgstr "Guides"
+
+#: ../../index.md:73
+msgid "Reference"
+msgstr "Référence"
+
+#: ../../index.md:1
+msgid "Axiom Engine"
+msgstr "Axiom Engine"
+
+#: ../../index.md:3
+msgid ""
+"**Axiom Engine** (`axiomai-engine` on PyPI) is a headless, LLM-driven "
+"narrative game engine. It powers the Axiom AI desktop application, but it "
+"has zero GUI dependencies: you can drive it from a Python script, a "
+"terminal, a server — or build your own front-end on top of it."
+msgstr ""
+"**Axiom Engine** (`axiomai-engine` sur PyPI) est un moteur de jeu narratif "
+"headless piloté par LLM. Il propulse l'application de bureau Axiom AI, mais "
+"il n'a aucune dépendance graphique : vous pouvez le piloter depuis un script"
+" Python, un terminal, un serveur — ou construire votre propre interface par-"
+"dessus."
+
+#: ../../index.md:21
+msgid "What it does"
+msgstr "Ce qu'il fait"
+
+#: ../../index.md:23
+msgid ""
+"**Persistent universes** — each world is a self-contained SQLite database "
+"holding entities, stats, rules, lore, locations and scheduled events."
+msgstr ""
+"**Univers persistants** — chaque monde est une base SQLite autonome "
+"contenant entités, stats, règles, lore, lieux et événements programmés."
+
+#: ../../index.md:25
+msgid ""
+"**Universe-as-Code** — a universe can be defined as a versionable tree of "
+"plain-text files (TOML + Markdown); the `.db` is just a compiled cache. "
+"Compile, decompile, hot-reload, share on Git."
+msgstr ""
+"**Universe-as-Code** — un univers peut être défini comme une arborescence "
+"versionnable de fichiers texte (TOML + Markdown) ; le `.db` n'est qu'un "
+"cache compilé. Compilez, décompilez, rechargez à chaud, partagez sur Git."
+
+#: ../../index.md:28
+msgid ""
+"**LLM-arbitrated narration** — a configurable LLM backend (Google Gemini, or"
+" any OpenAI-compatible API such as Ollama) narrates each turn, applies your "
+"universe's rules, and tracks entity stats."
+msgstr ""
+"**Narration arbitrée par LLM** — un backend LLM configurable (Google Gemini,"
+" ou toute API compatible OpenAI comme Ollama) narre chaque tour, applique "
+"les règles de votre univers et suit les stats des entités."
+
+#: ../../index.md:31
+msgid ""
+"**Event sourcing & time travel** — every turn is an event in a journal. "
+"Rewind to any past turn, fork a save into an alternate timeline, or edit a "
+"save state by hand."
+msgstr ""
+"**Event sourcing & voyage dans le temps** — chaque tour est un événement "
+"dans un journal. Revenez à n'importe quel tour passé, forkez une sauvegarde "
+"en chronologie alternative, ou éditez un état de sauvegarde à la main."
+
+#: ../../index.md:34
+msgid ""
+"**Causal time** — an in-game clock advances with the story; an off-screen "
+"\"Chronicler\" simulates the rest of the world while the player is away."
+msgstr ""
+"**Temps causal** — une horloge in-game avance avec l'histoire ; un « "
+"Chroniqueur » hors-champ simule le reste du monde pendant l'absence du "
+"joueur."
+
+#: ../../index.md:36
+msgid ""
+"**Vector memory (RAG)** — long-term memory and lore retrieval backed by a "
+"local vector store."
+msgstr ""
+"**Mémoire vectorielle (RAG)** — mémoire à long terme et récupération du lore"
+" via un magasin vectoriel local."
+
+#: ../../index.md:38
+msgid ""
+"**Content generation** — populate a universe (entities, lore, map, rules…) "
+"with an LLM, from the command line or from Python."
+msgstr ""
+"**Génération de contenu** — peuplez un univers (entités, lore, carte, "
+"règles…) avec un LLM, depuis la ligne de commande ou depuis Python."
+
+#: ../../index.md:40
+msgid ""
+"**Optional scene illustration** — generate an image per turn via Stable "
+"Diffusion WebUI, ComfyUI or the Gemini image API."
+msgstr ""
+"**Illustration de scène optionnelle** — générez une image par tour via "
+"Stable Diffusion WebUI, ComfyUI ou l'API d'images Gemini."
+
+#: ../../index.md:43
+msgid "Where to start"
+msgstr "Par où commencer"
+
+#: ../../index.md:45
+msgid ""
+"**New here?** Follow the [Quickstart](quickstart.md): install the engine, "
+"configure an LLM backend and play your first turn — in Python or straight "
+"from the terminal."
+msgstr ""
+"**Vous débutez ?** Suivez le [Démarrage rapide](quickstart.md) : installez "
+"le moteur, configurez un backend LLM et jouez votre premier tour — en Python"
+" ou directement dans le terminal."
+
+#: ../../index.md:48
+msgid ""
+"**Building a universe?** Read the [Universe-as-Code format](guides/universe-"
+"format.md) and the [CLI guide](guides/cli.md)."
+msgstr ""
+"**Vous construisez un univers ?** Lisez le [format Universe-as-Code](guides"
+"/universe-format.md) et le [guide du CLI](guides/cli.md)."
+
+#: ../../index.md:51
+msgid ""
+"**Integrating the engine?** Head to the [API reference](api/index.md), "
+"generated from the source docstrings."
+msgstr ""
+"**Vous intégrez le moteur ?** Direction la [référence d'API](api/index.md), "
+"générée depuis les docstrings du code."
+
+#: ../../index.md:80
+msgid "Project links"
+msgstr "Liens du projet"
+
+#: ../../index.md:82
+msgid ""
+"[Source repository](https://github.com/Frosoore/AxiomAI) (the engine lives "
+"in the `axiom/` package of the Axiom AI mono-repo)"
+msgstr ""
+"[Dépôt source](https://github.com/Frosoore/AxiomAI) (le moteur vit dans le "
+"paquet `axiom/` du mono-dépôt Axiom AI)"
+
+#: ../../index.md:84
+msgid "[PyPI: axiomai-engine](https://pypi.org/project/axiomai-engine/)"
+msgstr "[PyPI : axiomai-engine](https://pypi.org/project/axiomai-engine/)"
+
+#: ../../index.md:85
+msgid "[Issue tracker](https://github.com/Frosoore/AxiomAI/issues)"
+msgstr "[Suivi des tickets](https://github.com/Frosoore/AxiomAI/issues)"
+
+#: ../../index.md:87
+msgid ""
+"Axiom Engine is free software, licensed under the [GNU AGPL v3 or "
+"later](https://www.gnu.org/licenses/agpl-3.0.html); see the `NOTICE` file "
+"for the attribution requirement (\"Based on Axiom AI by 17h59 and "
+"Frosoore\")."
+msgstr ""
+"Axiom Engine est un logiciel libre, sous licence [GNU AGPL v3 ou "
+"ultérieure](https://www.gnu.org/licenses/agpl-3.0.html) ; voir le fichier "
+"`NOTICE` pour l'obligation de citation (« Based on Axiom AI by 17h59 and "
+"Frosoore »)."
+

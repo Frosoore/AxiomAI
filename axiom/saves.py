@@ -1,19 +1,23 @@
-"""axiom.saves — édition de sauvegardes (créables/modifiables par humain ou LLM).
+"""axiom.saves — save editing (creatable/editable by humans or LLMs).
 
-Pilier 2, Phase 6. Décisions actées (cf. maintenance/B2-…/TODO.md) :
-- **D1** : le journal `Event_Log` reste la **source de vérité** (il fait tourner le rewind).
-  L'édition se fait *par-dessus* : on **matérialise** l'état à un point (replay), on **forke**
-  (journal tronqué), et on **importe** un état édité comme une **nouvelle** save (events « genesis »
-  au tour 0). Jamais d'édition directe d'un dérivé (State_Cache/Snapshots).
-- **D3** : une save importée démarre avec une **mémoire vectorielle vide** (se remplit en jouant).
+Design decisions:
 
-Sélecteur de point : par **tour** (`at_turn`) ou par **temps in-game en minutes** (`at_minute`,
-résolu via la table `Timeline`). Zéro dépendance Qt.
+- **D1**: the `Event_Log` journal stays the **source of truth** (it powers
+  the rewind). Editing happens *on top of it*: the state is **materialised**
+  at a point (replay), **forked** (truncated journal), and an edited state
+  is **imported** as a **new** save ("genesis" events at turn 0). Derived
+  data (State_Cache/Snapshots) is never edited directly.
+- **D3**: an imported save starts with an **empty vector memory** (it fills
+  up as you play).
 
-Format texte éditable : `save_state.toml`
+Point selector: by **turn** (`at_turn`) or by **in-game time in minutes**
+(`at_minute`, resolved through the `Timeline` table). Zero Qt dependency.
+
+Editable text format, `save_state.toml`::
+
     [save]      player_name / difficulty / player_persona
-    [point]     turn_id / in_game_minutes   (informatif à l'export)
-    [state.<entity_id>]   stat = "valeur"     (état effectif des entités)
+    [point]     turn_id / in_game_minutes   (informative at export)
+    [state.<entity_id>]   stat = "value"    (effective entity state)
     [[inventory]]         entity_id / item_id / quantity
     [[modifiers]]         entity_id / stat_key / delta / minutes_remaining
 """
@@ -33,7 +37,7 @@ from axiom.schema import get_connection
 
 
 class SaveError(Exception):
-    """Erreur d'édition/lecture de sauvegarde."""
+    """Save editing/reading error."""
 
 
 # ---------------------------------------------------------------------------
@@ -54,14 +58,14 @@ def resolve_point(
     at_turn: int | None = None,
     at_minute: int | None = None,
 ) -> int:
-    """Résout un sélecteur (tour ou minute in-game) en `turn_id`.
+    """Resolve a selector (turn or in-game minute) into a `turn_id`.
 
-    - `at_turn` : utilisé tel quel.
-    - `at_minute` : dernier tour dont `Timeline.in_game_time <= at_minute`.
-    - aucun : dernier tour de la save.
+    - `at_turn`: used as-is.
+    - `at_minute`: last turn whose `Timeline.in_game_time <= at_minute`.
+    - neither: last turn of the save.
     """
     if at_turn is not None and at_minute is not None:
-        raise SaveError("Préciser soit at_turn, soit at_minute, pas les deux.")
+        raise SaveError("Specify either at_turn or at_minute, not both.")
     with get_connection(db_path) as conn:
         if at_turn is not None:
             return int(at_turn)
@@ -94,11 +98,11 @@ def materialize_state(
     at_turn: int | None = None,
     at_minute: int | None = None,
 ) -> dict[str, Any]:
-    """Matérialise l'état d'une save à un point donné (par replay du journal).
+    """Materialise a save's state at a given point (by replaying the journal).
 
-    Les stats par entité = stats de base de l'univers (`Entity_Stats`) recouvertes
-    par l'état rejoué jusqu'au point (`State_Cache` logique). Inventaire et modifiers
-    sont l'état courant (tables non event-sourcées).
+    Per-entity stats = the universe's base stats (`Entity_Stats`) overlaid
+    with the state replayed up to the point (logical `State_Cache`). Inventory
+    and modifiers are the current state (tables that are not event-sourced).
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
     sourcer = EventSourcer(db_path)
@@ -111,7 +115,7 @@ def materialize_state(
             (save_id,),
         ).fetchone()
         if save_row is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
         # Stats de base (définition d'univers) par entité active.
         base: dict[str, dict[str, str]] = {}
@@ -174,7 +178,7 @@ def export_save_state(
     at_turn: int | None = None,
     at_minute: int | None = None,
 ) -> Path:
-    """Exporte l'état matérialisé d'une save vers un `save_state.toml` éditable."""
+    """Export a save's materialised state to an editable `save_state.toml`."""
     state = materialize_state(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
     doc = tomlkit.document()
 
@@ -230,7 +234,7 @@ def _load_state_toml(path: str | Path) -> dict[str, Any]:
         with open(path, "rb") as fh:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
-        raise SaveError(f"save_state.toml invalide : {exc}") from exc
+        raise SaveError(f"Invalid save_state.toml: {exc}") from exc
 
 
 def import_save_state(
@@ -239,11 +243,11 @@ def import_save_state(
     *,
     player_name: str | None = None,
 ) -> str:
-    """Crée une **nouvelle** save jouable à partir d'un `save_state.toml`.
+    """Create a **new** playable save from a `save_state.toml`.
 
-    Sème l'état via des events « genesis » au tour 0 (entity_create + stat_set),
-    puis matérialise State_Cache, l'inventaire, les modifiers et une entrée Timeline.
-    Mémoire vectorielle vide (D3). Retourne le nouveau save_id.
+    Seeds the state through "genesis" events at turn 0 (entity_create +
+    stat_set), then materialises State_Cache, the inventory, the modifiers and
+    a Timeline entry. Empty vector memory. Returns the new save_id.
     """
     data = _load_state_toml(state_path)
     save_meta = data.get("save", {})
@@ -287,11 +291,11 @@ def import_save_state(
             conn.execute(
                 "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
                 "VALUES (?, ?, ?, ?);",
-                (save_id, 0, in_game_minutes, "Save importée"),
+                (save_id, 0, in_game_minutes, "Save imported"),
             )
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
-        raise SaveError(f"Import impossible (référence invalide ?) : {exc}") from exc
+        raise SaveError(f"Import failed (invalid reference?): {exc}") from exc
 
     sourcer.take_snapshot(save_id, 0)
     return save_id
@@ -308,28 +312,30 @@ def apply_correction(
     *,
     at_turn: int | None = None,
 ) -> int:
-    """Applique une correction à une save **existante** sans réécrire le passé.
+    """Apply a correction to an **existing** save without rewriting the past.
 
-    Les changements de stats deviennent des events `manual_edit` (au tour choisi, défaut =
-    dernier tour) → le journal reste cohérent et append-only, le rewind est préservé, et
-    l'édition est tracée. L'inventaire et les modifiers (non event-sourcés) sont écrits
-    directement.
+    Stat changes become `manual_edit` events (at the chosen turn, default =
+    last turn) — the journal stays consistent and append-only, the rewind is
+    preserved, and the edit is traceable. Inventory and modifiers (not
+    event-sourced) are written directly.
 
-    `patch` = {
-        "entities":  {entity_id: {stat_key: "valeur", ...}},   # stat_set via manual_edit
-        "inventory": [{entity_id, item_id, quantity}, ...],     # upsert (quantity 0 → retrait)
-        "modifiers": [{entity_id, stat_key, delta, minutes_remaining}, ...],  # ajoutés
-    }
+    The `patch` dict has the shape::
+
+        {
+            "entities":  {entity_id: {stat_key: "value", ...}},
+            "inventory": [{entity_id, item_id, quantity}, ...],
+            "modifiers": [{entity_id, stat_key, delta, minutes_remaining}, ...],
+        }
 
     Returns:
-        Le `turn_id` auquel la correction a été apposée.
+        The `turn_id` the correction was appended at.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn)
     sourcer = EventSourcer(db_path)
 
     with get_connection(db_path) as conn:
         if conn.execute("SELECT 1 FROM Saves WHERE save_id = ?;", (save_id,)).fetchone() is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
     events: list[tuple[str, int, str, str, dict]] = []
     for eid, stats in patch.get("entities", {}).items():
@@ -366,25 +372,26 @@ def apply_correction(
                 )
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
-        raise SaveError(f"Correction impossible (référence invalide ?) : {exc}") from exc
+        raise SaveError(f"Correction failed (invalid reference?): {exc}") from exc
 
     sourcer.rebuild_state_cache(save_id)
     return turn_id
 
 
 def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
-    """Calcule le patch de correction entre deux états `save_state.toml` parsés.
+    """Compute the correction patch between two parsed `save_state.toml` states.
 
-    Sert au flux « éditer la save » : on exporte l'état, l'utilisateur modifie
-    le TOML, et seules les **différences** sont apposées via `apply_correction`
-    (sinon chaque stat inchangée deviendrait un event `manual_edit` parasite).
+    Supports the "edit the save" flow: the state is exported, the user edits
+    the TOML, and only the **differences** are appended via `apply_correction`
+    (otherwise every unchanged stat would become a spurious `manual_edit`
+    event).
 
-    - stats : valeurs modifiées ou ajoutées (la suppression d'une stat n'existe
-      pas dans le modèle de correction → ignorée) ;
-    - inventaire : quantités modifiées/ajoutées ; une ligne disparue → quantité 0
-      (= retrait) ;
-    - modifiers : seuls les **nouveaux** sont retenus (la correction ne sait
-      qu'ajouter des modifiers).
+    - stats: changed or added values (removing a stat does not exist in the
+      correction model — ignored);
+    - inventory: changed/added quantities; a vanished line means quantity 0
+      (= removal);
+    - modifiers: only **new** ones are kept (a correction can only add
+      modifiers).
     """
     entities: dict[str, dict[str, str]] = {}
     state_before = before.get("state", {})
@@ -423,7 +430,7 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
 
 
 def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *, at_turn: int | None = None) -> int:
-    """Charge un fichier TOML (mêmes sections que save_state.toml) et l'applique en correction."""
+    """Load a TOML file (same sections as save_state.toml) and apply it as a correction."""
     data = _load_state_toml(patch_path)
     patch = {
         "entities": data.get("state", {}),
@@ -445,10 +452,11 @@ def fork_save(
     at_minute: int | None = None,
     player_name: str | None = None,
 ) -> str:
-    """Crée une nouvelle save = journal de `save_id` **tronqué** jusqu'au point choisi.
+    """Create a new save = `save_id`'s journal **truncated** at the chosen point.
 
-    Le journal complet jusqu'au point est copié (rewind/audit préservés) ; l'inventaire
-    et les modifiers courants sont copiés tels quels. Retourne le nouveau save_id.
+    The full journal up to the point is copied (rewind/audit preserved);
+    current inventory and modifiers are copied as-is. Returns the new
+    save_id.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
 
@@ -459,7 +467,7 @@ def fork_save(
             (save_id,),
         ).fetchone()
         if src is None:
-            raise SaveError(f"Sauvegarde introuvable : {save_id}")
+            raise SaveError(f"Save not found: {save_id}")
 
     new_id = create_new_save(
         db_path,

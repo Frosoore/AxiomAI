@@ -1,0 +1,201 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/populate.md:1
+msgid "Populating a universe with an LLM"
+msgstr "Peupler un univers avec un LLM"
+
+#: ../../guides/populate.md:3
+msgid ""
+"Writing a whole world by hand is work. The engine can draft one for you: the"
+" **populate** module sends your idea (or your existing lore) to the "
+"configured LLM and writes the results into the universe — entities, lore "
+"entries, rules, a map, scheduled events, stat definitions, metadata."
+msgstr ""
+"Écrire un monde entier à la main, c'est du travail. Le moteur peut vous en "
+"esquisser un : le module **populate** envoie votre idée (ou votre lore "
+"existant) au LLM configuré et écrit les résultats dans l'univers — entités, "
+"entrées de lore, règles, une carte, événements programmés, définitions de "
+"stats, métadonnées."
+
+#: ../../guides/populate.md:8
+msgid "From the command line"
+msgstr "Depuis la ligne de commande"
+
+#: ../../guides/populate.md:15
+msgid ""
+"`-t/--target` is repeatable, one per content kind: `meta`, `stats`, "
+"`entities`, `rules`, `events`, `lore`, `map`."
+msgstr ""
+"`-t/--target` est répétable, un par type de contenu : `meta`, `stats`, "
+"`entities`, `rules`, `events`, `lore`, `map`."
+
+#: ../../guides/populate.md:17
+msgid ""
+"`--text` gives a free-form instruction. Without it, the generation is "
+"inferred from the lore already present in the universe."
+msgstr ""
+"`--text` donne une consigne libre. Sans elle, la génération s'inspire du "
+"lore déjà présent dans l'univers."
+
+#: ../../guides/populate.md:20
+msgid ""
+"The universe argument accepts a `.db`, a source folder or a `.axiom` "
+"archive. If the universe is folder-backed (Universe-as-Code), the generated "
+"content is **decompiled back into the source tree** afterwards, so the text "
+"files stay the source of truth."
+msgstr ""
+"L'argument univers accepte un `.db`, un dossier source ou une archive "
+"`.axiom`. Si l'univers est adossé à un dossier (Universe-as-Code), le "
+"contenu généré est **décompilé en retour dans l'arborescence source**, pour "
+"que les fichiers texte restent la source de vérité."
+
+#: ../../guides/populate.md:25
+msgid "What each target generates"
+msgstr "Ce que chaque cible génère"
+
+#: ../../guides/populate.md
+msgid "Target"
+msgstr "Cible"
+
+#: ../../guides/populate.md
+msgid "Writes"
+msgstr "Écrit"
+
+#: ../../guides/populate.md
+msgid "`meta`"
+msgstr "`meta`"
+
+#: ../../guides/populate.md
+msgid "Universe name, system prompt, global lore, first message."
+msgstr "Nom de l'univers, prompt système, lore global, premier message."
+
+#: ../../guides/populate.md
+msgid "`stats`"
+msgstr "`stats`"
+
+#: ../../guides/populate.md
+msgid "Stat definitions appropriate for the setting."
+msgstr "Des définitions de stats adaptées à l'ambiance."
+
+#: ../../guides/populate.md
+msgid "`entities`"
+msgstr "`entities`"
+
+#: ../../guides/populate.md
+msgid "Characters and creatures, with initial stats."
+msgstr "Des personnages et créatures, avec leurs stats initiales."
+
+#: ../../guides/populate.md
+msgid "`rules`"
+msgstr "`rules`"
+
+#: ../../guides/populate.md
+msgid "Mechanical rules (conditions/actions) matching the world."
+msgstr "Des règles mécaniques (conditions/actions) raccord avec le monde."
+
+#: ../../guides/populate.md
+msgid "`events`"
+msgstr "`events`"
+
+#: ../../guides/populate.md
+msgid "Scheduled in-game events on the timeline."
+msgstr "Des événements in-game programmés sur la chronologie."
+
+#: ../../guides/populate.md
+msgid "`lore`"
+msgstr "`lore`"
+
+#: ../../guides/populate.md
+msgid "Lore-book entries (history, factions, places…)."
+msgstr "Des entrées du livre de lore (histoire, factions, lieux…)."
+
+#: ../../guides/populate.md
+msgid "`map`"
+msgstr "`map`"
+
+#: ../../guides/populate.md
+msgid "Locations and their connections."
+msgstr "Des lieux et leurs connexions."
+
+#: ../../guides/populate.md:37
+msgid ""
+"Generation is **idempotent in spirit**: entity identifiers are derived from "
+"names, so regenerating tends to update rather than duplicate."
+msgstr ""
+"La génération est **idempotente dans l'esprit** : les identifiants d'entités"
+" dérivent des noms, donc regénérer tend à mettre à jour plutôt qu'à "
+"dupliquer."
+
+#: ../../guides/populate.md:40
+msgid "From Python"
+msgstr "Depuis Python"
+
+#: ../../guides/populate.md:42
+#, python-brace-format
+msgid ""
+"Each target is a function in {py:mod}`axiom.populate`, all sharing the same "
+"shape — a database path, an optional instruction, an injectable LLM backend "
+"and an optional status callback:"
+msgstr ""
+"Chaque cible est une fonction de {py:mod}`axiom.populate`, toutes de même "
+"forme — un chemin de base, une consigne optionnelle, un backend LLM "
+"injectable et un callback de statut optionnel :"
+
+#: ../../guides/populate.md:54
+msgid "`POPULATE_TARGETS` maps the CLI target names to these functions."
+msgstr ""
+"`POPULATE_TARGETS` fait correspondre les noms de cibles du CLI à ces "
+"fonctions."
+
+#: ../../guides/populate.md:56
+msgid "Practical notes"
+msgstr "Notes pratiques"
+
+#: ../../guides/populate.md:58
+msgid ""
+"**Model choice matters.** Generation asks for structured output; small local"
+" models sometimes return malformed JSON. If a run fails, retry or use a "
+"stronger model."
+msgstr ""
+"**Le choix du modèle compte.** La génération demande une sortie structurée ;"
+" les petits modèles locaux renvoient parfois du JSON malformé. Si un passage"
+" échoue, relancez ou prenez un modèle plus costaud."
+
+#: ../../guides/populate.md:61
+msgid ""
+"**Quota resilience.** On Gemini, rate limits (HTTP 429) are retried with the"
+" configured backoff and the optional fallback model — see [LLM "
+"backends](backends.md)."
+msgstr ""
+"**Résilience aux quotas.** Sur Gemini, les limites de débit (HTTP 429) sont "
+"réessayées avec le backoff configuré et le modèle de repli optionnel — voir "
+"[Backends LLM](backends.md)."
+
+#: ../../guides/populate.md:64
+msgid ""
+"**Review the output.** Generated content is a draft. With a folder-backed "
+"universe, review the diff with `git diff` like any other code."
+msgstr ""
+"**Relisez la sortie.** Le contenu généré est un brouillon. Avec un univers-"
+"dossier, relisez le diff avec `git diff`, comme n'importe quel code."
+

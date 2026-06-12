@@ -1,10 +1,11 @@
-"""axiom — moteur de jeu headless (zéro dépendance Qt).
+"""axiom — headless game engine (zero Qt dependency).
 
-Extrait de l'app Axiom AI (Pilier 1, réf maintenance/AXIOM_AI_UPGRADE_DETAILS.md §5).
+Extracted from the Axiom AI desktop app.
 
-API publique :
+Public API::
+
     from axiom import Session, Universe
-    axiom.help()   # guide de démarrage rapide dans le REPL
+    axiom.help()   # quick-start guide right in the REPL
 """
 
 from typing import TYPE_CHECKING
@@ -19,53 +20,55 @@ __all__ = ["Session", "Universe"]
 
 _HELP_TEXT = """\
 ================================================================
- Axiom Engine {version} — moteur de jeu narratif piloté par LLM
+ Axiom Engine {version} — LLM-driven narrative game engine
 ================================================================
-Moteur headless (aucune interface graphique requise) : univers
-persistants en SQLite, narration arbitrée par LLM, event-sourcing
-(rewind), mémoire vectorielle, modes Normal / Hardcore / Companion.
+Headless engine (no GUI required): persistent SQLite universes,
+LLM-arbitrated narration, event sourcing (rewind), vector memory,
+Normal / Hardcore / Companion modes.
 
-DÉMARRAGE RAPIDE
+QUICKSTART
     import axiom
     from axiom.config import load_config, build_llm_from_config
     from axiom.db_helpers import create_new_save
 
-    llm = build_llm_from_config(load_config())   # config ~/AxiomAI
-    save_id = create_new_save("MonUnivers.db", "Alice", "Normal")
+    llm = build_llm_from_config(load_config())   # ~/AxiomAI config
+    save_id = create_new_save("MyWorld.db", "Alice", "Normal")
 
-    s = axiom.Session("MonUnivers.db", save_id, llm=llm)
-    result = s.take_turn("J'ouvre la porte de la taverne.")
+    s = axiom.Session("MyWorld.db", save_id, llm=llm)
+    result = s.take_turn("I open the tavern door.")
     print(result.narrative_text)
 
-    s.rewind(s.turn_id - 1)        # revenir un tour en arrière
-    print(s.current_stats())       # stats matérialisées courantes
+    s.rewind(s.turn_id - 1)        # go back one turn
+    print(s.current_stats())       # current materialised stats
 
-EXPLORER UN UNIVERS
-    u = axiom.Universe.load("MonUnivers.db")
+EXPLORE A UNIVERSE
+    u = axiom.Universe.load("MyWorld.db")
     print(u.name, u.list_saves())
 
-MODULES UTILES
-    axiom.compile / decompile  Universe-as-Code : arbo texte <-> .db
-    axiom.package              archives .axiom (export / import)
-    axiom.savestore            saves séparées + archives .axiomsave
-    axiom.populate             génération de contenu d'univers (LLM)
-    axiom.backends             backends LLM (Gemini, Ollama, OpenAI-like)
+USEFUL MODULES
+    axiom.compile / decompile  Universe-as-Code: text tree <-> .db
+    axiom.package              .axiom archives (export / import)
+    axiom.savestore            separate saves + .axiomsave archives
+    axiom.populate             LLM universe content generation
+    axiom.backends             LLM backends (Gemini, Ollama, OpenAI-like)
 
-LIGNE DE COMMANDE
-    axiom --help               (ou : python -m axiom.cli --help)
-    axiom play <univers>       jouer dans le terminal
+COMMAND LINE
+    axiom --help               (or: python -m axiom.cli --help)
+    axiom play <universe>      play in the terminal
     axiom compile / pack / populate / save-*  ...
 
-La config (backend LLM, clés API, modèles) vit dans le dossier de
-données AxiomAI (~/AxiomAI par défaut, modifiable via AXIOM_DATA_DIR).
+Configuration (LLM backend, API keys, models) lives in the AxiomAI
+data folder (~/AxiomAI by default, overridable via AXIOM_DATA_DIR).
+
+Documentation: https://frosoore.github.io/AxiomAI/
 """
 
 
 class _Help:
-    """`axiom.help` : guide affichable ET appelable (pratique en REPL).
+    """`axiom.help`: a guide that is both displayable AND callable (handy in a REPL).
 
-    `axiom.help`, `print(axiom.help)` et `axiom.help()` affichent tous
-    le même guide — aucun import lourd n'est déclenché.
+    `axiom.help`, `print(axiom.help)` and `axiom.help()` all show the same
+    guide — no heavy import is triggered.
     """
 
     def __call__(self) -> None:

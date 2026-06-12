@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 
 from ui.widgets.universe_card import UniverseCard
 from axiom.config import GLOBAL_DB_FILE
-from axiom.localization import tr
+from core.localization import tr
 from axiom.db_helpers import provision_blank_universe
 from workers.db_worker import DbWorker
 from workers.import_export_worker import ImportExportWorker

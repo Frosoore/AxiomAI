@@ -1,28 +1,28 @@
-"""axiom.dev — Universe-as-Code : mode dev avec hot reload (doc §7.7).
+"""axiom.dev — Universe-as-Code: dev mode with hot reload.
 
-`axiom dev <src_dir>` surveille l'arborescence source et, à chaque modification,
-recompile la **définition** dans le `.db` cible. Le vrai mode « moddeur » :
-éditer `entities/bob.toml` dans un éditeur et voir l'effet au tour suivant.
+`axiom dev <src_dir>` watches the source tree and, on every change,
+recompiles the **definition** into the target `.db`. The real "modder" mode:
+edit `entities/bob.toml` in an editor and see the effect on the next turn.
 
-Point clé : tant que §7.6 (saves séparées) n'est pas fait, les saves vivent dans
-le **même `.db`** que la définition. Un `compile_universe` plein reconstruit le
-fichier à neuf et détruirait donc les parties en cours. Le hot reload passe par
-`refresh_definition` : une mise à jour **in-place** des seules tables de
-définition, dans une transaction unique, tables runtime intactes
-(Saves, Event_Log, State_Cache, Snapshots, Timeline, Items_Inventory,
-Active_Modifiers, Fired_Scheduled_Events).
+Key point: legacy saves may live in the **same `.db`** as the definition. A
+full `compile_universe` rebuilds the file from scratch and would destroy
+games in progress. Hot reload therefore goes through `refresh_definition`:
+an **in-place** update of the definition tables only, in a single
+transaction, runtime tables untouched (Saves, Event_Log, State_Cache,
+Snapshots, Timeline, Items_Inventory, Active_Modifiers,
+Fired_Scheduled_Events).
 
-Contrainte FK : trois tables de définition ont des enfants runtime en
-`ON DELETE CASCADE` — `Entities` (← Items_Inventory, Active_Modifiers),
-`Item_Definitions` (← Items_Inventory), `Scheduled_Events`
-(← Fired_Scheduled_Events). Pour elles, on synchronise par UPDATE/INSERT/DELETE
-ciblés (un DELETE-tout-réinsérer purgerait les enfants des lignes conservées).
-Une ligne retirée de la source perd ses enfants runtime : c'est voulu (le texte
-est la vérité).
+FK constraint: three definition tables have runtime children with
+`ON DELETE CASCADE` — `Entities` (Items_Inventory, Active_Modifiers),
+`Item_Definitions` (Items_Inventory), `Scheduled_Events`
+(Fired_Scheduled_Events). For those, the sync uses targeted
+UPDATE/INSERT/DELETE statements (a delete-all-then-reinsert would purge the
+children of kept rows). A row removed from the source loses its runtime
+children: that is intended (the text is the truth).
 
-Zéro dépendance Qt : pur moteur, pilotable en CLI. Le watch est un polling de
-`hash_directory` (pas de dépendance watchdog ; les arborescences d'univers sont
-petites, le hash est instantané).
+Zero Qt dependency: pure engine, drivable from the CLI. The watch is a
+`hash_directory` polling loop (no watchdog dependency; universe trees are
+small, hashing is instant).
 """
 
 from __future__ import annotations
@@ -47,25 +47,24 @@ from axiom.compile import (
 # ---------------------------------------------------------------------------
 
 def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -> Path:
-    """Recompile la définition de l'univers dans un `.db` existant, in-place.
+    """Recompile the universe definition into an existing `.db`, in place.
 
-    Les tables runtime/save ne sont pas touchées. Si le `.db` n'existe pas
-    encore, équivaut à un `compile_universe(force=True)`.
+    Runtime/save tables are not touched. When the `.db` does not exist yet,
+    this is equivalent to `compile_universe(force=True)`.
 
     Args:
-        src_dir: Dossier source de l'univers (contient universe.toml).
-        db_path: `.db` cible. Par défaut `<src_dir>/.axiom-cache/universe.db`.
+        src_dir: Universe source folder (contains universe.toml).
+        db_path: Target `.db`. Defaults to `<src_dir>/.axiom-cache/universe.db`.
 
     Returns:
-        Le chemin du `.db` rafraîchi.
+        The path of the refreshed `.db`.
 
     Raises:
-        CompileError: source malformée (le `.db` reste alors inchangé,
-        la transaction est annulée).
+        CompileError: malformed source (the `.db` is left unchanged, the transaction is rolled back).
     """
     src_dir = Path(src_dir)
     if not src_dir.is_dir():
-        raise CompileError(f"Dossier source introuvable : {src_dir}")
+        raise CompileError(f"Source folder not found: {src_dir}")
     if db_path is None:
         db_path = src_dir / CACHE_DIRNAME / CACHE_DB_NAME
     db_path = Path(db_path)
@@ -109,16 +108,15 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
 
 
 def ensure_compiled(src_dir: str | Path, db_path: str | Path | None = None) -> Path:
-    """Garantit un cache compilé à jour **sans jamais détruire les saves**.
+    """Guarantee an up-to-date compiled cache **without ever destroying saves**.
 
-    À utiliser partout où un univers-dossier doit être rendu jouable (Hub,
-    `axiom play`) : cache absent → compilation pleine ; cache périmé →
-    `refresh_definition` in-place (un `compile_universe` plein reconstruirait
-    le fichier et effacerait les saves qu'il contient, cf. §7.6 différé) ;
-    cache à jour → no-op.
+    Use this wherever a folder universe must be made playable (Hub,
+    `axiom play`): missing cache -> full compilation; stale cache -> in-place
+    `refresh_definition` (a full `compile_universe` would rebuild the file and
+    erase any saves it contains); fresh cache -> no-op.
 
     Returns:
-        Le chemin du `.db` jouable.
+        The path of the playable `.db`.
     """
     src_dir = Path(src_dir)
     if db_path is None:
@@ -319,20 +317,18 @@ def poll_once(
     db_path: str | Path | None,
     last_hash: str | None,
 ) -> tuple[str, bool]:
-    """Une itération de watch : recompile si la source a changé depuis `last_hash`.
+    """One watch iteration: recompile when the source changed since `last_hash`.
 
     Args:
-        src_dir:   Dossier source surveillé.
-        db_path:   `.db` cible (None = cache par défaut).
-        last_hash: Hash de la dernière itération (None = premier passage).
+        src_dir:   Watched source folder.
+        db_path:   Target `.db` (None = default cache).
+        last_hash: Hash from the previous iteration (None = first pass).
 
     Returns:
-        (hash courant, True si un refresh a été effectué).
+        Tuple (current hash, True when a refresh was performed).
 
     Raises:
-        CompileError: la source a changé mais est malformée. Le hash courant
-        est porté par l'exception (attribut `src_hash`) pour que l'appelant
-        puisse l'enregistrer et ne pas re-tenter en boucle le même contenu.
+        CompileError: the source changed but is malformed. The current hash is carried by the exception (`src_hash` attribute) so the caller can record it and avoid retrying the same content in a loop.
     """
     src_dir = Path(src_dir)
     current = hash_directory(src_dir)
@@ -353,19 +349,19 @@ def watch_universe(
     on_event: Callable[[str], None] = print,
     should_stop: Callable[[], bool] | None = None,
 ) -> None:
-    """Surveille l'arborescence source et recompile la définition à chaque modif.
+    """Watch the source tree and recompile the definition on every change.
 
-    Une source momentanément malformée (sauvegarde à mi-frappe, TOML invalide)
-    est signalée via `on_event` mais ne tue pas la boucle : la correction
-    suivante redéclenche un refresh.
+    A momentarily malformed source (mid-typing save, invalid TOML) is reported
+    through `on_event` but does not kill the loop: the next fix triggers a
+    refresh again.
 
     Args:
-        src_dir:     Dossier source de l'univers.
-        db_path:     `.db` cible (None = `<src>/.axiom-cache/universe.db`).
-        interval:    Période de polling en secondes.
-        on_event:    Callback de log (une ligne par événement).
-        should_stop: Prédicat optionnel testé à chaque itération (pour tests /
-                     intégration) ; None = boucle jusqu'à KeyboardInterrupt.
+        src_dir:     Universe source folder.
+        db_path:     Target `.db` (None = `<src>/.axiom-cache/universe.db`).
+        interval:    Polling period in seconds.
+        on_event:    Log callback (one line per event).
+        should_stop: Optional predicate tested at each iteration (for tests /
+                     integration); None = loop until KeyboardInterrupt.
     """
     src_dir = Path(src_dir)
     target = Path(db_path) if db_path else src_dir / CACHE_DIRNAME / CACHE_DB_NAME
@@ -378,11 +374,11 @@ def watch_universe(
         try:
             last_hash, refreshed = poll_once(src_dir, db_path, last_hash)
             if refreshed:
-                msg = "Définition compilée" if first else "Modification détectée — définition rechargée"
+                msg = "Definition compiled" if first else "Change detected — definition reloaded"
                 on_event(f"{msg} → {target}")
         except CompileError as exc:
             # Hash mémorisé : on ne re-tente que si la source change à nouveau.
             last_hash = getattr(exc, "src_hash", last_hash)
-            on_event(f"Source invalide (en attente de correction) : {exc}")
+            on_event(f"Invalid source (awaiting fix): {exc}")
         first = False
         time.sleep(interval)

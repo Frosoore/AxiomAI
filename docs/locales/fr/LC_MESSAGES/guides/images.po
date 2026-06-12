@@ -1,0 +1,133 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/images.md:1
+msgid "Scene illustration"
+msgstr "Illustration de scène"
+
+#: ../../guides/images.md:3
+msgid ""
+"Optionally, the engine can generate **one illustration per turn**: it asks "
+"the LLM to distil the narrative, the location and the characters present "
+"into a visual prompt, then sends that prompt to an image backend. Images are"
+" saved under the data root (`assets/<save_id>/turn_<n>.png`) and follow the "
+"save through rewind, fork, export and import."
+msgstr ""
+"En option, le moteur peut générer **une illustration par tour** : il demande"
+" au LLM de condenser la narration, le lieu et les personnages présents en un"
+" prompt visuel, puis envoie ce prompt à un backend d'images. Les images sont"
+" enregistrées sous la racine de données (`assets/<save_id>/turn_<n>.png`) et"
+" suivent la sauvegarde à travers rewind, fork, export et import."
+
+#: ../../guides/images.md:9
+msgid ""
+"Image generation never blocks the game: any failure logs a warning and the "
+"turn completes without an image."
+msgstr ""
+"La génération d'images ne bloque jamais le jeu : tout échec écrit un "
+"avertissement dans les logs et le tour se termine sans image."
+
+#: ../../guides/images.md:12
+msgid "Configuration"
+msgstr "Configuration"
+
+#: ../../guides/images.md:14
+msgid "In `~/.config/AxiomAI/settings.json`:"
+msgstr "Dans `~/.config/AxiomAI/settings.json` :"
+
+#: ../../guides/images.md:32
+msgid "Backends"
+msgstr "Backends"
+
+#: ../../guides/images.md:34
+msgid "`gemini` — Google Gemini (cloud)"
+msgstr "`gemini` — Google Gemini (cloud)"
+
+#: ../../guides/images.md:36
+msgid ""
+"Uses the same API key as the text backend; no local install needed. The "
+"model is set by `image_gemini_model`, and the aspect ratio is derived from "
+"`image_width`/`image_height`. Note that image models are typically **not** "
+"in the Gemini free tier."
+msgstr ""
+"Utilise la même clé API que le backend texte ; aucune installation locale "
+"requise. Le modèle est fixé par `image_gemini_model`, et le ratio d'aspect "
+"est dérivé de `image_width`/`image_height`. Notez que les modèles d'image ne"
+" sont généralement **pas** dans le palier gratuit de Gemini."
+
+#: ../../guides/images.md:41
+msgid "`stable_diffusion` — Stable Diffusion WebUI (local)"
+msgstr "`stable_diffusion` — Stable Diffusion WebUI (local)"
+
+#: ../../guides/images.md:43
+msgid ""
+"Any AUTOMATIC1111-compatible server (A1111, reForge, Forge…) reachable at "
+"`image_api_url`. The server **must be launched with the `--api` flag** — "
+"without it the engine gets a 404 and tells you so. `image_width`, "
+"`image_height`, `image_steps` and `image_cfg_scale` map straight to the "
+"generation request; `image_timeout` caps the wait per image (default 180 s —"
+" raise it on slow machines)."
+msgstr ""
+"Tout serveur compatible AUTOMATIC1111 (A1111, reForge, Forge…) joignable à "
+"`image_api_url`. Le serveur **doit être lancé avec le drapeau `--api`** — "
+"sans lui, le moteur reçoit un 404 et vous le dit. `image_width`, "
+"`image_height`, `image_steps` et `image_cfg_scale` se reportent directement "
+"dans la requête de génération ; `image_timeout` plafonne l'attente par image"
+" (défaut 180 s — augmentez-le sur une machine lente)."
+
+#: ../../guides/images.md:50
+msgid "`comfyui` — ComfyUI (local)"
+msgstr "`comfyui` — ComfyUI (local)"
+
+#: ../../guides/images.md:52
+msgid ""
+"Point `image_api_url` at the ComfyUI server. By default the engine submits a"
+" minimal text-to-image workflow using the first installed checkpoint; for "
+"full control, set `image_comfyui_workflow` to a workflow JSON file path (or "
+"the JSON itself) exported from ComfyUI. Polling is bounded by "
+"`image_timeout`."
+msgstr ""
+"Pointez `image_api_url` vers le serveur ComfyUI. Par défaut, le moteur "
+"soumet un workflow text-to-image minimal utilisant le premier checkpoint "
+"installé ; pour un contrôle total, mettez dans `image_comfyui_workflow` le "
+"chemin d'un fichier JSON de workflow (ou le JSON lui-même) exporté depuis "
+"ComfyUI. La scrutation est bornée par `image_timeout`."
+
+#: ../../guides/images.md:57
+msgid "From Python"
+msgstr "Depuis Python"
+
+#: ../../guides/images.md:59
+#, python-brace-format
+msgid ""
+"{py:class}`axiom.image_generator.ImageGenerator` exposes the two steps — "
+"`generate_prompt(...)` (LLM → visual prompt) and `generate_image(prompt, "
+"assets_dir, filename)` (backend → PNG file, or `None` on failure). "
+"{py:class}`axiom.session.Session` calls it automatically at the end of each "
+"turn when `image_generation_enabled` is true."
+msgstr ""
+"{py:class}`axiom.image_generator.ImageGenerator` expose les deux étapes — "
+"`generate_prompt(...)` (LLM → prompt visuel) et `generate_image(prompt, "
+"assets_dir, filename)` (backend → fichier PNG, ou `None` en cas d'échec). "
+"{py:class}`axiom.session.Session` l'appelle automatiquement à la fin de "
+"chaque tour quand `image_generation_enabled` est vrai."
+

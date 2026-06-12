@@ -1,16 +1,16 @@
-"""axiom.compile — Universe-as-Code : compilation d'une arborescence source en cache `.db`.
+"""axiom.compile — Universe-as-Code: compiling a source tree into a `.db` cache.
 
-Pilier 2 (doc §7). Un univers est défini par une **arborescence de fichiers texte**
-(TOML/MD) versionnable ; le SQLite `.db` n'est qu'un **cache compilé** dérivé du texte.
-La vérité = le texte. Ce module lit l'arbo et peuple un `.db` runtime.
+A universe is defined as a versionable **tree of text files** (TOML/MD); the
+SQLite `.db` is only a **compiled cache** derived from the text. The text is
+the source of truth. This module reads the tree and populates a runtime `.db`.
 
-Zéro dépendance Qt : c'est du moteur pur, pilotable en CLI (`axiom compile`).
+Zero Qt dependency: pure engine, drivable from the CLI (`axiom compile`).
 
-Frontière : seules les **tables de définition** sont produites ici. Les tables
-runtime/save (Saves, Event_Log, State_Cache, Snapshots, Timeline, …) restent vides
-dans le cache — elles n'appartiennent pas à la définition d'univers.
+Boundary: only the **definition tables** are produced here. The runtime/save
+tables (Saves, Event_Log, State_Cache, Snapshots, Timeline, …) stay empty in
+the cache — they do not belong to the universe definition.
 
-Lecture TOML : `tomllib` (stdlib). L'écriture (decompile) utilise `tomlkit`.
+TOML reading: `tomllib` (stdlib). Writing (decompile) uses `tomlkit`.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ _STRUCTURED_META_KEYS = frozenset({
 
 
 class CompileError(Exception):
-    """Erreur de compilation d'un univers (source malformée, champ requis manquant)."""
+    """Universe compilation error (malformed source, missing required field)."""
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ def _iter_source_files(src_dir: Path):
 
 
 def hash_directory(src_dir: Path) -> str:
-    """Hash stable du contenu source (chemin relatif + octets de chaque fichier)."""
+    """Stable hash of the source content (relative path + bytes of each file)."""
     h = hashlib.sha256()
     for path in _iter_source_files(src_dir):
         rel = path.relative_to(src_dir).as_posix()
@@ -100,13 +100,13 @@ def _load_toml(path: Path) -> dict[str, Any]:
         with path.open("rb") as fh:
             return tomllib.load(fh)
     except (tomllib.TOMLDecodeError, OSError) as exc:
-        raise CompileError(f"TOML invalide : {path} — {exc}") from exc
+        raise CompileError(f"Invalid TOML: {path} — {exc}") from exc
 
 
 def _require(data: dict, key: str, ctx: str) -> Any:
     """Récupère une clé requise ou lève CompileError."""
     if key not in data:
-        raise CompileError(f"Champ requis manquant '{key}' dans {ctx}")
+        raise CompileError(f"Required field '{key}' missing in {ctx}")
     return data[key]
 
 
@@ -120,7 +120,7 @@ def _resolve_text(src_dir: Path, data: dict, inline_key: str, file_key: str) -> 
             with target.open("r", encoding="utf-8", newline="") as fh:
                 return fh.read()
         except OSError as exc:
-            raise CompileError(f"Fichier référencé introuvable : {target} — {exc}") from exc
+            raise CompileError(f"Referenced file not found: {target} — {exc}") from exc
     return str(data.get(inline_key, ""))
 
 
@@ -146,7 +146,7 @@ def _parse_universe(src_dir: Path) -> tuple[dict[str, str], set[str]]:
     """
     path = src_dir / "universe.toml"
     if not path.exists():
-        raise CompileError(f"universe.toml requis introuvable dans {src_dir}")
+        raise CompileError(f"Required universe.toml not found in {src_dir}")
 
     data = _load_toml(path)
     meta: dict[str, str] = {}
@@ -329,7 +329,7 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
     try:
         return tomllib.loads(front_text), body
     except tomllib.TOMLDecodeError as exc:
-        raise CompileError(f"Frontmatter TOML invalide — {exc}") from exc
+        raise CompileError(f"Invalid TOML frontmatter — {exc}") from exc
 
 
 def _parse_events(src_dir: Path) -> list[tuple]:
@@ -474,20 +474,20 @@ def compile_universe(
     output_db: str | Path | None = None,
     force: bool = False,
 ) -> Path:
-    """Compile une arborescence source en une base SQLite runtime.
+    """Compile a source tree into a runtime SQLite database.
 
     Args:
-        src_dir:   Dossier source de l'univers (contient universe.toml).
-        output_db: Chemin du `.db` à produire. Par défaut
+        src_dir:   Universe source folder (contains universe.toml).
+        output_db: Path of the `.db` to produce. Defaults to
                    `<src_dir>/.axiom-cache/universe.db`.
-        force:     Recompiler même si le hash source est inchangé.
+        force:     Recompile even if the source hash is unchanged.
 
     Returns:
-        Le chemin du `.db` compilé.
+        The path of the compiled `.db`.
     """
     src_dir = Path(src_dir)
     if not src_dir.is_dir():
-        raise CompileError(f"Dossier source introuvable : {src_dir}")
+        raise CompileError(f"Source folder not found: {src_dir}")
 
     if output_db is None:
         output_db = src_dir / CACHE_DIRNAME / CACHE_DB_NAME

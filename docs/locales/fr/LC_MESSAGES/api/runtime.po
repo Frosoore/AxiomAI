@@ -1,0 +1,1392 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/runtime.md:1
+msgid "Runtime internals"
+msgstr "Rouages du runtime"
+
+#: ../../api/runtime.md:3
+#, python-brace-format
+msgid ""
+"The narration pipeline and its helpers. Most applications drive these "
+"through {py:class}`axiom.session.Session` rather than directly."
+msgstr ""
+"Le pipeline de narration et ses auxiliaires. La plupart des applications les"
+" pilotent à travers {py:class}`axiom.session.Session` plutôt que "
+"directement."
+
+#: ../../api/runtime.md:6
+msgid "`axiom.arbitrator`"
+msgstr ""
+
+#: axiom.arbitrator:1 of
+msgid "core/arbitrator.py"
+msgstr ""
+
+#: axiom.arbitrator:3 of
+msgid ""
+"The ArbitratorEngine — Axiom AI's deterministic firewall between LLM "
+"creativity and the game's mathematical state."
+msgstr ""
+"L'ArbitratorEngine — le pare-feu déterministe d'Axiom AI entre la créativité"
+" du LLM et l'état mathématique du jeu."
+
+#: axiom.arbitrator:6 of
+msgid "On every narrative turn the ArbitratorEngine:"
+msgstr "À chaque tour narratif, l'ArbitratorEngine :"
+
+#: axiom.arbitrator:8 of
+msgid "Fetches current entity stats from State_Cache + applies modifier overlay."
+msgstr ""
+"Récupère les stats d'entités courantes du State_Cache + applique la "
+"surcouche de modificateurs."
+
+#: axiom.arbitrator:9 of
+msgid "Retrieves relevant narrative memories from VectorMemory (RAG)."
+msgstr "Récupère les souvenirs narratifs pertinents de la VectorMemory (RAG)."
+
+#: axiom.arbitrator:10 of
+msgid "Builds the full narrative prompt (injecting any pending correction)."
+msgstr ""
+"Construit le prompt narratif complet (en injectant toute correction en "
+"attente)."
+
+#: axiom.arbitrator:11 of
+msgid "Calls the LLM and parses its response."
+msgstr "Appelle le LLM et parse sa réponse."
+
+#: axiom.arbitrator:12 of
+msgid "Validates every proposed state change against current stats."
+msgstr "Valide chaque changement d'état proposé contre les stats courantes."
+
+#: axiom.arbitrator:13 of
+msgid "Persists valid changes via EventSourcer; queues corrections for invalids."
+msgstr ""
+"Persiste les changements valides via l'EventSourcer ; met en file les "
+"corrections pour les invalides."
+
+#: axiom.arbitrator:14 of
+msgid "Runs the Rules Engine for each mutated entity; persists triggered actions."
+msgstr ""
+"Exécute le moteur de règles pour chaque entité mutée ; persiste les actions "
+"déclenchées."
+
+#: axiom.arbitrator:15 of
+msgid "Ticks modifier durations."
+msgstr "Décrémente les durées des modificateurs."
+
+#: axiom.arbitrator:16 of
+msgid "Embeds the narrative chunk into VectorMemory."
+msgstr "Plonge (embed) le fragment narratif dans la VectorMemory."
+
+#: axiom.arbitrator:17 of
+msgid "Returns an ArbitratorResult with full detail for the UI / tests."
+msgstr "Retourne un ArbitratorResult complet pour l'UI / les tests."
+
+#: axiom.arbitrator:20 of
+msgid "The Correction Loop (spec §4-B)"
+msgstr "La boucle de correction"
+
+#: axiom.arbitrator:21 of
+msgid ""
+"If a change is rejected, a hidden system message is stored in "
+"`_pending_correction`.  On the VERY NEXT turn this message is injected into "
+"the prompt immediately before the user's input, then immediately cleared so "
+"it cannot affect turn N+2."
+msgstr ""
+"Si un changement est rejeté, un message système caché est stocké dans "
+"`_pending_correction`.  Au tour SUIVANT immédiat, ce message est injecté "
+"dans le prompt juste avant la saisie de l'utilisateur, puis aussitôt effacé "
+"pour ne pas pouvoir affecter le tour N+2."
+
+#: axiom.arbitrator.ArbitratorResult:1 of
+msgid "The complete output of one ArbitratorEngine turn."
+msgstr "La sortie complète d'un tour d'ArbitratorEngine."
+
+#: ../../api/runtime.md axiom.arbitrator.ArbitratorEngine.configure
+#: axiom.db_helpers.get_inventory axiom.memory.VectorMemory.embed_chunk
+#: axiom.memory.VectorMemory.query axiom.memory.VectorMemory.rollback
+#: axiom.multiplayer.ActionQueue.enqueue axiom.multiplayer.ActionQueue.run_loop
+#: axiom.multiplayer.PlayerAction axiom.textfmt.fmt_num
+#: axiom.time_system.CalendarConfig
+#: axiom.time_system.TimeSystem.components_to_minutes
+#: axiom.time_system.TimeSystem.get_time_components
+#: axiom.time_system.TimeSystem.get_time_string
+#: axiom.time_system.TimeSystem.minutes_to_components of
+msgid "Parameters"
+msgstr "Paramètres"
+
+#: axiom.arbitrator.ArbitratorResult:5 of
+msgid "The prose to display to the player.  Always present."
+msgstr "La prose à afficher au joueur.  Toujours présente."
+
+#: axiom.arbitrator.ArbitratorResult axiom.chronicler.ChroniclerResult of
+msgid "type"
+msgstr ""
+
+#: axiom.arbitrator.ArbitratorResult:7 axiom.arbitrator.ArbitratorResult:39
+#: axiom.arbitrator.ArbitratorResult:45 of
+msgid "str"
+msgstr ""
+
+#: axiom.arbitrator.ArbitratorResult:11 of
+msgid "State changes that passed validation and were persisted."
+msgstr "Changements d'état qui ont passé la validation et ont été persistés."
+
+#: axiom.arbitrator.ArbitratorResult:13 axiom.arbitrator.ArbitratorResult:20
+#: axiom.arbitrator.ArbitratorResult:26 of
+msgid "list[dict[str, Any]]"
+msgstr ""
+
+#: axiom.arbitrator.ArbitratorResult:17 of
+msgid ""
+"State changes that failed validation, each augmented with a \"reason\" key "
+"explaining the failure."
+msgstr ""
+"Changements d'état recalés à la validation, chacun augmenté d'une clé "
+"\"reason\" expliquant l'échec."
+
+#: axiom.arbitrator.ArbitratorResult:24 of
+msgid "Rule actions fired as a consequence of applied changes."
+msgstr "Actions de règles déclenchées en conséquence des changements appliqués."
+
+#: axiom.arbitrator.ArbitratorResult:30 of
+msgid ""
+"True if the rules engine reached its iteration limit, indicating a possible "
+"infinite loop in creator rules."
+msgstr ""
+"True si le moteur de règles a atteint sa limite d'itérations, signe d'une "
+"possible boucle infinie dans les règles du créateur."
+
+#: axiom.arbitrator.ArbitratorResult:33 of
+msgid "bool"
+msgstr ""
+
+#: axiom.arbitrator.ArbitratorResult:37 of
+msgid "The ambiance tag returned by the LLM (e.g. 'exploration')."
+msgstr "L'étiquette d'ambiance retournée par le LLM (ex. 'exploration')."
+
+#: axiom.arbitrator.ArbitratorResult:43 of
+msgid "The ID of the player who sent the message for this turn."
+msgstr "L'ID du joueur ayant envoyé le message de ce tour."
+
+#: axiom.arbitrator.ArbitratorResult:49 of
+msgid "The file path of the generated image for this turn."
+msgstr "Le chemin de fichier de l'image générée pour ce tour."
+
+#: axiom.arbitrator.ArbitratorResult:51 of
+msgid "str | None"
+msgstr ""
+
+#: axiom.arbitrator.ArbitratorEngine:1 of
+msgid "Validates and applies LLM-proposed state changes for one narrative turn."
+msgstr ""
+"Valide et applique les changements d'état proposés par le LLM pour un tour "
+"narratif."
+
+#: axiom.arbitrator.ArbitratorEngine:3 of
+msgid "Path to the universe .db for direct entity queries."
+msgstr "Chemin du `.db` univers pour les requêtes directes d'entités."
+
+#: axiom.arbitrator.ArbitratorEngine:4 of
+msgid "List of creator-defined rules."
+msgstr "Liste des règles définies par le créateur."
+
+#: axiom.arbitrator.ArbitratorEngine.configure:1 of
+msgid "Inject runtime dependencies before process_turn."
+msgstr "Injecte les dépendances runtime avant process_turn."
+
+#: ../../api/runtime.md axiom.arbitrator.ArbitratorEngine.configure
+#: axiom.arbitrator.ArbitratorEngine.invalidate_stats_cache
+#: axiom.db_helpers.get_inventory axiom.memory.VectorMemory.embed_chunk
+#: axiom.memory.VectorMemory.query axiom.memory.VectorMemory.rollback
+#: axiom.memory.preload_embedding_runtime axiom.multiplayer.ActionQueue.enqueue
+#: axiom.multiplayer.ActionQueue.run_loop axiom.multiplayer.ActionQueue.stop
+#: axiom.textfmt.fmt_num axiom.time_system.TimeSystem.components_to_minutes
+#: axiom.time_system.TimeSystem.get_time_components
+#: axiom.time_system.TimeSystem.get_time_string
+#: axiom.time_system.TimeSystem.minutes_to_components of
+msgid "Return type"
+msgstr "Type de retour"
+
+#: axiom.arbitrator.ArbitratorEngine.invalidate_stats_cache:1 of
+msgid "Clear the in-memory stats cache (call after rewind or external DB writes)."
+msgstr ""
+"Vide le cache de stats en mémoire (à appeler après un rewind ou des "
+"écritures externes)."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:1 of
+msgid "Execute one full ArbitratorEngine turn and return the result."
+msgstr "Exécute un tour complet d'ArbitratorEngine et retourne le résultat."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:3 of
+msgid "The active save identifier."
+msgstr "L'identifiant de la save active."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:4 of
+msgid "The current turn number (monotonically increasing)."
+msgstr "Le numéro de tour courant (croissant de façon monotone)."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:5 of
+msgid "Dict mapping actor entity_id to their intent text."
+msgstr "Dict de l'entity_id de chaque acteur vers son texte d'intention."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:6 of
+msgid "The universe's foundational system prompt."
+msgstr "Le prompt système fondateur de l'univers."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:7 of
+msgid "Prior conversation turns for context."
+msgstr "Les tours de conversation précédents, pour le contexte."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:8 of
+msgid ""
+"Optional callable invoked with each streaming token as it arrives from the "
+"LLM."
+msgstr ""
+"Callable optionnel invoqué avec chaque token de streaming à son arrivée du "
+"LLM."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:10
+#: axiom.chronicler.ChroniclerEngine.run:18 of
+msgid "Sampling temperature (0.0 to 1.0)."
+msgstr "Température d'échantillonnage (0.0 à 1.0)."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:11
+#: axiom.chronicler.ChroniclerEngine.run:19 of
+msgid "Nucleus sampling parameter (0.0 to 1.0)."
+msgstr "Paramètre d'échantillonnage nucleus (0.0 à 1.0)."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:12 of
+msgid "'short', 'balanced', or 'talkative'."
+msgstr "'short', 'balanced' ou 'talkative'."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:13 of
+msgid "Game mode ('Normal', 'Hardcore', 'Companion')."
+msgstr "Mode de jeu ('Normal', 'Hardcore', 'Companion')."
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:14 of
+msgid "Optional ID of the AI Hero entity."
+msgstr "ID optionnel de l'entité Héros IA."
+
+#: ../../api/runtime.md
+msgid "Returns"
+msgstr "Renvoie"
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:16 of
+msgid "ArbitratorResult containing narrative text and all change outcomes."
+msgstr ""
+"ArbitratorResult contenant le texte narratif et l'issue de tous les "
+"changements."
+
+#: ../../api/runtime.md
+msgid "Raises"
+msgstr "Lève"
+
+#: axiom.arbitrator.ArbitratorEngine.process_turn:18 of
+msgid "If the LLM backend is unreachable."
+msgstr "Si le backend LLM est injoignable."
+
+#: ../../api/runtime.md:13
+msgid "`axiom.chronicler`"
+msgstr ""
+
+#: axiom.chronicler:1 of
+msgid "core/chronicler.py"
+msgstr ""
+
+#: axiom.chronicler:3 of
+msgid "The Chronicler Engine — Axiom AI's macro-simulation agent."
+msgstr "Le moteur Chronicler — l'agent de macro-simulation d'Axiom AI."
+
+#: axiom.chronicler:5 of
+msgid ""
+"The Chronicler simulates the independent evolution of the off-screen world "
+"(factions, VIP NPCs, cities) without the player's involvement.  It runs "
+"periodically (every N player turns, or on explicit time-skip events) and "
+"produces JSON tool calls that update entity stats in the database."
+msgstr ""
+"Le Chronicler simule l'évolution indépendante du monde hors-champ (factions,"
+" PNJ importants, villes) sans implication du joueur.  Il tourne "
+"périodiquement (tous les N tours, ou sur saut temporel explicite) et produit"
+" des tool calls JSON qui mettent à jour les stats d'entités dans la base."
+
+#: axiom.chronicler:11 of
+msgid "Design principles"
+msgstr "Principes de conception"
+
+#: axiom.chronicler:12 of
+msgid ""
+"The Chronicler NEVER raises on malformed LLM responses.  A broken world "
+"simulation is always preferable to a crashed game session."
+msgstr ""
+"Le Chronicler ne lève JAMAIS sur une réponse LLM malformée.  Une simulation "
+"du monde cassée est toujours préférable à une session de jeu plantée."
+
+#: axiom.chronicler:14 of
+msgid ""
+"All updates are written to Event_Log with event_type='chronicler_update' so "
+"they are included in checkpoint replays and can be rewound."
+msgstr ""
+"Toutes les mises à jour sont écrites dans Event_Log avec "
+"event_type='chronicler_update', donc incluses dans les replays de checkpoint"
+" et rembobinables."
+
+#: axiom.chronicler:16 of
+msgid ""
+"World_Tension_Level (stored in Universe_Meta) throttles the severity of "
+"simulated events: low tension → mundane shifts, high tension → cataclysms."
+msgstr ""
+"World_Tension_Level (stocké dans Universe_Meta) module la sévérité des "
+"événements simulés : tension basse → évolutions banales, tension haute → "
+"cataclysmes."
+
+#: axiom.chronicler.ChroniclerResult:1 of
+msgid "The complete output of one Chronicler world-simulation run."
+msgstr "La sortie complète d'un passage de simulation du monde du Chronicler."
+
+#: axiom.chronicler.ChroniclerResult:5 of
+msgid "entity_ids whose stats were changed."
+msgstr "entity_ids dont les stats ont changé."
+
+#: axiom.chronicler.ChroniclerResult:7 axiom.chronicler.ChroniclerResult:25 of
+msgid "list[str]"
+msgstr ""
+
+#: axiom.chronicler.ChroniclerResult:11 of
+msgid "Count of new Event_Log entries written."
+msgstr "Nombre de nouvelles entrées Event_Log écrites."
+
+#: axiom.chronicler.ChroniclerResult:13 of
+msgid "int"
+msgstr ""
+
+#: axiom.chronicler.ChroniclerResult:17 of
+msgid "The World_Tension_Level active during this run."
+msgstr "Le World_Tension_Level actif pendant ce passage."
+
+#: axiom.chronicler.ChroniclerResult:19 of
+msgid "float"
+msgstr ""
+
+#: axiom.chronicler.ChroniclerResult:23 of
+msgid "A list of major off-screen event descriptions."
+msgstr "Une liste de descriptions des événements hors-champ majeurs."
+
+#: axiom.chronicler.ChroniclerEngine:1 of
+msgid "Simulates the off-screen world by calling the LLM periodically."
+msgstr "Simule le monde hors-champ en appelant le LLM périodiquement."
+
+#: axiom.chronicler.ChroniclerEngine:3 of
+msgid "The LLM backend used for world simulation calls."
+msgstr "Le backend LLM utilisé pour les appels de simulation du monde."
+
+#: axiom.chronicler.ChroniclerEngine:4 of
+msgid "Handles Event_Log writes and State_Cache reads."
+msgstr "Gère les écritures Event_Log et les lectures State_Cache."
+
+#: axiom.chronicler.ChroniclerEngine:5 of
+msgid "Path to the universe .db for entity and meta queries."
+msgstr "Chemin du `.db` univers pour les requêtes d'entités et de méta."
+
+#: axiom.chronicler.ChroniclerEngine:6 of
+msgid ""
+"In-game minutes between automatic Chronicler runs. Defaults to 720 (12 in-"
+"game hours)."
+msgstr ""
+"Minutes in-game entre deux passages automatiques du Chronicler. Par défaut "
+"720 (12 heures in-game)."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:1 of
+msgid "Return True if the in-game clock crossed a trigger_interval boundary."
+msgstr ""
+"Retourne True si l'horloge in-game a franchi une frontière de "
+"trigger_interval."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:3 of
+msgid ""
+"The Chronicler is driven by in-game minutes, not player turns: it fires once"
+" whenever the world clock moves from one `trigger_interval`-minute block "
+"into a later one. This makes a single long time-skip trigger exactly one "
+"off-screen simulation, while many short turns accumulate until they cross "
+"the next boundary (Pilier 5 / TICKET-018)."
+msgstr ""
+"Le Chronicler est piloté par les minutes in-game, pas par les tours joueur :"
+" il se déclenche chaque fois que l'horloge du monde passe d'un bloc de "
+"`trigger_interval` minutes à un bloc ultérieur. Un unique long saut temporel"
+" déclenche ainsi exactement une simulation hors-champ, tandis que beaucoup "
+"de petits tours s'accumulent jusqu'à franchir la frontière suivante (Pilier "
+"5 / TICKET-018)."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:9 of
+msgid "Pure function — no I/O."
+msgstr "Fonction pure — aucune E/S."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:11 of
+msgid "The world clock (in-game minutes) after this turn."
+msgstr "L'horloge du monde (minutes in-game) après ce tour."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:12 of
+msgid "The world clock before this turn's time advance."
+msgstr "L'horloge du monde avant l'avancée de temps de ce tour."
+
+#: axiom.chronicler.ChroniclerEngine.should_trigger:14 of
+msgid ""
+"True when `previous_time` and `current_time` fall in different "
+"`trigger_interval`-minute blocks (i.e. a boundary was crossed)."
+msgstr ""
+"True quand `previous_time` et `current_time` tombent dans des blocs de "
+"`trigger_interval` minutes différents (une frontière a été franchie)."
+
+#: axiom.chronicler.ChroniclerEngine.run:1 of
+msgid "Execute one Chronicler world-simulation cycle."
+msgstr "Exécute un cycle de simulation du monde du Chronicler."
+
+#: axiom.chronicler.ChroniclerEngine.run:3 of
+msgid "Steps:"
+msgstr "Étapes :"
+
+#: axiom.chronicler.ChroniclerEngine.run:4 of
+msgid "Read World_Tension_Level from Universe_Meta."
+msgstr "Lire World_Tension_Level depuis Universe_Meta."
+
+#: axiom.chronicler.ChroniclerEngine.run:5 of
+msgid "Fetch all active off-screen entities and their current stats."
+msgstr "Récupérer toutes les entités hors-champ actives et leurs stats courantes."
+
+#: axiom.chronicler.ChroniclerEngine.run:6 of
+msgid "Build the Chronicler prompt."
+msgstr "Construire le prompt du Chronicler."
+
+#: axiom.chronicler.ChroniclerEngine.run:7 of
+msgid "Call the LLM (non-streaming; expects only a JSON tool call)."
+msgstr "Appeler le LLM (sans streaming ; n'attend qu'un tool call JSON)."
+
+#: axiom.chronicler.ChroniclerEngine.run:8 of
+msgid "Parse the resulting state_changes."
+msgstr "Parser les state_changes résultants."
+
+#: axiom.chronicler.ChroniclerEngine.run:9 of
+msgid "Validate each change (entity must exist and be active)."
+msgstr "Valider chaque changement (l'entité doit exister et être active)."
+
+#: axiom.chronicler.ChroniclerEngine.run:10 of
+msgid "Persist valid changes via EventSourcer."
+msgstr "Persister les changements valides via l'EventSourcer."
+
+#: axiom.chronicler.ChroniclerEngine.run:11 of
+msgid "Return ChroniclerResult."
+msgstr "Retourner un ChroniclerResult."
+
+#: axiom.chronicler.ChroniclerEngine.run:13 of
+msgid ""
+"On any malformed LLM response the method logs a warning internally and "
+"returns an empty ChroniclerResult — it never raises."
+msgstr ""
+"Sur toute réponse LLM malformée, la méthode journalise un warning en interne"
+" et retourne un ChroniclerResult vide — elle ne lève jamais."
+
+#: axiom.chronicler.ChroniclerEngine.run:16 of
+msgid "The save that owns the entities being simulated."
+msgstr "La save propriétaire des entités simulées."
+
+#: axiom.chronicler.ChroniclerEngine.run:17 of
+msgid "The current turn number (used for Event_Log turn_id)."
+msgstr "Le numéro de tour courant (utilisé pour le turn_id d'Event_Log)."
+
+#: axiom.chronicler.ChroniclerEngine.run:21 of
+msgid "ChroniclerResult summarising what changed."
+msgstr "ChroniclerResult résumant ce qui a changé."
+
+#: axiom.chronicler.ChroniclerEngine.force_trigger:1 of
+msgid "Explicitly trigger a Chronicler run regardless of turn threshold."
+msgstr ""
+"Déclenche explicitement un passage du Chronicler, quel que soit le seuil de "
+"tours."
+
+#: axiom.chronicler.ChroniclerEngine.force_trigger:3 of
+msgid ""
+"Intended for time-skip actions (sleeping, fast travel) where the player has "
+"explicitly advanced time.  Semantically equivalent to run() but named "
+"distinctly for call-site clarity."
+msgstr ""
+"Destiné aux actions de saut temporel (sommeil, voyage rapide) où le joueur a"
+" explicitement avancé le temps.  Sémantiquement équivalent à run(), mais "
+"nommé distinctement pour la clarté des sites d'appel."
+
+#: axiom.chronicler.ChroniclerEngine.force_trigger:7 of
+msgid "The active save."
+msgstr "La save active."
+
+#: axiom.chronicler.ChroniclerEngine.force_trigger:8 of
+msgid "The current turn number."
+msgstr "Le numéro de tour courant."
+
+#: axiom.chronicler.ChroniclerEngine.force_trigger:10 of
+msgid "ChroniclerResult from the simulation run."
+msgstr "ChroniclerResult du passage de simulation."
+
+#: ../../api/runtime.md:20
+msgid "`axiom.memory`"
+msgstr ""
+
+#: axiom.memory:1 of
+msgid "llm_engine/vector_memory.py"
+msgstr ""
+
+#: axiom.memory:3 of
+msgid "Local vector-database memory for Axiom AI narrative chunks."
+msgstr "Mémoire en base vectorielle locale pour les fragments narratifs d'Axiom AI."
+
+#: axiom.memory:5 of
+msgid ""
+"Every piece of narrative embedded here carries a `turn_id` metadata tag. "
+"This enables the surgical rollback required by the Checkpoint system: when "
+"the player rewinds to turn N, all chunks with turn_id > N are permanently "
+"deleted so they cannot bleed into the rebuilt timeline."
+msgstr ""
+"Chaque morceau de narration plongé ici porte une métadonnée `turn_id`. Cela "
+"permet le rollback chirurgical exigé par le système de checkpoints : quand "
+"le joueur rembobine au tour N, tous les fragments avec turn_id > N sont "
+"définitivement supprimés pour ne pas contaminer la chronologie reconstruite."
+
+#: axiom.memory:10 of
+msgid ""
+"Backend: ChromaDB (persistent, local) Embedding model: sentence-transformers"
+" all-MiniLM-L6-v2 (fully offline)"
+msgstr ""
+"Backend : ChromaDB (persistant, local). Modèle d'embedding : sentence-"
+"transformers all-MiniLM-L6-v2 (entièrement hors ligne)."
+
+#: axiom.memory:14 of
+msgid "Collection layout"
+msgstr "Organisation de la collection"
+
+#: axiom.memory:15 of
+msgid ""
+"Collection name : \"narrative_memory\" Document        : the text chunk "
+"Metadata fields : save_id (str), turn_id (int), chunk_type (str) ID"
+"              : UUID string, generated per chunk"
+msgstr ""
+"Nom de collection : \"narrative_memory\". Document : le fragment de texte. "
+"Champs de métadonnées : save_id (str), turn_id (int), chunk_type (str). ID :"
+" chaîne UUID, générée par fragment."
+
+#: axiom.memory.preload_embedding_runtime:1 of
+msgid "Force torch's native runtime to load on the *calling* (main) thread."
+msgstr ""
+"Force le runtime natif de torch à se charger sur le thread *appelant* "
+"(principal)."
+
+#: axiom.memory.preload_embedding_runtime:3 of
+msgid ""
+"The sentence-transformers embedding model is loaded and used on worker "
+"threads (VectorInitWorker / NarrativeWorker). The first encode lazily pulls "
+"in ``torch._dynamo`` → ``triton``, which ``dlopen()``s ``libtriton.so``. "
+"Doing that ``dlopen`` from a secondary thread while Qt is running segfaults "
+"(native crash, no Python traceback). Importing it once here, on the main "
+"thread at startup, makes the later cross-thread use safe."
+msgstr ""
+"Le modèle d'embedding sentence-transformers est chargé et utilisé sur des "
+"threads workers (VectorInitWorker / NarrativeWorker). Le premier encode tire"
+" paresseusement ``torch._dynamo`` → ``triton``, qui fait un ``dlopen()`` de "
+"``libtriton.so``. Faire ce ``dlopen`` depuis un thread secondaire pendant "
+"que Qt tourne segfaulte (plantage natif, sans traceback Python). L'importer "
+"une fois ici, sur le thread principal au démarrage, rend l'usage inter-"
+"threads ultérieur sûr."
+
+#: axiom.memory.preload_embedding_runtime:10 of
+msgid ""
+"Call this from the GUI/CLI entry point *before* any worker thread touches "
+"VectorMemory. Idempotent, never raises. Returns True if the runtime was pre-"
+"loaded, False if torch is unavailable (e.g. headless test stubs)."
+msgstr ""
+"À appeler depuis le point d'entrée GUI/CLI *avant* qu'un thread worker ne "
+"touche à la VectorMemory. Idempotent, ne lève jamais. Retourne True si le "
+"runtime a été préchargé, False si torch est indisponible (ex. stubs de test "
+"headless)."
+
+#: axiom.memory.VectorMemory:1 of
+msgid "Local semantic memory store backed by ChromaDB."
+msgstr "Magasin de mémoire sémantique local adossé à ChromaDB."
+
+#: axiom.memory.VectorMemory:3 of
+msgid ""
+"Filesystem path where ChromaDB will store its data. Created automatically if"
+" it does not exist."
+msgstr ""
+"Chemin où ChromaDB stockera ses données. Créé automatiquement s'il n'existe "
+"pas."
+
+#: axiom.memory.VectorMemory.embed_chunk:1 of
+msgid "Embed a text chunk and store it with turn_id metadata."
+msgstr "Plonge (embed) un fragment de texte et le stocke avec la métadonnée turn_id."
+
+#: axiom.memory.VectorMemory.query:1 of
+msgid "Retrieve the top-k most relevant chunks using Time-Weighted search."
+msgstr ""
+"Récupère les k fragments les plus pertinents par recherche pondérée par le "
+"temps."
+
+#: axiom.memory.VectorMemory.rollback:1 of
+msgid "Delete all chunks for a save with turn_id strictly greater than target."
+msgstr ""
+"Supprime tous les fragments d'une save avec turn_id strictement supérieur à "
+"la cible."
+
+#: ../../api/runtime.md:27
+msgid "`axiom.time_system`"
+msgstr ""
+
+#: axiom.time_system:1 of
+msgid "core/time_system.py"
+msgstr ""
+
+#: axiom.time_system:3 of
+msgid ""
+"Flexible time and calendar system for Axiom AI. Allows custom minutes per "
+"hour, hours per day, and named months."
+msgstr ""
+"Système de temps et de calendrier flexible pour Axiom AI. Autorise des "
+"minutes par heure, heures par jour et noms de mois personnalisés."
+
+#: axiom.time_system.TimeComponents:1 of
+msgid "Decomposition of an instant into raw data (zero presentation/translation)."
+msgstr "Décomposition d'un instant en données brutes (zéro présentation/traduction)."
+
+#: axiom.time_system.TimeComponents:3 of
+msgid ""
+"`phase_key` is a stable key among dawn/morning/afternoon/dusk/night; "
+"`month_name` comes from the universe calendar (data, not a translation)."
+msgstr ""
+"`phase_key` est une clé stable parmi dawn/morning/afternoon/dusk/night ; "
+"`month_name` provient du calendrier de l'univers (une donnée, pas une "
+"traduction)."
+
+#: axiom.time_system.TimeComponents.year:1 of
+msgid "Alias for field number 0"
+msgstr "Alias du champ numéro 0"
+
+#: axiom.time_system.TimeComponents.month_name:1 of
+msgid "Alias for field number 1"
+msgstr "Alias du champ numéro 1"
+
+#: axiom.time_system.TimeComponents.day:1 of
+msgid "Alias for field number 2"
+msgstr "Alias du champ numéro 2"
+
+#: axiom.time_system.TimeComponents.hour:1 of
+msgid "Alias for field number 3"
+msgstr "Alias du champ numéro 3"
+
+#: axiom.time_system.TimeComponents.minute:1 of
+msgid "Alias for field number 4"
+msgstr "Alias du champ numéro 4"
+
+#: axiom.time_system.TimeComponents.phase_key:1 of
+msgid "Alias for field number 5"
+msgstr "Alias du champ numéro 5"
+
+#: axiom.time_system.CalendarConfig:1 of
+msgid "Configuration for a custom calendar."
+msgstr "Configuration d'un calendrier personnalisé."
+
+#: axiom.time_system.TimeSystem:1 of
+msgid "Handles time conversion and formatting based on a CalendarConfig."
+msgstr "Gère la conversion et le formatage du temps selon une CalendarConfig."
+
+#: axiom.time_system.TimeSystem.get_time_components:1 of
+msgid "Decompose cumulative minutes into (year, month, day, h, min, phase key)."
+msgstr "Décompose des minutes cumulées en (année, mois, jour, h, min, clé de phase)."
+
+#: axiom.time_system.TimeSystem.get_time_components:3 of
+msgid ""
+"Raw data only: no translation. The frontend localises the display from these"
+" fields."
+msgstr ""
+"Données brutes uniquement : aucune traduction. Le frontend localise "
+"l'affichage à partir de ces champs."
+
+#: axiom.time_system.TimeSystem.get_time_string:1 of
+msgid ""
+"Default English rendering (dev / CLI / library). Zero engine-side "
+"localisation."
+msgstr ""
+"Rendu anglais par défaut (dev / CLI / librairie). Zéro localisation côté "
+"moteur."
+
+#: axiom.time_system.TimeSystem.get_time_string:3 of
+msgid ""
+"The GUI does NOT go through here: it formats through its own localisation "
+"layer to display in the user's language."
+msgstr ""
+"Le GUI ne passe PAS par ici : il formate via sa propre couche de "
+"localisation pour afficher dans la langue de l'utilisateur."
+
+#: axiom.time_system.TimeSystem.components_to_minutes:1 of
+msgid ""
+"Convert a simplified (Day, Hour, Min) UI input back to cumulative session "
+"minutes."
+msgstr ""
+"Convertit une saisie UI simplifiée (Jour, Heure, Min) en minutes de session "
+"cumulées."
+
+#: axiom.time_system.TimeSystem.minutes_to_components:1 of
+msgid "Convert session minutes back to Day, Hour, Min."
+msgstr "Convertit des minutes de session en Jour, Heure, Min."
+
+#: ../../api/runtime.md:34
+msgid "`axiom.rules`"
+msgstr ""
+
+#: axiom.rules:1 of
+msgid "core/rules_engine.py"
+msgstr ""
+
+#: axiom.rules:3 of
+msgid "JSON-based Rules Engine for Axiom AI."
+msgstr "Moteur de règles JSON d'Axiom AI."
+
+#: axiom.rules:5 of
+msgid ""
+"The engine evaluates a set of creator-defined rules against an entity's "
+"current stats and returns the list of actions that should be applied."
+msgstr ""
+"Le moteur évalue un ensemble de règles définies par le créateur contre les "
+"stats courantes d'une entité et retourne la liste des actions à appliquer."
+
+#: axiom.rules:8 of
+msgid "Canonical Rule JSON schema::"
+msgstr "Schéma JSON canonique d'une règle ::"
+
+#: axiom.rules:41 of
+msgid "Notes"
+msgstr "Notes"
+
+#: axiom.rules:42 of
+msgid "Rules are evaluated in ascending priority order (0 = highest priority)."
+msgstr "Les règles sont évaluées par priorité croissante (0 = priorité maximale)."
+
+#: axiom.rules:43 of
+msgid "A rule with target_entity == '*' is evaluated for every entity."
+msgstr "Une règle avec target_entity == '*' est évaluée pour chaque entité."
+
+#: axiom.rules:44 of
+msgid ""
+"A rule with a specific target_entity is only evaluated when entity_id "
+"matches."
+msgstr ""
+"Une règle avec un target_entity précis n'est évaluée que si entity_id "
+"correspond."
+
+#: axiom.rules:45 of
+msgid ""
+"apply_actions() is a pure function: it does NOT write to the database. The "
+"caller (Arbitrator, Phase 2) is responsible for persisting changes via "
+"EventSourcer."
+msgstr ""
+"apply_actions() est une fonction pure : elle n'écrit PAS dans la base. "
+"L'appelant (l'Arbitrator) est responsable de persister les changements via "
+"l'EventSourcer."
+
+#: axiom.rules.RulesEngine:1 of
+msgid "Evaluates JSON rules against entity stats and produces triggered actions."
+msgstr ""
+"Évalue les règles JSON contre les stats d'entités et produit les actions "
+"déclenchées."
+
+#: axiom.rules.RulesEngine:3 of
+msgid ""
+"List of rule dicts loaded from the Rules table of a universe db. Rules are "
+"sorted by priority at construction time."
+msgstr ""
+"Liste de dicts de règles chargés depuis la table Rules d'une base d'univers."
+" Les règles sont triées par priorité à la construction."
+
+#: axiom.rules.RulesEngine.evaluate:1 of
+msgid "Evaluate all rules against an entity's current stats."
+msgstr "Évalue toutes les règles contre les stats courantes d'une entité."
+
+#: axiom.rules.RulesEngine.evaluate:3 of
+msgid "Rules are processed in priority order.  A rule fires when:"
+msgstr ""
+"Les règles sont traitées par ordre de priorité.  Une règle se déclenche "
+"quand :"
+
+#: axiom.rules.RulesEngine.evaluate:4 of
+msgid "Its target_entity is '*' OR equals entity_id, AND"
+msgstr "Son target_entity est '*' OU égale entity_id, ET"
+
+#: axiom.rules.RulesEngine.evaluate:5 of
+msgid "Its conditions evaluate to True."
+msgstr "Ses conditions s'évaluent à True."
+
+#: axiom.rules.RulesEngine.evaluate:7 of
+msgid "The ID of the entity whose stats are being tested."
+msgstr "L'ID de l'entité dont les stats sont testées."
+
+#: axiom.rules.RulesEngine.evaluate:8 of
+msgid "The entity's current stat snapshot (stat_key -> value)."
+msgstr "L'instantané de stats courant de l'entité (stat_key -> valeur)."
+
+#: axiom.rules.RulesEngine.evaluate:10 of
+msgid ""
+"List of action dicts from all triggered rules, in priority order. May be "
+"empty if no rules fire."
+msgstr ""
+"Liste des dicts d'actions de toutes les règles déclenchées, par ordre de "
+"priorité. Peut être vide si aucune règle ne se déclenche."
+
+#: axiom.rules.RulesEngine.apply_actions:1 of
+msgid "Apply a list of actions to a stats snapshot and return the updated copy."
+msgstr ""
+"Applique une liste d'actions à un instantané de stats et retourne la copie "
+"mise à jour."
+
+#: axiom.rules.RulesEngine.apply_actions:3 of
+msgid "This is a pure function.  The original stats dict is not mutated."
+msgstr "C'est une fonction pure.  Le dict de stats d'origine n'est pas muté."
+
+#: axiom.rules.RulesEngine.apply_actions:5 of
+msgid "Supported action types:"
+msgstr "Types d'actions pris en charge :"
+
+#: axiom.rules.RulesEngine.apply_actions:7 of
+msgid "stat_change — adds 'delta' (float) to an existing or zero-valued stat."
+msgstr "stat_change — ajoute 'delta' (float) à une stat existante ou valant zéro."
+
+#: axiom.rules.RulesEngine.apply_actions:8 of
+msgid "stat_set — unconditionally sets a stat to the string form of 'value'."
+msgstr "stat_set — fixe inconditionnellement une stat à la forme chaîne de 'value'."
+
+#: axiom.rules.RulesEngine.apply_actions:9 of
+msgid "set_status — alias for stat_set; sets 'stat' to string 'value'."
+msgstr "set_status — alias de stat_set ; fixe 'stat' à la chaîne 'value'."
+
+#: axiom.rules.RulesEngine.apply_actions:10 of
+msgid ""
+"trigger_event — no immediate stat mutation; included in output for the "
+"caller to dispatch as a new Event_Log entry."
+msgstr ""
+"trigger_event — aucune mutation de stat immédiate ; inclus dans la sortie "
+"pour que l'appelant l'émette comme nouvelle entrée Event_Log."
+
+#: axiom.rules.RulesEngine.apply_actions:13 of
+msgid "List of action dicts (typically from evaluate())."
+msgstr "Liste de dicts d'actions (typiquement issus d'evaluate())."
+
+#: axiom.rules.RulesEngine.apply_actions:14 of
+msgid "The current stat snapshot to transform."
+msgstr "L'instantané de stats courant à transformer."
+
+#: axiom.rules.RulesEngine.apply_actions:16 of
+msgid "New Stats dict with all applicable mutations applied."
+msgstr "Nouveau dict de stats avec toutes les mutations applicables appliquées."
+
+#: ../../api/runtime.md:41
+msgid "`axiom.modifiers`"
+msgstr ""
+
+#: axiom.modifiers:1 of
+msgid "database/modifier_processor.py"
+msgstr ""
+
+#: axiom.modifiers:3 of
+msgid "Active Modifiers management for Axiom AI."
+msgstr "Gestion des modificateurs actifs d'Axiom AI."
+
+#: axiom.modifiers:5 of
+msgid ""
+"Modifiers are temporary stat adjustments (buffs, debuffs, curses, blessings)"
+" that automatically expire after a set amount of in-game time (minutes). "
+"This module provides:"
+msgstr ""
+"Les modificateurs sont des ajustements de stats temporaires (buffs, debuffs,"
+" malédictions, bénédictions) qui expirent automatiquement après un temps in-"
+"game donné (minutes). Ce module fournit :"
+
+#: axiom.modifiers:9 of
+msgid ""
+"apply_modifiers: overlay active modifiers on top of a base stat snapshot for"
+" real-time display (read-only, no DB mutation)."
+msgstr ""
+"apply_modifiers : superpose les modificateurs actifs sur un instantané de "
+"stats de base pour l'affichage temps réel (lecture seule, aucune mutation de"
+" base)."
+
+#: axiom.modifiers:11 of
+msgid ""
+"tick_modifiers: decrement all modifier durations by elapsed minutes and "
+"purge expired ones from the database."
+msgstr ""
+"tick_modifiers : décrémente toutes les durées de modificateurs des minutes "
+"écoulées et purge les expirés de la base."
+
+#: axiom.modifiers:13 of
+msgid "add_modifier: insert a new modifier row and return its ID."
+msgstr "add_modifier : insère une nouvelle ligne de modificateur et retourne son ID."
+
+#: axiom.modifiers:15 of
+msgid ""
+"Modifiers live in the Active_Modifiers table, which is keyed on "
+"(modifier_id, entity_id, stat_key).  Every modifier carries a signed float "
+"delta and a minutes_remaining countdown.  When minutes_remaining reaches 0 "
+"the modifier is considered expired and will be deleted on the next tick."
+msgstr ""
+"Les modificateurs vivent dans la table Active_Modifiers, indexée sur "
+"(modifier_id, entity_id, stat_key).  Chaque modificateur porte un delta "
+"float signé et un compte à rebours minutes_remaining.  Quand "
+"minutes_remaining atteint 0, le modificateur est considéré expiré et sera "
+"supprimé au tick suivant."
+
+#: axiom.modifiers.ModifierProcessor:1 of
+msgid "Manages temporary stat modifiers for entities in a universe database."
+msgstr "Gère les modificateurs de stats temporaires des entités d'une base d'univers."
+
+#: axiom.modifiers.ModifierProcessor:3 of
+msgid ""
+"Filesystem path to an existing universe .db file created by "
+"database.schema.create_universe_db()."
+msgstr ""
+"Chemin de fichier d'un `.db` univers existant créé par "
+"database.schema.create_universe_db()."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:1 of
+msgid "Overlay active modifiers on a base stat snapshot."
+msgstr "Superpose les modificateurs actifs sur un instantané de stats de base."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:3 of
+msgid ""
+"Reads all active modifiers for the entity and adds their deltas to the "
+"corresponding numeric stats.  Non-numeric stats are left unchanged. This "
+"method is read-only: it does not write to the database."
+msgstr ""
+"Lit tous les modificateurs actifs de l'entité et ajoute leurs deltas aux "
+"stats numériques correspondantes.  Les stats non numériques sont laissées "
+"inchangées. Cette méthode est en lecture seule : elle n'écrit pas dans la "
+"base."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:7 of
+msgid ""
+"The active save (used to scope modifier lookup via entity_id — modifiers are"
+" stored per entity, not per save, but the entity must belong to this save's "
+"universe)."
+msgstr ""
+"La save active (sert à délimiter la recherche de modificateurs via entity_id"
+" — les modificateurs sont stockés par entité, pas par save, mais l'entité "
+"doit appartenir à l'univers de cette save)."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:10 of
+msgid "The entity whose modifiers are applied."
+msgstr "L'entité dont les modificateurs sont appliqués."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:11 of
+msgid ""
+"The entity's current base stat snapshot from State_Cache (stat_key -> string"
+" value)."
+msgstr ""
+"L'instantané de stats de base courant de l'entité depuis le State_Cache "
+"(stat_key -> valeur chaîne)."
+
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:14 of
+msgid ""
+"New dict with modifier deltas applied.  Keys not affected by any modifier "
+"are copied verbatim from base_stats."
+msgstr ""
+"Nouveau dict avec les deltas de modificateurs appliqués.  Les clés non "
+"affectées par un modificateur sont copiées telles quelles depuis base_stats."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:12
+#: axiom.modifiers.ModifierProcessor.apply_modifiers:17
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:17 of
+msgid "On any database failure."
+msgstr "Sur tout échec de base de données."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:1 of
+msgid "Decrement minutes_remaining for all modifiers of this save's entities."
+msgstr ""
+"Décrémente minutes_remaining pour tous les modificateurs des entités de "
+"cette save."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:3 of
+msgid "For every active modifier associated with any entity in the database:"
+msgstr "Pour chaque modificateur actif associé à une entité de la base :"
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:4 of
+msgid "Decrements minutes_remaining by elapsed_minutes."
+msgstr "Décrémente minutes_remaining d'elapsed_minutes."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:5 of
+msgid "Deletes the modifier if minutes_remaining reaches 0 after decrement."
+msgstr "Supprime le modificateur si minutes_remaining atteint 0 après décrément."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:7 of
+msgid ""
+"The save_id parameter scopes the tick to entities relevant to the given save"
+" by joining through the State_Cache (entities that have cache entries for "
+"this save).  If no scoping information exists, all entity modifiers in "
+"Active_Modifiers are ticked."
+msgstr ""
+"Le paramètre save_id délimite le tick aux entités pertinentes pour la save "
+"donnée en joignant le State_Cache (entités ayant des entrées de cache pour "
+"cette save).  Sans information de délimitation, tous les modificateurs "
+"d'entités d'Active_Modifiers sont tickés."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:12 of
+msgid "The save whose modifier timers are advanced."
+msgstr "La save dont les minuteurs de modificateurs avancent."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:13 of
+msgid "Number of minutes that passed in-game."
+msgstr "Nombre de minutes écoulées in-game."
+
+#: axiom.modifiers.ModifierProcessor.tick_modifiers:15 of
+msgid "List of modifier_id strings that were deleted (expired) this tick."
+msgstr "Liste des modifier_id (chaînes) supprimés (expirés) à ce tick."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:1 of
+msgid "Insert a new modifier and return its generated modifier_id."
+msgstr "Insère un nouveau modificateur et retourne son modifier_id généré."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:3 of
+msgid "The save this modifier is associated with."
+msgstr "La save à laquelle ce modificateur est associé."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:4 of
+msgid "The entity the modifier affects."
+msgstr "L'entité que le modificateur affecte."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:5 of
+msgid "The stat key the delta is applied to."
+msgstr "La clé de stat à laquelle le delta s'applique."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:6 of
+msgid "Signed float adjustment (positive = buff, negative = debuff)."
+msgstr "Ajustement float signé (positif = buff, négatif = debuff)."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:7 of
+msgid "Number of in-game minutes the modifier lasts (must be >= 1)."
+msgstr "Nombre de minutes in-game que dure le modificateur (doit être >= 1)."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:9 of
+msgid "The newly generated modifier_id (UUID string)."
+msgstr "Le modifier_id nouvellement généré (chaîne UUID)."
+
+#: axiom.modifiers.ModifierProcessor.add_modifier:11 of
+msgid "If minutes < 1."
+msgstr "Si minutes < 1."
+
+#: ../../api/runtime.md:48
+msgid "`axiom.multiplayer`"
+msgstr ""
+
+#: axiom.multiplayer:1 of
+msgid "axiom.multiplayer — sequential turn-resolution queue."
+msgstr "axiom.multiplayer — file de résolution séquentielle des tours."
+
+#: axiom.multiplayer:3 of
+msgid ""
+"In multiplayer, player actions are resolved **one at a time** (FIFO) to "
+"avoid any race on the database. Pure threading, zero Qt — the Qt shell "
+"(`core/multiplayer_queue.py::ArbitratorWorker`) merely moves `run_loop` onto"
+" a QThread and translates the callbacks into signals."
+msgstr ""
+"En multijoueur, les actions des joueurs sont résolues **une à la fois** "
+"(FIFO) pour éviter toute course sur la base. Pur threading, zéro Qt — la "
+"coquille Qt (`core/multiplayer_queue.py::ArbitratorWorker`) ne fait que "
+"déporter `run_loop` sur un QThread et traduire les callbacks en signaux."
+
+#: axiom.multiplayer.PlayerAction:1 of
+msgid "A player action awaiting resolution."
+msgstr "Une action de joueur en attente de résolution."
+
+#: axiom.multiplayer.ActionQueue:1 of
+msgid "FIFO queue of player actions, resolved sequentially by the arbitrator."
+msgstr "File FIFO d'actions joueurs, résolues séquentiellement par l'arbitrator."
+
+#: axiom.multiplayer.ActionQueue:3 of
+msgid ""
+"`run_loop` is blocking: the caller runs it on ITS thread (QThread on the GUI"
+" side, plain Python thread headless). `enqueue` and `stop` are thread-safe "
+"and callable from anywhere."
+msgstr ""
+"`run_loop` est bloquant : l'appelant le fait tourner sur SON thread (QThread"
+" côté GUI, thread Python nu en headless). `enqueue` et `stop` sont thread-"
+"safe et appelables de partout."
+
+#: axiom.multiplayer.ActionQueue.enqueue:1 of
+msgid "Add an action to resolve."
+msgstr "Ajoute une action à résoudre."
+
+#: axiom.multiplayer.ActionQueue.stop:1 of
+msgid "Stop the loop cleanly (unblocks the pending `get`)."
+msgstr "Arrête proprement la boucle (débloque le `get` en attente)."
+
+#: axiom.multiplayer.ActionQueue.run_loop:1 of
+msgid "Resolution loop: one action at a time, until `stop()`."
+msgstr "Boucle de résolution : une action à la fois, jusqu'à `stop()`."
+
+#: ../../api/runtime.md:55
+msgid "`axiom.db_helpers`"
+msgstr ""
+
+#: axiom.db_helpers:1 of
+msgid "workers/db_helpers.py"
+msgstr ""
+
+#: axiom.db_helpers:3 of
+msgid "Synchronous database helper functions for one-time UI bootstrap reads."
+msgstr ""
+"Fonctions d'aide synchrones de base de données pour les lectures uniques "
+"d'amorçage de l'UI."
+
+#: axiom.db_helpers:5 of
+msgid ""
+"These are small, fast, lightweight operations that are acceptable to run on "
+"the main thread during view construction or session initialisation (e.g. "
+"reading 1–2 rows of metadata at session start)."
+msgstr ""
+"Ce sont de petites opérations rapides et légères, acceptables sur le thread "
+"principal pendant la construction des vues ou l'initialisation de session "
+"(ex. lire 1–2 lignes de métadonnées au démarrage)."
+
+#: axiom.db_helpers:9 of
+msgid ""
+"All SQL strings in the project are concentrated in database/ and workers/ "
+"modules — never in ui/ files — to satisfy the MVC separation mandate."
+msgstr ""
+"Toutes les chaînes SQL du projet sont concentrées dans les modules database/"
+" et workers/ — jamais dans les fichiers ui/ — pour respecter la séparation "
+"MVC."
+
+#: axiom.db_helpers.apply_stat_preset:1 of
+msgid "Apply a stat preset to a universe database."
+msgstr "Applique un préréglage de stats à une base d'univers."
+
+#: axiom.db_helpers.apply_stat_preset:3 axiom.db_helpers.create_new_save:3
+#: axiom.db_helpers.get_current_time:3 axiom.db_helpers.get_max_turn_id:3
+#: axiom.db_helpers.get_spatial_context:3 axiom.db_helpers.load_active_entities:7
+#: axiom.db_helpers.load_rules_for_session:3 axiom.db_helpers.load_saves:6
+#: axiom.db_helpers.read_universe_card_metadata:3 of
+msgid "Path to the universe .db file."
+msgstr "Chemin du fichier `.db` univers."
+
+#: axiom.db_helpers.apply_stat_preset:4 of
+msgid "Key in STAT_PRESETS."
+msgstr "Clé dans STAT_PRESETS."
+
+#: axiom.db_helpers.apply_stat_preset:6 of
+msgid "Number of stats successfully added."
+msgstr "Nombre de stats ajoutées avec succès."
+
+#: axiom.db_helpers.read_universe_card_metadata:1 of
+msgid "Read display metadata for a universe card widget."
+msgstr "Lit les métadonnées d'affichage pour une carte d'univers."
+
+#: axiom.db_helpers.read_universe_card_metadata:5 of
+msgid ""
+"Tuple of (universe_name, last_updated_str, difficulty_str). Returns sensible"
+" defaults on any error."
+msgstr ""
+"Tuple (universe_name, last_updated_str, difficulty_str). Retourne des "
+"défauts raisonnables en cas d'erreur."
+
+#: axiom.db_helpers.provision_blank_universe:1 of
+msgid "Insert default Universe_Meta rows into a freshly provisioned database."
+msgstr ""
+"Insère les lignes Universe_Meta par défaut dans une base fraîchement "
+"provisionnée."
+
+#: axiom.db_helpers.provision_blank_universe:3 of
+msgid "Path to the universe .db file (already schema-provisioned)."
+msgstr "Chemin du fichier `.db` univers (schéma déjà provisionné)."
+
+#: axiom.db_helpers.provision_blank_universe:4 of
+msgid "Human-readable universe name."
+msgstr "Nom d'univers lisible par un humain."
+
+#: axiom.db_helpers.create_new_save:1 of
+msgid "Insert a new save row and return its save_id."
+msgstr "Insère une nouvelle ligne de save et retourne son save_id."
+
+#: axiom.db_helpers.create_new_save:4 of
+msgid "Player's chosen name."
+msgstr "Le nom choisi par le joueur."
+
+#: axiom.db_helpers.create_new_save:5 of
+msgid "\"Normal\" or \"Hardcore\"."
+msgstr "\"Normal\" ou \"Hardcore\"."
+
+#: axiom.db_helpers.create_new_save:6 of
+msgid "Optional background / persona text for the player."
+msgstr "Texte optionnel de background / persona du joueur."
+
+#: axiom.db_helpers.create_new_save:8 of
+msgid "The newly created UUID save_id string."
+msgstr "La chaîne save_id (UUID) nouvellement créée."
+
+#: axiom.db_helpers.load_saves:1 of
+msgid "Read all saves for a universe, sorted most-recent first."
+msgstr "Lit toutes les saves d'un univers, les plus récentes d'abord."
+
+#: axiom.db_helpers.load_saves:3 of
+msgid ""
+"Runs the player_persona migration automatically so older databases remain "
+"compatible."
+msgstr ""
+"Exécute automatiquement la migration player_persona pour que les anciennes "
+"bases restent compatibles."
+
+#: axiom.db_helpers.load_saves:8 of
+msgid "save_id, player_name, difficulty, last_updated, player_persona."
+msgstr "save_id, player_name, difficulty, last_updated, player_persona."
+
+#: axiom.db_helpers.load_rules_for_session:1 of
+msgid "Read all rules from a universe database for session initialisation."
+msgstr "Lit toutes les règles d'une base d'univers pour l'initialisation de session."
+
+#: axiom.db_helpers.load_rules_for_session:5 of
+msgid ""
+"List of rule dicts in canonical Rules Engine schema. Empty list if the "
+"database cannot be read."
+msgstr ""
+"Liste de dicts de règles au schéma canonique du moteur de règles. Liste vide"
+" si la base est illisible."
+
+#: axiom.db_helpers.load_active_entities:1 of
+msgid "Read all active entities (with their stats) for session initialisation."
+msgstr ""
+"Lit toutes les entités actives (avec leurs stats) pour l'initialisation de "
+"session."
+
+#: axiom.db_helpers.load_active_entities:3 of
+msgid ""
+"Mirrors the shape produced by `workers/db_worker.load_entities_and_rules` "
+"(the list the GUI feeds to `NarrativeWorker`), so a headless `Session` can "
+"resolve the Companion Hero entity itself instead of relying on the UI."
+msgstr ""
+"Reproduit la forme produite par `workers/db_worker.load_entities_and_rules` "
+"(la liste que le GUI fournit au `NarrativeWorker`), pour qu'une `Session` "
+"headless puisse résoudre elle-même l'entité Héros Compagnon au lieu de "
+"dépendre de l'UI."
+
+#: axiom.db_helpers.load_active_entities:9 of
+#, python-brace-format
+msgid ""
+"`{entity_id, entity_type, name, description, stats}`. Empty list if the "
+"database cannot be read."
+msgstr ""
+"`{entity_id, entity_type, name, description, stats}`. Liste vide si la base "
+"est illisible."
+
+#: axiom.db_helpers.get_max_turn_id:1 of
+msgid "Read the highest turn_id from Event_Log for a save (session resume)."
+msgstr "Lit le turn_id maximal d'Event_Log pour une save (reprise de session)."
+
+#: axiom.db_helpers.get_current_time:4 axiom.db_helpers.get_max_turn_id:4 of
+msgid "The save to query."
+msgstr "La save à interroger."
+
+#: axiom.db_helpers.get_max_turn_id:6 of
+msgid "The maximum turn_id, or 0 if no events exist."
+msgstr "Le turn_id maximal, ou 0 si aucun événement n'existe."
+
+#: axiom.db_helpers.get_current_time:1 of
+msgid "Read the highest in_game_time from Timeline for a save."
+msgstr "Lit le in_game_time maximal de la Timeline pour une save."
+
+#: axiom.db_helpers.get_current_time:6 of
+msgid "The maximum in_game_time in minutes, or 0 if no timeline exists."
+msgstr "Le in_game_time maximal en minutes, ou 0 si aucune timeline n'existe."
+
+#: axiom.db_helpers.get_time_of_day_context:1 of
+msgid "Convert total minutes into a descriptive Day, Time, and Phase string."
+msgstr "Convertit des minutes totales en chaîne descriptive Jour, Heure et Phase."
+
+#: axiom.db_helpers.get_time_of_day_context:3 of
+msgid "Cumulative in-game minutes."
+msgstr "Minutes in-game cumulées."
+
+#: axiom.db_helpers.get_time_of_day_context:5 of
+msgid "\"Day X, HH:MM (Phase)\""
+msgstr "\"Day X, HH:MM (Phase)\""
+
+#: axiom.db_helpers.get_inventory:1 of
+msgid "Fetch the inventory for a specific entity in a save."
+msgstr "Récupère l'inventaire d'une entité précise dans une save."
+
+#: axiom.db_helpers.get_spatial_context:1 of
+msgid "Fetch the breadcrumb path and immediate neighbors for a location."
+msgstr "Récupère le fil d'Ariane et les voisins immédiats d'un lieu."
+
+#: axiom.db_helpers.get_spatial_context:4 of
+msgid "The ID of the current location."
+msgstr "L'ID du lieu courant."
+
+#: axiom.db_helpers.get_spatial_context:6 of
+msgid ""
+"Dict with 'breadcrumb' (str), 'description' (str), and 'neighbors' (list of "
+"dicts)."
+msgstr ""
+"Dict avec 'breadcrumb' (str), 'description' (str) et 'neighbors' (liste de "
+"dicts)."
+
+#: axiom.db_helpers.create_player_entity:1 of
+msgid "Create a player entity (origin='runtime') with its default stats."
+msgstr "Crée une entité joueur (origin='runtime') avec ses stats par défaut."
+
+#: axiom.db_helpers.create_player_entity:3 of
+msgid "The created entity_id (derived from the name, disambiguated on collision)."
+msgstr "L'entity_id créé (dérivé du nom, désambiguïsé en cas de collision)."
+
+#: ../../api/runtime.md:62
+msgid "`axiom.textfmt`"
+msgstr ""
+
+#: axiom.textfmt:1 of
+msgid "axiom.textfmt — language-neutral text formatting, engine-side."
+msgstr "axiom.textfmt — formatage de texte langue-neutre, côté moteur."
+
+#: axiom.textfmt:3 of
+msgid ""
+"`fmt_num` is NOT translation: it is display cleanup for numbers (avoids "
+"\"3.0\" or \"0.1000000001\"). The engine needs it regardless of any "
+"language; localisation itself lives on the frontend side (see "
+"`core.localization`)."
+msgstr ""
+"`fmt_num` n'est PAS de la traduction : c'est un nettoyage d'affichage des "
+"nombres (évite « 3.0 » ou « 0.1000000001 »). Le moteur en a besoin "
+"indépendamment de toute langue ; la localisation, elle, vit côté frontend "
+"(voir `core.localization`)."
+
+#: axiom.textfmt.fmt_num:1 of
+msgid "Format a number to avoid 'weird' float displays."
+msgstr "Formate un nombre pour éviter les affichages « bizarres » de flottants."
+
+#: axiom.textfmt.fmt_num:3 of
+msgid ""
+"Returns a string representation of the number, rounded to 2 decimal places "
+"if it's a float, or as an integer if it has no fractional part."
+msgstr ""
+"Retourne une représentation en chaîne du nombre, arrondie à 2 décimales si "
+"c'est un flottant, ou en entier s'il n'a pas de partie fractionnaire."
+

@@ -1,14 +1,14 @@
-"""axiom.package — Universe-as-Code : packaging `.axiom` v2 + compat v1.
+"""axiom.package — Universe-as-Code: `.axiom` v2 packaging + v1 compat.
 
-Pilier 2 (doc §7.5, §7.10, annexe C.1). Un `.axiom` v2 est un **zip de l'arborescence
-source** (TOML/MD) incluant le cache compilé `.axiom-cache/universe.db` pour un chargement
-instantané.
+A `.axiom` v2 archive is a **zip of the source tree** (TOML/MD) including the
+compiled cache `.axiom-cache/universe.db` for instant loading.
 
-Compat ascendante : les anciens `.axiom` v1 (zip de fichiers JSON) sont détectés et
-convertis à la volée (v1 → .db → decompile → arbo v2 → recompile).
+Backward compatibility: old `.axiom` v1 archives (zip of JSON files) are
+detected and converted on the fly (v1 -> .db -> decompile -> v2 tree ->
+recompile).
 
-Zéro dépendance Qt : pur moteur. Le worker Qt `import_export_worker.py` devra à terme
-n'être qu'une coquille fine appelant ces fonctions.
+Zero Qt dependency: pure engine. The Qt worker `import_export_worker.py` is a
+thin shell calling these functions.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ _V1_MARKERS = ("universe_meta.json", "format_version.json")
 
 
 class PackageError(Exception):
-    """Erreur de packaging/dépaquetage d'un `.axiom`."""
+    """Error while packing/unpacking a `.axiom` archive."""
 
 
 # ---------------------------------------------------------------------------
@@ -43,25 +43,26 @@ class PackageError(Exception):
 # ---------------------------------------------------------------------------
 
 def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
-    """Empaquette une arborescence source en archive `.axiom` v2.
+    """Pack a source tree into a `.axiom` v2 archive.
 
-    Recompile d'abord le cache (`.axiom-cache/universe.db`) pour l'embarquer, puis
-    zippe l'arborescence. Une archive ne publie que la **définition** (même
-    contrat que l'export d'un `.db` plat, TICKET-039) :
-    - `.git/` et les sidecars WAL (`-wal`/`-shm`) sont exclus ;
-    - le cache embarqué est une copie **purgée des tables runtime** (les saves
-      embarquées legacy — historique de jeu privé — ne voyagent pas).
+    Recompiles the cache (`.axiom-cache/universe.db`) first so it ships in the
+    archive, then zips the tree. An archive only publishes the **definition**
+    (same contract as exporting a flat `.db`, TICKET-039):
+
+    - `.git/` and the WAL sidecars (`-wal`/`-shm`) are excluded;
+    - the embedded cache is a copy **purged of the runtime tables** (legacy
+      embedded saves — private play history — do not travel).
 
     Args:
-        src_dir:     Dossier source de l'univers (contient universe.toml).
-        output_path: Chemin de l'archive `.axiom` à produire.
+        src_dir:     Universe source folder (contains universe.toml).
+        output_path: Path of the `.axiom` archive to produce.
 
     Returns:
-        Le chemin de l'archive créée.
+        The path of the created archive.
     """
     src_dir = Path(src_dir)
     if not (src_dir / _V2_MARKER).exists():
-        raise PackageError(f"Arborescence source invalide (pas de universe.toml) : {src_dir}")
+        raise PackageError(f"Invalid source tree (no universe.toml): {src_dir}")
 
     compile_universe(src_dir)  # garantit un cache à jour à embarquer
     cache_rel = f"{CACHE_DIRNAME}/{CACHE_DB_NAME}"
@@ -130,23 +131,23 @@ def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
 
 
 def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
-    """Exporte un univers `.db` en archive `.axiom` v2 (decompile → pack).
+    """Export a `.db` universe to a `.axiom` v2 archive (decompile -> pack).
 
-    Pour les univers qui ne vivent encore que sous forme `.db` (legacy GUI).
-    L'archive ne contient que la **définition** (l'arbo décompilée + son cache
-    recompilé) : les saves embarquées dans le `.db` ne sont pas exportées —
-    même contrat que l'export v1.
+    For universes that still only exist as a `.db` (legacy GUI). The archive
+    only contains the **definition** (the decompiled tree + its recompiled
+    cache): saves embedded in the `.db` are not exported — same contract as the
+    v1 export.
 
     Args:
-        db_path:     Chemin du `.db` univers à exporter.
-        output_path: Chemin de l'archive `.axiom` à produire.
+        db_path:     Path of the universe `.db` to export.
+        output_path: Path of the `.axiom` archive to produce.
 
     Returns:
-        Le chemin de l'archive créée.
+        The path of the created archive.
     """
     db_path = Path(db_path)
     if not db_path.is_file():
-        raise PackageError(f"Base univers introuvable : {db_path}")
+        raise PackageError(f"Universe database not found: {db_path}")
 
     from axiom.decompile import DecompileError, decompile_universe
 
@@ -155,7 +156,7 @@ def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
         try:
             decompile_universe(db_path, src)
         except DecompileError as exc:
-            raise PackageError(f"Décompilation impossible : {exc}") from exc
+            raise PackageError(f"Decompilation failed: {exc}") from exc
         return pack_universe(src, output_path)
 
 
@@ -164,31 +165,33 @@ def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
 # ---------------------------------------------------------------------------
 
 def detect_format(axiom_path: str | Path) -> str:
-    """Retourne 'v2', 'v1' ou lève PackageError selon le contenu de l'archive."""
+    """Return 'v2' or 'v1', or raise PackageError, depending on the archive content."""
     try:
         with zipfile.ZipFile(str(axiom_path), "r") as zf:
             names = set(zf.namelist())
     except (zipfile.BadZipFile, OSError) as exc:
-        raise PackageError(f"Archive .axiom illisible : {exc}") from exc
+        raise PackageError(f"Unreadable .axiom archive: {exc}") from exc
     if _V2_MARKER in names:
         return "v2"
     if any(m in names for m in _V1_MARKERS):
         return "v1"
-    raise PackageError("Format .axiom non reconnu (ni v2 ni v1).")
+    raise PackageError("Unrecognized .axiom format (neither v2 nor v1).")
 
 
 def unpack_universe(axiom_path: str | Path, dest_root: str | Path) -> Path:
-    """Dépaquette un `.axiom` (v1 ou v2) en arborescence source jouable.
+    """Unpack a `.axiom` (v1 or v2) into a playable source tree.
 
-    v2 : décompresse, vérifie le hash → garde le `.db` embarqué si valide, sinon recompile.
-    v1 : convertit (JSON → .db → decompile → arbo v2 → compile).
+    v2: unzip, check the hash — keep the embedded `.db` if valid, recompile
+    otherwise. v1: convert (JSON -> .db -> decompile -> v2 tree -> compile).
 
     Args:
-        axiom_path: Chemin de l'archive `.axiom`.
-        dest_root:  Dossier racine où matérialiser l'univers (un sous-dossier <name>/).
+        axiom_path: Path of the `.axiom` archive.
+        dest_root:  Root folder where the universe is materialised (in a
+                    <name>/ subfolder).
 
     Returns:
-        Le chemin du dossier source de l'univers (contenant universe.toml + cache).
+        The path of the universe source folder (containing universe.toml +
+        cache).
     """
     axiom_path = Path(axiom_path)
     dest_root = Path(dest_root)
@@ -276,7 +279,7 @@ def _import_v1(axiom_path: Path, dest_root: Path, name: str) -> Path:
                 if (tmp / "lore_book.json").exists() else []
             )
         except (json.JSONDecodeError, OSError, KeyError) as exc:
-            raise PackageError(f".axiom v1 corrompu : {exc}") from exc
+            raise PackageError(f"Corrupt .axiom v1: {exc}") from exc
 
         v1_db = tmp / "_v1.db"
         create_universe_db(str(v1_db))

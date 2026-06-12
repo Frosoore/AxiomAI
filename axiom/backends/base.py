@@ -8,14 +8,13 @@ agent) are decoupled from any concrete LLM provider through this interface.
 Swapping between a local Ollama model and a remote Gemini model requires only
 changing which concrete subclass is instantiated.
 
-Tool Call Protocol
-------------------
-The LLM is instructed to wrap any structured state-change JSON inside a
-fenced block delimited by ~~~json / ~~~ markers.  This delimiter was chosen
-deliberately to avoid ambiguity with standard markdown ``` code fences that
-may appear legitimately in narrative prose.
+Tool Call Protocol: the LLM is instructed to wrap any structured
+state-change JSON inside a fenced block delimited by ``~~~json`` / ``~~~``
+markers.  This delimiter was chosen deliberately to avoid ambiguity with
+standard markdown triple-backtick code fences that may appear legitimately
+in narrative prose.
 
-Example LLM output:
+Example LLM output::
 
     The dragon breathes fire.  The knight loses his shield.
 
@@ -90,12 +89,12 @@ class LLMParseError(Exception):
 
 
 class GenerationCancelled(Exception):
-    """Annulation volontaire d'une génération (TICKET-033).
+    """Voluntary cancellation of a generation (TICKET-033).
 
-    Levée quand `LLMBackend.cancel_event` est armé pendant une attente (retry
-    429, pacing) ou à une frontière coopérative (entre chunks/cibles d'un
-    Populate). Ce n'est PAS une erreur : les appelants la traduisent en signal
-    « annulé », jamais en popup d'erreur.
+    Raised when `LLMBackend.cancel_event` is set during a wait (429 retry,
+    pacing) or at a cooperative boundary (between Populate chunks/targets).
+    This is NOT an error: callers translate it into a "cancelled" signal,
+    never into an error popup.
     """
 
 
@@ -122,14 +121,15 @@ class LLMBackend(ABC):
     """Abstract interface for all Axiom AI LLM provider clients.
 
     Concrete subclasses must implement complete(), stream_tokens(), and
-    is_available().  The parse_tool_call() helper is provided here and is
+    is_available(). The parse_tool_call() helper is provided here and is
     shared by all subclasses.
 
-    Hooks optionnels (TICKET-033), posés par l'appelant après construction —
-    zéro Qt, un backend qui ne les consulte pas reste valide :
-    - `on_status` : callback(str) de progression (ex. compte à rebours de retry) ;
-    - `cancel_event` : `threading.Event` armé pour demander l'arrêt — les
-      backends/appelants coopératifs lèvent alors `GenerationCancelled`.
+    Optional hooks, set by the caller after construction — zero Qt, a backend
+    that never consults them stays valid:
+
+    - `on_status`: progress callback(str) (e.g. retry countdown);
+    - `cancel_event`: a `threading.Event` set to request a stop — cooperative
+      backends/callers then raise `GenerationCancelled`.
     """
 
     on_status = None        # Callable[[str], None] | None
@@ -226,17 +226,20 @@ class LLMBackend(ABC):
         """Extract narrative text and tool-call JSON from a raw LLM response.
 
         Resilient parsing:
-        1. Checks for common markdown fences (~~~json, ```json, etc).
-        2. Fallback: Heuristic search for JSON objects {...} or arrays [...].
-        3. Normalizes minor schema deviations (e.g., missing 'stats' key or flat params).
+
+        1. Checks for common markdown fences (``~~~json``, triple-backtick
+           json, etc).
+        2. Fallback: heuristic search for JSON objects or arrays.
+        3. Normalizes minor schema deviations (e.g., missing 'stats' key or
+           flat params).
 
         Args:
             raw_response: The complete raw string returned by the LLM.
 
         Returns:
-            A tuple (narrative_text, tool_call) where:
-            - narrative_text is the response with the JSON block removed.
-            - tool_call is the parsed dict/list, or None if no valid JSON was found.
+            A (narrative_text, tool_call) tuple — narrative_text is the
+            response with the JSON block removed, and tool_call is the
+            parsed dict/list, or None if no valid JSON was found.
         """
         # 1. Try fenced blocks first (prioritize ~~~json as per spec)
         for pattern in _FENCE_PATTERNS:

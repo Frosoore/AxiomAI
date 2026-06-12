@@ -1,10 +1,9 @@
-"""axiom.multiplayer — file de résolution séquentielle des tours (portage B4).
+"""axiom.multiplayer — sequential turn-resolution queue.
 
-Logique extraite de `core/multiplayer_queue.py` : en multijoueur, les actions
-des joueurs sont résolues **une à la fois** (FIFO) pour éviter toute course
-sur la base. Pur threading, zéro Qt — la coquille Qt
-(`core/multiplayer_queue.py::ArbitratorWorker`) ne fait que déporter
-`run_loop` sur un QThread et traduire les callbacks en signaux.
+In multiplayer, player actions are resolved **one at a time** (FIFO) to
+avoid any race on the database. Pure threading, zero Qt — the Qt shell
+(`core/multiplayer_queue.py::ArbitratorWorker`) merely moves `run_loop` onto
+a QThread and translates the callbacks into signals.
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class PlayerAction:
-    """Action de joueur en attente de résolution."""
+    """A player action awaiting resolution."""
     player_id: str
     text: str
     save_id: str
@@ -37,11 +36,11 @@ def _noop(*_args) -> None:
 
 
 class ActionQueue:
-    """File FIFO d'actions joueurs, résolues séquentiellement par l'arbitrator.
+    """FIFO queue of player actions, resolved sequentially by the arbitrator.
 
-    `run_loop` est bloquant : l'appelant le fait tourner sur SON thread
-    (QThread côté GUI, thread Python en headless). `enqueue` et `stop` sont
-    thread-safe et appelables depuis n'importe où.
+    `run_loop` is blocking: the caller runs it on ITS thread (QThread on the
+    GUI side, plain Python thread headless). `enqueue` and `stop` are
+    thread-safe and callable from anywhere.
     """
 
     def __init__(self, arbitrator: "ArbitratorEngine") -> None:
@@ -50,11 +49,11 @@ class ActionQueue:
         self._is_running = True
 
     def enqueue(self, action: PlayerAction) -> None:
-        """Ajoute une action à résoudre."""
+        """Add an action to resolve."""
         self._queue.put(action)
 
     def stop(self) -> None:
-        """Arrête proprement la boucle (débloque le `get` en attente)."""
+        """Stop the loop cleanly (unblocks the pending `get`)."""
         self._is_running = False
         self._queue.put(None)
 
@@ -65,7 +64,7 @@ class ActionQueue:
         on_error: Callable[[str, str], None] = _noop,      # (message, player_id)
         on_status: Callable[[str], None] = _noop,
     ) -> None:
-        """Boucle de résolution : une action à la fois, jusqu'à `stop()`."""
+        """Resolution loop: one action at a time, until `stop()`."""
         while self._is_running:
             action = self._queue.get()  # bloque jusqu'à la prochaine action
             if action is None or not self._is_running:

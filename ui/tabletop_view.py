@@ -46,7 +46,7 @@ from workers.vector_worker import VectorWorker, VectorInitWorker
 from axiom.config import load_config, build_llm_from_config
 from axiom.time_system import TimeSystem, CalendarConfig
 from axiom.logger import logger
-from axiom.localization import tr
+from core.localization import tr, format_time
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
@@ -403,7 +403,7 @@ class TabletopView(HardcoreMixin, QWidget):
 
         # TICKET-032 : normalise les valeurs historiques stockées localisées
         # (« équilibré »…) — sinon tr() râle et le niveau retombe en défaut.
-        from axiom.localization import canonical_verbosity
+        from core.localization import canonical_verbosity
         self._llm_verbosity = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
         v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 1)
         self._verbosity_slider.setValue(v_idx)
@@ -913,4 +913,4 @@ class TabletopView(HardcoreMixin, QWidget):
 
     def _format_time(self, total_minutes: int) -> str:
         """Format total minutes into localized custom calendar string."""
-        return self._time_system.get_time_string(total_minutes)
+        return format_time(self._time_system, total_minutes)

@@ -48,7 +48,7 @@ class CheckpointManager:
                             permanently removed.
 
         Returns:
-            A summary dict: {"deleted_events": int, "rebuilt_to_turn": int}.
+            A summary dict: A dict with keys deleted_events and rebuilt_to_turn.
 
         Raises:
             sqlite3.Error: On any database failure.

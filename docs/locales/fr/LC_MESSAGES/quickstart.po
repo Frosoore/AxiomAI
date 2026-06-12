@@ -1,0 +1,209 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../quickstart.md:1
+msgid "Quickstart"
+msgstr "Démarrage rapide"
+
+#: ../../quickstart.md:3
+msgid "This page takes you from `pip install` to your first narrated game turn."
+msgstr "Cette page vous emmène du `pip install` à votre premier tour de jeu narré."
+
+#: ../../quickstart.md:5
+msgid "Requirements"
+msgstr "Prérequis"
+
+#: ../../quickstart.md:7
+msgid "**Python 3.11 or newer.**"
+msgstr "**Python 3.11 ou plus récent.**"
+
+#: ../../quickstart.md:8
+msgid ""
+"An LLM you can call: either a **Google Gemini API key** (free tier works) or"
+" any **OpenAI-compatible endpoint** — a local [Ollama](https://ollama.com) "
+"server, LM Studio, llama.cpp, vLLM…"
+msgstr ""
+"Un LLM que vous pouvez appeler : soit une **clé API Google Gemini** (le "
+"palier gratuit suffit), soit n'importe quel **endpoint compatible OpenAI** —"
+" un serveur [Ollama](https://ollama.com) local, LM Studio, llama.cpp, vLLM…"
+
+#: ../../quickstart.md:12
+msgid "Install"
+msgstr "Installation"
+
+#: ../../quickstart.md:18
+msgid ""
+"This installs the `axiom` Python package and the `axiom` command-line tool. "
+"Check it works:"
+msgstr ""
+"Cela installe le paquet Python `axiom` et l'outil en ligne de commande "
+"`axiom`. Vérifiez que tout fonctionne :"
+
+#: ../../quickstart.md:26
+msgid "`axiom.help()` prints a short usage guide right in the REPL."
+msgstr "`axiom.help()` affiche un petit guide d'utilisation directement dans le REPL."
+
+#: ../../quickstart.md:28
+msgid "Configure an LLM backend"
+msgstr "Configurer un backend LLM"
+
+#: ../../quickstart.md:30
+msgid ""
+"The engine reads its configuration from `~/.config/AxiomAI/settings.json` "
+"(created on first use). The two essential keys:"
+msgstr ""
+"Le moteur lit sa configuration dans `~/.config/AxiomAI/settings.json` (créé "
+"au premier usage). Les deux clés essentielles :"
+
+#: ../../quickstart.md:41
+msgid "or, for a local OpenAI-compatible server such as Ollama:"
+msgstr "ou, pour un serveur local compatible OpenAI comme Ollama :"
+
+#: ../../quickstart.md:51
+msgid ""
+"See the [LLM backends guide](guides/backends.md) for every option, including"
+" rate limiting and fallback models. From Python you can also bypass the file"
+" entirely and construct a backend yourself."
+msgstr ""
+"Voir le [guide des backends LLM](guides/backends.md) pour toutes les "
+"options, dont la limitation de débit et les modèles de repli. Depuis Python,"
+" vous pouvez aussi ignorer complètement ce fichier et construire un backend "
+"vous-même."
+
+#: ../../quickstart.md:55
+msgid "Get a universe"
+msgstr "Obtenir un univers"
+
+#: ../../quickstart.md:57
+msgid ""
+"A universe is a single file (`.db` or `.axiom`) or a source folder. Three "
+"ways to get one:"
+msgstr ""
+"Un univers est un fichier unique (`.db` ou `.axiom`) ou un dossier source. "
+"Trois façons d'en obtenir un :"
+
+#: ../../quickstart.md:60
+msgid "**Import a shared `.axiom` archive** someone published:"
+msgstr "**Importer une archive `.axiom` partagée** publiée par quelqu'un :"
+
+#: ../../quickstart.md:66
+msgid ""
+"**Write one as text** — a folder with a `universe.toml` and friends, then "
+"compile it (see [Universe-as-Code](guides/universe-format.md)):"
+msgstr ""
+"**En écrire un en texte** — un dossier avec un `universe.toml` et compagnie,"
+" puis le compiler (voir [Universe-as-Code](guides/universe-format.md)) :"
+
+#: ../../quickstart.md:73
+msgid ""
+"**Generate one with an LLM** from a one-line idea (see [Populating a "
+"universe](guides/populate.md)):"
+msgstr ""
+"**En générer un avec un LLM** à partir d'une idée en une ligne (voir "
+"[Peupler un univers](guides/populate.md)) :"
+
+#: ../../quickstart.md:80
+msgid "Play in the terminal"
+msgstr "Jouer dans le terminal"
+
+#: ../../quickstart.md:86
+msgid ""
+"The `play` command looks for the universe file where you point it, and also "
+"in `~/AxiomAI/universes/`. Use `--save SAVE_ID` to resume, `--new` to force "
+"a new game, and `--difficulty Normal|Hardcore|Companion` to pick a mode."
+msgstr ""
+"La commande `play` cherche le fichier univers là où vous le pointez, et "
+"aussi dans `~/AxiomAI/universes/`. Utilisez `--save SAVE_ID` pour reprendre,"
+" `--new` pour forcer une nouvelle partie, et `--difficulty "
+"Normal|Hardcore|Companion` pour choisir un mode."
+
+#: ../../quickstart.md:90
+msgid "Play from Python"
+msgstr "Jouer depuis Python"
+
+#: ../../quickstart.md:113
+msgid "Key objects:"
+msgstr "Objets clés :"
+
+#: ../../quickstart.md:115
+#, python-brace-format
+msgid ""
+"{py:class}`axiom.session.Session` — the high-level game loop: submit "
+"intents, resolve turns, rewind, regenerate variants."
+msgstr ""
+"{py:class}`axiom.session.Session` — la boucle de jeu de haut niveau : "
+"soumettre des intentions, résoudre des tours, rembobiner, régénérer des "
+"variantes."
+
+#: ../../quickstart.md:117
+#, python-brace-format
+msgid ""
+"{py:class}`axiom.universe.Universe` — read-only metadata and save listing "
+"for a universe file."
+msgstr ""
+"{py:class}`axiom.universe.Universe` — métadonnées en lecture seule et liste "
+"des sauvegardes d'un fichier univers."
+
+#: ../../quickstart.md:120
+msgid "Where files live"
+msgstr "Où vivent les fichiers"
+
+#: ../../quickstart.md:122
+msgid ""
+"By default the engine keeps its data under `~/AxiomAI/` (universes, saves, "
+"vector memory, generated assets) and its settings under "
+"`~/.config/AxiomAI/`. Both roots can be redirected with the `AXIOM_DATA_DIR`"
+" and `AXIOM_CONFIG_DIR` environment variables — handy for tests and "
+"sandboxes."
+msgstr ""
+"Par défaut, le moteur range ses données sous `~/AxiomAI/` (univers, "
+"sauvegardes, mémoire vectorielle, images générées) et ses réglages sous "
+"`~/.config/AxiomAI/`. Les deux racines peuvent être redirigées avec les "
+"variables d'environnement `AXIOM_DATA_DIR` et `AXIOM_CONFIG_DIR` — pratique "
+"pour les tests et les bacs à sable."
+
+#: ../../quickstart.md:127
+msgid "Next steps"
+msgstr "Étapes suivantes"
+
+#: ../../quickstart.md:129
+msgid ""
+"[The Universe-as-Code format](guides/universe-format.md) — define worlds as "
+"versionable text."
+msgstr ""
+"[Le format Universe-as-Code](guides/universe-format.md) — définir des mondes"
+" en texte versionnable."
+
+#: ../../quickstart.md:131
+msgid "[The `axiom` command line](guides/cli.md) — every subcommand."
+msgstr "[La ligne de commande `axiom`](guides/cli.md) — toutes les sous-commandes."
+
+#: ../../quickstart.md:132
+msgid "[Saves, rewind and sharing](guides/saves.md) — event sourcing in practice."
+msgstr ""
+"[Sauvegardes, rewind et partage](guides/saves.md) — l'event sourcing en "
+"pratique."
+
+#: ../../quickstart.md:133
+msgid "[API reference](api/index.md)."
+msgstr "[Référence d'API](api/index.md)."
+
