@@ -56,14 +56,16 @@ class MiniDicoPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
+        from ui.help_system import doc
+
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        self._header = QLabel(f"<b>{tr('tab_lore')}</b>")
+        self._header = doc(QLabel(f"<b>{tr('tab_lore')}</b>"), "tabletop.mini_dico")
         layout.addWidget(self._header)
 
-        self._answer_display = QTextEdit()
+        self._answer_display = doc(QTextEdit(), "tabletop.mini_dico")
         self._answer_display.setReadOnly(True)
         self._answer_display.setAcceptRichText(False)
         self._answer_display.setPlaceholderText(
@@ -74,11 +76,11 @@ class MiniDicoPanel(QWidget):
         )
         layout.addWidget(self._answer_display)
 
-        self._question_input = QLineEdit()
+        self._question_input = doc(QLineEdit(), "tabletop.mini_dico")
         self._question_input.setPlaceholderText(tr("lore_search"))
         layout.addWidget(self._question_input)
 
-        self._ask_button = QPushButton(tr("send")) # Reuse "Send" or add "Ask"
+        self._ask_button = doc(QPushButton(tr("send")), "tabletop.mini_dico") # Reuse "Send" or add "Ask"
         if "ask" in tr("ready"):
              self._ask_button.setText(tr("ask"))
         else:

@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.localization import tr
+
 
 class LoadingView(QWidget):
     """Simple centered loading screen."""
@@ -26,7 +28,7 @@ class LoadingView(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
-        self._label = QLabel("Loading Universe...")
+        self._label = QLabel(tr("loading_universe"))
         self._label.setStyleSheet("font-size: 18px; font-weight: bold; color: #d4d4d4;")
         self._label.setAlignment(Qt.AlignCenter)
 

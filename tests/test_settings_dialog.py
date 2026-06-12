@@ -82,3 +82,12 @@ def test_settings_dialog_gemini_image_backend_selectable(qtbot) -> None:
     updated_cfg = dialog.collect_config()
     assert updated_cfg.image_backend == "gemini"
     assert updated_cfg.image_gemini_model == "gemini-2.5-flash-image"
+
+def test_settings_dialog_doc_tooltips_toggle(qtbot) -> None:
+    """TICKET-057 follow-up: the hover-doc toggle loads and saves."""
+    dialog = SettingsDialog(AppConfig(doc_tooltips_enabled=False))
+    qtbot.addWidget(dialog)
+    assert dialog._doc_tooltips_cb.isChecked() is False
+
+    dialog._doc_tooltips_cb.setChecked(True)
+    assert dialog.collect_config().doc_tooltips_enabled is True

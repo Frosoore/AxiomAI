@@ -5,7 +5,7 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `dev-documentation`
-**Chantier :** TICKET-058 — site de doc Sphinx de la lib `axiomai-engine` (nouveau dossier `docs/`, GitHub Pages).
+**Chantier :** TICKET-057 — doc intégrée à l'app GUI (tooltips, « expliquer cette page », quick tour, annuaire). Le TICKET-058 (site Sphinx) est livré, en attente d'activation Pages.
 
 ## Fichiers / modules que je touche en ce moment
 
@@ -16,6 +16,9 @@
 | **docstrings de `axiom/*.py`** (19 fichiers) | traduction FR→EN des **docstrings publiques** — **fait** | 2026-06-12 | **aucune ligne de code touchée**, que des docstrings (621 tests verts) ; règle désormais : docstring publique = anglais |
 | `requirements-dev.txt`, `.gitignore` | + outillage doc (sphinx, furo, myst-parser, sphinx-intl ; ignore `docs/_build/`, `*.mo`) | 2026-06-12 | |
 | `axiom/__init__.py` | TICKET-060 : `axiom.help` (`_HELP_TEXT`) traduit FR→EN — **fait** | 2026-06-12 | texte/docstrings seuls, zéro ligne de code |
+| `ui/` (vues principales + nouveaux modules `help_system`/`help_dialogs`) | TICKET-057 : doc intégrée (tooltips, bouton « ? », tour, annuaire) + **toggle des tooltips** (settings, `install_tooltip_gate`) + fixes retranslate `setup_view` — **fait, en attente de validation GUI + commit** | 2026-06-12 | ajouts ciblés (helpers + boutons) ; préviens si tu touches `ui/` |
+| `core/locales/*.toml` | TICKET-057 : clés `doc_*` + 9 clés persona/toggle ×10 langues — **fait** (+ correction de clés préexistantes mal traduites : `chronicler_interval_label`, `univ_params`, `image_api_url` ko) | 2026-06-12 | ajouts en fin de fichier + ~14 lignes existantes corrigées |
+| `axiom/config.py` | TICKET-057 : champ `doc_tooltips_enabled` (bool, défaut True) — **fait** | 2026-06-12 | ajout pur (dataclass + docstring), zéro logique touchée |
 
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
 

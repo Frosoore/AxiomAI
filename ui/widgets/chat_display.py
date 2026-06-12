@@ -128,12 +128,15 @@ class ChatDisplayWidget(QWidget):
                     fmt.setFontWeight(QFont.Weight.Normal)
                 self._formats[(bold, italic)] = fmt
 
+        from ui.help_system import doc
+        doc(self._narrative_display, "tabletop.chat_log")
+
         # Input row
         input_row = QHBoxLayout()
-        self._input_box = _MultiLineInput()
+        self._input_box = doc(_MultiLineInput(), "tabletop.chat_input")
         self._input_box.setFixedHeight(60)
         self._input_box.setPlaceholderText(tr("type_message"))
-        self._send_button = QPushButton(tr("send"))
+        self._send_button = doc(QPushButton(tr("send")), "tabletop.send")
         self._send_button.setFixedWidth(90)
         self._send_button.setFixedHeight(60)
         input_row.addWidget(self._input_box)
