@@ -38,6 +38,11 @@ from axiom import paths
 
 _DEFAULT_SYSTEM_PROMPT = "You are the narrator of this world."
 
+#: Status string emitted right before contextual image generation starts.
+#: Exposed as a constant so the GUI can react (e.g. show a placeholder) without
+#: matching a hard-coded English message.
+IMAGE_GEN_STATUS = "Generating scene illustration..."
+
 
 def _emit(callback: Callable[[str], None] | None, message: str) -> None:
     """Invoke an optional progress callback, ignoring None."""
@@ -203,7 +208,7 @@ class Session:
 
         # Contextual image generation
         if cfg.image_generation_enabled:
-            _emit(on_status, "Generating scene illustration...")
+            _emit(on_status, IMAGE_GEN_STATUS)
             try:
                 from axiom.image_generator import ImageGenerator
                 img_gen = ImageGenerator(cfg, llm=self._llm)

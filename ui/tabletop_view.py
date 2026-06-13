@@ -584,7 +584,15 @@ class TabletopView(HardcoreMixin, QWidget):
         self._narrative_worker.turn_complete.connect(self._on_turn_complete)
         self._narrative_worker.error_occurred.connect(self._on_worker_error)
         self._narrative_worker.status_update.connect(self._main_window.on_status_update)
+        self._narrative_worker.status_update.connect(self._on_turn_status)
         self._narrative_worker.start()
+
+    @Slot(str)
+    def _on_turn_status(self, message: str) -> None:
+        """Show the 'generating illustration…' vignette during image generation."""
+        from axiom.session import IMAGE_GEN_STATUS
+        if message == IMAGE_GEN_STATUS:
+            self._chat.show_image_placeholder()
 
     @Slot(object)
     def _on_turn_complete(self, result: object) -> None:
@@ -617,6 +625,9 @@ class TabletopView(HardcoreMixin, QWidget):
         image_path = getattr(result, "image_path", None)
         if image_path:
             self._chat.append_image(image_path)
+        else:
+            # Generation was attempted (placeholder shown) but produced nothing.
+            self._chat.clear_image_placeholder()
 
         # Show variant navigation (Regenerate button)
         self._chat.append_variants_nav(self._turn_id, 0, 1, is_latest=True)

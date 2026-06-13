@@ -51,6 +51,21 @@ def test_enabled_toggle(ambiance_manager):
     assert ambiance_manager._enabled is False
     assert ambiance_manager._current_tag is None
 
+def test_update_ambiance_returns_false_without_assets(ambiance_manager):
+    """No bundled audio → no track starts → caller must not announce a fade."""
+    # The repo ships no assets/audio/<tag>/ folder, so this resolves to nothing.
+    assert ambiance_manager.update_ambiance("exploration") is False
+    assert ambiance_manager._fade_timer.isActive() is False
+
+def test_update_ambiance_returns_false_when_disabled_or_same_tag(ambiance_manager):
+    """Disabled audio or an unchanged tag is a no-op (no fade announced)."""
+    ambiance_manager.set_enabled(False)
+    assert ambiance_manager.update_ambiance("combat") is False
+
+    ambiance_manager.set_enabled(True)
+    ambiance_manager._current_tag = "combat"
+    assert ambiance_manager.update_ambiance("combat") is False
+
 def test_fade_step_logic(ambiance_manager):
     """Manually trigger fade steps and check volume calculation."""
     ambiance_manager.set_global_volume(1.0)

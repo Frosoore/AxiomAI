@@ -103,3 +103,53 @@ def test_partial_backtick_fence_is_buffered_until_flushed(qapp):
 
     widget.flush_final_buffer()
     assert "Hello ```j" in widget._narrative_display.toPlainText()
+
+
+def test_image_placeholder_shows_and_clears(qapp):
+    """show_image_placeholder inserts the vignette; clear removes it while
+    keeping the narrative that preceded it."""
+    from core.localization import tr
+    widget = ChatDisplayWidget()
+    widget.append_token("Scene narrative.")
+    widget.flush_final_buffer()
+
+    widget.show_image_placeholder()
+    label = tr("generating_image")
+    assert label in widget._narrative_display.toPlainText()
+    assert widget._img_placeholder_range is not None
+    # A second call is a no-op (no duplicate vignette).
+    widget.show_image_placeholder()
+
+    widget.clear_image_placeholder()
+    text = widget._narrative_display.toPlainText()
+    assert label not in text
+    assert "Scene narrative." in text
+    assert widget._img_placeholder_range is None
+
+
+def test_image_placeholder_preserves_text_flushed_after_it(qapp):
+    """The final buffer flush can append narrative AFTER the placeholder; clearing
+    the placeholder must not eat that text."""
+    from core.localization import tr
+    widget = ChatDisplayWidget()
+    widget.show_image_placeholder()
+    # Simulate a late flush landing at the document end (after the placeholder).
+    widget._insert_instant_parsed_text("Tail text.")
+
+    widget.clear_image_placeholder()
+    text = widget._narrative_display.toPlainText()
+    assert "Tail text." in text
+    assert tr("generating_image") not in text
+
+
+def test_append_image_clears_pending_placeholder(qapp):
+    """append_image drops any pending 'generating…' vignette (even with no file)."""
+    from core.localization import tr
+    widget = ChatDisplayWidget()
+    widget.show_image_placeholder()
+    assert widget._img_placeholder_range is not None
+
+    # Non-existent path: append_image returns early but must still clear.
+    widget.append_image("/nonexistent/turn_999.png")
+    assert widget._img_placeholder_range is None
+    assert tr("generating_image") not in widget._narrative_display.toPlainText()

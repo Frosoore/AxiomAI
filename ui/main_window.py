@@ -147,8 +147,10 @@ class MainWindow(QMainWindow):
             return
 
         self._current_ambiance_tag = tag
-        self._ambiance_manager.update_ambiance(tag)
-        self.on_status_update(f"{tr('ambiance')} {tag} ({tr('fading')})")
+        # Only announce the cross-fade if a track actually started — otherwise
+        # (no audio assets in this build) the message would be misleading.
+        if self._ambiance_manager.update_ambiance(tag):
+            self.on_status_update(f"{tr('ambiance')} {tag} ({tr('fading')})")
 
     # ------------------------------------------------------------------
     # Setup helpers

@@ -150,6 +150,11 @@ class ChatDisplayWidget(QWidget):
         self._in_json_fence = False
         self._json_fence_close = "~~~"
         self._token_buf = ""
+        # Document range [start, end] of a "generating illustration…" placeholder,
+        # or None when no placeholder is currently shown. Stored as an explicit
+        # range (not "to end") because the final token flush may append narrative
+        # text *after* the placeholder before we replace it.
+        self._img_placeholder_range: tuple[int, int] | None = None
 
     def retranslate_ui(self):
         self._input_box.setPlaceholderText(tr("type_message"))
@@ -495,13 +500,57 @@ class ChatDisplayWidget(QWidget):
                 self._narrative_display.verticalScrollBar().maximum()
             )
 
+    def show_image_placeholder(self):
+        """Insert an inline 'generating illustration…' vignette at the end.
+
+        Shown while the cloud backend produces the turn's image, then replaced by
+        the real image (append_image) or removed (clear_image_placeholder).
+        """
+        if self._img_placeholder_range is not None:
+            return  # already showing one
+        cursor = self._narrative_display.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        start = cursor.position()
+
+        block_fmt = QTextBlockFormat()
+        block_fmt.setAlignment(Qt.AlignCenter)
+        block_fmt.setTopMargin(10)
+        block_fmt.setBottomMargin(10)
+        cursor.insertBlock(block_fmt)
+        cursor.insertHtml(
+            f"<span style='color:#8A93A6; font-style:italic;'>🖼 {tr('generating_image')}</span>"
+        )
+        self._img_placeholder_range = (start, cursor.position())
+        self._reset_states()
+        self._narrative_display.verticalScrollBar().setValue(
+            self._narrative_display.verticalScrollBar().maximum()
+        )
+
+    def clear_image_placeholder(self):
+        """Remove the 'generating illustration…' vignette if present.
+
+        Removes exactly the placeholder's range; any narrative text appended
+        after it (final buffer flush) is preserved.
+        """
+        if self._img_placeholder_range is None:
+            return
+        start, end = self._img_placeholder_range
+        self._img_placeholder_range = None
+        cursor = self._narrative_display.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        self._reset_states()
+
     def append_image(self, image_path: str | Path | None):
+        # An image arrived: drop any "generating…" vignette first.
+        self.clear_image_placeholder()
         if not image_path:
             return
         img_path = Path(image_path)
         if not img_path.exists():
             return
-            
+
         cursor = self._narrative_display.textCursor()
         cursor.movePosition(QTextCursor.End)
         

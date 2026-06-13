@@ -10,6 +10,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, QUrl, Slot
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
+from axiom.logger import logger
+
 
 class AmbianceManager(QObject):
     """Manages background music with smooth cross-fading.
@@ -65,21 +67,26 @@ class AmbianceManager(QObject):
         if not self._fade_timer.isActive():
             self._active_out.setVolume(self._global_volume)
 
-    def update_ambiance(self, tag: str) -> None:
-        """Trigger a cross-fade to a new ambiance tag."""
-        if not self._enabled or tag == self._current_tag:
-            return
+    def update_ambiance(self, tag: str) -> bool:
+        """Trigger a cross-fade to a new ambiance tag.
 
-        print(f"[AMBIANCE] Requesting transition to '{tag}'")
+        Returns True only when a track was actually started, so callers can
+        avoid announcing a fade that produces no sound (e.g. when the build
+        ships without audio assets).
+        """
+        if not self._enabled or tag == self._current_tag:
+            return False
+
+        logger.debug("[AMBIANCE] Requesting transition to '%s'", tag)
         self._current_tag = tag
         audio_file = self._pick_random_file(tag)
 
         if not audio_file:
-            print(f"[AMBIANCE] No audio assets found for '{tag}'. Stopping all.")
+            logger.debug("[AMBIANCE] No audio assets found for '%s'. Stopping all.", tag)
             self.stop_all()
-            return
+            return False
 
-        print(f"[AMBIANCE] Selected track: {audio_file.name}")
+        logger.debug("[AMBIANCE] Selected track: %s", audio_file.name)
         # Prepare the fading player (the one currently silent or fading out)
         # Swap roles
         self._fading_player, self._active_player = self._active_player, self._fading_player
@@ -93,6 +100,7 @@ class AmbianceManager(QObject):
         # Start fading
         self._fade_progress = 0.0
         self._fade_timer.start()
+        return True
 
     def stop_all(self) -> None:
         """Immediately stop all audio."""
