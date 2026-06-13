@@ -366,7 +366,8 @@ def test_image_generator_gemini_backend_success(
     assert save_path is not None
     assert Path(save_path).read_bytes() == png_bytes
 
-    mock_client_cls.assert_called_once_with(api_key="fake-key")
+    mock_client_cls.assert_called_once()
+    assert mock_client_cls.call_args.kwargs["api_key"] == "fake-key"
     _, kwargs = mock_client.models.generate_content.call_args
     assert kwargs["model"] == "gemini-2.5-flash-image"
     assert kwargs["contents"] == "gemini art"

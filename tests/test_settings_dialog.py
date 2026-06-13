@@ -211,7 +211,7 @@ def test_settings_dialog_cloud_empty_models_fall_back_to_defaults(qtbot) -> None
     updated = dialog.collect_config()
     assert updated.anthropic_model == "claude-opus-4-8"
     assert updated.venice_model == "zai-org-glm-4.7"
-    assert updated.fireworks_model == "accounts/fireworks/models/deepseek-v3p1"
+    assert updated.fireworks_model == "accounts/fireworks/models/gpt-oss-120b"
     assert updated.openai_model == "gpt-4.1-mini"
     assert updated.openrouter_model == "openrouter/auto"
 

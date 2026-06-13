@@ -1,0 +1,11 @@
+entity_id = "sereth_voss"
+entity_type = "npc"
+name = "Doctor Sereth Voss"
+description = """A soft-spoken physician who runs a charitable clinic on the edge of Lowtown — vaccinations for dockers' children, clean bandages, no questions. Voss is courteous, observant, and far better funded than any charity clinic should be.
+
+SECRET (never volunteered): Voss is a field agent of the Scientific Coalition's Biology section, one of several quietly seeded into Highport. The official mission is sample collection and talent spotting. The real mission, known to Voss alone in this city, is the Coalition's highest priority: locating a target referred to in encrypted instructions only as THE BUYER — an individual believed to have purchased certain old remains over a very long period, last traced to the Republic. Voss has a list of bookish professions to watch, and has recently started attending estate sales and antiquarian auctions."""
+
+[stats]
+Health = "100"
+Location = "lowtown"
+Demeanor = "gentle, methodical"

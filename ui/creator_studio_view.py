@@ -44,6 +44,14 @@ if TYPE_CHECKING:
     from ui.main_window import MainWindow
 
 
+def _meta_float(meta: dict, key: str, default: float) -> float:
+    """Read a numeric Universe_Meta value, tolerating malformed content."""
+    try:
+        return float(meta.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
 class CreatorStudioView(QWidget):
     """The universe builder screen."""
 
@@ -399,9 +407,11 @@ class CreatorStudioView(QWidget):
         self._lore_edit.setPlainText(meta.get("global_lore", ""))
         self._system_prompt_edit.setPlainText(meta.get("system_prompt", ""))
         self._first_message_edit.setPlainText(meta.get("first_message", ""))
-        self._tension_spin.setValue(float(meta.get("world_tension_level", "0.3")))
-        self._temp_spin.setValue(float(meta.get("llm_temperature", "0.7")))
-        self._top_p_spin.setValue(float(meta.get("llm_top_p", "1.0")))
+        # Meta values come from user-editable sources (universe.toml, imported
+        # .axiom) — a malformed number must not crash the Studio.
+        self._tension_spin.setValue(_meta_float(meta, "world_tension_level", 0.3))
+        self._temp_spin.setValue(_meta_float(meta, "llm_temperature", 0.7))
+        self._top_p_spin.setValue(_meta_float(meta, "llm_top_p", 1.0))
         
         # TICKET-032 : normalise les valeurs historiques stockées localisées.
         from core.localization import canonical_verbosity

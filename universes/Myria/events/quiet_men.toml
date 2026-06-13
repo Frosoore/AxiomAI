@@ -1,0 +1,5 @@
+# ~10 in-game days after the start.
+event_id = "quiet_men"
+trigger_minute = 14400
+title = "Quiet Men in Highport"
+description = "New faces drift into Highport in twos and threes — too well-dressed for the docks, too curious for tourists. They attend estate sales, buy antiquarian lots above market price, and ask gentle questions about old book collections and their sellers. The auction houses are delighted. Anyone observant enough to connect them notices they never give the same employer twice."

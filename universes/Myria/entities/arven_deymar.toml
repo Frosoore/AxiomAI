@@ -1,0 +1,9 @@
+entity_id = "arven_deymar"
+entity_type = "npc"
+name = "Emperor Arven Deymar"
+description = "The Usurper. A commoner who took the Ash Throne of the Empire of Ashes in a coup nobody saw coming, and holds it by competence, conviction and fear. Deymar is a sincere meritocrat in a world built on blood: he promotes the able regardless of birth and breaks the incompetent regardless of loyalty. He is not a demagogue — he wants to be proved right, not loved. The old nobility plots in whispers; the engineer caste worships him; the people wait. He counts the days until the Coalition delivers the great guns, knowing every rival on Myria counts them too. He rules from Cinderhold and has never seen the sea."
+
+[stats]
+Health = "100"
+Location = "cinderhold"
+Demeanor = "controlled intensity"

@@ -330,6 +330,17 @@ def main() -> None:
     else:
         logger.warning("Embedding runtime not pre-loaded (torch unavailable).")
 
+    # TICKET-062 : the bundled default universe (Myria) is offered to the
+    # library on first launch, before the Hub's first discovery.
+    from core.bundled_universes import install_bundled_universes
+    install_bundled_universes()
+
+    # TICKET-062 : shared beta keys (used only when the user has no own key)
+    # + zero-config default backend on the very first launch.
+    from core.builtin_keys import apply_beta_defaults, register_builtin_providers
+    register_builtin_providers()
+    apply_beta_defaults()
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("Axiom AI")

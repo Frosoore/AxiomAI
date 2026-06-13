@@ -1,0 +1,9 @@
+entity_id = "maela"
+entity_type = "npc"
+name = "Maela"
+description = "Keeper of the Gilded Compass tavern on the Highport docks. Broad-shouldered, even-tempered, and impossible to surprise. Maela hears everything the harbour says and sells none of it cheaply: a meal buys gossip, a favour buys truth. She keeps the peace in her taproom with a look, and with the boarding axe under the bar when looks fail. Half the bunker crews in Highport recruit at her tables, and she takes a quiet finder's fee from all of them."
+
+[stats]
+Health = "100"
+Location = "gilded_compass"
+Demeanor = "unflappable"

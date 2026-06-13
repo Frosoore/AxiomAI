@@ -1,0 +1,6 @@
+item_id = "percussion_pistol"
+name = "Percussion Pistol"
+description = "A Republic-made single-shot pistol, standard sidearm of ship officers and nervous merchants. Reliable, loud, and slow to reload."
+category = "weapon"
+weight = 1.2
+rarity = "common"

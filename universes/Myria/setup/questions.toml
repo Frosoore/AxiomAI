@@ -1,0 +1,35 @@
+[[questions]]
+setup_id = "origin"
+question = "Where do you come from?"
+type = "single_choice"
+options = [
+    "The Republic of the High-Ports — you were born under crystal lamps",
+    "The Empire of Ashes — you grew up with temple bells and factory whistles",
+    "The Aicamed Federation — everyone you knew could work magic",
+    "The Khanates of the Steppe — you were raised in the saddle",
+    "The Marsh Kingdoms — the south is wrong, and it is home",
+    "The Northern Peaks — cold made you, like everyone you loved",
+]
+max_selections = 1
+priority = 0
+
+[[questions]]
+setup_id = "trade"
+question = "What do you do for a living?"
+type = "single_choice"
+options = [
+    "Bunker hunter — you go down into the old dark for pay",
+    "Scholar or translator — paper is power, and you read it",
+    "Sailor or docker — the harbour feeds you, when it feels like it",
+    "Hedge mage — your arcane core is trained, your licence less so",
+    "Merchant courier — you carry things, and don't open them",
+    "Physician — you patch up whoever pays, and some who can't",
+]
+max_selections = 1
+priority = 1
+
+[[questions]]
+setup_id = "hook"
+question = "What brought you to Highport, and what do you want here?"
+type = "text"
+priority = 2

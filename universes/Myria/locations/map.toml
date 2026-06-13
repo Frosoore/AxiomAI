@@ -1,0 +1,193 @@
+# Myria — locations. Regions sketch the continent; Highport is detailed
+# because play starts there.
+
+[[locations]]
+location_id = "western_coasts"
+name = "The Western Coasts"
+scale = "zone"
+description = "Cliffs and harbours of the Republic of the High-Ports; the tame edge of an untameable ocean."
+x = 10.0
+y = 50.0
+
+[[locations]]
+location_id = "continental_heart"
+name = "The Continental Heart"
+scale = "zone"
+description = "Fertile central plains, cradle of the reborn civilisations and heartland of the Empire of Ashes."
+x = 40.0
+y = 45.0
+
+[[locations]]
+location_id = "aicamed_plains"
+name = "The Aicamed Plains"
+scale = "zone"
+description = "Wide grasslands where magic hangs thick in the air and surface crystals glitter after rain. Territory of the Federation."
+x = 55.0
+y = 40.0
+
+[[locations]]
+location_id = "eastern_steppe"
+name = "The Eastern Steppe"
+scale = "zone"
+description = "Arid grass-sea of the Khanates; the road of caravans."
+x = 80.0
+y = 40.0
+
+[[locations]]
+location_id = "southern_marshes"
+name = "The Southern Marshes"
+scale = "zone"
+description = "Jungles and swamps that grow too fast and breed warped beasts. Land of the Marsh Kingdoms."
+x = 45.0
+y = 80.0
+
+[[locations]]
+location_id = "northern_peaks"
+name = "The Northern Peaks"
+scale = "zone"
+description = "Frozen mountains, scattered bunkers, and tribes hard enough to live between them."
+x = 45.0
+y = 10.0
+
+[[locations]]
+location_id = "highport"
+name = "Highport"
+scale = "city"
+parent_id = "western_coasts"
+description = "Capital of the Republic, largest harbour on Myria. Steam trams, crystal lamps, a dozen languages, everything for sale twice."
+x = 8.0
+y = 52.0
+
+[[locations]]
+location_id = "cinderhold"
+name = "Cinderhold"
+scale = "city"
+parent_id = "continental_heart"
+description = "Capital of the Empire of Ashes: temples of the Fifteen, marshalling yards, and forges that never sleep. Seat of the usurper Arven Deymar."
+x = 38.0
+y = 47.0
+
+[[locations]]
+location_id = "the_docks"
+name = "The Docks"
+scale = "district"
+parent_id = "highport"
+description = "Cranes, warehouses, taverns and noise. Where Highport earns its living."
+x = 7.5
+y = 53.0
+
+[[locations]]
+location_id = "scholars_quarter"
+name = "The Scholars' Quarter"
+scale = "district"
+parent_id = "highport"
+description = "Reading-houses, print shops and translators' garrets. In Highport, paper is power."
+x = 8.2
+y = 51.8
+
+[[locations]]
+location_id = "lowtown"
+name = "Lowtown"
+scale = "district"
+parent_id = "highport"
+description = "Crowded, cheap and ungoverned, except where private militias say otherwise."
+x = 7.8
+y = 52.6
+
+[[locations]]
+location_id = "foundry_row"
+name = "Foundry Row"
+scale = "district"
+parent_id = "highport"
+description = "Shipwrights, manufactories and smoke. The Republic's muscle."
+x = 7.2
+y = 52.2
+
+[[locations]]
+location_id = "upper_terraces"
+name = "The Upper Terraces"
+scale = "district"
+parent_id = "highport"
+description = "Wrought-iron mansions of the shipping dynasties around the Council Hall. Quiet money, quieter guards."
+x = 8.6
+y = 51.2
+
+[[locations]]
+location_id = "gilded_compass"
+name = "The Gilded Compass"
+scale = "poi"
+parent_id = "the_docks"
+description = "Dockside tavern run by Maela. Cheap gin, expensive information, and half the bunker crews of Highport recruiting at its tables."
+x = 7.6
+y = 53.1
+
+[[locations]]
+location_id = "reading_house"
+name = "The Public Reading-House"
+scale = "poi"
+parent_id = "scholars_quarter"
+description = "Crystal lamps over scarred oak desks; the Republic's open library, and the discreet hunting ground of every collector in the city."
+x = 8.3
+y = 51.7
+
+[[locations]]
+location_id = "cog_street"
+name = "Cog Street"
+scale = "poi"
+parent_id = "scholars_quarter"
+description = "A crooked lane of binderies, pawnshops and translators' garrets — including that of Calder Veyran, buyer of odd lots."
+x = 8.1
+y = 51.9
+
+[[locations]]
+location_id = "guild_hall"
+name = "The Bunker-Hunters' Guild Hall"
+scale = "poi"
+parent_id = "the_docks"
+description = "Charter board, tunnel charts and the painted rule over the door: 'Maps are worth more than gold. Doors are worth more than maps.'"
+x = 7.4
+y = 52.9
+
+[[locations]]
+location_id = "voss_clinic"
+name = "The Lowtown Clinic"
+scale = "poi"
+parent_id = "lowtown"
+description = "Doctor Voss's charitable clinic: vaccinations, clean bandages, no questions. Better funded than it should be."
+x = 7.9
+y = 52.7
+
+[[connections]]
+source_id = "gilded_compass"
+target_id = "guild_hall"
+distance_km = 0.4
+
+[[connections]]
+source_id = "the_docks"
+target_id = "lowtown"
+distance_km = 1.0
+
+[[connections]]
+source_id = "the_docks"
+target_id = "foundry_row"
+distance_km = 1.5
+
+[[connections]]
+source_id = "lowtown"
+target_id = "scholars_quarter"
+distance_km = 1.2
+
+[[connections]]
+source_id = "scholars_quarter"
+target_id = "upper_terraces"
+distance_km = 1.0
+
+[[connections]]
+source_id = "cog_street"
+target_id = "reading_house"
+distance_km = 0.5
+
+[[connections]]
+source_id = "highport"
+target_id = "cinderhold"
+distance_km = 1400

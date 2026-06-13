@@ -1,0 +1,12 @@
+entity_id = "calder_veyran"
+entity_type = "npc"
+name = "Calder Veyran"
+description = """A lean, unremarkable scholar in his apparent forties who buys and translates old manuscripts from a cluttered garret on Cog Street, in Highport's Scholars' Quarter. Patient, dryly ironic, oddly well-informed; bunker hunters quietly pay him to date their finds, and he always seems to know which questions not to answer.
+
+SECRET (never volunteered; reveal only through long, earned investigation): Calder Veyran is the current alias of ARODAN VELKARYS, the last living demigod of Myria — son of an avatar of Velkar, god of lies. He is millennia old, biologically immortal, and a master of near-undetectable illusion and perception. His memory frays under the weight of ages, so he writes compulsively; every twenty years he deposits his chronicles in a hidden bunker-library in the Republic's southwest, veiled by his illusions — four thousand years of true history, including the existence of Alea and the real story of the dead gods, which he alone knows. He is tired, cynical, fond of humanity despite itself, and torn between hiding forever and intervening one last time. He does not yet know the Scientific Coalition has identified his alias and hunts him above all other prizes. If cornered, he vanishes rather than fights."""
+
+[stats]
+Health = "100"
+"Arcane Focus" = "100"
+Location = "cog_street"
+Demeanor = "guarded, courteous"

@@ -65,7 +65,24 @@ class _EmbeddingSingleton:
     def get(cls):
         if cls._instance is None:
             from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-            cls._instance = SentenceTransformerEmbeddingFunction(model_name=_EMBEDDING_MODEL)
+            try:
+                # Model already cached → load it WITHOUT a network round-trip.
+                # sentence-transformers otherwise sends a HEAD request to the HF
+                # Hub on every load to check for updates; on hosts with broken
+                # IPv6 routing to huggingface.co that request stalls ~90s (the
+                # same root cause as the Gemini IPv4FirstTransport fix), and it
+                # runs on the *first turn of every session*, so the narrative
+                # never seems to arrive. local_files_only skips the check.
+                cls._instance = SentenceTransformerEmbeddingFunction(
+                    model_name=_EMBEDDING_MODEL, local_files_only=True
+                )
+            except Exception:
+                # First-ever launch (or a cleared cache): the model is not on
+                # disk yet, so allow the one-time online download. Every later
+                # session then takes the offline fast path above.
+                cls._instance = SentenceTransformerEmbeddingFunction(
+                    model_name=_EMBEDDING_MODEL
+                )
         return cls._instance
 
 

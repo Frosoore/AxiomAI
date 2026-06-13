@@ -109,6 +109,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "cloud_provider",
         "cloud_key",
         "cloud_model",
+        "browse_models",
         "gemini_fallback",
         "llm_rpm",
         "tab_params",

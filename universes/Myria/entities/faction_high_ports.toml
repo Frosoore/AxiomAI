@@ -1,0 +1,8 @@
+entity_id = "high_ports_republic"
+entity_type = "faction"
+name = "The Republic of the High-Ports"
+description = "Merchant oligarchy of the western coast, governed by the Council of Captains. First navy of Myria, busiest harbours, sharpest spies; weak on land and proud of never needing to be strong there. Hosts and tolerates the Coalition's officially-illegal laboratories. In Highport, its capital, everything is for sale twice."
+
+[stats]
+Influence = "dominant sea power"
+Stance = "profiting from everyone's tension"

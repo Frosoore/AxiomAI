@@ -1,0 +1,6 @@
+item_id = "kael_crystal_shard"
+name = "Crystal Shard"
+description = "A thumb-sized sliver of cave crystal, faintly warm. Charged enough to power a lamp for a month — or, cracked under pressure, to remove a door and whoever is holding it."
+category = "resource"
+weight = 0.1
+rarity = "uncommon"

@@ -115,10 +115,11 @@ class AppConfig:
     venice_api_key: str = ""
     venice_model: str = "zai-org-glm-4.7"
     fireworks_api_key: str = ""
-    # NB: Fireworks retires serverless models aggressively — deepseek-v3p1 is
-    # the id their own docs examples use. An unknown model = 404 on
-    # /chat/completions while /models still answers 200.
-    fireworks_model: str = "accounts/fireworks/models/deepseek-v3p1"
+    # NB: Fireworks retires serverless models aggressively — an unknown model
+    # = 404 on /chat/completions while /models still answers 200. deepseek-v3p1
+    # (previous default) died that way; gpt-oss-120b verified live 2026-06-12,
+    # and cheap enough for the built-in beta keys (TICKET-062).
+    fireworks_model: str = "accounts/fireworks/models/gpt-oss-120b"
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     openrouter_api_key: str = ""
@@ -166,6 +167,50 @@ OPENAI_COMPAT_PROVIDERS: dict[str, tuple[str, str, str, int | None]] = {
 
 # Every cloud backend (the Cloud tab of the settings dialog).
 CLOUD_BACKENDS: tuple[str, ...] = ("gemini", *OPENAI_COMPAT_PROVIDERS)
+
+
+# ---------------------------------------------------------------------------
+# Built-in key pools (TICKET-062)
+#
+# The published engine ships with NO key. An embedding application (the Axiom
+# AI GUI during the public beta) can register a pool of shared keys for a
+# provider; they are used — with automatic rotation on auth/quota errors —
+# whenever the user has not entered their own key for that provider.
+# Bearer-auth providers only (rotation swaps the Authorization header).
+# ---------------------------------------------------------------------------
+
+_BUILTIN_KEYS: dict[str, list[str]] = {}
+
+
+def register_builtin_keys(provider: str, keys: list[str]) -> None:
+    """Register shared fallback keys for an OpenAI-compatible provider.
+
+    Args:
+        provider: One of OPENAI_COMPAT_PROVIDERS (e.g. "fireworks").
+        keys:     Ordered key pool; empty entries are dropped. An empty list
+                  unregisters the provider.
+    """
+    cleaned = [k.strip() for k in keys if k and k.strip()]
+    if cleaned:
+        _BUILTIN_KEYS[provider] = cleaned
+    else:
+        _BUILTIN_KEYS.pop(provider, None)
+
+
+def get_builtin_keys(provider: str) -> list[str]:
+    """Return the registered key pool for a provider ([] when none)."""
+    return list(_BUILTIN_KEYS.get(provider, []))
+
+
+def uses_builtin_keys(config: AppConfig) -> bool:
+    """True when the active backend will run on the registered shared keys
+    (provider with a registered pool and no user key configured)."""
+    backend = config.llm_backend.lower().strip()
+    return (
+        backend in OPENAI_COMPAT_PROVIDERS
+        and not getattr(config, OPENAI_COMPAT_PROVIDERS[backend][1]).strip()
+        and bool(_BUILTIN_KEYS.get(backend))
+    )
 
 
 # Cache de load_config (QA-042.1) : tr() et les chemins chauds rechargent la
@@ -315,11 +360,18 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
     if backend in OPENAI_COMPAT_PROVIDERS:
         base_url, key_field, model_field, max_stops = OPENAI_COMPAT_PROVIDERS[backend]
         api_key = getattr(config, key_field).strip()
+        fallback_keys: list[str] = []
         if not api_key:
-            raise ValueError(
-                f"'{backend}' backend selected but no API key is configured. "
-                "Add your key in File → Settings → Cloud."
-            )
+            # No user key: fall back to the registered shared pool, with the
+            # remaining keys as rotation spares (TICKET-062).
+            builtin = get_builtin_keys(backend)
+            if builtin:
+                api_key, fallback_keys = builtin[0], builtin[1:]
+            else:
+                raise ValueError(
+                    f"'{backend}' backend selected but no API key is configured. "
+                    "Add your key in File → Settings → Cloud."
+                )
         extra_headers = None
         if backend == "claude":
             # Anthropic's OpenAI-compat layer accepts the native x-api-key on
@@ -337,6 +389,7 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
             model_name=model_override if model_override else getattr(config, model_field),
             extra_headers=extra_headers,
             max_stop_sequences=max_stops,
+            fallback_api_keys=fallback_keys,
         )
 
     if backend == "gemini":

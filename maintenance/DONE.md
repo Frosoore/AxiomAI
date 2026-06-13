@@ -627,3 +627,39 @@ publié dans le wheel) traduit FR→EN, docstrings de module/`_Help` inclus, + l
 doc (TICKET-058) en pied de guide. Aucun test n'assertait le texte FR (`test_packaging.py`
 15 verts). Le moteur publié n'expose plus aucun texte français, REPL compris. Détails :
 `maintenance/TICKET-060-help-english/`.
+
+---
+
+## Lot validations GUI — 2026-06-13 (confirmées par l'utilisateur)
+
+**Statut : clos le 2026-06-13.** Tous les chantiers qui traînaient en « ⚠ validation GUI
+en attente » ont été **confirmés bons en usage réel par l'utilisateur** ce jour. Seul
+TICKET-057 (doc intégrée) reste ouvert — jugée **trop succincte**, à enrichir (cf. PENDING.md).
+
+Items validés et clos :
+
+- **TICKET-062 item 1 — univers Myria par défaut** : installation au 1ᵉʳ lancement OK,
+  univers jouable depuis la bibliothèque/Hub. Détails : `maintenance/TICKET-062-univers-par-defaut/`.
+- **TICKET-062 item 2 — clés Fireworks bêta** : zéro-config opérationnel (backend `fireworks`
+  / `gpt-oss-120b`), bouton « Parcourir… » les modèles + prix OK, rotation OK.
+  Détails : `maintenance/TICKET-062-clefs-fireworks/`. ⏰ rappel : clés expirent le 2026-06-30
+  → flipper `BUILTIN_KEYS_ENABLED=False` ou renouveler le pool.
+- **TICKET-062 item 4 — outil de diagnostic (CLI + GUI)** : Aide → Diagnostic, rapport
+  parlant, bouton « Lancer tous les tests » OK. Détails : `maintenance/TICKET-062-outil-diagnostic/`.
+- **TICKET-066 — modèles de raisonnement (gpt-oss)** : narration streamée OK, Timekeeper ne
+  crashe plus en GUI. Détails : `maintenance/TICKET-066-reasoning-models/`.
+- **TICKET-068 — gel du 1ᵉʳ tour (~90 s)** : disparu (`local_files_only=True` sur l'embedding),
+  1ᵉʳ token rapide confirmé. Détails : `maintenance/TICKET-068-embedding-offline-stall/`.
+- **QA-test-connexion-gemini — `IPv4FirstTransport`** : « Test Connection » répond en ~1 s
+  (Gemini + cloud). Détails : `maintenance/QA-test-connexion-gemini/`.
+- **feature-cloud-text-providers — onglet « Cloud » multi-fournisseurs** : sélecteur de
+  fournisseur OK, clé+modèle persistés par fournisseur (pas de perte au changement).
+- **Fix crash Studio « Edit » (Myria)** : le Creator Studio ouvre Myria sans crash
+  (`_meta_float` tolérant). TICKET-065 (double casse `world_tension_level`) reste ouvert à part.
+- **feature-image-backend-gemini** : génération d'illustration via « Google Gemini (cloud) » OK.
+- **TICKET-054 — i18n** : changement de langue + affichage du temps localisé OK in-game.
+- **image-backends-locaux** : SD WebUI / ComfyUI testés en réel après redémarrage de reForge (`--api`).
+- **B2 Pilier 2 — parcours GUI réel** : couvert par l'usage quotidien (les sous-tickets
+  028/029/030/031/033 étaient déjà validés le 2026-06-10) → réserve « parcours GUI » levée.
+- **TICKET-050 — fail-fast 429 `limit:0`** : code fait + 38 tests verts ; re-vérif API réelle
+  jugée optionnelle, ticket clos.

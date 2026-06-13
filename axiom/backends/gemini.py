@@ -34,6 +34,7 @@ from axiom.backends.base import (
     LLMParseError,
     LLMResponse,
 )
+from axiom.backends.transport import IPv4FirstTransport
 from axiom.logger import logger
 
 _DEFAULT_MODEL: str = "gemini-2.0-flash"
@@ -55,6 +56,24 @@ T = TypeVar("T")
 def _is_quota_error(exc: Exception) -> bool:
     text = str(exc)
     return "RESOURCE_EXHAUSTED" in text or getattr(exc, "code", None) == 429 or " 429 " in f" {text} "
+
+
+def _is_hard_quota_error(exc: Exception) -> bool:
+    """A 429 whose quota is structurally zero: the model is simply not in this
+    API key's free tier (the violation reports `limit: 0` / `quotaValue: "0"`).
+
+    Waiting can NEVER make it succeed — yet the API still sends a misleading
+    `retryDelay` — so the caller must skip the retry/backoff for this model and
+    fail fast instead of burning 1-2 min of countdown per turn (TICKET-050).
+    """
+    if not _is_quota_error(exc):
+        return False
+    text = str(exc)
+    # The value must be exactly zero: "limit: 100" / "quotaValue: 5" must NOT match.
+    return bool(
+        re.search(r"limit['\"]?\s*[:=]\s*['\"]?0(?!\d)", text)
+        or re.search(r"quotaValue['\"]?\s*[:=]\s*['\"]?0(?!\d)", text)
+    )
 
 
 def _parse_retry_delay(exc_text: str) -> float | None:
@@ -134,7 +153,15 @@ class GeminiClient(LLMBackend):
         self._model_name = model_name
         self._min_interval = 60.0 / requests_per_minute if requests_per_minute > 0 else 0.0
         self._fallback_model = fallback_model.strip()
-        self._client = genai.Client(api_key=api_key)
+        # Custom transport (IPv4 first + connect timeout): the SDK ships with
+        # no timeout at all and overrides client-level httpx timeouts with an
+        # explicit None per request — see axiom/backends/transport.py.
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(
+                client_args={"transport": IPv4FirstTransport()},
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Résilience quota (TICKET-031)
@@ -190,6 +217,15 @@ class GeminiClient(LLMBackend):
                             f"Gemini API error ({type(exc).__name__}): {exc}"
                         ) from exc
                     last_exc = exc
+                    # TICKET-050 : quota structurellement à zéro (modèle hors
+                    # free tier) → attendre ne servira jamais. On saute les
+                    # retries pour ce modèle et on passe direct au modèle de
+                    # secours (qui, lui, peut être dans le tier gratuit).
+                    if _is_hard_quota_error(exc):
+                        logger.warning(
+                            "Gemini quota à 0 pour '%s' (modèle hors free tier) "
+                            "— pas de retry, on tente le modèle de secours.", model)
+                        break
                     if attempt < _MAX_QUOTA_RETRIES:
                         delay = _parse_retry_delay(str(exc)) or (5.0 * (2 ** attempt))
                         delay = min(delay + 0.5, _MAX_RETRY_WAIT_S)
@@ -208,6 +244,15 @@ class GeminiClient(LLMBackend):
                     "de secours '%s'", model, self._fallback_model)
                 self._notify(f"Quota still exhausted on '{model}' "
                              f"— switching to fallback model '{self._fallback_model}'")
+        # TICKET-050 : message actionnable quand la cause est un quota à 0
+        # (modèle hors free tier) plutôt que le générique « épuisé après retries ».
+        if last_exc is not None and _is_hard_quota_error(last_exc):
+            raise LLMConnectionError(
+                "Gemini quota is 0 for this model — it is not included in your "
+                "API key's free tier. Enable billing on the key or pick a model "
+                "that is in the free tier (e.g. gemini-2.0-flash). "
+                f"Original error: {last_exc}"
+            ) from last_exc
         raise LLMConnectionError(
             f"Gemini API error (quota exhausted after retries"
             f"{' and fallback model' if self._fallback_model else ''}): {last_exc}"
@@ -232,6 +277,27 @@ class GeminiClient(LLMBackend):
             return True
         except Exception:
             return False
+
+    def list_models(self) -> list[str]:
+        """Return the generation-capable model names, without the "models/" prefix.
+
+        Empty list on any error — best-effort, used by the settings dialog's
+        model picker (TICKET-062).
+        """
+        try:
+            names: list[str] = []
+            for m in self._client.models.list():
+                actions = (getattr(m, "supported_actions", None)
+                           or getattr(m, "supported_generation_methods", None)
+                           or [])
+                if actions and "generateContent" not in actions:
+                    continue
+                name = (getattr(m, "name", "") or "").removeprefix("models/")
+                if name:
+                    names.append(name)
+            return names
+        except Exception:
+            return []
 
     def complete(
         self,

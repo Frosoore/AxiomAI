@@ -1,0 +1,8 @@
+entity_id = "scientific_coalition"
+entity_type = "faction"
+name = "The Scientific Coalition"
+description = """The invisible superpower: a clandestine order of scientists and mages holding the monopoly on advanced knowledge — vaccines, hybrid machines, restored magic. Sells discoveries under exclusivity contracts; answers to no nation. Headquarters: the Antrum, a hidden underground city. SECRET: its Biology section conducts a planetary, silent manhunt for a target known as 'the Buyer' — in truth Arodan Velkarys, the last demigod, traced to the Republic. Agents (like Dr Voss in Highport) work under deep cover."""
+
+[stats]
+Influence = "monopoly on knowledge"
+Stance = "officially neutral, everywhere"

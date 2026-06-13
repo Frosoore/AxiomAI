@@ -1,0 +1,6 @@
+item_id = "brass_spyglass"
+name = "Brass Spyglass"
+description = "A collapsible mariner's spyglass of Foundry Row make. Good lenses, dented barrel, someone else's initials filed off the rim."
+category = "tool"
+weight = 0.8
+rarity = "common"

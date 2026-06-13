@@ -21,7 +21,7 @@ import pytest
 import chromadb
 from chromadb import EmbeddingFunction, Documents, Embeddings
 
-from axiom.memory import VectorMemory, _COLLECTION_NAME
+from axiom.memory import VectorMemory, _COLLECTION_NAME, _EmbeddingSingleton
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ class _FakeEmbeddingFn(EmbeddingFunction[Documents]):
 def vm(tmp_path: Path):
     """Provide a VectorMemory instance with mocked embeddings and tmp storage."""
     with patch(
-        "axiom.memory.SentenceTransformerEmbeddingFunction",
+        "chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction",
         return_value=_FakeEmbeddingFn(),
     ):
         memory = VectorMemory(persist_dir=str(tmp_path / "chroma"))
@@ -257,3 +257,64 @@ class TestRollback:
 
         deleted = vm.rollback("save1", target_turn_id=4)
         assert deleted == 3  # turns 5, 6, 7
+
+
+# ---------------------------------------------------------------------------
+# Embedding model is loaded OFFLINE when already cached
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingSingletonOffline:
+    """The embedding model must load without a HF Hub network round-trip when
+    it is already cached. That HEAD request stalls ~90s on hosts with broken
+    IPv6 routing to huggingface.co and runs on the first turn of every session,
+    so the narrative never seems to arrive (regression guard)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_singleton(self):
+        _EmbeddingSingleton._instance = None
+        yield
+        _EmbeddingSingleton._instance = None
+
+    def test_loads_with_local_files_only(self) -> None:
+        """The cached fast path passes local_files_only=True (no network)."""
+        with patch(
+            "chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction"
+        ) as fake:
+            fake.return_value = _FakeEmbeddingFn()
+            _EmbeddingSingleton.get()
+
+        fake.assert_called_once()
+        assert fake.call_args.kwargs.get("local_files_only") is True
+
+    def test_falls_back_to_online_when_not_cached(self) -> None:
+        """If the offline load fails (model not on disk), retry online once."""
+        attempts: list[bool] = []
+
+        def _side_effect(*args, **kwargs):
+            local_only = kwargs.get("local_files_only", False)
+            attempts.append(local_only)
+            if local_only:
+                raise OSError("model not found in local cache")
+            return _FakeEmbeddingFn()
+
+        with patch(
+            "chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction",
+            side_effect=_side_effect,
+        ):
+            result = _EmbeddingSingleton.get()
+
+        # First attempt offline (raised), second attempt online (succeeded).
+        assert attempts == [True, False]
+        assert isinstance(result, _FakeEmbeddingFn)
+
+    def test_singleton_caches_instance(self) -> None:
+        """The model is built once and reused across calls."""
+        with patch(
+            "chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction"
+        ) as fake:
+            fake.return_value = _FakeEmbeddingFn()
+            first = _EmbeddingSingleton.get()
+            second = _EmbeddingSingleton.get()
+
+        assert first is second
+        fake.assert_called_once()

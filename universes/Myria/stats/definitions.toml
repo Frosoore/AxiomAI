@@ -1,0 +1,27 @@
+[[definitions]]
+stat_id = "Health"
+name = "Health"
+description = "Physical condition. At 0, you are dying."
+value_type = "numeric"
+parameters = { min = 0, max = 100 }
+
+[[definitions]]
+stat_id = "Arcane Focus"
+name = "Arcane Focus"
+description = "The stamina of the arcane core. Casting drains it; rest restores it. An exhausted core injures its bearer."
+value_type = "numeric"
+parameters = { min = 0, max = 100 }
+
+[[definitions]]
+stat_id = "Coin"
+name = "Coin"
+description = "Spendable money, in Republic marks."
+value_type = "numeric"
+parameters = { min = 0 }
+
+[[definitions]]
+stat_id = "Notoriety"
+name = "Notoriety"
+description = "How widely your name and face are known in Highport — for good or ill. High notoriety opens doors and draws the wrong kind of attention."
+value_type = "numeric"
+parameters = { min = 0, max = 100 }

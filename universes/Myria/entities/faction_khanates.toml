@@ -1,0 +1,8 @@
+entity_id = "steppe_khanates"
+entity_type = "faction"
+name = "The Khanates of the Steppe"
+description = "Nomad confederation of the eastern steppe, unified by the God-Khan — a chief transformed by a buried vein of power into something bound to the very concept of his people. He strengthens his riders and slowly spends himself doing it. Tradition-bound, technologically simple, strategically mobile, practising a shamanism no settled school can explain."
+
+[stats]
+Influence = "masters of the east"
+Stance = "traditional, unreadable"

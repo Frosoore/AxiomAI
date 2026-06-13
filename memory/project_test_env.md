@@ -25,6 +25,17 @@ y compris par jour — attendre ne sert à rien) ; `gemini-1.5-flash`/`-8b` → 
 se connecte mais renvoie un texte vide (`None` → `LLMParseError`, structure « thinking » non gérée).
 `settings.json` (`~/.config/AxiomAI/`) a été basculé sur `gemini-2.5-flash-lite`.
 
+**MAJ 2026-06-12 — IPv6 cassée vers Google sur la machine :** les SYN TCP vers les adresses
+IPv6 de `generativelanguage.googleapis.com` ne reçoivent jamais de réponse (`curl -6` → timeout,
+`curl -4` → OK ; cassure probablement apparue avec la MAJ Fedora du 06-11). Tout client Python
+sans timeout de connexion y reste bloqué ~130 s **par adresse** (plusieurs AAAA publiées) avant
+la bascule IPv4. Corrigé côté app le 2026-06-12 (étape `QA-test-connexion-gemini`) :
+`axiom/backends/transport.py::IPv4FirstTransport` partagé par `gemini.py`/`universal.py` —
+IPv4 épinglée d'abord, fallback dual-stack mémorisé, connect timeout 5 s/adresse → appels
+quasi instantanés (0,27 s vérifié). ⚠ Si un futur outil/script contourne ces clients (httpx ou
+genai « nus »), il re-paiera des minutes de blocage — réutiliser ce transport. La vraie
+guérison serait de réparer/désactiver l'IPv6 au niveau OS/box.
+
 **Why:** pour valider un tour de jeu réel, on dépend de Gemini ; les chemins qui supposaient un modèle
 local (`extraction_model = llama3.1:8b`) cassaient en Gemini (cf. [[—]] TICKET-007). Les validations
 « run réel » peuvent échouer pour cause de quota, pas de bug.

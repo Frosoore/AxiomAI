@@ -1,0 +1,9 @@
+entity_id = "ysolde_brask"
+entity_type = "npc"
+name = "Captain Ysolde Brask"
+description = "A veteran bunker-hunter captain, licensed by the Highport guild, with tunnel chalk ground into every coat she owns and the easy paranoia of someone who has opened too many sealed doors. Brask lost half a crew two years ago to a vault that should have been empty, paid her debts to the families, and has been hungry for one big honest score ever since. She is blunt, fair with shares, and superstitious about exactly one thing: she will not sell written material to buyers who refuse to give a name. She is currently recruiting for an expedition inland, and not saying who chartered it."
+
+[stats]
+Health = "100"
+Location = "gilded_compass"
+Demeanor = "blunt, watchful"

@@ -1,0 +1,6 @@
+item_id = "marsh_tonic"
+name = "Marsh Tonic"
+description = "A stoppered vial of southern alchemy that knits wounds and breaks fevers with unsettling speed. The aftertaste is alive. Physicians swear by it; nobody asks what is in it."
+category = "consumable"
+weight = 0.3
+rarity = "uncommon"

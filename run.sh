@@ -27,15 +27,8 @@ if ! python3 -m venv --help &>/dev/null; then
     exit 1
 fi
 
-# Check for common Qt/PySide6 system dependencies on Linux
-MISSING_LIBS=()
-check_lib() {
-    if ! ldconfig -p | grep -q "$1"; then
-        MISSING_LIBS+=("$2")
-    fi
-}
-
-# libxcb-cursor0 and libqt6svg6 are frequent missing libraries for PySide6 on Ubuntu
+# Check for common Qt/PySide6 system dependencies on Linux.
+# libxcb-cursor0 and libqt6svg6 are frequent missing libraries for PySide6 on Ubuntu.
 if command -v ldconfig &>/dev/null; then
     if ! ldconfig -p | grep -q "libxcb-cursor.so.0"; then
         echo "Warning: libxcb-cursor0 might be missing (required for PySide6 GUI)."

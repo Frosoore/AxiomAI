@@ -11,7 +11,11 @@ build/
 *.egg-info/
 
 # Databases (Local saves and universes)
-universes/
+# Personal universes stay untracked, but the bundled default universe
+# (Universe-as-Code source) is versioned — only its compiled cache is not.
+universes/*
+!universes/Myria/
+universes/Myria/.axiom-cache/
 vector/
 auto_backups/
 /saves/

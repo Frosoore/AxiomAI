@@ -18,7 +18,11 @@ registre déclaratif unique `ui/help_system.py::PAGES` (208 éléments, 6 pages)
 `tools/doc_check.py`. **Traduit dans les 10 langues** (i18n_check 515/515 partout). En chemin :
 3 clés préexistantes mal traduites corrigées (`chronicler_interval_label` — cascade
 italien/espagnol dans it/pt/ru/zh/ja/ko —, `univ_params` ×7, `image_api_url` ko).
-Suites vertes 581 + 56. ⚠ Reste : validation GUI réelle par l'utilisateur.
+Suites vertes 581 + 56. **Structure VALIDÉE GUI le 2026-06-13** (les 4 briques marchent) MAIS
+**contenu jugé TROP SUCCINCT → TICKET-057 reste ouvert** : étoffer les ~242 clés `doc_*` de
+`core/locales/*.toml` (explications complètes, contexte/exemples, le « pourquoi » de chaque
+réglage — EN d'abord puis 10 langues ; périmètre `core/locales/`, pas de code ; trous via
+`tools/doc_check.py`).
 **Retours utilisateur traités (2026-06-12)** : toggle « bulles d'aide au survol » dans les
 paramètres (config `doc_tooltips_enabled` + filtre `install_tooltip_gate` — ne coupe que les
 tooltips de doc, dialogues/audit intacts) ; bug retranslate de la vue setup corrigé (onglet
@@ -37,7 +41,7 @@ de la réf API (~800 chaînes) et autres langues = plus tard. Mode d'emploi :
 `maintenance/TICKET-058-doc-sphinx/DOC.md`.
 
 **Ordre décidé :** i18n d'abord (fait, TICKET-053/054), puis le site Sphinx (fait, TICKET-058),
-puis la doc intégrée (fait côté code, TICKET-057 — validation GUI en attente).
+puis la doc intégrée (structure validée GUI le 2026-06-13, TICKET-057 rouvert — contenu à enrichir).
 
 **Prérequis traité (i18n) :** TICKET-053 (rework : traductions externalisées en TOML par langue,
 10 langues complétées à 295/295) **puis** TICKET-054 (séparation des couches) — tous deux le

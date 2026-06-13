@@ -1,0 +1,8 @@
+entity_id = "aicamed_federation"
+entity_type = "faction"
+name = "The Aicamed Federation"
+description = "The nation of mages: two centuries of sealed borders and merciless selection made every citizen the equal of a war-mage, and its ruler is simply its strongest. De facto unattackable, deeply insular, locked in a five-century feud with the anti-magic Empire of Ashes."
+
+[stats]
+Influence = "untouchable"
+Stance = "insular, vigilant"

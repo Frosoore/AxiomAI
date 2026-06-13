@@ -301,6 +301,17 @@ _QUOTA_MSG = (
     "'status': 'RESOURCE_EXHAUSTED'}}"
 )
 
+# A model that is NOT in the key's free tier: the QuotaFailure violation reports
+# quotaValue '0', yet the API still attaches a (misleading) retryDelay.
+# Waiting can never succeed → must fail fast (TICKET-050).
+_HARD_QUOTA_MSG = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
+    "'You exceeded your current quota.', 'status': 'RESOURCE_EXHAUSTED', "
+    "'details': [{'@type': 'type.googleapis.com/google.rpc.QuotaFailure', "
+    "'violations': [{'quotaId': 'GenerateContentFreeTier', "
+    "'quotaValue': '0'}]}, {'retryDelay': '14s'}]}}"
+)
+
 
 def _quota_exc() -> Exception:
     return Exception(_QUOTA_MSG)
@@ -381,6 +392,51 @@ class TestQuotaResilience:
         with pytest.raises(LLMConnectionError, match="quota"):
             client.complete([{"role": "user", "content": "hi"}])
 
+    # --- TICKET-050 : quota structurellement à zéro (modèle hors free tier) ---
+
+    def test_is_hard_quota_error_detects_zero_limit(self) -> None:
+        from axiom.backends.gemini import _is_hard_quota_error
+
+        assert _is_hard_quota_error(Exception(_HARD_QUOTA_MSG)) is True
+        assert _is_hard_quota_error(Exception("429 RESOURCE_EXHAUSTED limit: 0")) is True
+        # A real, recoverable per-minute quota is NOT hard (must still retry).
+        assert _is_hard_quota_error(_quota_exc()) is False
+        # Non-zero limits and non-quota errors are never hard.
+        assert _is_hard_quota_error(Exception("429 RESOURCE_EXHAUSTED limit: 100")) is False
+        assert _is_hard_quota_error(Exception("boom 500")) is False
+
+    def test_hard_quota_skips_retries_no_wait(self, mock_client_cls, monkeypatch) -> None:
+        """limit:0 → fail fast: a single call, zero backoff wait (no fallback)."""
+        client, inner = _make_gemini_client(mock_client_cls)
+        monkeypatch.setattr("axiom.backends.gemini.time.sleep",
+                            lambda s: pytest.fail("hard quota must not wait"))
+        inner.models.generate_content.side_effect = Exception(_HARD_QUOTA_MSG)
+        with pytest.raises(LLMConnectionError, match="free tier"):
+            client.complete([{"role": "user", "content": "hi"}])
+        assert inner.models.generate_content.call_count == 1  # pas de retry
+
+    def test_hard_quota_still_tries_fallback_model(self, mock_client_cls, monkeypatch) -> None:
+        """A model out of the free tier skips retries but still falls back to a
+        model that may be in the tier — and reaches it without any backoff."""
+        mock_inner = MagicMock()
+        mock_client_cls.return_value = mock_inner
+        client = GeminiClient(api_key="fake-key", model_name="primary",
+                              fallback_model="secours")
+        monkeypatch.setattr("axiom.backends.gemini.time.sleep",
+                            lambda s: pytest.fail("hard quota must not wait"))
+
+        def gen(model, contents, config):
+            if model == "primary":
+                raise Exception(_HARD_QUOTA_MSG)
+            return _make_response("sauvé")
+
+        mock_inner.models.generate_content.side_effect = gen
+        resp = client.complete([{"role": "user", "content": "hi"}])
+        assert resp.narrative_text == "sauvé"
+        calls = [c.kwargs["model"] for c in mock_inner.models.generate_content.call_args_list]
+        assert calls.count("primary") == 1  # une seule fois, pas _MAX_QUOTA_RETRIES+1
+        assert calls[-1] == "secours"
+
     def test_rate_limiter_espace_les_requetes(self, monkeypatch) -> None:
         from axiom.backends import gemini as g
 
@@ -403,3 +459,84 @@ class TestQuotaResilience:
                             lambda s: pytest.fail("pas de pacing par défaut"))
         inner.models.generate_content.return_value = _make_response("ok")
         assert client.complete([{"role": "user", "content": "hi"}]).narrative_text == "ok"
+
+
+
+# ---------------------------------------------------------------------------
+# Network transport (QA-test-connexion-gemini)
+# ---------------------------------------------------------------------------
+
+class TestIPv4FirstTransport:
+    """IPv4 must be tried first (a broken IPv6 route stalled for minutes) and
+    every request must carry a connect timeout — the SDK passes timeout=None
+    per request, which disables client-level timeouts."""
+
+    @staticmethod
+    def _make_transport():
+        import httpx
+        from axiom.backends.transport import IPv4FirstTransport
+
+        transport = IPv4FirstTransport()
+        transport._ipv4 = MagicMock()
+        transport._dual = MagicMock()
+        return httpx, transport
+
+    def test_ipv4_tried_first(self) -> None:
+        httpx, transport = self._make_transport()
+        request = httpx.Request("GET", "https://example.test")
+        response = transport.handle_request(request)
+        assert response is transport._ipv4.handle_request.return_value
+        transport._dual.handle_request.assert_not_called()
+
+    def test_falls_back_to_dual_stack_and_sticks(self) -> None:
+        httpx, transport = self._make_transport()
+        transport._ipv4.handle_request.side_effect = httpx.ConnectError("no v4")
+        request = httpx.Request("GET", "https://example.test")
+        response = transport.handle_request(request)
+        assert response is transport._dual.handle_request.return_value
+        # The dead IPv4 probe is remembered: next request skips it entirely.
+        transport.handle_request(httpx.Request("GET", "https://example.test"))
+        assert transport._ipv4.handle_request.call_count == 1
+        assert transport._dual.handle_request.call_count == 2
+
+    def test_injects_connect_timeout_when_none(self) -> None:
+        from axiom.backends.transport import _CONNECT_TIMEOUT_S
+
+        httpx, transport = self._make_transport()
+        request = httpx.Request(
+            "GET",
+            "https://example.test",
+            extensions={
+                "timeout": {"connect": None, "read": None, "write": None, "pool": None}
+            },
+        )
+        transport.handle_request(request)
+        timeouts = request.extensions["timeout"]
+        assert timeouts["connect"] == _CONNECT_TIMEOUT_S
+        # Read stays unlimited: long generations must not be cut short.
+        assert timeouts["read"] is None
+
+    def test_injects_connect_timeout_when_extension_missing(self) -> None:
+        from axiom.backends.transport import _CONNECT_TIMEOUT_S
+
+        httpx, transport = self._make_transport()
+        request = httpx.Request("GET", "https://example.test")
+        transport.handle_request(request)
+        assert request.extensions["timeout"]["connect"] == _CONNECT_TIMEOUT_S
+
+    def test_respects_explicit_connect_timeout(self) -> None:
+        httpx, transport = self._make_transport()
+        request = httpx.Request(
+            "GET",
+            "https://example.test",
+            extensions={"timeout": {"connect": 30.0, "read": 5.0}},
+        )
+        transport.handle_request(request)
+        assert request.extensions["timeout"] == {"connect": 30.0, "read": 5.0}
+
+    def test_gemini_client_built_with_transport(self, mock_client_cls) -> None:
+        from axiom.backends.transport import IPv4FirstTransport
+
+        GeminiClient(api_key="fake-key")
+        http_options = mock_client_cls.call_args.kwargs["http_options"]
+        assert isinstance(http_options.client_args["transport"], IPv4FirstTransport)

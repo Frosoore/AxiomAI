@@ -1,0 +1,8 @@
+entity_id = "empire_of_ashes"
+entity_type = "faction"
+name = "The Empire of Ashes"
+description = "Myria's oldest and most industrialised power. Anti-magic by doctrine and superstition, mighty by rail, steel and disciplined infantry. Newly ruled by the usurper Arven Deymar; awaiting delivery of revolutionary Coalition-built artillery. Rivals: Aicamed (ancient feud), the Republic (trade war). Keeps secrets even from itself."
+
+[stats]
+Influence = "dominant land power"
+Stance = "watchful, rearming"

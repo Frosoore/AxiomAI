@@ -214,6 +214,10 @@ class MainWindow(QMainWindow):
         tour_action = QAction(tr("menu_quick_tour"), self)
         tour_action.triggered.connect(self._show_quick_tour)
         help_menu.addAction(tour_action)
+        diagnostic_action = QAction(tr("menu_diagnostic"), self)
+        diagnostic_action.setToolTip(tr("menu_diagnostic_tip"))
+        diagnostic_action.triggered.connect(self._show_diagnostic)
+        help_menu.addAction(diagnostic_action)
         help_menu.addSeparator()
         about_action = QAction(tr("menu_about"), self)
         about_action.triggered.connect(self._show_about)
@@ -414,6 +418,10 @@ class MainWindow(QMainWindow):
     def _show_quick_tour(self) -> None:
         from ui.help_dialogs import QuickTourDialog
         QuickTourDialog(self).exec()
+
+    def _show_diagnostic(self) -> None:
+        from ui.diagnostic_dialog import DiagnosticDialog
+        DiagnosticDialog(self).exec()
 
     def _check_first_launch(self) -> None:
         """First launch: show the quick tour (TICKET-057, replaces the old

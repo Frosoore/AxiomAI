@@ -1,0 +1,6 @@
+item_id = "tunnel_chart_fragment"
+name = "Tunnel Chart Fragment"
+description = "A torn quarter of a hand-drawn bunker chart, tunnel-chalk smudged, with a depth notation nobody has matched to a known site. Worth a drink as a curiosity — or a fortune, if the other three quarters exist."
+category = "document"
+weight = 0.1
+rarity = "rare"

@@ -1,0 +1,5 @@
+# ~75 in-game days after the start.
+event_id = "artillery_delivery"
+trigger_minute = 108000
+title = "The Great Guns Are Delivered"
+description = "Word breaks across every harbour and chancellery at once: the Scientific Coalition has delivered the plans and prototypes of the Empire's revolutionary heavy artillery to Cinderhold. The balance of power on Myria has just tilted, and everyone — the Council of Captains first among them — must decide what to do about it."

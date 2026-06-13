@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -37,7 +39,9 @@ from axiom.config import (
     CLOUD_BACKENDS,
     OPENAI_COMPAT_PROVIDERS,
     build_llm_from_config,
+    get_builtin_keys,
     save_config,
+    uses_builtin_keys,
     GLOBAL_DB_FILE,
     load_config,
 )
@@ -45,6 +49,7 @@ from core.localization import tr, SUPPORTED_LANGUAGES
 from ui.widgets.persona_editor import PersonaEditorWidget
 from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker
+from workers.model_list_worker import ModelListWorker
 
 # Cloud tab dropdown: display label + placeholders per provider. The key
 # placeholder for "gemini" is localized (tr("gemini_key_placeholder")).
@@ -56,11 +61,33 @@ _CLOUD_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("OpenAI", "openai"),
     ("OpenRouter", "openrouter"),
 )
+def _fireworks_model_entries(models: list[str], builtin: bool) -> list[tuple[str, str]]:
+    """(model id, display label) pairs for the Fireworks model picker.
+
+    The /models listing is incomplete (it omits serverless models like
+    gpt-oss-20b that do answer), so it is merged with the hand-maintained
+    price table; on the shared beta keys, only affordable models remain
+    (TICKET-062).
+    """
+    from core.builtin_keys import FIREWORKS_MODEL_PRICES, is_affordable_on_builtin
+
+    ids = sorted(set(models) | set(FIREWORKS_MODEL_PRICES))
+    if builtin:
+        ids = [m for m in ids if is_affordable_on_builtin(m)]
+    entries = []
+    for mid in ids:
+        prices = FIREWORKS_MODEL_PRICES.get(mid)
+        label = (f"{mid}   (${prices[0]:.2f} in / ${prices[1]:.2f} out per 1M)"
+                 if prices else mid)
+        entries.append((mid, label))
+    return entries
+
+
 _CLOUD_MODEL_PLACEHOLDERS: dict[str, str] = {
     "gemini": "e.g. gemini-2.0-flash",
     "claude": "e.g. claude-opus-4-8",
     "venice": "e.g. zai-org-glm-4.7",
-    "fireworks": "e.g. accounts/fireworks/models/deepseek-v3p1",
+    "fireworks": "e.g. accounts/fireworks/models/gpt-oss-120b",
     "openai": "e.g. gpt-4.1-mini",
     "openrouter": "e.g. openrouter/auto",
 }
@@ -160,6 +187,10 @@ class SettingsDialog(QDialog):
         self._cloud_key = doc(QLineEdit(), "settings.cloud_key")
         self._cloud_key.setEchoMode(QLineEdit.Password)
         self._cloud_model = doc(QLineEdit(), "settings.cloud_model")
+        # TICKET-062 : pick the model from the provider's real catalogue.
+        self._browse_models_btn = doc(
+            QPushButton(tr("browse_models")), "settings.browse_models"
+        )
         self._cloud_test_btn = doc(QPushButton(tr("test_connection")), "settings.test_connection")
         self._cloud_status = QLabel("")
 
@@ -177,7 +208,10 @@ class SettingsDialog(QDialog):
 
         self._cloud_form.addRow(self._cloud_provider_label, self._cloud_provider_combo)
         self._cloud_form.addRow(self._cloud_key_label, self._cloud_key)
-        self._cloud_form.addRow(self._cloud_model_label, self._cloud_model)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self._cloud_model, stretch=1)
+        model_row.addWidget(self._browse_models_btn)
+        self._cloud_form.addRow(self._cloud_model_label, model_row)
         self._cloud_form.addRow(self._gemini_fallback_label, self._gemini_fallback)
         self._cloud_form.addRow(self._llm_rpm_label, self._llm_rpm_spin)
 
@@ -358,6 +392,7 @@ class SettingsDialog(QDialog):
         # Connections
         self._univ_test_btn.clicked.connect(self._test_universal)
         self._cloud_test_btn.clicked.connect(self._test_cloud)
+        self._browse_models_btn.clicked.connect(self._browse_models)
         self._cloud_provider_combo.currentIndexChanged.connect(
             self._on_cloud_provider_changed
         )
@@ -382,9 +417,14 @@ class SettingsDialog(QDialog):
         values = self._cloud_values.get(provider, {"key": "", "model": ""})
         self._cloud_key.setText(values["key"])
         self._cloud_model.setText(values["model"])
-        self._cloud_key.setPlaceholderText(
-            tr("gemini_key_placeholder") if provider == "gemini" else tr("api_key").rstrip(" :")
-        )
+        if provider == "gemini":
+            key_placeholder = tr("gemini_key_placeholder")
+        elif get_builtin_keys(provider):
+            # TICKET-062 : shared beta keys cover this provider.
+            key_placeholder = tr("builtin_keys_placeholder")
+        else:
+            key_placeholder = tr("api_key").rstrip(" :")
+        self._cloud_key.setPlaceholderText(key_placeholder)
         self._cloud_model.setPlaceholderText(_CLOUD_MODEL_PLACEHOLDERS.get(provider, ""))
         # Fallback model + RPM limit only exist on the Gemini client.
         is_gemini = provider == "gemini"
@@ -425,6 +465,7 @@ class SettingsDialog(QDialog):
         self._cloud_key_label.setText(tr("api_key"))
         self._cloud_model_label.setText(tr("model_name"))
         self._cloud_test_btn.setText(tr("test_connection"))
+        self._browse_models_btn.setText(tr("browse_models"))
         # Refresh the localized key placeholder without losing unsaved edits.
         self._stash_cloud_fields()
         self._sync_cloud_fields()
@@ -544,7 +585,7 @@ class SettingsDialog(QDialog):
             venice_model=cloud["venice"]["model"] or "zai-org-glm-4.7",
             fireworks_api_key=cloud["fireworks"]["key"],
             fireworks_model=cloud["fireworks"]["model"]
-            or "accounts/fireworks/models/deepseek-v3p1",
+            or "accounts/fireworks/models/gpt-oss-120b",
             openai_api_key=cloud["openai"]["key"],
             openai_model=cloud["openai"]["model"] or "gpt-4.1-mini",
             openrouter_api_key=cloud["openrouter"]["key"],
@@ -707,3 +748,73 @@ class SettingsDialog(QDialog):
         color = "#27ae60" if ok else "#c0392b"
         status_label.setText(f'<span style="color:{color};">{msg}</span>')
         test_btn.setEnabled(True)
+
+    # ------------------------------------------------------------------
+    # Model picker (TICKET-062)
+    # ------------------------------------------------------------------
+
+    def _cloud_config(self) -> AppConfig:
+        """Current form state with the selected cloud provider as backend."""
+        cfg = self.collect_config()
+        cfg.llm_backend = self._cloud_provider_combo.currentData()
+        return cfg
+
+    @Slot()
+    def _browse_models(self) -> None:
+        cfg = self._cloud_config()
+        try:
+            llm = build_llm_from_config(cfg)
+        except ValueError as exc:
+            self._cloud_status.setText(f"{tr('failed')} {exc}")
+            return
+        self._cloud_status.setText(tr("loading_models"))
+        self._browse_models_btn.setEnabled(False)
+        self._model_worker = ModelListWorker(llm)
+        self._model_worker.models_ready.connect(self._on_models_listed)
+        self._model_worker.start()
+
+    @Slot(list)
+    def _on_models_listed(self, models: list) -> None:
+        self._browse_models_btn.setEnabled(True)
+        self._cloud_status.setText("")
+        cfg = self._cloud_config()
+        provider = cfg.llm_backend
+        builtin = uses_builtin_keys(cfg)
+
+        if provider == "fireworks":
+            entries = _fireworks_model_entries(models, builtin)
+        else:
+            entries = [(m, m) for m in models]
+
+        if not entries:
+            self._cloud_status.setText(
+                f'<span style="color:#c0392b;">{tr("no_models_found")}</span>'
+            )
+            return
+        self._show_model_picker(entries, builtin_note=builtin)
+
+    def _show_model_picker(self, entries: list, builtin_note: bool) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("model_picker_title"))
+        dialog.setMinimumWidth(520)
+        layout = QVBoxLayout(dialog)
+        if builtin_note:
+            note = QLabel(tr("model_picker_builtin_note"))
+            note.setWordWrap(True)
+            layout.addWidget(note)
+        model_list = QListWidget()
+        current = self._cloud_model.text().strip()
+        for mid, label in entries:
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, mid)
+            model_list.addItem(item)
+            if mid == current:
+                model_list.setCurrentItem(item)
+        layout.addWidget(model_list)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        model_list.itemDoubleClicked.connect(lambda _item: dialog.accept())
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted and model_list.currentItem() is not None:
+            self._cloud_model.setText(model_list.currentItem().data(Qt.UserRole))

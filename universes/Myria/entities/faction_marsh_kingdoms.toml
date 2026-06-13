@@ -1,0 +1,8 @@
+entity_id = "marsh_kingdoms"
+entity_type = "faction"
+name = "The Marsh Kingdoms"
+description = "Cities of the warped south that tamed what everyone else fled: unmatched alchemy and living craft, rumoured hybrid beasts, harvesters of the strange organic crystals the Coalition buys by the crate. Beast-gods rise from their deep marshes and are worshipped or dreaded parish by parish."
+
+[stats]
+Influence = "alchemical monopoly"
+Stance = "closed, transactional"

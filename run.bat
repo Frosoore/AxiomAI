@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-# Axiom AI — Windows launch script
+REM Axiom AI - Windows launch script
 REM ============================================================
 SETLOCAL
 
@@ -12,15 +12,15 @@ REM Check for python
 where python >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo ERROR: python not found.
-    echo Please install Python 3.10+ from python.org
+    echo Please install Python 3.11+ from python.org
     pause
     exit /b 1
 )
 
 REM Check python version
-python -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)"
+python -c "import sys; exit(0 if sys.version_info >= (3, 11) else 1)"
 if %ERRORLEVEL% neq 0 (
-    echo ERROR: Python 3.10+ required.
+    echo ERROR: Python 3.11+ required.
     pause
     exit /b 1
 )

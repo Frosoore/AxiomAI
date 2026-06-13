@@ -339,3 +339,26 @@ class TestResolveExtractionModel:
         )
         assert resolve_extraction_model(cfg) == "zai-org-glm-4.7"
         assert resolve_time_model(cfg) == "zai-org-glm-4.7"
+
+
+class TestHttpTimeouts:
+    """QA-test-connexion-gemini: the connect phase must have its own short
+    timeout — a scalar timeout let a broken IPv6 route stall the client for
+    minutes before the IPv4 fallback."""
+
+    def test_universal_client_has_separate_connect_timeout(self) -> None:
+        from axiom.backends.universal import (
+            UniversalClient,
+            _CONNECT_TIMEOUT,
+            _DEFAULT_TIMEOUT,
+        )
+        llm = UniversalClient(base_url="http://x.test/v1", api_key="", model_name="m")
+        assert llm._client.timeout.connect == _CONNECT_TIMEOUT
+        assert llm._client.timeout.read == _DEFAULT_TIMEOUT
+
+    def test_universal_client_uses_ipv4_first_transport(self) -> None:
+        from axiom.backends.transport import IPv4FirstTransport
+        from axiom.backends.universal import UniversalClient
+
+        llm = UniversalClient(base_url="http://x.test/v1", api_key="", model_name="m")
+        assert isinstance(llm._client._transport, IPv4FirstTransport)
