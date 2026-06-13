@@ -227,11 +227,10 @@ class QuickTourDialog(QDialog):
 
 
 def make_help_button(page: str, parent=None) -> QPushButton:
-    """The small round '?' button placed in each page header (brique 2)."""
-    button = QPushButton("?", parent)
-    button.setFixedSize(28, 28)
+    """The 'Information' button placed in each page header (brique 2)."""
+    button = QPushButton(tr("information"), parent)
     button.setStyleSheet(
-        "QPushButton { border-radius: 14px; font-weight: bold; }"
+        "QPushButton { border-radius: 8px; font-weight: bold; padding: 4px 12px; }"
     )
     button.setToolTip(tr("explain_page_btn"))
     button.clicked.connect(lambda: ExplainPageDialog(page, parent).exec())
