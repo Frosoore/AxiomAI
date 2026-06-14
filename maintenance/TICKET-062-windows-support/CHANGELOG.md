@@ -167,3 +167,41 @@ détecter au lancement et proposer le téléchargement — **uniquement en couch
   no-op hors Windows / runtime OK / torch absent ; affichage unique + respect du marqueur ; le
   bouton Télécharger ouvre bien l'URL Microsoft. Détection vérifiée en réel (`missing_dll` sur la
   machine ; torch lui-même imprime le même conseil VC++).
+
+## 2026-06-14 (suite 3) — QA Linux post-portage (non-régression)
+
+Contrôle qualité sur Linux (Fedora, Python 3.14.5, torch 2.12.0+cu130) pour vérifier que la
+couche compat Windows de cette branche `dev-win-compat` **ne casse rien sur POSIX**. Aucun code
+modifié — vérification seule.
+
+### Tests (machine Linux de dev)
+- Suite moteur/app hors vector/Qt : **700 passed**.
+- Lot vector/Qt séparé (`test_vector_memory`/`test_vector_threading`/`test_phase6`/
+  `test_ambiance_manager`) : **61 passed**. Total **761 passed, 0 échec** (deux lots,
+  `QT_QPA_PLATFORM=offscreen`, segfault TICKET-067 contourné comme prévu).
+
+### Revue des changements à risque sémantique sur Linux — tous sains
+- **`schema.py::_ClosingConnection`** (le plus sensible, 87 sites `with get_connection()`) :
+  vérifié **zéro assignation nue**, tous les sites passent par `with`. Smoke réel : la connexion
+  est bien fermée après le bloc (`Cannot operate on a closed database` à la réutilisation) et
+  aucun site ne la réutilise après (sinon la suite planterait). Sur Linux, seul effet = handle
+  libéré plus tôt → comportement inchangé.
+- **`memory.py` dégradation gracieuse** : sur Linux torch charge, `_disabled` reste `False`,
+  `_ensure_connected` réussit → comportement strictement inchangé (la dégradation ne s'arme que
+  sur exception).
+- **`compile.py::_split_frontmatter`** : smoke confirme LF **et** CRLF parsent à l'identique
+  (`\n` toujours traité en premier, corps préservé).
+- **`library.py` `.as_posix()`** : sur Linux `as_posix()` == `str()` (séparateur déjà `/`) →
+  clés de diff inchangées.
+- **`fsutil.py` retry** : sur POSIX la 1ʳᵉ tentative (delay 0.0) réussit toujours → no-op, zéro
+  surcoût.
+
+### Smokes end-to-end Linux
+- Compile de l'univers embarqué `universes/Myria` → OK (11 entités).
+- `tools.diagnostic --offline` → exit 0, embedding model en cache, config bêta OK.
+- `ui/runtime_check.py` → `status="ok"`, `maybe_warn_missing_runtime(None)` renvoie `False`
+  (no-op hors Windows).
+- `bash -n run.sh` → OK.
+
+**Bilan : aucune régression Linux introduite par le portage Windows.** Seul point ouvert =
+environnement Windows utilisateur (VC++ Redistributable, TICKET-070), sans impact POSIX.

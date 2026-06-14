@@ -362,6 +362,10 @@ class MainWindow(QMainWindow):
             
         dialog = SettingsDialog(config=load_config(), db_path=db_path, parent=self)
         if dialog.exec() == QDialog.Accepted:
+            # The language may have changed: drop the cached current language so
+            # tr() picks up the new one (App-M4).
+            from core.localization import reload_translations
+            reload_translations()
             # Update all UI text dynamically
             self.retranslate_ui()
             

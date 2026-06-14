@@ -63,3 +63,28 @@ def test_load_full_universe_emits_every_table_signal_with_data(db_path):
     
     assert "meta" in results
     assert results["meta"]["global_lore"] == "The world is round."
+
+
+def test_ensure_universe_migrations_runs_once_per_db(db_path, monkeypatch):
+    """App-M2: the idempotent universe migrations run once per db_path, not on
+    every load."""
+    import workers.db_tasks as dbt
+
+    # Make sure this db_path is not already marked from another test.
+    dbt._MIGRATED_DBS.discard(db_path)
+
+    calls = {"n": 0}
+    import axiom.schema as schema
+    real = schema.migrate_lore_book_table
+
+    def _counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(schema, "migrate_lore_book_table", _counting)
+
+    dbt.ensure_universe_migrations(db_path)
+    dbt.ensure_universe_migrations(db_path)
+    dbt.ensure_universe_migrations(db_path)
+
+    assert calls["n"] == 1  # only the first call actually migrated

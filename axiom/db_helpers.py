@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from axiom.logger import logger
@@ -152,7 +152,7 @@ def create_new_save(
     migrate_inventory_tables(db_path)
     migrate_active_modifiers_table(db_path)
     save_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with get_connection(db_path) as conn:
         conn.execute(
             "INSERT INTO Saves (save_id, player_name, difficulty, last_updated, player_persona) "

@@ -206,12 +206,14 @@ class VectorMemory:
                 ]
             }
 
-        # Check available docs for this save
-        all_for_save = self._collection.get(where=where_cond)
-        available = len(all_for_save["ids"])
+        # How many docs exist for this save. Each save has its OWN collection
+        # (persist_dir is per save_id), so count() is exactly this save's chunk
+        # count — a cheap metadata read, instead of get() which used to
+        # materialise every chunk's document + metadata just to size the query.
+        available = self._collection.count()
         if available == 0:
             return []
-            
+
         fetch_k = min(candidate_count, available)
 
         results = self._collection.query(
