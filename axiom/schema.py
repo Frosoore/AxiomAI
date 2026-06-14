@@ -8,6 +8,7 @@ over the schema definition.
 
 import logging
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 # NOTE: the database layer must not import `core` at module load time. Doing so
@@ -300,7 +301,12 @@ def create_universe_db(db_path: str) -> None:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(str(path)) as conn:
+    # closing() (et pas seulement `with conn:`) : `with sqlite3.connect()` ne
+    # ferme PAS la connexion, il ne gère que la transaction. En WAL, le `-shm`
+    # reste mappé en mémoire tant que la connexion vit ; sous Windows ce handle
+    # persistant bloque le renommage atomique du .tmp (WinError 32). On ferme
+    # donc explicitement, sans dépendre du refcount du GC.
+    with closing(sqlite3.connect(str(path))) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         for ddl in _ALL_DDL:
@@ -316,14 +322,14 @@ def create_global_db(db_path: str) -> None:
     """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(path)) as conn:
+    with closing(sqlite3.connect(str(path))) as conn:
         conn.execute(_DDL_GLOBAL_PERSONAS)
         conn.commit()
 
 
 def migrate_entities_table(db_path: str) -> None:
     """Add the description column to an existing Entities table if absent."""
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         try:
             conn.execute(
                 "ALTER TABLE Entities ADD COLUMN description TEXT NOT NULL DEFAULT '';"
@@ -349,7 +355,7 @@ def migrate_entities_origin_column(db_path: str) -> bool:
         l'appelant peut alors « amnistier » les lignes existantes au lieu de
         les traiter en strictes lignes de définition.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         try:
             conn.execute(
                 "ALTER TABLE Entities ADD COLUMN origin TEXT NOT NULL DEFAULT 'definition' "
@@ -376,7 +382,7 @@ def migrate_saves_table(db_path: str) -> None:
         sqlite3.Error: If the ALTER TABLE statement fails for a reason other
                        than the column already existing.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         try:
             conn.execute(
                 "ALTER TABLE Saves ADD COLUMN player_persona TEXT NOT NULL DEFAULT '';"
@@ -395,7 +401,7 @@ def migrate_active_modifiers_table(db_path: str) -> None:
     (les rows héritées prennent save_id='' → orphelines, ignorées par le filtrage par save).
     Idempotent.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         try:
             conn.execute(
                 "ALTER TABLE Active_Modifiers ADD COLUMN save_id TEXT NOT NULL DEFAULT '';"
@@ -419,14 +425,14 @@ def migrate_lore_book_table(db_path: str) -> None:
     Raises:
         sqlite3.Error: If the statement fails for an unexpected reason.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_LORE_BOOK)
         conn.commit()
 
 
 def migrate_stat_definitions_table(db_path: str) -> None:
     """Create the Stat_Definitions table if it does not exist in an older database."""
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_STAT_DEFINITIONS)
         conn.commit()
 
@@ -441,7 +447,7 @@ def migrate_timeline_table(db_path: str) -> None:
     Args:
         db_path: Path to an existing universe .db file.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_TIMELINE)
         conn.commit()
 
@@ -456,14 +462,14 @@ def migrate_scheduled_events_table(db_path: str) -> None:
     Args:
         db_path: Path to an existing universe .db file.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_SCHEDULED_EVENTS)
         conn.commit()
 
 
 def migrate_inventory_tables(db_path: str) -> None:
     """Create Item_Definitions and Items_Inventory tables if they do not exist."""
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_ITEM_DEFINITIONS)
         conn.execute(_DDL_ITEMS_INVENTORY)
         conn.commit()
@@ -471,14 +477,14 @@ def migrate_inventory_tables(db_path: str) -> None:
 
 def migrate_story_setup_table(db_path: str) -> None:
     """Create the Story_Setup table if it does not exist in an older database."""
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute(_DDL_STORY_SETUP)
         conn.commit()
 
 
 def migrate_location_tables(db_path: str) -> None:
     """Create Locations and Location_Connections tables if they do not exist, or migrate them if constraints changed."""
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         # Check if table exists
         row_loc = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='Locations';").fetchone()
         row_conn = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='Location_Connections';").fetchone()
@@ -558,7 +564,7 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
     Instead, we create a temp table, copy data, drop the original, and 
     rename temp to original.
     """
-    with sqlite3.connect(str(db_path)) as conn:
+    with closing(sqlite3.connect(str(db_path))) as conn:
         # Check current constraint
         row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='Saves';").fetchone()
         if not row:
@@ -599,12 +605,39 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             conn.execute("PRAGMA foreign_keys=ON;")
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """A connection whose ``with`` block **closes** it on exit (not just commit).
+
+    Plain ``with sqlite3.connect(...) as conn:`` only commits/rolls back the
+    transaction — the connection (and, in WAL mode, the memory-mapped ``-shm``
+    handle) stays open until the garbage collector reclaims it. On Windows that
+    lingering handle locks the ``.db`` file, so any later ``os.replace`` /
+    ``unlink`` on it fails with ``PermissionError`` (WinError 32). On POSIX an
+    open handle never blocks a rename/unlink, which is why this stayed hidden in
+    Linux testing.
+
+    Closing on block exit makes every ``with get_connection(...) as conn:``
+    site Windows-safe without touching the ~75 call sites. All callers use the
+    connection inside a single ``with`` block and discard it afterwards, so
+    closing eagerly is always correct here.
+    """
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            super().__exit__(exc_type, exc_val, exc_tb)  # commit or rollback
+        finally:
+            self.close()
+        return False
+
+
 def get_connection(db_path: str) -> sqlite3.Connection:
     """Open and return a configured SQLite connection to an existing universe db.
 
-    The caller is responsible for closing the connection (or using it as a
-    context manager).  Foreign-key enforcement and WAL journal mode are
-    enabled automatically.
+    The connection is meant to be used as a context manager
+    (``with get_connection(...) as conn:``): exiting the block commits (or rolls
+    back) **and closes** it — releasing the file handle immediately, which
+    Windows requires before the db can be renamed or deleted. Foreign-key
+    enforcement and WAL journal mode are enabled automatically.
 
     Args:
         db_path: Path to an existing .db file created by create_universe_db().
@@ -619,7 +652,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     if not Path(db_path).exists():
         raise FileNotFoundError(f"Universe database not found: {db_path}")
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), factory=_ClosingConnection)
     conn.execute("PRAGMA foreign_keys=ON;")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.row_factory = sqlite3.Row

@@ -32,6 +32,31 @@ except ImportError:
 _COLLECTION_NAME: str = "narrative_memory"
 _EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
+_runtime_warned = False
+
+
+def _warn_runtime_unavailable_once(exc: BaseException) -> None:
+    """Log a single, actionable warning when the embedding runtime won't load.
+
+    Typical cause on Windows: torch's native libraries fail to load (WinError
+    126) because the Microsoft Visual C++ Redistributable is not installed.
+    """
+    global _runtime_warned
+    if _runtime_warned:
+        return
+    _runtime_warned = True
+    try:
+        from axiom.logger import logger
+
+        logger.warning(
+            "Semantic memory disabled: the embedding runtime could not load (%s). "
+            "Gameplay continues without long-term narrative recall. On Windows this "
+            "usually means the Microsoft Visual C++ Redistributable (x64) is missing.",
+            exc,
+        )
+    except Exception:
+        pass
+
 
 def preload_embedding_runtime() -> bool:
     """Force torch's native runtime to load on the *calling* (main) thread.
@@ -98,18 +123,30 @@ class VectorMemory:
         self._persist_dir = persist_dir
         self._chroma_client = None
         self._collection = None
+        # Set True if the embedding runtime can't load (e.g. torch native libs
+        # missing on Windows). Semantic memory then degrades to a no-op so the
+        # game stays playable instead of crashing every turn.
+        self._disabled = False
 
     def _ensure_connected(self) -> None:
-        """Lazy-init ChromaDB only when first used."""
-        if self._collection is not None:
+        """Lazy-init ChromaDB only when first used.
+
+        If the embedding runtime is unavailable, the store is marked disabled
+        rather than raising: callers then get empty results / no-ops.
+        """
+        if self._collection is not None or self._disabled:
             return
 
-        import chromadb
-        self._chroma_client = chromadb.PersistentClient(path=self._persist_dir)
-        self._collection = self._chroma_client.get_or_create_collection(
-            name=_COLLECTION_NAME,
-            embedding_function=_EmbeddingSingleton.get(),
-        )
+        try:
+            import chromadb
+            self._chroma_client = chromadb.PersistentClient(path=self._persist_dir)
+            self._collection = self._chroma_client.get_or_create_collection(
+                name=_COLLECTION_NAME,
+                embedding_function=_EmbeddingSingleton.get(),
+            )
+        except Exception as exc:
+            self._disabled = True
+            _warn_runtime_unavailable_once(exc)
 
     # ------------------------------------------------------------------
     # Public API
@@ -127,6 +164,8 @@ class VectorMemory:
             raise ValueError("Cannot embed empty or whitespace-only text.")
 
         self._ensure_connected()
+        if self._disabled:
+            return ""
         doc_id = str(uuid.uuid4())
         self._collection.add(
             documents=[text],
@@ -152,6 +191,8 @@ class VectorMemory:
             raise ValueError("Query text must not be empty.")
 
         self._ensure_connected()
+        if self._disabled:
+            return []
         # Fetch more candidates than k to allow for re-ranking
         candidate_count = max(k * 3, 20)
         
@@ -217,6 +258,8 @@ class VectorMemory:
     def rollback(self, save_id: str, target_turn_id: int) -> int:
         """Delete all chunks for a save with turn_id strictly greater than target."""
         self._ensure_connected()
+        if self._disabled:
+            return 0
         # ChromaDB's $gt operator requires a numeric type
         result = self._collection.get(
             where={

@@ -52,13 +52,20 @@ class _FakeEmbeddingFn(EmbeddingFunction[Documents]):
 
 @pytest.fixture
 def vm(tmp_path: Path):
-    """Provide a VectorMemory instance with mocked embeddings and tmp storage."""
-    with patch(
-        "chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction",
-        return_value=_FakeEmbeddingFn(),
-    ):
-        memory = VectorMemory(persist_dir=str(tmp_path / "chroma"))
-    return memory
+    """Provide a VectorMemory instance with mocked embeddings and tmp storage.
+
+    On injecte le faux embedder dans le singleton (et non via un patch autour du
+    seul constructeur, qui est paresseux : la connexion réelle — et donc le
+    chargement de torch — n'a lieu qu'au premier embed/query, hors du patch).
+    Résultat : tests déterministes, rapides, et sans dépendance native torch
+    (indispensable là où ses DLL ne se chargent pas, ex. Windows sans VC++).
+    """
+    saved = _EmbeddingSingleton._instance
+    _EmbeddingSingleton._instance = _FakeEmbeddingFn()
+    try:
+        yield VectorMemory(persist_dir=str(tmp_path / "chroma"))
+    finally:
+        _EmbeddingSingleton._instance = saved
 
 
 # ---------------------------------------------------------------------------

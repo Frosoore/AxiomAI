@@ -4,6 +4,7 @@ tests/test_bundled_universes.py
 First-launch installation of the bundled universes (TICKET-062).
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,11 @@ def test_missing_bundle_root_is_a_noop(env: dict) -> None:
     ) == []
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="chmod(0o500) ne rend pas un dossier non-inscriptible sous Windows "
+    "(les bits POSIX y sont ignorés) : impossible de déclencher l'échec d'install.",
+)
 def test_never_raises_on_unwritable_library(env: dict) -> None:
     """Startup must survive an install failure (warning logged)."""
     env["library"].mkdir(parents=True)

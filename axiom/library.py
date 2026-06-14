@@ -16,6 +16,7 @@ from pathlib import Path
 from axiom.compile import CACHE_DIRNAME, CompileError
 from axiom.db_helpers import read_universe_card_metadata
 from axiom.dev import ensure_compiled
+from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.logger import logger
 
 _SOURCE_MARKER = "universe.toml"
@@ -98,8 +99,11 @@ def diff_source_trees(before_dir: str | Path, after_dir: str | Path) -> list[dic
     after_dir = Path(after_dir)
 
     def _files(root: Path) -> dict[str, Path]:
+        # as_posix() : clés de diff canoniques (slashes), identiques sous Windows
+        # et Linux — sinon le rapport afficherait `entities\bob.toml` et tout
+        # appariement par chemin côté UI casserait.
         return {
-            str(p.relative_to(root)): p
+            p.relative_to(root).as_posix(): p
             for p in root.rglob("*")
             if p.is_file() and p.relative_to(root).parts[0] not in _PROTECTED_TOP_LEVEL
         }
@@ -223,11 +227,9 @@ def convert_flat_db_to_folder(db_path: str | Path) -> dict:
     # 4. L'original sort de la bibliothèque (mais reste récupérable).
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-    db_path.replace(db_path.with_name(db_path.name + ".bak"))
+    replace_with_retry(db_path, db_path.with_name(db_path.name + ".bak"))
     for suffix in ("-wal", "-shm"):
-        leftover = Path(str(db_path) + suffix)
-        if leftover.exists():
-            leftover.unlink()
+        unlink_with_retry(Path(str(db_path) + suffix), missing_ok=True)
 
     return {"source_dir": str(root), "db_path": str(cache_db)}
 
@@ -346,7 +348,7 @@ def sync_source_from_db(db_path: str | Path, src_dir: str | Path) -> None:
     db_path = Path(db_path)
     src_dir = Path(src_dir)
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         tree = Path(tmp) / "tree"
         decompile_universe(db_path, tree)
         # Les entités runtime n'appartiennent pas à la définition.

@@ -69,7 +69,9 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    # ignore_cleanup_errors : sous Windows, un -shm SQLite encore mappé peut
+    # faire échouer le rmtree final du dossier temporaire (WinError 32).
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         clean_db = _runtime_free_cache_copy(src_dir / cache_rel, Path(tmp_dir))
         with zipfile.ZipFile(str(output_path), "w", zipfile.ZIP_DEFLATED) as zf:
             for path in sorted(src_dir.rglob("*")):
@@ -151,7 +153,7 @@ def export_db_to_axiom(db_path: str | Path, output_path: str | Path) -> Path:
 
     from axiom.decompile import DecompileError, decompile_universe
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         src = Path(tmp_dir) / db_path.stem
         try:
             decompile_universe(db_path, src)
@@ -262,7 +264,7 @@ def _unpack_v2(axiom_path: Path, dest_root: Path, name: str) -> Path:
 
 def _import_v1(axiom_path: Path, dest_root: Path, name: str) -> Path:
     """Convertit un `.axiom` v1 (JSON) en arborescence v2."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         tmp = Path(tmp_dir)
         with zipfile.ZipFile(str(axiom_path), "r") as zf:
             zf.extractall(tmp)

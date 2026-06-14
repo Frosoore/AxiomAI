@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -299,7 +300,9 @@ def test_compile_skips_when_unchanged(source_tree: Path):
 
 def test_compile_force_rebuilds(source_tree: Path):
     db = compile_universe(source_tree)
-    with sqlite3.connect(str(db)) as conn:
+    # closing() : sous Windows la connexion ouverte verrouille le .db et le
+    # recompile (replace atomique) échouerait (WinError 32).
+    with closing(sqlite3.connect(str(db))) as conn:
         conn.execute("INSERT INTO Universe_Meta (key, value) VALUES ('_marker', 'kept');")
         conn.commit()
 
@@ -310,7 +313,7 @@ def test_compile_force_rebuilds(source_tree: Path):
 
 def test_compile_rebuilds_on_source_change(source_tree: Path):
     db = compile_universe(source_tree)
-    with sqlite3.connect(str(db)) as conn:
+    with closing(sqlite3.connect(str(db))) as conn:
         conn.execute("INSERT INTO Universe_Meta (key, value) VALUES ('_marker', 'kept');")
         conn.commit()
 

@@ -194,10 +194,13 @@ class TestDialogs:
         assert dialog.result() == QDialog.Accepted
 
     def test_make_help_button(self, qtbot) -> None:
+        from core.localization import tr
         from ui.help_dialogs import make_help_button
         btn = make_help_button("hub")
         qtbot.addWidget(btn)
-        assert btn.text() == "?"
+        # Le bouton porte désormais le libellé « Information » (commit 0e956ae),
+        # plus l'ancien « ? ».
+        assert btn.text() == tr("information")
         assert btn.toolTip() != ""
 
 

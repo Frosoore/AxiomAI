@@ -15,6 +15,7 @@ Aucun LLM, aucun Qt : pur moteur.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -464,7 +465,9 @@ class TestConvertFlatDb:
         player_id = create_player_entity(str(flat), "Hero")
         # Simule un joueur d'avant la colonne `origin` (défaut de migration =
         # 'definition') : c'est le cas legacy que la conversion doit rattraper.
-        with sqlite3.connect(str(flat)) as conn:
+        # closing() : la conversion renomme `flat` en .bak — une connexion encore
+        # ouverte le verrouillerait sous Windows (WinError 32).
+        with closing(sqlite3.connect(str(flat))) as conn:
             conn.execute(
                 "UPDATE Entities SET origin = 'definition' WHERE entity_id = ?;",
                 (player_id,),

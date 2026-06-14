@@ -23,7 +23,16 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCENARIO = Path(__file__).resolve().parent / "_vector_qthread_scenario.py"
 
 # Heavy native deps; skip cleanly where they (or Qt) are unavailable.
-pytest.importorskip("torch", reason="torch required for the embedding runtime")
+# importorskip ne capte que ImportError : torch peut échouer son chargement de
+# DLL natives avec OSError (WinError 126, dépendance manquante côté Windows) →
+# on attrape les deux, sinon la collecte du module entier plante.
+try:
+    import torch  # noqa: F401
+except (ImportError, OSError) as exc:
+    pytest.skip(
+        f"torch unavailable for the embedding runtime: {exc}",
+        allow_module_level=True,
+    )
 pytest.importorskip("PySide6.QtMultimedia", reason="Qt multimedia required")
 pytest.importorskip("chromadb", reason="chromadb required for VectorMemory")
 
