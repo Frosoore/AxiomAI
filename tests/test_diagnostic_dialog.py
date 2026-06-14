@@ -66,6 +66,7 @@ class TestDiagnosticWorker:
 
 class _FakeWorker(QObject):
     report_ready = Signal(str, str)
+    artifacts_ready = Signal(str, str)
 
     def __init__(self, **kwargs) -> None:
         super().__init__()
@@ -74,7 +75,7 @@ class _FakeWorker(QObject):
     def isRunning(self) -> bool:
         return False
 
-    def start(self) -> None:  # no-op: tests drive report_ready manually
+    def start(self) -> None:  # no-op: tests drive the signals manually
         pass
 
 
@@ -110,3 +111,35 @@ class TestDiagnosticDialog:
         dialog._worker.report_ready.emit("COPY ME", "OK")
         dialog._copy()
         assert QApplication.clipboard().text() == "COPY ME"
+
+    def test_detail_buttons_disabled_without_artifacts(self, dialog):
+        # No test run yet → nothing to show.
+        assert not dialog._warnings_btn.isEnabled()
+        assert not dialog._failures_btn.isEnabled()
+
+    def test_artifacts_enable_only_relevant_buttons(self, dialog):
+        # Warnings present, no failures.
+        dialog._worker.artifacts_ready.emit("some warnings", "")
+        assert dialog._warnings_btn.isEnabled()
+        assert not dialog._failures_btn.isEnabled()
+        # Both present.
+        dialog._worker.artifacts_ready.emit("w", "the failure log")
+        assert dialog._warnings_btn.isEnabled()
+        assert dialog._failures_btn.isEnabled()
+
+    def test_show_failures_opens_window_with_text(self, dialog):
+        dialog._worker.artifacts_ready.emit("", "FULL TRACEBACK HERE")
+        dialog._show_failures()
+        assert dialog._child_windows, "a child window should have opened"
+        win = dialog._child_windows[-1]
+        assert "FULL TRACEBACK HERE" in win._view.toPlainText()
+        win.close()
+
+    def test_child_window_copy_all(self, dialog):
+        from PySide6.QtWidgets import QApplication
+        dialog._worker.artifacts_ready.emit("warn A\nwarn B", "")
+        dialog._show_warnings()
+        win = dialog._child_windows[-1]
+        win._copy()
+        assert QApplication.clipboard().text() == "warn A\nwarn B"
+        win.close()

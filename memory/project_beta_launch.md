@@ -58,5 +58,28 @@ Canaux visés : SillyTavern (l'app importe leurs cartes — à mettre en avant d
 r/LocalLLaMA, LinuxFr.org, itch.io, Show HN/r/Python pour la lib. Conseillé avant annonce :
 TICKET-050 (fail-fast 429) + CI tests.
 
+**CI GitHub Actions — cause du fail permanent trouvée (2026-06-14)** : le workflow `tests`
+échouait à chaque push (PAS un problème de droits GitHub ni un vrai test cassé) — collection
+pytest interrompue par `ImportError: libpulse.so.0` : QtMultimedia (importé par
+`test_ambiance_manager.py` ET indirectement `test_vector_threading.py`) a besoin de la lib
+système PulseAudio, absente des `apt-get install` du workflow. **Fix : ajout de `libpulse0`** à
+`.github/workflows/tests.yml`. Le workflow `docs` lui passait déjà. En plus, **1 test local
+cassé** par le commit `0e956ae` (« Fix: Information button text », `?` → `tr("information")`) :
+`test_help_system.py::test_make_help_button` mis à jour. **Outil de diagnostic enrichi**
+(`tools/diagnostic.py`) : `--tests` liste désormais chaque test échoué (node id + raison via
+`-rfE`), le nombre de warnings, et écrit le log complet dans `tempfile.gettempdir()/axiom_diag_*.log`.
+Le **GUI** (`ui/diagnostic_dialog.py`, ouvert via Aide→Diagnostic) consomme le même
+`run_diagnostics`+`format_report` → il hérite automatiquement de ces infos. **Lanceur GUI
+standalone ajouté** : `python -m tools.diagnostic --gui` (flag `--gui` → `_run_gui()` réutilise
+`DiagnosticDialog`). **README** : section « Diagnostic / Troubleshooting » documente les 3 accès
+(menu app, `--gui`, mode texte). **GUI enrichi (2026-06-14, 2ᵉ passe)** : le rapport n'affichait
+que le *nombre* de warnings → ajout de 2 boutons « Voir les avertissements » / « Voir les tests
+échoués » ouvrant chacun une fenêtre `_TextWindow` copiable (bouton « Tout copier »). Plomberie :
+`Section` porte `warnings_text`/`failures_text` ; `_run_test_batch` retourne un `_BatchOutcome`
+(capture le bloc « warnings summary » même en succès, + log complet des échecs) ; helper
+`collect_artifacts()` ; worker émet un 2ᵉ signal `artifacts_ready(str,str)`. 3 clés i18n ajoutées
+aux **10** langues (`diagnostic_view_warnings/_view_failures/_copy_all`) — le test
+`test_localization_coverage` exige toutes les langues. ⚠ rien commité (l'utilisateur gère git).
+
 Lié : [[project-doc-chantier]] (doc finie = prérequis rempli), [[project-engine-split-strategy]]
 (PyPI 0.1.3 prêt à publier, page EN + lien doc).

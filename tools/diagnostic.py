@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -81,9 +82,16 @@ class CheckResult:
 
 @dataclass
 class Section:
-    """A named group of checks."""
+    """A named group of checks.
+
+    `warnings_text` / `failures_text` carry the *full* pytest warning summary
+    and failure logs for the test-suite section, so the GUI can show them in
+    their own copyable windows (the report only shows counts/names).
+    """
     title: str
     results: list[CheckResult] = field(default_factory=list)
+    warnings_text: str = ""
+    failures_text: str = ""
 
     def add(self, name: str, status: str, detail: str = "") -> None:
         self.results.append(CheckResult(name, status, detail))
@@ -264,20 +272,58 @@ def _check_backend(offline: bool) -> Section:
     return sec
 
 
-def _run_test_batch(args: list[str], label: str) -> CheckResult:
-    """Run one pytest invocation and summarise pass/fail from its return code."""
+@dataclass
+class _BatchOutcome:
+    """What one pytest batch produced: the report lines plus the raw texts the
+    GUI shows in dedicated windows (warnings summary, full failure log)."""
+    results: list[CheckResult]
+    warnings: str = ""
+    log: str = ""
+
+
+def _extract_warnings_block(stdout: str) -> str:
+    """Return pytest's 'warnings summary' section verbatim (without its header),
+    or "" if there were no warnings. pytest prints it even on a passing run."""
+    out: list[str] = []
+    collecting = False
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        is_header = bool(re.match(r"^=+ .* =+$", stripped))
+        if is_header and "warnings summary" in stripped:
+            collecting = True
+            continue
+        if collecting:
+            # The block ends at the "-- Docs:" footer or the next section header.
+            if stripped.startswith("-- Docs:") or is_header:
+                break
+            out.append(line)
+    return "\n".join(out).strip()
+
+
+def _run_test_batch(args: list[str], label: str) -> _BatchOutcome:
+    """Run one pytest invocation and report pass/fail.
+
+    The first result line is the summary; on failure, one extra line per
+    failing/erroring test (so a tester sees *which* tests broke, not just a
+    count). `warnings`/`log` carry the full texts the GUI opens in their own
+    copyable windows.
+    """
     try:
         env = dict(os.environ)
         # Skip the HF Hub network check during tests (axiom/memory.py fix).
         env.setdefault("HF_HUB_OFFLINE", "1")
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", *args, "-q", "--no-header"],
+            # -rfE → a "short test summary info" block listing FAILED/ERROR
+            # node ids, which we parse below for the per-test detail lines.
+            [sys.executable, "-m", "pytest", *args, "-q", "--no-header", "-rfE"],
             cwd=str(_ROOT), capture_output=True, text=True, env=env, timeout=1800,
         )
     except FileNotFoundError:
-        return CheckResult(label, WARN, "pytest not installed (pip install -r requirements-dev.txt)")
+        return _BatchOutcome([CheckResult(
+            label, WARN, "pytest not installed (pip install -r requirements-dev.txt)")])
     except subprocess.TimeoutExpired:
-        return CheckResult(label, FAIL, "timed out after 30 min")
+        return _BatchOutcome([CheckResult(label, FAIL, "timed out after 30 min")])
+
     # pytest's last non-empty stdout line is the summary (e.g. "710 passed in …").
     summary = ""
     for line in reversed(proc.stdout.splitlines()):
@@ -285,17 +331,53 @@ def _run_test_batch(args: list[str], label: str) -> CheckResult:
             summary = line.strip().strip("=").strip()
             break
     status = OK if proc.returncode == 0 else FAIL
-    return CheckResult(label, status, summary or f"exit code {proc.returncode}")
+    results = [CheckResult(label, status, summary or f"exit code {proc.returncode}")]
+    warnings = _extract_warnings_block(proc.stdout)
+    log = ""
+
+    if status != OK:
+        # Failure: surface each failing/erroring test by node id. The -rfE
+        # summary lines look like "FAILED tests/x.py::test - AssertionError: …"
+        # or "ERROR tests/y.py - ImportError: …"; keep the reason, drop prefix.
+        for line in proc.stdout.splitlines():
+            stripped = line.strip()
+            for prefix, tag in (("FAILED ", "failed"), ("ERROR ", "error")):
+                if stripped.startswith(prefix):
+                    results.append(CheckResult(stripped[len(prefix):].strip(), FAIL, tag))
+                    break
+        # The full output (tracebacks included) is the "log" the GUI shows and
+        # that we also drop on disk for the CLI / a bug report.
+        log = (proc.stdout or "") + (
+            "\n--- stderr ---\n" + proc.stderr if proc.stderr else "")
+        try:
+            safe = "".join(c if c.isalnum() else "_" for c in label).lower()
+            log_path = Path(tempfile.gettempdir()) / f"axiom_diag_{safe}.log"
+            log_path.write_text(log, encoding="utf-8")
+            results.append(CheckResult("Full log", WARN, str(log_path)))
+        except OSError:
+            pass
+
+    return _BatchOutcome(results, warnings, log)
 
 
 def _check_tests() -> Section:
     sec = Section("Test suite")
+    warnings_blocks: list[str] = []
+    log_blocks: list[str] = []
     # Two batches dodge the Qt-multimedia → triton segfault (TICKET-067):
     # everything except the audio test, then the audio test alone.
-    sec.results.append(_run_test_batch(
-        ["tests/", "--ignore=tests/test_ambiance_manager.py"], "Main batch"))
-    sec.results.append(_run_test_batch(
-        ["tests/test_ambiance_manager.py"], "Audio batch"))
+    for args, label in (
+        (["tests/", "--ignore=tests/test_ambiance_manager.py"], "Main batch"),
+        (["tests/test_ambiance_manager.py"], "Audio batch"),
+    ):
+        outcome = _run_test_batch(args, label)
+        sec.results.extend(outcome.results)
+        if outcome.warnings:
+            warnings_blocks.append(f"===== {label} =====\n{outcome.warnings}")
+        if outcome.log:
+            log_blocks.append(f"===== {label} =====\n{outcome.log}")
+    sec.warnings_text = "\n\n".join(warnings_blocks)
+    sec.failures_text = "\n\n".join(log_blocks)
     return sec
 
 
@@ -328,6 +410,18 @@ def run_diagnostics(*, run_tests: bool = False, offline: bool = False) -> list[S
     if run_tests:
         sections.append(_check_tests())
     return sections
+
+
+def collect_artifacts(sections: list[Section]) -> tuple[str, str]:
+    """Aggregate the full warnings text and failure logs across all sections.
+
+    Returns ``(warnings_text, failures_text)`` — either may be "" when there is
+    nothing to show. The GUI uses these to populate its 'Warnings' and 'Failed
+    tests' windows.
+    """
+    warnings = "\n\n".join(s.warnings_text for s in sections if s.warnings_text)
+    failures = "\n\n".join(s.failures_text for s in sections if s.failures_text)
+    return warnings, failures
 
 
 def overall_status(sections: list[Section]) -> str:
@@ -372,6 +466,27 @@ def _to_json(sections: list[Section]) -> str:
     return json.dumps(payload, indent=2)
 
 
+def _run_gui() -> int:
+    """Open the standalone graphical diagnostic window and block until closed.
+
+    Reuses the in-app DiagnosticDialog so the GUI and the menu entry stay
+    identical. Returns 0 on a clean open, 1 if the GUI stack is unavailable
+    (e.g. PySide6 missing or no display) — the message tells the tester to fall
+    back to the text mode.
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+        from ui.diagnostic_dialog import DiagnosticDialog
+    except Exception as exc:  # noqa: BLE001
+        print(f"Cannot open the graphical window ({exc}).\n"
+              "Run the text version instead: python -m tools.diagnostic",
+              file=sys.stderr)
+        return 1
+    app = QApplication.instance() or QApplication(sys.argv)
+    DiagnosticDialog().exec()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m tools.diagnostic",
@@ -385,7 +500,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="machine-readable JSON output")
     parser.add_argument("--output", metavar="FILE",
                         help="also write the report to FILE")
+    parser.add_argument("--gui", action="store_true",
+                        help="open the graphical diagnostic window (same checks, "
+                             "with buttons to run the tests / copy / save)")
     args = parser.parse_args(argv)
+
+    # --gui: launch the standalone diagnostic window. It shares ALL its logic
+    # with the in-app "Help → Diagnostic" dialog (ui/diagnostic_dialog.py), so a
+    # tester gets the exact same report — failed-test list and log path included
+    # — whether they open it from Axiom or run this from a terminal.
+    if args.gui:
+        return _run_gui()
 
     # The report uses ✅/⚠️/❌ glyphs. On Windows a redirected/piped stdout
     # defaults to cp1252 and would crash on those with UnicodeEncodeError;

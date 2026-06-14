@@ -90,6 +90,31 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
    - **Local (Recommended):** Set up Ollama with `ollama pull llama3.2`.
    - **Cloud:** Enter your Gemini API key.
 
+### Diagnostic / Troubleshooting
+
+If something doesn't work, run the built-in self-diagnostic. It checks your
+Python version, dependencies, configuration, data directories and whether the
+AI backend actually answers — and can optionally run the full test suite,
+listing **which** tests failed (with the reason and a full log file) plus any
+warnings.
+
+It is available three ways — all sharing the same checks:
+
+- **From the app:** **Help → Diagnostic**.
+- **Standalone, graphical window:**
+  ```bash
+  python -m tools.diagnostic --gui
+  ```
+- **Standalone, text report** (handy to paste into a bug report):
+  ```bash
+  python -m tools.diagnostic           # fast health checks
+  python -m tools.diagnostic --tests   # + the full test suite (slower)
+  python -m tools.diagnostic --offline # skip the network/backend check
+  ```
+
+> Run these from the project's virtual environment (e.g. `source .venv/bin/activate`
+> first, or use `run.sh`/`run.bat` once to create it).
+
 ---
 
 ## The Python Library (`axiomai-engine`)

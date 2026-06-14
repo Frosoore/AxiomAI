@@ -578,6 +578,9 @@ diagnostic_copy = "Copia report"
 diagnostic_copied = "Report copiato negli appunti."
 diagnostic_save = "Salva…"
 diagnostic_saved = "Report salvato."
+diagnostic_view_warnings = "Mostra avvisi"
+diagnostic_view_failures = "Mostra test falliti"
+diagnostic_copy_all = "Copia tutto"
 generating_image = "Generazione dell'illustrazione…"
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)

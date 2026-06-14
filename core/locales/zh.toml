@@ -578,6 +578,9 @@ diagnostic_copy = "复制报告"
 diagnostic_copied = "报告已复制到剪贴板。"
 diagnostic_save = "保存…"
 diagnostic_saved = "报告已保存。"
+diagnostic_view_warnings = "查看警告"
+diagnostic_view_failures = "查看失败的测试"
+diagnostic_copy_all = "全部复制"
 generating_image = "正在生成插图…"
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
