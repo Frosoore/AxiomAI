@@ -238,6 +238,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._chat.message_submitted.connect(self._on_send_message)
         self._chat.variant_requested.connect(self._on_variant_requested)
         self._chat.regenerate_requested.connect(self._on_regenerate_requested)
+        self._chat.edit_message_requested.connect(self._on_edit_message_requested)
+
 
         # Shortcuts
         from PySide6.QtGui import QShortcut, QKeySequence
@@ -328,6 +330,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._db_worker.integrity_validated.connect(self._on_integrity_validated)
         self._db_worker.save_complete.connect(self._refresh_after_variant_switch)
         self._db_worker.rewind_complete.connect(self._on_rewind_done)
+        self._db_worker.event_payload_updated.connect(self._on_event_payload_updated)
+
         
         self._db_worker.load_session_history(save_id)
         self._db_worker.load_full_universe(save_id) # Fetch lore_book + entities + etc
@@ -375,6 +379,12 @@ class TabletopView(HardcoreMixin, QWidget):
         assets_dir = paths.get_assets_dir() / self._save_id
         self._chat.rebuild_from_history(history, assets_dir=assets_dir)
         self._check_all_loaded()
+        
+        if hasattr(self, "_edit_rollback_pending_input") and self._edit_rollback_pending_input is not None:
+            pending_text = self._edit_rollback_pending_input
+            self._edit_rollback_pending_input = None
+            self._on_send_message(pending_text)
+
 
     @Slot(dict)
     def _on_meta_loaded(self, meta: dict) -> None:
@@ -731,8 +741,110 @@ class TabletopView(HardcoreMixin, QWidget):
         self._regen_worker.error_occurred.connect(self._on_worker_error)
         self._regen_worker.start()
 
+    @Slot(str, int)
+    def _on_edit_message_requested(self, event_type: str, turn_id: int) -> None:
+        """Handle editing a message from the history."""
+        if not self._db_path or not self._history:
+            return
+
+        # Find the event in the history list
+        message_event = None
+        for event in self._history:
+            if event.get("event_type") == event_type and event.get("turn_id") == turn_id:
+                message_event = event
+                break
+
+        if not message_event:
+            return
+
+        # Extract current text
+        payload = message_event.get("payload", "")
+        current_text = ""
+        if isinstance(payload, dict):
+            if "variants" in payload and "active" in payload:
+                variants = payload.get("variants") or [""]
+                active = payload.get("active", 0)
+                if 0 <= active < len(variants):
+                    current_text = variants[active]
+                else:
+                    current_text = payload.get("text", "")
+            else:
+                current_text = payload.get("text", "")
+        else:
+            current_text = str(payload)
+
+        # Open the multi-line input dialog
+        from PySide6.QtWidgets import QInputDialog
+        dialog_title = tr("edit")
+        dialog_prompt = f"{tr('edit')} :"
+        
+        new_text, ok = QInputDialog.getMultiLineText(
+            self,
+            dialog_title,
+            dialog_prompt,
+            current_text
+        )
+
+        if not ok or new_text.strip() == current_text.strip():
+            return
+
+        new_text = new_text.strip()
+
+        # Handle user input edit (reverts and regenerates)
+        if event_type == "user_input":
+            self._edit_rollback_pending_input = new_text
+            self._edit_rollback_target_turn = turn_id - 1
+            
+            self._chat.set_send_enabled(False)
+            self._main_window.on_status_update(f"{tr('rewind')}...")
+            self._db_worker.execute_rewind(self._save_id, turn_id - 1)
+
+        # Handle AI message edit (only updates data/memory, no turn reload)
+        else:
+            # Construct the new payload
+            if isinstance(payload, dict):
+                new_payload = dict(payload)
+                if "variants" in payload and "active" in payload:
+                    variants = list(payload["variants"])
+                    active = payload["active"]
+                    if 0 <= active < len(variants):
+                        variants[active] = new_text
+                        new_payload["variants"] = variants
+                    else:
+                        new_payload["text"] = new_text
+                else:
+                    new_payload["text"] = new_text
+            else:
+                new_payload = {"text": new_text}
+
+            self._chat.set_send_enabled(False)
+            self._main_window.on_status_update(f"{tr('edit')}...")
+            
+            # Start database update
+            self._db_worker.update_event_payload(self._save_id, turn_id, event_type, new_payload)
+            
+            # Start vector update in the background (only if narrative_text)
+            if event_type == "narrative_text" and self._vector_memory is not None:
+                from workers.vector_worker import VectorUpdateWorker
+                self._vector_update_worker = VectorUpdateWorker(
+                    self._vector_memory,
+                    self._save_id,
+                    turn_id,
+                    new_text,
+                    chunk_type="narrative"
+                )
+                self._vector_update_worker.start()
+
+    @Slot(bool)
+    def _on_event_payload_updated(self, success: bool) -> None:
+        """Handle completion of the AI message edit payload update."""
+        self._db_worker.load_session_history(self._save_id)
+        self._chat.set_send_enabled(True)
+        self._main_window.on_status_update(tr("ready"))
+
     # ------------------------------------------------------------------
     # Slots (Toolbar)
+
     # ------------------------------------------------------------------
 
     @Slot()

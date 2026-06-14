@@ -128,3 +128,38 @@ class VectorEmbedWorker(QThread):
         except Exception as exc:
             self.error_occurred.emit(f"VectorMemory embed failed: {exc}")
 
+
+class VectorUpdateWorker(QThread):
+    """Updates the vector memory for a given turn and chunk type off the main thread.
+    """
+    update_complete = Signal()
+    error_occurred = Signal(str)
+    status_update = Signal(str)
+
+    def __init__(
+        self,
+        vector_memory: VectorMemory,
+        save_id: str,
+        turn_id: int,
+        text: str,
+        chunk_type: str = "narrative",
+    ) -> None:
+        super().__init__()
+        self._vector_memory = vector_memory
+        self._save_id = save_id
+        self._turn_id = turn_id
+        self._text = text
+        self._chunk_type = chunk_type
+
+    def run(self) -> None:
+        try:
+            self.status_update.emit(f"Updating memory for turn {self._turn_id}...")
+            self._vector_memory.update_turn_narrative(
+                self._save_id, self._turn_id, self._text, self._chunk_type
+            )
+            self.update_complete.emit()
+            self.status_update.emit(f"Turn {self._turn_id} memory updated.")
+        except Exception as exc:
+            self.error_occurred.emit(f"VectorMemory update failed: {exc}")
+
+

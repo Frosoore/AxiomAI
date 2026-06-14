@@ -73,6 +73,8 @@ class ChatDisplayWidget(QWidget):
     variant_requested = Signal(int, int)
     regenerate_requested = Signal(int)
     message_submitted = Signal(str)
+    edit_message_requested = Signal(str, int)
+
     
     # Tool-call fences hidden during streaming. The engine parser
     # (axiom/backends/base.py::_FENCE_PATTERNS) accepts ~~~json AND ```json —
@@ -202,6 +204,11 @@ class ChatDisplayWidget(QWidget):
             parts = url_str.split(":")
             if len(parts) == 2:
                 self.regenerate_requested.emit(int(parts[1]))
+        elif url_str.startswith("edit:"):
+            parts = url_str.split(":")
+            if len(parts) == 3:
+                self.edit_message_requested.emit(parts[1], int(parts[2]))
+
 
     def begin_turn(self, turn_id: int = None):
         self._reset_states()
@@ -211,7 +218,7 @@ class ChatDisplayWidget(QWidget):
     def clear_after_turn_id(self, turn_id: int = None):
         pass
 
-    def append_user_message(self, text: str):
+    def append_user_message(self, text: str, turn_id: int | None = None):
         cursor = self._narrative_display.textCursor()
         cursor.movePosition(QTextCursor.End)
         
@@ -220,10 +227,16 @@ class ChatDisplayWidget(QWidget):
         fmt.setFontWeight(QFont.Weight.Bold)
         
         prefix = "" if cursor.position() == 0 else "\n\n"
-        cursor.insertText(f"{prefix}{text}\n\n", fmt)
+        cursor.insertText(f"{prefix}{text}", fmt)
+        
+        if turn_id is not None:
+            edit_text = tr("edit")
+            cursor.insertHtml(f" <a href='edit:user_input:{turn_id}' style='color: #555555; text-decoration: none; font-size: 8pt;'>[{edit_text}]</a>")
+            
+        cursor.insertText("\n\n")
         self._reset_states()
 
-    def append_hero_intent(self, text: str):
+    def append_hero_intent(self, text: str, turn_id: int | None = None):
         """Display the AI Hero's intended action in a distinct style."""
         cursor = self._narrative_display.textCursor()
         cursor.movePosition(QTextCursor.End)
@@ -238,9 +251,15 @@ class ChatDisplayWidget(QWidget):
         text_fmt = QTextCharFormat()
         text_fmt.setForeground(QColor("#FFD54F")) # Light Amber
         text_fmt.setFontItalic(True)
-        cursor.insertText(f"{text}\n\n", text_fmt)
+        cursor.insertText(f"{text}", text_fmt)
         
+        if turn_id is not None:
+            edit_text = tr("edit")
+            cursor.insertHtml(f" <a href='edit:hero_intent:{turn_id}' style='color: #555555; text-decoration: none; font-size: 8pt;'>[{edit_text}]</a>")
+            
+        cursor.insertText("\n\n")
         self._reset_states()
+
 
     def append_assistant_separator(self):
         self._reset_states()
@@ -386,9 +405,6 @@ class ChatDisplayWidget(QWidget):
             self._process_text_to_cursor(suffix, cursor)
 
     def append_variants_nav(self, turn_id: int, active_index: int, total_variants: int, is_latest: bool = False):
-        if total_variants <= 1 and not is_latest:
-            return
-            
         cursor = self._narrative_display.textCursor()
         cursor.movePosition(QTextCursor.End)
         
@@ -400,11 +416,20 @@ class ChatDisplayWidget(QWidget):
                 else:
                     nav_parts.append(f"<a href='variant:{turn_id}:{i}' style='color: #4FC1FF; text-decoration: none;'>[{i+1}]</a>")
         
+        # Always allow editing narrative_text if turn_id > 0
+        if turn_id > 0:
+            edit_text = tr("edit")
+            nav_parts.append(f"<a href='edit:narrative_text:{turn_id}' style='color: #888888; text-decoration: none;'>[{edit_text}]</a>")
+
         if is_latest:
             reg_text = tr("regenerate")
             nav_parts.append(f"<a href='regenerate:{turn_id}' style='color: #FFB000; text-decoration: none;'>[⟳ {reg_text}]</a>")
             
+        if not nav_parts:
+            return
+
         html_nav = "&nbsp;&nbsp;".join(nav_parts)
+
         
         # Force a new block centered
         block_fmt = QTextBlockFormat()
@@ -442,10 +467,11 @@ class ChatDisplayWidget(QWidget):
 
                 if evt_type == 'user_input':
                     text_payload = payload.get("text", "") if isinstance(payload, dict) else str(payload)
-                    self.append_user_message(text_payload)
+                    self.append_user_message(text_payload, turn_id=turn_id)
                 elif evt_type == 'hero_intent':
                     text_payload = payload.get("text", "") if isinstance(payload, dict) else str(payload)
-                    self.append_hero_intent(text_payload)
+                    self.append_hero_intent(text_payload, turn_id=turn_id)
+
                 elif evt_type == 'narrative_text':
                     active_idx = 0
                     total_vars = 1

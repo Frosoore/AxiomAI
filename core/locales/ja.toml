@@ -42,6 +42,8 @@ new_universe = "新しい宇宙"
 import_universe = ".axiomをインポート"
 play = "プレイ"
 edit = "編集"
+edit_message_prompt = "メッセージの編集:"
+
 delete = "削除"
 export = "エクスポート"
 no_sessions = "セッションが読み込まれていません"

@@ -42,6 +42,8 @@ new_universe = "Новая вселенная"
 import_universe = "Импорт .axiom"
 play = "Играть"
 edit = "Правка"
+edit_message_prompt = "Редактировать сообщение:"
+
 delete = "Удалить"
 export = "Экспорт"
 no_sessions = "Сессии не загружены"

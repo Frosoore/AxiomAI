@@ -277,3 +277,33 @@ class VectorMemory:
             self._collection.delete(ids=ids_to_delete)
 
         return len(ids_to_delete)
+
+    def update_turn_narrative(
+        self,
+        save_id: str,
+        turn_id: int,
+        new_text: str,
+        chunk_type: str = "narrative",
+    ) -> None:
+        """Delete existing chunks for this turn and embed the new text.
+        """
+        self._ensure_connected()
+        if self._disabled:
+            return
+        
+        result = self._collection.get(
+            where={
+                "$and": [
+                    {"save_id": {"$eq": save_id}},
+                    {"turn_id": {"$eq": turn_id}},
+                    {"chunk_type": {"$eq": chunk_type}},
+                ]
+            }
+        )
+        ids_to_delete: list[str] = result["ids"]
+        if ids_to_delete:
+            self._collection.delete(ids=ids_to_delete)
+        
+        if new_text and new_text.strip():
+            self.embed_chunk(save_id, turn_id, new_text, chunk_type)
+

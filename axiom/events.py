@@ -77,7 +77,31 @@ class EventSourcer:
 
         return event_id  # type: ignore[return-value]
 
+    def update_event_payload(
+        self,
+        save_id: str,
+        turn_id: int,
+        event_type: str,
+        new_payload: dict[str, Any],
+    ) -> bool:
+        """Update the payload of an event identified by save_id, turn_id, and event_type.
+        """
+        payload_json = json.dumps(new_payload)
+        with get_connection(self._db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE Event_Log
+                SET payload = ?
+                WHERE save_id = ? AND turn_id = ? AND event_type = ?;
+                """,
+                (payload_json, save_id, turn_id, event_type),
+            )
+            updated = cursor.rowcount > 0
+            conn.commit()
+        return updated
+
     def append_events_batch(
+
         self,
         events: list[tuple[str, int, str, str, dict[str, Any]]],
     ) -> None:

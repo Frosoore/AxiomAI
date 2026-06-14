@@ -42,6 +42,8 @@ new_universe = "新建宇宙"
 import_universe = "导入 .axiom"
 play = "开始游戏"
 edit = "编辑"
+edit_message_prompt = "编辑消息:"
+
 delete = "删除"
 export = "导出"
 no_sessions = "未加载会话"

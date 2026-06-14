@@ -42,6 +42,8 @@ new_universe = "새 우주"
 import_universe = ".axiom 가져오기"
 play = "플레이"
 edit = "편집"
+edit_message_prompt = "메시지 편집:"
+
 delete = "삭제"
 export = "내보내기"
 no_sessions = "로드된 세션 없음"

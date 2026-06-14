@@ -73,8 +73,10 @@ class DbWorker(QObject):
     story_canonized = Signal(dict)       # idem preview + {"universe_db", "applied"}
     # TICKET-033 — annulation volontaire d'une génération (pas une erreur)
     generation_cancelled = Signal(str)
+    event_payload_updated = Signal(bool)
 
     def __init__(self, db_path: str) -> None:
+
         super().__init__()
         self._db_path = db_path
         self._pool = QThreadPool.globalInstance()
@@ -164,7 +166,15 @@ class DbWorker(QObject):
         task.signals.result.connect(lambda _: self.save_complete.emit())
         self._setup_task(task)
 
+    def update_event_payload(self, save_id: str, turn_id: int, event_type: str, new_payload: dict) -> None:
+        from workers.db_tasks import UpdateEventPayloadTask
+        task = UpdateEventPayloadTask(self._db_path, save_id, turn_id, event_type, new_payload)
+        task.signals.result.connect(self.event_payload_updated.emit)
+        task.signals.result.connect(lambda _: self.save_complete.emit())
+        self._setup_task(task)
+
     def delete_save(self, save_id: str) -> None:
+
         task = DeleteSaveTask(self._db_path, save_id)
         task.signals.result.connect(lambda _: self.save_complete.emit())
         self._setup_task(task)

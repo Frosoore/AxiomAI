@@ -143,3 +143,36 @@ def test_migrate_active_modifiers_adds_column(tmp_path: Path):
     with sqlite3.connect(db) as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(Active_Modifiers);")}
     assert "save_id" in cols
+
+
+def test_update_event_payload(tmp_path: Path):
+    db = _new_db(tmp_path)
+    save_id = create_new_save(db, "Hero", "Normal")
+    es = EventSourcer(db)
+    es.append_event(save_id, 1, "narrative_text", "world", {"text": "Original text"})
+    
+    updated = es.update_event_payload(save_id, 1, "narrative_text", {"text": "Updated text"})
+    assert updated is True
+    
+    events = es.get_events(save_id, start_turn_id=0)
+    assert len(events) == 1
+    assert events[0]["payload"] == {"text": "Updated text"}
+
+
+def test_update_turn_narrative(tmp_path: Path):
+    from axiom.memory import VectorMemory
+    db = _new_db(tmp_path)
+    save_id = create_new_save(db, "Hero", "Normal")
+    
+    vm_dir = str(tmp_path / "vectors")
+    vm = VectorMemory(persist_dir=vm_dir)
+    
+    doc_id = vm.embed_chunk(save_id, 1, "Original memories")
+    assert doc_id != ""
+    
+    vm.update_turn_narrative(save_id, 1, "New revised memories")
+    
+    results = vm.query(save_id, "memories", k=1)
+    assert len(results) == 1
+    assert results[0]["text"] == "New revised memories"
+

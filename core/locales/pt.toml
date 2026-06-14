@@ -42,6 +42,8 @@ new_universe = "Novo Universo"
 import_universe = "Importar .axiom"
 play = "Jogar"
 edit = "Editar"
+edit_message_prompt = "Editar mensagem:"
+
 delete = "Excluir"
 export = "Exportar"
 no_sessions = "Nenhuma sessão carregada"

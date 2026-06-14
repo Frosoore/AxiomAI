@@ -253,7 +253,24 @@ class UpdateVariantTask(BaseDbTask):
         return new_text
 
 
+class UpdateEventPayloadTask(BaseDbTask):
+    def __init__(self, db_path: str, save_id: str, turn_id: int, event_type: str, new_payload: dict):
+        super().__init__(db_path)
+        self.save_id = save_id
+        self.turn_id = turn_id
+        self.event_type = event_type
+        self.new_payload = new_payload
+
+    def execute(self) -> bool:
+        self.signals.status.emit("Updating database event...")
+        es = EventSourcer(self.db_path)
+        return es.update_event_payload(
+            self.save_id, self.turn_id, self.event_type, self.new_payload
+        )
+
+
 class DeleteSaveTask(BaseDbTask):
+
     def __init__(self, db_path: str, save_id: str):
         super().__init__(db_path)
         self.save_id = save_id
