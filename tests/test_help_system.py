@@ -194,10 +194,13 @@ class TestDialogs:
         assert dialog.result() == QDialog.Accepted
 
     def test_make_help_button(self, qtbot) -> None:
+        from core.localization import tr
         from ui.help_dialogs import make_help_button
         btn = make_help_button("hub")
         qtbot.addWidget(btn)
-        assert btn.text() == "?"
+        # The header button now reads the localized "Information" label
+        # (commit "Fix: Information button text"), no longer a bare "?".
+        assert btn.text() == tr("information")
         assert btn.toolTip() != ""
 
 

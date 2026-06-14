@@ -19,6 +19,9 @@ class DiagnosticWorker(QThread):
 
     Signals:
         report_ready(str, str): (formatted text report, overall status string).
+        artifacts_ready(str, str): (full warnings text, full failure logs) — the
+            raw pytest output the dialog shows in its dedicated copyable windows.
+            Either string may be empty.
 
     Args:
         run_tests: Also run the pytest suite (2 batches) — slow.
@@ -26,6 +29,7 @@ class DiagnosticWorker(QThread):
     """
 
     report_ready = Signal(str, str)
+    artifacts_ready = Signal(str, str)
 
     def __init__(self, *, run_tests: bool = False, offline: bool = False) -> None:
         super().__init__()
@@ -34,9 +38,12 @@ class DiagnosticWorker(QThread):
 
     def run(self) -> None:
         """Run every check and emit the report.  Never raises."""
-        from tools.diagnostic import run_diagnostics, format_report, overall_status
+        from tools.diagnostic import (
+            collect_artifacts, format_report, overall_status, run_diagnostics,
+        )
         try:
             sections = run_diagnostics(run_tests=self._run_tests, offline=self._offline)
             self.report_ready.emit(format_report(sections), overall_status(sections))
+            self.artifacts_ready.emit(*collect_artifacts(sections))
         except Exception as exc:  # noqa: BLE001 — a diagnostic must never crash the app
             self.report_ready.emit(f"Diagnostic failed to run: {exc}", "FAIL")
