@@ -144,6 +144,7 @@ def create_new_save(
         migrate_inventory_tables,
         migrate_saves_difficulty_constraint,
         migrate_active_modifiers_table,
+        migrate_indexes,
     )
 
     migrate_saves_table(db_path)
@@ -151,6 +152,7 @@ def create_new_save(
     migrate_lore_book_table(db_path)
     migrate_inventory_tables(db_path)
     migrate_active_modifiers_table(db_path)
+    migrate_indexes(db_path)
     save_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     with get_connection(db_path) as conn:
@@ -182,6 +184,7 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_inventory_tables,
         migrate_saves_difficulty_constraint,
         migrate_active_modifiers_table,
+        migrate_indexes,
     )
 
     try:
@@ -190,6 +193,7 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_lore_book_table(db_path)
         migrate_inventory_tables(db_path)
         migrate_active_modifiers_table(db_path)
+        migrate_indexes(db_path)
         with get_connection(db_path) as conn:
             rows = conn.execute(
                 "SELECT save_id, player_name, difficulty, last_updated, player_persona "

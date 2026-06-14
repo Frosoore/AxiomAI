@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from axiom.backends.base import LLMConnectionError
+from axiom.logger import logger
 
 _HELP_TEXT = """\
 Commands:
@@ -137,7 +138,8 @@ def _resolve_player_id(db_path: str) -> str:
             if ent.get("entity_type") == "player":
                 return ent["entity_id"]
     except Exception:
-        pass
+        # Fall back to the conventional id; trace so a DB error stays visible.
+        logger.debug("Player-entity resolution failed; defaulting to player_1.", exc_info=True)
     return "player_1"
 
 

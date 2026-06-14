@@ -874,4 +874,52 @@ class TestCausalTime:
         assert "DO NOT ignore any members or refer to them as 'you two'" in final_msg["content"]
 
 
+class TestInventoryQuantityValidation:
+    """A malformed `quantity` from LLM JSON must reject the change, never crash.
+
+    `quantity` is untrusted: int(None)/int("two") raise, a negative add violates
+    the quantity>=0 CHECK, and a negative remove would silently *add* items.
+    """
+
+    def _arb(self, db_path: str) -> ArbitratorEngine:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Item_Definitions (item_id, name) VALUES ('sword', 'Sword');"
+            )
+            conn.commit()
+        return ArbitratorEngine(db_path, [])
+
+    def test_valid_positive_quantity_passes(self, db_path: str) -> None:
+        arb = self._arb(db_path)
+        ok, _ = arb._validate_inventory_change(
+            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": 2}
+        )
+        assert ok is True
+
+    def test_missing_quantity_defaults_to_one(self, db_path: str) -> None:
+        arb = self._arb(db_path)
+        ok, _ = arb._validate_inventory_change(
+            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add"}
+        )
+        assert ok is True
+
+    @pytest.mark.parametrize("bad", ["two", None, "2.5", "", [1]])
+    def test_non_integer_quantity_rejected_not_raised(self, db_path: str, bad) -> None:
+        arb = self._arb(db_path)
+        ok, reason = arb._validate_inventory_change(
+            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": bad}
+        )
+        assert ok is False
+        assert "whole number" in reason
+
+    @pytest.mark.parametrize("bad", [0, -3])
+    def test_non_positive_quantity_rejected(self, db_path: str, bad) -> None:
+        arb = self._arb(db_path)
+        ok, reason = arb._validate_inventory_change(
+            "s1", {"entity_id": "player1", "item_id": "sword", "action": "remove", "quantity": bad}
+        )
+        assert ok is False
+        assert "positive" in reason
+
+
 

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from axiom import paths
 from axiom.backends.base import LLMBackend
+from axiom.logger import logger
 from axiom.paths import CONFIG_DIR, SETTINGS_FILE, GLOBAL_DB_FILE
 
 
@@ -240,7 +241,9 @@ def load_config() -> AppConfig:
             create_global_db(global_db)
             _GLOBAL_DB_READY.add(global_db)
         except Exception:
-            pass
+            # Best-effort: config still loads without the global DB (personas).
+            # Trace it so a real provisioning failure isn't completely invisible.
+            logger.debug("Global DB provisioning failed at %s.", global_db, exc_info=True)
 
     if not config_file.exists():
         _CONFIG_CACHE.pop(str(config_file), None)

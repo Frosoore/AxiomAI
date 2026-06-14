@@ -871,7 +871,12 @@ class ArbitratorEngine:
                 if row:
                     return int(row[0])
         except Exception:
-            pass
+            # Distance unknown → treat as 0 (adjacent), but leave a trace: a DB
+            # error here would otherwise silently distort travel-time logic.
+            logger.debug(
+                "Travel-distance lookup %s→%s failed; defaulting to 0.",
+                source_id, target_id, exc_info=True,
+            )
         return 0
 
     def _load_defined_stats(self) -> set[str]:
@@ -1013,10 +1018,21 @@ class ArbitratorEngine:
         entity_id = change.get("entity_id")
         item_id = change.get("item_id")
         action = change.get("action")
-        quantity = int(change.get("quantity", 1))
 
         if not entity_id or not item_id or action not in ("add", "remove"):
             return False, "Malformed inventory change (missing entity_id, item_id, or invalid action)."
+
+        # `quantity` comes straight from untrusted LLM JSON: it can be missing,
+        # null, a non-numeric / float string, or <= 0. Coerce defensively here so
+        # a bad value rejects the change (→ correction hint) instead of crashing
+        # the whole turn (int(None)/int("two") raise) or later violating the
+        # quantity >= 0 CHECK / silently turning a "remove" into an add.
+        try:
+            quantity = int(change.get("quantity", 1))
+        except (ValueError, TypeError):
+            return False, "Inventory quantity must be a whole number."
+        if quantity <= 0:
+            return False, "Inventory quantity must be a positive whole number."
 
         with get_connection(self._db_path) as conn:
             # 1. Check if item exists in definitions

@@ -38,6 +38,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      # Persist the downloaded embedding model across runs. Once a single run
+      # has populated the cache, every later run loads it offline and never
+      # hits the HuggingFace Hub again (see the pre-fetch step below).
+      - name: Cache HuggingFace embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-v1
+
       # System libraries PySide6 needs to import head-less.
       - name: Install headless Qt system libraries
         run: |
@@ -49,6 +58,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      # The memory tests need the all-MiniLM-L6-v2 embedding model. On a warm
+      # cache it loads offline (no network); on a cold cache we download it with
+      # retries to ride out HuggingFace's 429 rate-limiting on shared CI runners
+      # (the flaky `assert doc_id != ""` failure in test_update_turn_narrative).
+      # If it still can't be fetched we only warn, so the actual test result —
+      # not an opaque setup error — is what shows up.
+      - name: Pre-fetch embedding model (offline first, retry on download)
+        run: |
+          if HF_HUB_OFFLINE=1 python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"; then
+            echo "embedding model served from cache"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            echo "downloading embedding model (attempt $i)..."
+            if python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"; then
+              echo "download ok"
+              exit 0
+            fi
+            sleep $((i * 15))
+          done
+          echo "::warning::could not pre-fetch embedding model; memory tests may fail"
 
       # Batch 1 — everything except the Qt-multimedia test.
       - name: Run tests (main batch)

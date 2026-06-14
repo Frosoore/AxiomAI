@@ -27,6 +27,7 @@ from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
 from axiom.backends.base import LLMBackend, LLMMessage
 from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
+from axiom.logger import logger
 from axiom.memory import VectorMemory
 from axiom.prompts import HISTORY_TURN_CAP
 from axiom.universe import Universe
@@ -459,7 +460,9 @@ class Session:
                 rows = conn.execute("SELECT entity_id, name FROM Entities;").fetchall()
                 id_to_name = {r["entity_id"]: r["name"] for r in rows}
         except Exception:
-            pass
+            # Non-fatal: history then shows raw IDs instead of names. Trace it so
+            # a real DB error doesn't hide behind merely-ugly history.
+            logger.debug("Entity id→name map load failed; using raw IDs.", exc_info=True)
 
         # Only load the recent turns the prompt can actually use (it caps at the
         # newest HISTORY_TURN_CAP turns). Loading the ENTIRE Event_Log every turn
@@ -595,7 +598,9 @@ class Session:
                     player_name = row["player_name"]
                     player_persona = row["player_persona"]
         except Exception:
-            pass
+            # Non-fatal: prompt falls back to default player name/persona. Trace
+            # it so a real DB read error is still diagnosable.
+            logger.debug("Player name/persona load failed; using defaults.", exc_info=True)
 
         # Get active entities and their stats
         entities = self._get_entities()

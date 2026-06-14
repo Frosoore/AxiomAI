@@ -279,6 +279,23 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
 })
 
 
+# Secondary indexes for the per-turn hot path. SQLite only auto-indexes PRIMARY
+# KEY / UNIQUE columns, so without these the queries below full-scan a table that
+# grows by (at least) one row every turn → cost rises linearly over a long game:
+#   - Event_Log      : get_events() filters WHERE save_id=? AND turn_id>? each turn.
+#   - Active_Modifiers: the decay tick filters WHERE save_id=? each turn.
+#   - Timeline       : time resolution filters WHERE save_id=? (AND turn_id<=?).
+# State_Cache / Snapshots / Fired_Scheduled_Events already lead their PRIMARY KEY
+# with save_id, so the same lookups are already index-backed — no extra index.
+# These index columns double as the FK child index, so cascade deletes of a Save
+# stop scanning the child tables too.
+_DDL_INDEXES: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_event_log_save_turn ON Event_Log(save_id, turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_active_modifiers_save ON Active_Modifiers(save_id);",
+    "CREATE INDEX IF NOT EXISTS idx_timeline_save_turn ON Timeline(save_id, turn_id);",
+]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -311,6 +328,8 @@ def create_universe_db(db_path: str) -> None:
         conn.execute("PRAGMA foreign_keys=ON;")
         for ddl in _ALL_DDL:
             conn.execute(ddl)
+        for ddl in _DDL_INDEXES:
+            conn.execute(ddl)
         conn.commit()
 
 
@@ -324,6 +343,27 @@ def create_global_db(db_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(str(path))) as conn:
         conn.execute(_DDL_GLOBAL_PERSONAS)
+        conn.commit()
+
+
+def migrate_indexes(db_path: str) -> None:
+    """Create the per-turn hot-path indexes on an already-provisioned database.
+
+    Idempotent (CREATE INDEX IF NOT EXISTS): brings databases provisioned before
+    the indexes existed up to date, so long games stop full-scanning Event_Log /
+    Active_Modifiers / Timeline every turn (see ``_DDL_INDEXES``). A missing
+    target table (older / partial schema) is skipped rather than raised.
+    """
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        for ddl in _DDL_INDEXES:
+            try:
+                conn.execute(ddl)
+            except sqlite3.OperationalError as exc:
+                # "no such table" on a partial/legacy schema — the index simply
+                # gets created the next time that table exists. Anything else is
+                # a real error and must surface.
+                if "no such table" not in str(exc).lower():
+                    raise
         conn.commit()
 
 
