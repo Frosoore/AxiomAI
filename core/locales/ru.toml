@@ -577,3 +577,10 @@ diagnostic_copied = "Отчёт скопирован в буфер обмена.
 diagnostic_save = "Сохранить…"
 diagnostic_saved = "Отчёт сохранён."
 generating_image = "Создание иллюстрации…"
+
+# Embedding runtime / VC++ Redistributable warning (Windows GUI)
+vcredist_title = "Отсутствует компонент Windows"
+vcredist_body = "Семантической памяти Axiom AI (долговременные сюжетные воспоминания) требуется Microsoft Visual C++ Redistributable, который не установлен на этом ПК. Игра прекрасно работает и без него — отключается только долговременная память. Чтобы включить её, установите бесплатный компонент (x64) и перезапустите Axiom AI."
+vcredist_download = "Скачать…"
+vcredist_later = "Позже"
+vcredist_dont_remind = "Больше не напоминать"

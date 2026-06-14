@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -215,7 +216,7 @@ class ImportExportWorker(QThread):
         try:
             self._populate_db(db_path_str, meta, entities, [], lore_book)
             
-            with sqlite3.connect(db_path_str) as conn:
+            with closing(sqlite3.connect(db_path_str)) as conn:
                 conn.execute("PRAGMA foreign_keys=ON;")
                 
                 # Fulfill Phase 10 & 11 Directive: Inject Event directly into Event_Log
@@ -298,7 +299,7 @@ class ImportExportWorker(QThread):
             lore_book: List of lore book entry dicts.
         """
         lore_book = lore_book or []
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             conn.execute("PRAGMA foreign_keys=ON;")
 
             # Universe_Meta

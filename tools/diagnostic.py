@@ -18,6 +18,8 @@ Usage
 What it checks (each → OK / WARN / FAIL, never crashes the whole report):
   * Python & OS, virtualenv.
   * Versions of the heavy dependencies (torch, chromadb, PySide6, …).
+  * Whether torch's native libraries actually LOAD (on Windows a missing MS
+    Visual C++ Redistributable makes the import fail and disables memory).
   * Whether the embedding model is already cached (a cold first turn otherwise
     downloads it; on a broken-IPv6 host that stall is what makes the narrative
     seem to never arrive — see axiom/memory.py).
@@ -121,6 +123,32 @@ def _check_packages() -> Section:
             sec.add(label, OK, str(version))
         except Exception as exc:  # noqa: BLE001 — report, never abort
             sec.add(label, WARN, f"not importable: {exc}")
+    return sec
+
+
+def _check_embedding_runtime() -> Section:
+    """Verify torch's native libraries actually LOAD (not just that it's installed).
+
+    On Windows, torch ships fine via pip but its DLLs (torch_python.dll & co.)
+    need the Microsoft Visual C++ Redistributable. Without it the import raises
+    OSError (WinError 126) — semantic memory then silently degrades to a no-op
+    (axiom/memory.py). This surfaces that as an actionable FAIL.
+    """
+    sec = Section("Embedding runtime")
+    try:
+        import torch  # noqa: F401
+        sec.add("torch native libraries", OK, "loaded")
+    except ImportError as exc:
+        sec.add("torch native libraries", WARN,
+                f"torch not installed ({exc}) — semantic memory will be disabled")
+    except OSError as exc:  # e.g. WinError 126: a dependent DLL is missing
+        hint = ""
+        if sys.platform == "win32":
+            hint = (" — install the Microsoft Visual C++ Redistributable (x64) from "
+                    "microsoft.com (search 'vc_redist.x64.exe'), then relaunch")
+        sec.add("torch native libraries", FAIL,
+                f"installed but failed to load its native libraries: {exc}{hint}. "
+                "Semantic memory stays disabled until fixed (the game still runs).")
     return sec
 
 
@@ -291,6 +319,7 @@ def run_diagnostics(*, run_tests: bool = False, offline: bool = False) -> list[S
     sections = [
         _check_environment(),
         _check_packages(),
+        _check_embedding_runtime(),
         _check_embedding_cache(),
         _check_config(),
         _check_data_dirs(),

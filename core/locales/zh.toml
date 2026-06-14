@@ -577,3 +577,10 @@ diagnostic_copied = "报告已复制到剪贴板。"
 diagnostic_save = "保存…"
 diagnostic_saved = "报告已保存。"
 generating_image = "正在生成插图…"
+
+# Embedding runtime / VC++ Redistributable warning (Windows GUI)
+vcredist_title = "缺少 Windows 组件"
+vcredist_body = "Axiom AI 的语义记忆（长期叙事记忆）需要 Microsoft Visual C++ Redistributable，但此电脑未安装该组件。游戏没有它也能正常运行——仅长期记忆被禁用。要启用它，请安装免费组件（x64）并重新启动 Axiom AI。"
+vcredist_download = "下载…"
+vcredist_later = "稍后"
+vcredist_dont_remind = "不再提醒"

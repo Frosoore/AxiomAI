@@ -22,6 +22,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.schema import create_universe_db
 from axiom.time_system import CalendarConfig
 
@@ -316,20 +317,27 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
     Préserve le corps **octet pour octet** (pas de splitlines/strip) pour garantir
     un round-trip fidèle.
     """
-    opener = _FRONTMATTER_DELIM + "\n"
-    if not text.startswith(opener):
-        return {}, text
-    rest = text[len(opener):]
-    closer = "\n" + _FRONTMATTER_DELIM + "\n"
-    end = rest.find(closer)
-    if end == -1:
-        return {}, text
-    front_text = rest[:end]
-    body = rest[end + len(closer):]
-    try:
-        return tomllib.loads(front_text), body
-    except tomllib.TOMLDecodeError as exc:
-        raise CompileError(f"Invalid TOML frontmatter — {exc}") from exc
+    # On lit le .md en `newline=""` (corps préservé octet pour octet) : il faut
+    # donc tolérer les deux styles de fin de ligne. Un fichier édité sous Windows
+    # commence par "+++\r\n" — sans cette tolérance, son frontmatter (entry_id,
+    # category, keywords) serait silencieusement ignoré et l'id retomberait sur
+    # le nom de fichier.
+    for nl in ("\n", "\r\n"):
+        opener = _FRONTMATTER_DELIM + nl
+        if not text.startswith(opener):
+            continue
+        rest = text[len(opener):]
+        closer = nl + _FRONTMATTER_DELIM + nl
+        end = rest.find(closer)
+        if end == -1:
+            break  # ouvert mais non refermé dans le même style → pas de frontmatter
+        front_text = rest[:end]
+        body = rest[end + len(closer):]
+        try:
+            return tomllib.loads(front_text), body
+        except tomllib.TOMLDecodeError as exc:
+            raise CompileError(f"Invalid TOML frontmatter — {exc}") from exc
+    return {}, text
 
 
 def _parse_events(src_dir: Path) -> list[tuple]:
@@ -518,7 +526,7 @@ def compile_universe(
         conn.close()
 
     _remove_db_files(output_db)
-    tmp_db.replace(output_db)
+    replace_with_retry(tmp_db, output_db)  # bascule atomique, retry anti-lock Windows
     _remove_db_files(tmp_db, keep_main=True)  # nettoie les sidecars -wal/-shm résiduels
 
     hash_file.parent.mkdir(parents=True, exist_ok=True)
@@ -530,6 +538,4 @@ def _remove_db_files(db: Path, keep_main: bool = False) -> None:
     """Supprime un .db et ses sidecars WAL (-wal/-shm)."""
     suffixes = ("-wal", "-shm") if keep_main else ("", "-wal", "-shm")
     for suffix in suffixes:
-        p = Path(str(db) + suffix)
-        if p.exists():
-            p.unlink()
+        unlink_with_retry(Path(str(db) + suffix), missing_ok=True)

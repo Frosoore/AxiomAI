@@ -27,7 +27,7 @@ from axiom.events import EventSourcer
 from axiom.modifiers import ModifierProcessor
 from axiom.schema import create_universe_db
 from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
-from axiom.memory import VectorMemory
+from axiom.memory import VectorMemory, _EmbeddingSingleton
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +106,16 @@ def db_path(tmp_path: Path) -> str:
 
 
 @pytest.fixture
-def vm(tmp_path: Path) -> VectorMemory:
-    with patch(
-        "axiom.memory.SentenceTransformerEmbeddingFunction",
-        return_value=_FakeEmbeddingFn(),
-    ):
-        return VectorMemory(persist_dir=str(tmp_path / "chroma"))
+def vm(tmp_path: Path):
+    # Injecte le faux embedder dans le singleton : la connexion réelle (chargement
+    # de torch) est paresseuse et n'aurait pas été couverte par un patch autour du
+    # seul constructeur. Tests déterministes et sans dépendance native torch.
+    saved = _EmbeddingSingleton._instance
+    _EmbeddingSingleton._instance = _FakeEmbeddingFn()
+    try:
+        yield VectorMemory(persist_dir=str(tmp_path / "chroma"))
+    finally:
+        _EmbeddingSingleton._instance = saved
 
 
 def _make_arbitrator(
