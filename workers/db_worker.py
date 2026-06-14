@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+from contextlib import closing
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal, QThreadPool
@@ -349,7 +350,7 @@ class DbWorker(QObject):
                 migrate_lore_book_table(self.db_path)
                 migrate_stat_definitions_table(self.db_path)
                 migrate_entities_table(self.db_path)
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     e_rows = conn.execute("SELECT entity_id, entity_type, name, description FROM Entities WHERE is_active = 1;").fetchall()
                     entities = []
@@ -399,7 +400,7 @@ class DbWorker(QObject):
         """Atomic update of multiple keys in Universe_Meta."""
         class TempTask(LoadStatsTask):
             def execute(self) -> bool:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     for k, v in meta.items():
                         conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);", (k, str(v)))
                     conn.commit()
@@ -421,7 +422,7 @@ class DbWorker(QObject):
                 migrate_scheduled_events_table(self.db_path)
                 migrate_story_setup_table(self.db_path)
                 migrate_location_tables(self.db_path)
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.execute("PRAGMA foreign_keys=ON;")
                     conn.execute("DELETE FROM Entity_Stats;")
                     conn.execute("DELETE FROM Entities;")
@@ -519,7 +520,7 @@ class DbWorker(QObject):
                 migrate_entities_table(self.db_path)
                 migrate_scheduled_events_table(self.db_path)
                 migrate_location_tables(self.db_path)
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     # 1. Entities
                     e_rows = conn.execute("SELECT entity_id, entity_type, name, description FROM Entities WHERE is_active = 1;").fetchall()
@@ -637,7 +638,7 @@ class DbWorker(QObject):
     def load_global_personas(self) -> None:
         class TempTask(LoadStatsTask):
             def execute(self) -> list:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     rows = conn.execute("SELECT persona_id, name, description FROM Global_Personas;").fetchall()
                 return [dict(r) for r in rows]
@@ -648,7 +649,7 @@ class DbWorker(QObject):
     def save_global_personas(self, personas: list[dict]) -> None:
         class TempTask(LoadStatsTask):
             def execute(self) -> bool:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn:
                     conn.execute("DELETE FROM Global_Personas;")
                     for p in personas:
                         conn.execute("INSERT INTO Global_Personas (persona_id, name, description) VALUES (?, ?, ?);", (p["persona_id"], p["name"], p["description"]))

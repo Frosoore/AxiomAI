@@ -110,3 +110,60 @@ Redistributable. Le jeu reste jouable (sans mémoire sémantique long terme) au 
 - ⚠ **Installer le Microsoft Visual C++ Redistributable x64** (vc_redist.x64.exe) : débloque torch
   → mémoire sémantique fonctionnelle + les 2 tests skippés torch passeront. **Top recommandation.**
 - Toujours non testé en réel : audio `.ogg`, génération d'images locale, `run.bat` bout en bout.
+
+## 2026-06-14 (suite) — 4 chantiers de suivi demandés (branche `dev-win-compat`)
+
+1. **Balayage des bugs de chemin** (même famille que le diff `\`) : **RAS**. Le code est discipliné
+   — les noms d'archive zip utilisent déjà `.as_posix()` (`package.py`, `savestore.py`), les
+   `split("/")` portent sur des IDs de modèle / URLs HTTP (pas des chemins), les comparaisons
+   `relative_to` de `library.py` se font Path-à-Path (cohérent). Le bug de clés de diff corrigé hier
+   était le seul.
+2. **TICKET-071 — fin de la classe « connexion non fermée »** : 8 `with sqlite3.connect(...)` restants
+   passés en `closing()` — `workers/db_worker.py` (×6 : tous read-only ou `commit()` explicite) et
+   `workers/import_export_worker.py` (×2 : `commit()` aux l.247/355). **Pas que de l'hygiène** :
+   `db_worker` save-univers appelle `sync_source_if_any()` (qui recompile/replace) *juste après* le
+   bloc → l'ancien handle ouvert aurait verrouillé le `.db` sous Windows. Tests `db_worker`/studio OK.
+3. **Visibilité torch/VC++** : `tools/diagnostic.py::_check_embedding_runtime` (nouveau) — tente
+   l'import torch et, sur `OSError` (WinError 126), émet un **FAIL actionnable** pointant le VC++
+   Redistributable (au lieu d'un WARN « not importable » noyé dans les deps). Vérifié en réel sur la
+   machine : le rapport affiche bien le FAIL + le conseil. 25 tests diagnostic OK.
+4. **Test run.bat + audio en RÉEL sur la machine** :
+   - **Audio** : **aucun asset audio embarqué** dans le repo (l'ambiance lit des fichiers fournis par
+     l'utilisateur). Sonde `QMediaFormat` sur cette Win 11 : **Ogg, FLAC, AAC, MP3, Wave tous
+     supportés** → la crainte « Media Foundation ne décode pas OGG » **ne se vérifie pas** ici
+     (codecs Win11 OK). Risque audio Windows ⇒ requalifié **quasi nul**.
+   - **`run.bat`** : `debug/startup_check.py` passe (exit 0 : signaux DbWorker, schéma, imports cœur
+     dont `ui.main_window`). **Lancement réel `main.py` (offscreen, timeout)** : l'app **atteint sa
+     boucle d'événements sans crash** ; le log montre `WARNING: Embedding runtime not pre-loaded
+     (torch unavailable)` → **la dégradation gracieuse fonctionne de bout en bout dans la vraie app**
+     (warn + continue au lieu de crasher). Reste non couvert : un vrai tour de jeu GUI, génération
+     d'images locale (services externes).
+
+**Bilan** : la couche moteur **et** app est désormais Windows-safe pour le démarrage, la
+compilation, les saves, le Studio et la suppression hardcore. Seul point ouvert = le VC++
+Redistributable côté utilisateur (TICKET-070), bien signalé par le diagnostic.
+
+## 2026-06-14 (suite 2) — alerte GUI « VC++ Redistributable manquant »
+
+Demande utilisateur : auto-installer le composant manquant via `requirements.txt`, sinon le
+détecter au lancement et proposer le téléchargement — **uniquement en couche GUI**.
+
+- **Pourquoi pas `requirements.txt`** : pip n'installe que des **paquets Python** (wheels PyPI).
+  Le VC++ Redistributable est un **composant système Windows** (installeur `.exe`/MSI, droits
+  admin) → hors de portée de pip. (Le paquet bricolé `msvc-runtime` existe mais place les DLL de
+  façon non fiable pour le chargeur de torch → écarté.)
+- **Solution GUI** : **`ui/runtime_check.py` (nouveau, zéro code moteur)**.
+  `embedding_runtime_status()` → `ok` / `missing_dll` / `not_installed` ;
+  `maybe_warn_missing_runtime(parent)` n'agit **que** sous Windows + cas `missing_dll` + pas de
+  marqueur « ne plus afficher ». Boîte `QMessageBox` (bouton **Télécharger** →
+  `QDesktopServices.openUrl(https://aka.ms/vs/17/release/vc_redist.x64.exe)`, bouton **Plus tard**,
+  case **ne plus me prévenir** → marqueur `%APPDATA%/AxiomAI/vcredist_warning_dismissed`). Best-effort,
+  ne lève jamais (un dialogue d'aide ne doit pas casser le démarrage).
+- **Branchement** : `main.py` appelle `maybe_warn_missing_runtime(window)` après `window.show()`
+  (le moteur, lui, continue de dégrader en silence — séparation des couches respectée).
+- **i18n** : 5 clés `vcredist_*` ajoutées aux **10 langues** (traductions réelles), couverture
+  i18n re-vérifiée **554/554 ×10, OK**.
+- **Tests** : `tests/test_runtime_check.py` (6, QMessageBox mocké → pas de modale bloquante) :
+  no-op hors Windows / runtime OK / torch absent ; affichage unique + respect du marqueur ; le
+  bouton Télécharger ouvre bien l'URL Microsoft. Détection vérifiée en réel (`missing_dll` sur la
+  machine ; torch lui-même imprime le même conseil VC++).
