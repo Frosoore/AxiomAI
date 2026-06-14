@@ -31,6 +31,7 @@ import os
 import shutil
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -176,7 +177,11 @@ class HardcoreWorker(QThread):
         Raises:
             sqlite3.Error: On connection or pragma failure.
         """
-        with sqlite3.connect(db_path, timeout=2.0) as conn:
+        # closing() : `with sqlite3.connect()` ne FERME pas la connexion (il ne
+        # gère que la transaction) ; sous Windows le handle laissé ouvert ferait
+        # apparaître le .db comme verrouillé à l'étape de sonde (_find_locked_files)
+        # et la suppression hardcore échouerait à tort.
+        with closing(sqlite3.connect(db_path, timeout=2.0)) as conn:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
             conn.execute("PRAGMA journal_mode=DELETE;")
 
@@ -191,7 +196,7 @@ class HardcoreWorker(QThread):
         Raises:
             sqlite3.Error: On any database failure.
         """
-        with sqlite3.connect(db_path, timeout=2.0) as conn:
+        with closing(sqlite3.connect(db_path, timeout=2.0)) as conn:
             conn.execute("PRAGMA foreign_keys=ON;")
             # Step A: Delete this save's modifiers (TICKET-024: scoping par save_id)
             conn.execute(
@@ -269,6 +274,6 @@ class HardcoreWorker(QThread):
         Returns:
             Number of remaining save rows.
         """
-        with sqlite3.connect(db_path, timeout=2.0) as conn:
+        with closing(sqlite3.connect(db_path, timeout=2.0)) as conn:
             row = conn.execute("SELECT COUNT(*) FROM Saves;").fetchone()
         return int(row[0]) if row else 0

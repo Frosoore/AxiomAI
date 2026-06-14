@@ -357,6 +357,12 @@ def main() -> None:
     window = MainWindow()
     window.show()
 
+    # GUI-only: if torch's native runtime failed to load (typically a missing
+    # Visual C++ Redistributable on Windows), tell the user how to fix it. The
+    # engine already degraded silently; this surfaces the actionable link.
+    from ui.runtime_check import maybe_warn_missing_runtime
+    maybe_warn_missing_runtime(window)
+
     sys.exit(app.exec())
 
 

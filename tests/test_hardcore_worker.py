@@ -9,6 +9,7 @@ signals to fire.  All tests are fully offline — no real saves are touched.
 
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -153,7 +154,9 @@ class TestHardcoreWorker:
 
         db3 = str(tmp_path / "u3.db")
         create_universe_db(db3)
-        with sqlite3.connect(db3) as conn:
+        # closing() : le worker supprime ce .db — une connexion encore ouverte le
+        # verrouillerait sous Windows (WinError 32) et la suppression échouerait.
+        with closing(sqlite3.connect(db3)) as conn:
             conn.execute("INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES (?,?,?,?);",
                          ("s3", "Hero", "Hardcore", "2026-01-01T00:00:00"))
             conn.commit()
@@ -182,7 +185,7 @@ class TestHardcoreWorker:
 
         db4 = str(tmp_path / "u4.db")
         create_universe_db(db4)
-        with sqlite3.connect(db4) as conn:
+        with closing(sqlite3.connect(db4)) as conn:
             conn.execute("INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES (?,?,?,?);",
                          ("s4", "Hero", "Hardcore", "2026-01-01T00:00:00"))
             conn.commit()

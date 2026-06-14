@@ -31,6 +31,7 @@ from contextlib import closing
 from pathlib import Path
 
 from axiom.compile import hash_directory
+from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.library import universe_root_for
 from axiom.schema import create_universe_db
 
@@ -250,11 +251,9 @@ def finalize_save_container(container: Path, save_id: str) -> Path:
     finally:
         conn.close()
     final_db = container.parent / f"save_{save_id}.db"
-    container.replace(final_db)
+    replace_with_retry(container, final_db)
     for suffix in ("-wal", "-shm"):
-        leftover = Path(str(container) + suffix)
-        if leftover.exists():
-            leftover.unlink()
+        unlink_with_retry(Path(str(container) + suffix), missing_ok=True)
     return final_db
 
 
@@ -736,6 +735,4 @@ def delete_universe_saves(universe_db: str | Path) -> None:
 
 def _remove_db_files(db: Path) -> None:
     for suffix in ("", "-wal", "-shm"):
-        p = Path(str(db) + suffix)
-        if p.exists():
-            p.unlink()
+        unlink_with_retry(Path(str(db) + suffix), missing_ok=True)

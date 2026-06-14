@@ -580,3 +580,10 @@ diagnostic_view_warnings = "경고 보기"
 diagnostic_view_failures = "실패한 테스트 보기"
 diagnostic_copy_all = "모두 복사"
 generating_image = "일러스트 생성 중…"
+
+# Embedding runtime / VC++ Redistributable warning (Windows GUI)
+vcredist_title = "Windows 구성 요소 없음"
+vcredist_body = "Axiom AI의 의미 기억(장기 서사 기억)에는 이 PC에 설치되지 않은 Microsoft Visual C++ Redistributable이 필요합니다. 게임은 이것 없이도 정상 작동하며, 장기 기억만 비활성화됩니다. 활성화하려면 무료 구성 요소(x64)를 설치한 후 Axiom AI를 다시 시작하세요."
+vcredist_download = "다운로드…"
+vcredist_later = "나중에"
+vcredist_dont_remind = "다시 알리지 않기"

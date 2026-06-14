@@ -1,7 +1,14 @@
 # TICKET-062 item 3 — Audit du support Windows
 
-**Statut : audit code complet le 2026-06-13. ⚠ AUCUNE machine Windows ici → audit
-STATIQUE.** Les correctifs sûrs sont appliqués ; le reste demande un test réel sous Windows.
+**Statut : QA sur VRAIE machine Windows le 2026-06-14 (Win 11, Python 3.13).** L'audit
+statique du 2026-06-13 (ci-dessous) avait conclu à tort « moteur Windows-safe » — la 1ʳᵉ
+exécution réelle a révélé une classe entière de bugs (`with sqlite3.connect` qui ne ferme
+pas → verrou Windows → `WinError 32` sur replace/unlink). **Tout corrigé, suite 753✅/2 skip.**
+Détail complet dans `CHANGELOG.md` (section 2026-06-14). Reste : torch/VC++ redist (TICKET-070),
+app-layer (TICKET-071), audio/.ogg + images locales + run.bat (TICKET-069).
+
+---
+*(Audit statique initial du 2026-06-13 conservé ci-dessous pour mémoire.)*
 
 ## Méthode
 

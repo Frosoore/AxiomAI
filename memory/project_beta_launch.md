@@ -18,9 +18,26 @@ modèles, 1ᵉʳ lancement zéro-config → fireworks/`gpt-oss-120b` (l'ancien d
 mort chez Fireworks). **Item 4 (outil de diagnostic) FAIT — CLI + GUI Aide→Diagnostic.**
 **Items 1, 2, 4 VALIDÉS GUI par l'utilisateur le 2026-06-13.** TICKET-050 (fail-fast 429) FAIT
 et **CI GitHub Actions FAITE** (`.github/workflows/tests.yml`, 2 lots, matrice 3.11/3.12 — reste
-à confirmer verte au 1ᵉʳ push). **Restent uniquement : vérif du support Windows** (censé marcher,
-`run.bat` existe, jamais testé récemment — audit code seulement, pas de machine) **+ nouvelles
-captures + GIF** (les assets du README datent).
+à confirmer verte au 1ᵉʳ push). **Restent : finir le support Windows + nouvelles captures + GIF**
+(les assets du README datent).
+
+**Support Windows — QA sur VRAIE machine le 2026-06-14** (Win 11, Python 3.13) : l'audit statique
+du 2026-06-13 disait « moteur déjà Windows-safe » → **FAUX**. La 1ʳᵉ exécution réelle a révélé une
+**classe entière de bugs** : `with sqlite3.connect(...) as conn:` **ne ferme pas la connexion**
+(gère seulement la transaction) → sous Windows le handle ouvert + le `-shm` WAL mappé
+**verrouillent le `.db`** → `os.replace`/`unlink` lèvent `PermissionError [WinError 32]` (invisible
+sous Linux : POSIX autorise rename/unlink d'un fichier ouvert). C'était la cause du crash rapporté
+au démarrage (`universe.db.tmp -> universe.db`). **Tout corrigé** : `get_connection` renvoie une
+`_ClosingConnection` (ferme en sortie de `with`, fix d'un point pour ~75 sites), migrations en
+`closing()`, `axiom/fsutil.py` (retry borné anti-verrou transitoire Defender/indexeur), bascules
+atomiques en `replace_with_retry`. Bonus Windows trouvés/corrigés : frontmatter lore CRLF ignoré
+(`compile.py`), chemins de diff en `\` (`library.py`), suppression hardcore qui échouait à tort
+(`workers/hardcore_worker.py`). **Suite 753✅/2 skip sous Windows** (cf.
+`maintenance/TICKET-062-windows-support/CHANGELOG.md`). **2ᵉ découverte → TICKET-070** : **torch ne
+charge pas** (`OSError WinError 126`) car le **Microsoft Visual C++ Redistributable x64 manque** sur
+la machine → embedding/mémoire sémantique HS ; l'app dégrade gracieusement (no-op + warning) mais
+**il faut installer `vc_redist.x64.exe`**. Reste non testé : audio `.ogg`, images locales, `run.bat`
+de bout en bout (TICKET-069).
 
 **TICKET-066 — chemin de raisonnement VALIDÉ de bout en bout le 2026-06-12** (bloquant bêta :
 gpt-oss = modèle de raisonnement → Timekeeper crashait, narration vide, « Generating »

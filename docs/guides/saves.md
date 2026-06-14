@@ -39,7 +39,7 @@ From Python, rewind is one call on the session:
 
 ```python
 session.rewind(target_turn_id)     # back to that turn
-session.list_checkpoints()         # turns with a snapshot
+session.list_checkpoints()         # every recorded turn you can rewind to
 ```
 
 In **Hardcore** mode, death deletes the save — that is the point of Hardcore.

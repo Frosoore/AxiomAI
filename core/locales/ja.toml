@@ -580,3 +580,10 @@ diagnostic_view_warnings = "警告を表示"
 diagnostic_view_failures = "失敗したテストを表示"
 diagnostic_copy_all = "すべてコピー"
 generating_image = "イラストを生成中…"
+
+# Embedding runtime / VC++ Redistributable warning (Windows GUI)
+vcredist_title = "Windows コンポーネントがありません"
+vcredist_body = "Axiom AI のセマンティックメモリ（長期的な物語の記憶）には Microsoft Visual C++ 再頒布可能パッケージが必要ですが、この PC にはインストールされていません。なくてもゲームは問題なく動作します（長期記憶のみ無効になります）。有効にするには、無料コンポーネント（x64）をインストールして Axiom AI を再起動してください。"
+vcredist_download = "ダウンロード…"
+vcredist_later = "後で"
+vcredist_dont_remind = "今後表示しない"

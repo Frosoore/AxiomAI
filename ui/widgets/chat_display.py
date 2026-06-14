@@ -401,7 +401,7 @@ class ChatDisplayWidget(QWidget):
                     nav_parts.append(f"<a href='variant:{turn_id}:{i}' style='color: #4FC1FF; text-decoration: none;'>[{i+1}]</a>")
         
         if is_latest:
-            reg_text = tr("regenerate") if "regenerate" in tr("ready") else "Regenerate"
+            reg_text = tr("regenerate")
             nav_parts.append(f"<a href='regenerate:{turn_id}' style='color: #FFB000; text-decoration: none;'>[⟳ {reg_text}]</a>")
             
         html_nav = "&nbsp;&nbsp;".join(nav_parts)

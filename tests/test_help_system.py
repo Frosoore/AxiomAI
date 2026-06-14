@@ -198,8 +198,13 @@ class TestDialogs:
         from ui.help_dialogs import make_help_button
         btn = make_help_button("hub")
         qtbot.addWidget(btn)
+<<<<<<< HEAD
         # The header button now reads the localized "Information" label
         # (commit "Fix: Information button text"), no longer a bare "?".
+=======
+        # Le bouton porte désormais le libellé « Information » (commit 0e956ae),
+        # plus l'ancien « ? ».
+>>>>>>> 4d4bcc107c0a094772e4680b08aba20c19632812
         assert btn.text() == tr("information")
         assert btn.toolTip() != ""
 

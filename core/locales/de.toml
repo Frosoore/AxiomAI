@@ -580,3 +580,10 @@ diagnostic_view_warnings = "Warnungen anzeigen"
 diagnostic_view_failures = "Fehlgeschlagene Tests anzeigen"
 diagnostic_copy_all = "Alles kopieren"
 generating_image = "Illustration wird erzeugt…"
+
+# Embedding runtime / VC++ Redistributable warning (Windows GUI)
+vcredist_title = "Windows-Komponente fehlt"
+vcredist_body = "Das semantische Gedächtnis von Axiom AI (langfristige Erzählerinnerungen) benötigt das Microsoft Visual C++ Redistributable, das auf diesem PC nicht installiert ist. Das Spiel funktioniert auch ohne einwandfrei – nur das Langzeitgedächtnis ist deaktiviert. Zum Aktivieren installieren Sie die kostenlose Komponente (x64) und starten Axiom AI neu."
+vcredist_download = "Herunterladen…"
+vcredist_later = "Später"
+vcredist_dont_remind = "Nicht mehr erinnern"

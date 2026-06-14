@@ -50,6 +50,12 @@ _LOCALES_DIR = Path(__file__).resolve().parent / "locales"
 # Cache des traductions chargées : {lang: {key: text}}. Rempli à la 1ʳᵉ demande.
 _TRANSLATIONS_CACHE: dict[str, dict[str, str]] | None = None
 
+# Cache de la langue courante. `tr()` est appelé des centaines de fois par rendu
+# d'UI ; sans ça chaque appel repassait par load_config() (un os.stat de cache
+# mtime). La langue ne change qu'au save des réglages → `reload_translations()`
+# (appelé par MainWindow à ce moment) vide ce cache.
+_CURRENT_LANG: str | None = None
+
 
 def _load_translations() -> dict[str, dict[str, str]]:
     """Charge (une seule fois) et met en cache les tables de toutes les langues.
@@ -75,17 +81,26 @@ def _load_translations() -> dict[str, dict[str, str]]:
 
 
 def reload_translations() -> None:
-    """Vide le cache des traductions (utile en tests ou hot reload)."""
-    global _TRANSLATIONS_CACHE
+    """Vide les caches i18n (traductions + langue courante).
+
+    À appeler après un changement de langue (save des réglages) ou en hot
+    reload / tests.
+    """
+    global _TRANSLATIONS_CACHE, _CURRENT_LANG
     _TRANSLATIONS_CACHE = None
+    _CURRENT_LANG = None
 
 
 def _current_language() -> str:
+    global _CURRENT_LANG
+    if _CURRENT_LANG is not None:
+        return _CURRENT_LANG
     try:
         from axiom.config import load_config
-        return getattr(load_config(), "language", "en")
+        _CURRENT_LANG = getattr(load_config(), "language", "en")
     except Exception:
-        return "en"
+        _CURRENT_LANG = "en"
+    return _CURRENT_LANG
 
 
 def tr(key: str, **kwargs) -> str:

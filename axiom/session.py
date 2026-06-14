@@ -28,6 +28,7 @@ from axiom.backends.base import LLMBackend, LLMMessage
 from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
 from axiom.memory import VectorMemory
+from axiom.prompts import HISTORY_TURN_CAP
 from axiom.universe import Universe
 from axiom.db_helpers import (
     load_rules_for_session,
@@ -37,6 +38,18 @@ from axiom.db_helpers import (
 from axiom import paths
 
 _DEFAULT_SYSTEM_PROMPT = "You are the narrator of this world."
+
+#: Extra turns loaded beyond HISTORY_TURN_CAP so the prompt's cap always has
+#: enough genuine conversation turns to choose from (some turns carry no
+#: narrative). Older context is covered by RAG, so there is no need to replay
+#: the entire Event_Log every turn.
+_HISTORY_LOAD_BUFFER = 5
+
+#: Take a State_Cache snapshot every N turns. Snapshots only speed up
+#: rebuild_state_cache / rewind (the rewind UI lists Event_Log turns, not
+#: snapshots — see CheckpointManager.list_checkpoints), so this is purely an
+#: internal performance bound with no gameplay-visible effect.
+_SNAPSHOT_INTERVAL_TURNS = 25
 
 #: Status string emitted right before contextual image generation starts.
 #: Exposed as a constant so the GUI can react (e.g. show a placeholder) without
@@ -206,6 +219,17 @@ class Session:
             self._events.rebuild_state_cache(self._save_id)
             self._arbitrator.invalidate_stats_cache()
 
+        # Periodic snapshot so rebuild_state_cache / rewind start from a recent
+        # state instead of replaying from turn 0 (no per-turn snapshot existed
+        # before — take_snapshot_async was never wired). Best-effort: a failed
+        # snapshot must never break a turn.
+        if self._turn_id > 0 and self._turn_id % _SNAPSHOT_INTERVAL_TURNS == 0:
+            try:
+                self._events.take_snapshot(self._save_id, self._turn_id)
+            except Exception as snap_err:
+                from axiom import logger
+                logger.warning(f"Periodic snapshot failed at turn {self._turn_id}: {snap_err}")
+
         # Contextual image generation
         if cfg.image_generation_enabled:
             _emit(on_status, IMAGE_GEN_STATUS)
@@ -221,7 +245,7 @@ class Session:
                     (aid for aid in intents if aid != hero_entity_id), "player"
                 )
                 entities = self._get_entities()
-                all_stats = self.current_stats()
+                all_stats = self._read_state_cache()
                 player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
                 
                 spatial_ctx = None
@@ -368,25 +392,51 @@ class Session:
             on_token=on_token,
         )
 
+    def _read_state_cache(self) -> dict[str, dict[str, str]]:
+        """Read materialised stats straight from State_Cache (no rebuild).
+
+        The Arbitrator's `update_state_cache` keeps State_Cache fresh after every
+        turn, and the post-chronicler / post-rewind paths rebuild it explicitly,
+        so on the hot path (image generation, hero decision) a plain read is
+        correct and avoids replaying the Event_Log each turn.
+
+        Fallback: if the cache comes back empty, materialise it once from the
+        Event_Log and re-read. In normal play the cache is already populated
+        (save genesis / per-turn updates), so this only fires before the very
+        first materialisation (e.g. a freshly seeded save).
+        """
+        from axiom.schema import get_connection
+
+        def _read() -> dict[str, dict[str, str]]:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute(
+                    "SELECT entity_id, stat_key, stat_value FROM State_Cache "
+                    "WHERE save_id = ?;",
+                    (self._save_id,),
+                ).fetchall()
+            out: dict[str, dict[str, str]] = {}
+            for entity_id, key, value in rows:
+                out.setdefault(entity_id, {})[key] = value
+            return out
+
+        stats = _read()
+        if not stats:
+            self._events.rebuild_state_cache(self._save_id)
+            stats = _read()
+        return stats
+
     def current_stats(self) -> dict[str, dict[str, str]]:
         """Current materialised stats per entity (rebuilds the State_Cache).
+
+        Public API: rebuilds the cache from the Event_Log first, so external
+        callers always get a guaranteed-consistent snapshot. In-engine hot paths
+        use `_read_state_cache()` instead (the cache is already kept fresh).
 
         Returns:
             Mapping of entity_id to a dict of stat_key to stat_value strings.
         """
-        from axiom.schema import get_connection
-
         self._events.rebuild_state_cache(self._save_id)
-        with get_connection(self._db_path) as conn:
-            rows = conn.execute(
-                "SELECT entity_id, stat_key, stat_value FROM State_Cache "
-                "WHERE save_id = ?;",
-                (self._save_id,),
-            ).fetchall()
-        out: dict[str, dict[str, str]] = {}
-        for entity_id, key, value in rows:
-            out.setdefault(entity_id, {})[key] = value
-        return out
+        return self._read_state_cache()
 
     # ------------------------------------------------------------------
     # Interne
@@ -411,8 +461,16 @@ class Session:
         except Exception:
             pass
 
-        events = self._events.get_events(self._save_id, start_turn_id=-1)
-        
+        # Only load the recent turns the prompt can actually use (it caps at the
+        # newest HISTORY_TURN_CAP turns). Loading the ENTIRE Event_Log every turn
+        # was O(turns) per turn → O(turns²) over a long game, for context the
+        # prompt then threw away. Older turns are still recalled via RAG.
+        # get_events uses turn_id > start, so subtract one extra to be inclusive.
+        start_turn = self._turn_id - HISTORY_TURN_CAP - _HISTORY_LOAD_BUFFER - 1
+        if start_turn < 0:
+            start_turn = -1  # early game: load everything (incl. turn 0 genesis)
+        events = self._events.get_events(self._save_id, start_turn_id=start_turn)
+
         # Group events by turn_id
         turns_map = {}
         for ev in events:
@@ -541,7 +599,7 @@ class Session:
 
         # Get active entities and their stats
         entities = self._get_entities()
-        all_stats = self.current_stats()
+        all_stats = self._read_state_cache()
 
         # The real player entity id is name-derived (TICKET-043): resolve it
         # from the current intents (first non-hero actor), never assume "player".

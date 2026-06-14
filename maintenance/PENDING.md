@@ -17,9 +17,11 @@
 | TICKET-064| Backend d'**images** Venice AI (`POST /image/generate`, clé `venice_api_key` déjà en config) | ouvert — idée feature |
 | TICKET-065| `world_tension_level` : **deux casses de clé** (`World_Tension_Level` seedée/lue par le Chronicler vs `world_tension_level` écrite par Studio/compilateur) → le curseur de tension du Studio est sans effet réel | ouvert — bug latent |
 | TICKET-067| Suite de tests : **segfault** quand `test_ambiance_manager.py` (Qt multimédia) précède `test_arbitrator.py` (import torch→triton) — `pytest tests/` plante, chaque moitié passe seule | ouvert — fiabilité de la suite, environnement (Python 3.14/Fedora) |
-| TICKET-069| **Validation Windows sur machine réelle** : reste de l'audit TICKET-062 item 3 — install des deps (selon version Python), audio `.ogg`, images locales, run.bat de bout en bout | ouvert — bloque l'annonce bêta Windows, **nécessite une vraie machine/VM Windows** |
+| TICKET-069| **Validation Windows sur machine réelle** : 🔄 **gros lot fait les 2026-06-14** (crash WinError 32 résolu, classe connexion-non-fermée corrigée moteur+app, suite 753✅, **`run.bat`/startup_check OK + `main.py` atteint la boucle d'événements sans crash**, **audio requalifié quasi nul** : Ogg/FLAC/AAC supportés sur Win11 + aucun asset audio embarqué — cf. `TICKET-062-windows-support/CHANGELOG.md`). Reste : **un vrai tour de jeu GUI** + génération d'images locale | ouvert — bien allégé |
+| TICKET-070| **torch ne charge pas sous Windows** (`OSError WinError 126`) : **VC++ Redistributable x64 manquant**. App dégradée gracieusement (no-op + warning) ; **diagnostic FAIL actionnable** (`_check_embedding_runtime`) **+ alerte GUI au lancement** avec lien de téléchargement (`ui/runtime_check.py`, i18n ×10, marqueur « ne plus afficher »). `requirements.txt` impossible (composant système, pas un paquet pip). Reste action utilisateur → **installer vc_redist.x64.exe** | ouvert — environnement (code côté app = FAIT) |
+| TICKET-072| **Lore Book : passer la récupération en recherche sémantique (vectorielle)** plutôt que par mots-clés SQL. La correction B1 (audit 2026-06-14) a réparé une feature morte via un match SQL `keywords`/nom — correct et déterministe, mais **sans synonymes ni proximité de sens**, ce qui est moins bon pour la narration. Cible : vectoriser les entrées `Lore_Book` (`chunk_type="lore"`) et les ranker par similarité, en gardant un repli mots-clés | ouvert — amélioration narration |
 
-Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
+Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
 relancer le job `deploy`). TICKET-054 (i18n) **validé GUI le 2026-06-13**.
 
@@ -280,3 +282,43 @@ peut être levé que sur une vraie machine/VM Windows. À dérouler dans l'ordre
 **Priorité :** haute (bloque l'annonce bêta côté Windows). **Prérequis : accès à un Windows**
 (VM, ou testeur de confiance). Le diagnostic GUI/CLI (`tools/diagnostic.py`) est l'outil à faire
 tourner en premier par un testeur pour remonter un rapport.
+
+---
+
+## TICKET-072 — Lore Book : recherche sémantique (vectorielle) plutôt que mots-clés SQL
+
+**Contexte.** L'audit moteur du 2026-06-14 (étape `maintenance/audit-moteur-2026-06-14/`) a
+réparé une feature morte (**B1**) : `_fetch_relevant_lore` ne renvoyait jamais rien (filtre sur une
+clé `metadata.type` que `VectorMemory.query()` ne produit pas, et le lore n'était de toute façon
+jamais vectorisé). Le fix retenu, **pragmatique et correct**, lit directement la table `Lore_Book`
+et classe les entrées par **recouvrement de mots-clés / nom** avec l'input du tour (`axiom/
+arbitrator.py::_fetch_relevant_lore`, `keywords` + filtre stopwords).
+
+**Limite actée (retour utilisateur).** Ce match par mots-clés **ne gère ni les synonymes ni la
+proximité de sens** — il faut que le mot exact (ou un mot du nom) apparaisse. Pour la **narration**,
+une recherche **sémantique** (« le héros parle de trahison » doit ramener la lore sur les complots
+même sans le mot « trahison ») est nettement supérieure. « Pour le moment ça passe », mais c'est la
+bonne cible.
+
+**Ce qui serait à faire.**
+- **Vectoriser les entrées `Lore_Book`** dans le store du save avec `chunk_type="lore"` et des
+  métadonnées exploitables (`category`, `name`), p. ex. à la création de la save / au 1ᵉʳ tour, de
+  façon idempotente (et resync au refresh de définition / hot reload).
+- **Récupérer par similarité** : soit une requête vectorielle dédiée filtrée `chunk_type="lore"`,
+  soit fusionner avec la requête narrative existante en **exposant `chunk_type` dans le retour de
+  `VectorMemory.query()`** (aujourd'hui il renvoie `text/turn_id/chunk_type/distance/score` mais les
+  consommateurs filtrent un `metadata.type` inexistant — corriger cette incohérence au passage).
+- **Garder un repli mots-clés** (l'implémentation SQL actuelle) quand l'embedding est indisponible
+  (cf. dégradation gracieuse `VectorMemory._disabled` sous Windows sans VC++, TICKET-070) — le lore
+  ne doit jamais disparaître faute de torch.
+
+**Points d'attention.**
+- **Duplication par save** : la lore est universe-level mais le store vectoriel est par save_id →
+  ré-embarquer la lore pour chaque save. Acceptable (petits volumes) mais à acter.
+- **Coût** : une requête vectorielle de plus par tour (ou fusionnée avec l'existante). L'audit avait
+  justement *supprimé* la requête lore gaspillée ; n'en ré-introduire une que si elle sert vraiment.
+- Tests existants de garde : `tests/test_arbitrator.py::TestLoreBookRetrieval` (à faire évoluer vers
+  l'assertion sémantique le jour J).
+
+**Priorité :** moyenne — amélioration de qualité narrative, pas un bug (la feature marche). Lié à
+[[B1]] de l'audit moteur et à la couche `axiom/memory.py`.
