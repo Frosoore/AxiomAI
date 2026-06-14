@@ -19,9 +19,8 @@
 | TICKET-067| Suite de tests : **segfault** quand `test_ambiance_manager.py` (Qt multimédia) précède `test_arbitrator.py` (import torch→triton) — `pytest tests/` plante, chaque moitié passe seule | ouvert — fiabilité de la suite, environnement (Python 3.14/Fedora) |
 | TICKET-069| **Validation Windows sur machine réelle** : 🔄 **gros lot fait les 2026-06-14** (crash WinError 32 résolu, classe connexion-non-fermée corrigée moteur+app, suite 753✅, **`run.bat`/startup_check OK + `main.py` atteint la boucle d'événements sans crash**, **audio requalifié quasi nul** : Ogg/FLAC/AAC supportés sur Win11 + aucun asset audio embarqué — cf. `TICKET-062-windows-support/CHANGELOG.md`). Reste : **un vrai tour de jeu GUI** + génération d'images locale | ouvert — bien allégé |
 | TICKET-070| **torch ne charge pas sous Windows** (`OSError WinError 126`) : **VC++ Redistributable x64 manquant**. App dégradée gracieusement (no-op + warning) ; **diagnostic FAIL actionnable** (`_check_embedding_runtime`) **+ alerte GUI au lancement** avec lien de téléchargement (`ui/runtime_check.py`, i18n ×10, marqueur « ne plus afficher »). `requirements.txt` impossible (composant système, pas un paquet pip). Reste action utilisateur → **installer vc_redist.x64.exe** | ouvert — environnement (code côté app = FAIT) |
-| TICKET-071| ✅ **FAIT le 2026-06-14** — 8 `with sqlite3.connect` non-fermants (`db_worker` ×6, `import_export_worker` ×2) passés en `closing()`. Bonus : `db_worker` save-univers ferme désormais AVANT `sync_source_if_any` (recompile/replace) → vrai fix Windows, pas que hygiène. Suite verte. *(à déplacer dans DONE.md)* |
 
-Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
+Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
 relancer le job `deploy`). TICKET-054 (i18n) **validé GUI le 2026-06-13**.
 

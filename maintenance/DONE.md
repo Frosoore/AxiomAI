@@ -13,6 +13,23 @@ Récapitulatifs des tickets traités. Les tickets restent numérotés dans
 
 ---
 
+## TICKET-071 — Fin de la classe « connexion sqlite non fermée » (workers)
+
+**Statut :** clos le 2026-06-14 (branche `dev-win-compat`).
+
+Suite logique du fix moteur `schema.py::_ClosingConnection`. Les 8 derniers
+`with sqlite3.connect(...) as conn:` non-fermants côté app passés en `closing()` :
+`workers/db_worker.py` ×6 (read-only ou `commit()` explicite) et
+`workers/import_export_worker.py` ×2 (`commit()` aux l.247/355).
+
+**Pas que de l'hygiène :** `db_worker` save-univers appelle `sync_source_if_any()` (qui
+recompile/replace le `.db`) *juste après* le bloc — l'ancien handle resté ouvert aurait
+verrouillé le `.db` sous Windows (WinError 32). Donc vrai fix Windows. Sur Linux : aucun
+changement de comportement (handle libéré plus tôt). Tests `db_worker`/studio OK, suite verte
+(761 sous Linux le 2026-06-14, cf. `TICKET-062-windows-support/CHANGELOG.md` suite 3).
+
+---
+
 ## TICKET-026 — `parse_tool_call` : résilience confirmée
 
 **Statut :** clos le 2026-06-09, décision utilisateur. Le comportement **résilient** est conservé :
