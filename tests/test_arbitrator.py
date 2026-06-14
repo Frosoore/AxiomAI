@@ -748,6 +748,9 @@ class TestCausalTime:
             result = arb.process_turn("s1", 1, {"player1": "I wait."}, "sys", [])
 
         assert result.elapsed_minutes == 45
+        # App-M3: the absolute in-game time is carried in the result so the GUI
+        # can refresh its clock without a main-thread DB read.
+        assert result.in_game_time == 45
         with sqlite3.connect(db_path) as conn:
             rows = conn.execute(
                 "SELECT in_game_time, description FROM Timeline WHERE save_id='s1' AND turn_id=1;"
@@ -755,6 +758,7 @@ class TestCausalTime:
         assert len(rows) == 1          # exactly one timeline row per turn
         assert rows[0][0] == 45
         assert "45" in rows[0][1]
+        assert result.in_game_time == rows[0][0]
 
     def test_timekeeper_disabled_uses_scene_pace_and_skips_second_call(self, db_path, vm) -> None:
         """With the Timekeeper disabled, no second LLM call is made and the

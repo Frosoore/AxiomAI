@@ -606,9 +606,11 @@ class TabletopView(HardcoreMixin, QWidget):
 
         narrative_text = getattr(result, "narrative_text", "")
 
-        # Phase 11: Advance game time based on LLM decision (now handled in engine)
-        from axiom.db_helpers import get_current_time
-        self._current_time = get_current_time(self._db_path, self._save_id)
+        # Phase 11: Advance game time based on LLM decision (computed in the engine).
+        # The new absolute in-game time is carried in the result, so we update the
+        # clock without a main-thread DB read (App-M3). Fallback to the previous
+        # value if an older result lacks the field.
+        self._current_time = getattr(result, "in_game_time", None) or self._current_time
         self._time_label.setText(self._format_time(self._current_time))
 
         payload = {

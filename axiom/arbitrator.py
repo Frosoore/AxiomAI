@@ -94,6 +94,10 @@ class ArbitratorResult:
     elapsed_minutes: int = 1
     scene_pace: str = "deliberate"
     image_path: str | None = None
+    #: Absolute in-game time (minutes) after this turn — i.e. the value written
+    #: to the Timeline. Lets the GUI refresh its clock without a main-thread DB
+    #: read (see ui/tabletop_view._on_turn_complete).
+    in_game_time: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +595,7 @@ class ArbitratorEngine:
             player_entity_id=player_entity_id,
             elapsed_minutes=elapsed_minutes,
             scene_pace=scene_pace,
+            in_game_time=new_time,
         )
 
     # ------------------------------------------------------------------

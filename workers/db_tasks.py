@@ -169,20 +169,6 @@ class RewindTask(BaseDbTask):
         return cm.rewind(self.save_id, self.target_turn_id)
 
 
-class SnapshotTask(BaseDbTask):
-    """Background task to take a state snapshot without blocking the main flow."""
-    def __init__(self, db_path: str, save_id: str, turn_id: int):
-        super().__init__(db_path)
-        self.save_id = save_id
-        self.turn_id = turn_id
-
-    def execute(self) -> bool:
-        self.signals.status.emit(f"Background snapshotting turn {self.turn_id}...")
-        es = EventSourcer(self.db_path)
-        es.take_snapshot(self.save_id, self.turn_id)
-        return True
-
-
 class AppendEventTask(BaseDbTask):
     def __init__(self, db_path: str, save_id: str, turn_id: int, etype: str, target: str, payload: Any):
         super().__init__(db_path)
@@ -973,5 +959,337 @@ class LoadFullGameStateTask(BaseDbTask):
                 (self.save_id,)
             ).fetchall()
             timeline_list = [dict(r) for r in rows]
-        
+
         return stats_list, inventory_map, timeline_list
+
+
+# ---------------------------------------------------------------------------
+# Universe load/save tasks (extracted from DbWorker's inline "TempTask" pattern)
+# ---------------------------------------------------------------------------
+
+# App-M2: the universe-table migrations are idempotent but each opens its own
+# connection; running them on every load was wasteful. The schema is stable
+# within a process, so we run them once per (process, db_path).
+_MIGRATED_DBS: set[str] = set()
+_MIGRATE_LOCK = threading.Lock()
+
+
+def ensure_universe_migrations(db_path: str) -> None:
+    """Run the idempotent universe-table migrations once per db_path."""
+    with _MIGRATE_LOCK:
+        if db_path in _MIGRATED_DBS:
+            return
+        from axiom.schema import (
+            migrate_lore_book_table,
+            migrate_stat_definitions_table,
+            migrate_entities_table,
+            migrate_scheduled_events_table,
+            migrate_location_tables,
+            migrate_story_setup_table,
+        )
+        migrate_lore_book_table(db_path)
+        migrate_stat_definitions_table(db_path)
+        migrate_entities_table(db_path)
+        migrate_scheduled_events_table(db_path)
+        migrate_location_tables(db_path)
+        migrate_story_setup_table(db_path)
+        _MIGRATED_DBS.add(db_path)
+
+
+def _read_stats_by_entity(conn: sqlite3.Connection) -> dict[str, dict[str, str]]:
+    """All Entity_Stats grouped by entity in ONE query (App-M1, was an N+1)."""
+    out: dict[str, dict[str, str]] = {}
+    for s in conn.execute("SELECT entity_id, stat_key, stat_value FROM Entity_Stats;").fetchall():
+        out.setdefault(s["entity_id"], {})[s["stat_key"]] = s["stat_value"]
+    return out
+
+
+class LoadUniverseMetaTask(BaseDbTask):
+    """Read all Universe_Meta rows as a dict."""
+
+    def execute(self) -> dict:
+        with get_connection(self.db_path) as conn:
+            rows = conn.execute("SELECT key, value FROM Universe_Meta;").fetchall()
+        return {row[0]: row[1] for row in rows}
+
+
+class LoadEntitiesAndRulesTask(BaseDbTask):
+    """Read entities (+stats), rules, lore book and stat definitions."""
+
+    def execute(self) -> tuple:
+        ensure_universe_migrations(self.db_path)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            stats_by_entity = _read_stats_by_entity(conn)
+            e_rows = conn.execute("SELECT entity_id, entity_type, name, description FROM Entities WHERE is_active = 1;").fetchall()
+            entities = []
+            for r in e_rows:
+                entities.append({
+                    "entity_id": r["entity_id"],
+                    "entity_type": r["entity_type"],
+                    "name": r["name"],
+                    "description": r["description"],
+                    "stats": stats_by_entity.get(r["entity_id"], {}),
+                })
+
+            rules = []
+            r_rows = conn.execute("SELECT rule_id, priority, conditions, actions, target_entity FROM Rules;").fetchall()
+            for r in r_rows:
+                rules.append({
+                    "rule_id": r["rule_id"], "priority": r["priority"],
+                    "conditions": json.loads(r["conditions"]) if r["conditions"] else {},
+                    "actions": json.loads(r["actions"]) if r["actions"] else [],
+                    "target_entity": r["target_entity"]
+                })
+
+            lb_rows = conn.execute("SELECT entry_id, category, name, content FROM Lore_Book;").fetchall()
+            lore = [{"entry_id": r["entry_id"], "category": r["category"], "name": r["name"], "content": r["content"]} for r in lb_rows]
+
+            sd_rows = conn.execute("SELECT stat_id, name, description, value_type, parameters FROM Stat_Definitions;").fetchall()
+            stat_defs = []
+            for r in sd_rows:
+                stat_defs.append({
+                    "stat_id": r["stat_id"], "name": r["name"], "description": r["description"],
+                    "value_type": r["value_type"], "parameters": json.loads(r["parameters"])
+                })
+        return entities, rules, lore, stat_defs
+
+
+class SaveUniverseMetaTask(BaseDbTask):
+    """Atomic update of multiple keys in Universe_Meta."""
+
+    def __init__(self, db_path: str, meta: dict):
+        super().__init__(db_path)
+        self.meta = meta
+
+    def execute(self) -> bool:
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            for k, v in self.meta.items():
+                conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);", (k, str(v)))
+            conn.commit()
+        # TICKET-027 : univers-dossier → l'arbo texte reste la vérité.
+        self._sync_definition_source()
+        return True
+
+
+class SaveFullUniverseTask(BaseDbTask):
+    """Replace the full universe definition (entities, rules, meta, …)."""
+
+    def __init__(self, db_path: str, entities, rules, meta, lore_book,
+                 stat_definitions=None, scheduled_events=None, story_setup=None,
+                 locations=None, connections=None):
+        super().__init__(db_path)
+        self.entities = entities
+        self.rules = rules
+        self.meta = meta
+        self.lore_book = lore_book
+        self.stat_definitions = stat_definitions
+        self.scheduled_events = scheduled_events
+        self.story_setup = story_setup
+        self.locations = locations
+        self.connections = connections
+
+    def execute(self) -> bool:
+        ensure_universe_migrations(self.db_path)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.execute("DELETE FROM Entity_Stats;")
+            conn.execute("DELETE FROM Entities;")
+            for e in self.entities:
+                eid = e.get("entity_id", "").strip()
+                if not eid:
+                    continue
+                conn.execute("INSERT INTO Entities (entity_id, entity_type, name, description, is_active) VALUES (?, ?, ?, ?, 1);",
+                           (eid, e.get("entity_type", "npc"), e.get("name", ""), e.get("description", "")))
+                for sk, sv in e.get("stats", {}).items():
+                    conn.execute("INSERT INTO Entity_Stats (entity_id, stat_key, stat_value) VALUES (?, ?, ?);", (eid, str(sk), str(sv)))
+
+            conn.execute("DELETE FROM Rules;")
+            for r in self.rules:
+                conn.execute("INSERT INTO Rules (rule_id, priority, conditions, actions, target_entity) VALUES (?, ?, ?, ?, ?);",
+                           (r["rule_id"], int(r.get("priority", 0)), json.dumps(r.get("conditions", {})), json.dumps(r.get("actions", [])), r.get("target_entity", "*")))
+
+            conn.execute("DELETE FROM Stat_Definitions;")
+            if self.stat_definitions:
+                for s in self.stat_definitions:
+                    conn.execute("INSERT INTO Stat_Definitions (stat_id, name, description, value_type, parameters) VALUES (?, ?, ?, ?, ?);",
+                               (s["stat_id"], s["name"], s.get("description", ""), s["value_type"], json.dumps(s.get("parameters", {}))))
+
+            for k, v in self.meta.items():
+                conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);", (k, str(v)))
+
+            conn.execute("DELETE FROM Lore_Book;")
+            for l in self.lore_book:
+                conn.execute("INSERT INTO Lore_Book (entry_id, category, name, content) VALUES (?, ?, ?, ?);", (l["entry_id"], l.get("category", ""), l.get("name", ""), l.get("content", "")))
+
+            conn.execute("DELETE FROM Scheduled_Events;")
+            if self.scheduled_events:
+                for ev in self.scheduled_events:
+                    conn.execute("INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) VALUES (?, ?, ?, ?);",
+                               (ev["event_id"], int(ev["trigger_minute"]), ev["title"], ev["description"]))
+
+            conn.execute("DELETE FROM Story_Setup;")
+            if self.story_setup:
+                for ss in self.story_setup:
+                    conn.execute(
+                        "INSERT INTO Story_Setup (setup_id, question, type, options, max_selections, priority) VALUES (?, ?, ?, ?, ?, ?);",
+                        (ss["setup_id"], ss["question"], ss["type"], json.dumps(ss.get("options", [])), ss.get("max_selections", 1), ss.get("priority", 0))
+                    )
+
+            conn.execute("DELETE FROM Location_Connections;")
+            conn.execute("DELETE FROM Locations;")
+            if self.locations:
+                for l in self.locations:
+                    conn.execute(
+                        "INSERT INTO Locations (location_id, name, scale, parent_id, description, x, y) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                        (l["location_id"], l["name"], l["scale"], l.get("parent_id"), l.get("description", ""), l.get("x", 0), l.get("y", 0))
+                    )
+            if self.connections:
+                for c in self.connections:
+                    conn.execute(
+                        "INSERT INTO Location_Connections (source_id, target_id, distance_km) VALUES (?, ?, ?);",
+                        (c["source_id"], c["target_id"], int(c["distance_km"]))
+                    )
+            conn.commit()
+        # TICKET-027 : univers-dossier → l'arbo texte reste la vérité.
+        self._sync_definition_source()
+        return True
+
+
+class LoadLibraryTask(BaseDbTask):
+    """Discover universes in a library directory (flat .db + source folders)."""
+
+    def __init__(self, db_path: str, library_dir: str):
+        super().__init__(db_path)
+        self.library_dir = library_dir
+
+    def execute(self) -> list:
+        from axiom.library import discover_universes
+        return discover_universes(self.library_dir)
+
+
+class LoadSavesTask(BaseDbTask):
+    """List a universe's saves (§7.6 : separate saves + legacy embedded)."""
+
+    def execute(self) -> list:
+        from axiom.savestore import list_saves
+        return list_saves(self.db_path)
+
+
+class LoadFullUniverseTask(BaseDbTask):
+    """Atomic load of entities, rules, lore, meta, stat defs, events, setup,
+    history, locations and connections."""
+
+    def __init__(self, db_path: str, save_id: str = ""):
+        super().__init__(db_path)
+        self.save_id = save_id
+
+    def execute(self) -> tuple:
+        ensure_universe_migrations(self.db_path)
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            # 1. Entities (+ stats grouped in one query — App-M1)
+            stats_by_entity = _read_stats_by_entity(conn)
+            e_rows = conn.execute("SELECT entity_id, entity_type, name, description FROM Entities WHERE is_active = 1;").fetchall()
+            entities = []
+            for r in e_rows:
+                entities.append({
+                    "entity_id": r["entity_id"],
+                    "entity_type": r["entity_type"],
+                    "name": r["name"],
+                    "description": r["description"],
+                    "stats": stats_by_entity.get(r["entity_id"], {}),
+                })
+
+            # 2. Rules
+            rules = []
+            r_rows = conn.execute("SELECT rule_id, priority, conditions, actions, target_entity FROM Rules;").fetchall()
+            for r in r_rows:
+                rules.append({
+                    "rule_id": r["rule_id"], "priority": r["priority"],
+                    "conditions": json.loads(r["conditions"]) if r["conditions"] else {},
+                    "actions": json.loads(r["actions"]) if r["actions"] else [],
+                    "target_entity": r["target_entity"]
+                })
+
+            # 3. Lore
+            lb_rows = conn.execute("SELECT entry_id, category, name, content FROM Lore_Book;").fetchall()
+            lore = [{"entry_id": r["entry_id"], "category": r["category"], "name": r["name"], "content": r["content"]} for r in lb_rows]
+
+            # 4. Meta
+            m_rows = conn.execute("SELECT key, value FROM Universe_Meta;").fetchall()
+            meta = {row["key"]: row["value"] for row in m_rows}
+
+            # 5. Stat Definitions
+            sd_rows = conn.execute("SELECT stat_id, name, description, value_type, parameters FROM Stat_Definitions;").fetchall()
+            stat_defs = []
+            for r in sd_rows:
+                stat_defs.append({
+                    "stat_id": r["stat_id"], "name": r["name"], "description": r["description"],
+                    "value_type": r["value_type"], "parameters": json.loads(r["parameters"])
+                })
+
+            # 6. Scheduled Events
+            se_rows = conn.execute("SELECT event_id, trigger_minute, title, description FROM Scheduled_Events;").fetchall()
+            scheduled_events = [{"event_id": r["event_id"], "trigger_minute": r["trigger_minute"], "title": r["title"], "description": r["description"]} for r in se_rows]
+
+            # 7. Story Setup
+            ss_rows = conn.execute("SELECT setup_id, question, type, options, max_selections, priority FROM Story_Setup ORDER BY priority ASC;").fetchall()
+            story_setup = [{
+                "setup_id": r["setup_id"],
+                "question": r["question"],
+                "type": r["type"],
+                "options": json.loads(r["options"]),
+                "max_selections": r["max_selections"],
+                "priority": r["priority"]
+            } for r in ss_rows]
+
+            # 8. History
+            history = []
+            max_tid = 0
+            difficulty = "Normal"
+            if self.save_id:
+                d_row = conn.execute("SELECT difficulty FROM Saves WHERE save_id = ?;", (self.save_id,)).fetchone()
+                if d_row:
+                    difficulty = d_row[0]
+
+                h_rows = conn.execute("SELECT turn_id, event_type, payload FROM Event_Log WHERE save_id = ? AND event_type IN ('user_input', 'narrative_text', 'hero_intent') ORDER BY event_id ASC;", (self.save_id,)).fetchall()
+                for row in h_rows:
+                    max_tid = max(max_tid, row[0])
+                    history.append({"turn_id": row[0], "event_type": row[1], "payload": json.loads(row[2])})
+
+            # 9. Locations
+            loc_rows = conn.execute("SELECT location_id, name, scale, parent_id, description, x, y FROM Locations;").fetchall()
+            locations = [dict(r) for r in loc_rows]
+
+            # 10. Connections
+            conn_rows = conn.execute("SELECT source_id, target_id, distance_km FROM Location_Connections;").fetchall()
+            connections = [dict(r) for r in conn_rows]
+
+        return entities, rules, lore, meta, stat_defs, scheduled_events, story_setup, history, max_tid, locations, connections, difficulty
+
+
+class LoadGlobalPersonasTask(BaseDbTask):
+    """Read the Global_Personas table."""
+
+    def execute(self) -> list:
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT persona_id, name, description FROM Global_Personas;").fetchall()
+        return [dict(r) for r in rows]
+
+
+class SaveGlobalPersonasTask(BaseDbTask):
+    """Replace the Global_Personas table."""
+
+    def __init__(self, db_path: str, personas: list[dict]):
+        super().__init__(db_path)
+        self.personas = personas
+
+    def execute(self) -> bool:
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("DELETE FROM Global_Personas;")
+            for p in self.personas:
+                conn.execute("INSERT INTO Global_Personas (persona_id, name, description) VALUES (?, ?, ?);", (p["persona_id"], p["name"], p["description"]))
+            conn.commit()
+        return True

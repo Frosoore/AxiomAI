@@ -33,8 +33,9 @@ print(result.narrative_text)
   save state by hand.
 - **Causal time** — an in-game clock advances with the story; an off-screen
   "Chronicler" simulates the rest of the world while the player is away.
-- **Vector memory (RAG)** — long-term memory and lore retrieval backed by a
-  local vector store.
+- **Vector memory (RAG)** — long-term narrative memory backed by a local vector
+  store; the structured Lore Book is retrieved by keyword from the universe
+  database.
 - **Content generation** — populate a universe (entities, lore, map, rules…)
   with an LLM, from the command line or from Python.
 - **Optional scene illustration** — generate an image per turn via Stable

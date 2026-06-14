@@ -12,7 +12,9 @@ stopwords (`_LORE_STOPWORDS`, sinon le « The » des noms matchait tout). Avant 
 VectorMemory en filtrant sur une clé `metadata.type` que `query()` ne produit jamais **et** le lore
 n'était jamais vectorisé → toujours `[]` + une requête vectorielle gaspillée/tour. Vérifié en réel
 sur Myria (5 entrées pertinentes sur « aicamed », `The Aicamed Federation` en tête).
-+5 tests (`TestLoreBookRetrieval`).
++5 tests (`TestLoreBookRetrieval`). **Suite logique → TICKET-072** : le match mots-clés ne gère
+ni synonymes ni proximité de sens ; passer la récupération du lore en **recherche sémantique
+(vectorielle)** serait meilleur pour la narration (retenu « ça passe pour le moment »).
 
 ### B2 — Overlay de modifiers plus jamais périmé (`axiom/arbitrator.py`)
 Suppression du cache inter-tours `_stats_cache` : `_fetch_effective_stats()` relit désormais
@@ -58,6 +60,19 @@ publique `current_stats()` garde sa sémantique (rebuild) pour les appelants ext
   `get_connection`. **Exception** : `load_config` laissé en import local dans `process_turn` —
   les tests patchent `axiom.config.load_config`, un hoist casserait le rebind.
 - **M5** — `datetime.utcnow()` (déprécié 3.12+) → `datetime.now(timezone.utc)` (`db_helpers.py`).
+
+## Documentation (site Sphinx `docs/`)
+Seules 2 inexactitudes hand-written à corriger (la référence d'API se régénère depuis les
+docstrings — déjà mises à jour là où le comportement a changé : `_fetch_relevant_lore`,
+`invalidate_stats_cache`, `current_stats`/`_read_state_cache`) :
+- `docs/index.md` — « lore retrieval backed by a local vector store » devenait faux (B1) : le
+  Lore Book est désormais récupéré **par mots-clés depuis la base** ; seul le souvenir narratif
+  long terme reste vectoriel.
+- `docs/guides/saves.md` — commentaire `list_checkpoints() # turns with a snapshot` **déjà faux
+  avant** (la méthode liste les tours de l'Event_Log, pas les Snapshots) → « every recorded turn
+  you can rewind to ». Distinction d'autant plus utile depuis A2 (snapshots ≠ checkpoints).
+
+`docs/_build/` est gitignoré (artefact régénéré au déploiement GitHub Pages) — non modifié.
 
 ## Tests
 - +5 tests (`TestLoreBookRetrieval` ×4, `TestEffectiveStatsFreshness` ×1).
