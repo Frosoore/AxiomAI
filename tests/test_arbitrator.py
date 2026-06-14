@@ -105,6 +105,75 @@ def db_path(tmp_path: Path) -> str:
     return path
 
 
+class TestLoreBookRetrieval:
+    """B1: _fetch_relevant_lore reads Lore_Book directly and ranks by keyword/name.
+
+    Regression guard — this used to always return [] (it filtered on a metadata
+    key the vector query never produced, and lore was never embedded), so the
+    Lore Book never reached the narrator prompt.
+    """
+
+    @staticmethod
+    def _seed_lore(db_path: str) -> None:
+        with sqlite3.connect(db_path) as conn:
+            conn.executemany(
+                "INSERT INTO Lore_Book (entry_id, category, name, keywords, content) "
+                "VALUES (?,?,?,?,?);",
+                [
+                    ("e1", "factions", "The Aicamed Federation",
+                     "aicamed, federation, mages", "A reclusive order of mages."),
+                    ("e2", "places", "The Sunken Library",
+                     "library, books, archive", "A drowned hall of forbidden tomes."),
+                ],
+            )
+            conn.commit()
+
+    def test_returns_matching_entry_by_keyword(self, db_path: str) -> None:
+        self._seed_lore(db_path)
+        arb = ArbitratorEngine(db_path, [])
+        res = arb._fetch_relevant_lore("s1", "I seek the mages of the federation.")
+        assert [e["name"] for e in res] == ["The Aicamed Federation"]
+        assert res[0]["category"] == "factions"
+        assert "reclusive" in res[0]["content"]
+
+    def test_no_match_returns_empty(self, db_path: str) -> None:
+        self._seed_lore(db_path)
+        arb = ArbitratorEngine(db_path, [])
+        assert arb._fetch_relevant_lore("s1", "I walk down the road.") == []
+
+    def test_stopwords_alone_do_not_match(self, db_path: str) -> None:
+        # "The" leads both entry names but is a stopword → no spurious matches.
+        self._seed_lore(db_path)
+        arb = ArbitratorEngine(db_path, [])
+        assert arb._fetch_relevant_lore("s1", "the the the") == []
+
+    def test_empty_lore_book_returns_empty(self, db_path: str) -> None:
+        arb = ArbitratorEngine(db_path, [])
+        assert arb._fetch_relevant_lore("s1", "mages and federation") == []
+
+
+class TestEffectiveStatsFreshness:
+    """B2: effective stats are re-read every turn (no stale per-turn cache).
+
+    The old `_stats_cache` froze the base+modifier overlay at the end of a turn,
+    so a modifier added/expired afterwards was not reflected until a
+    chronicler/rewind invalidation. We now always re-read State_Cache +
+    Active_Modifiers.
+    """
+
+    def test_modifier_added_after_turn_is_reflected(self, db_path: str, vm) -> None:
+        arb, _llm = _make_arbitrator(
+            db_path, vm, LLMResponse("ok", {"state_changes": []}, "stop")
+        )
+        arb.process_turn("s1", 1, {"player1": "I wait."}, "sys", [])
+
+        # A modifier applied AFTER the turn must show up on the next stats fetch,
+        # not be masked by a stale snapshot cached during the turn.
+        ModifierProcessor(db_path).add_modifier("s1", "player1", "HP", 50, minutes=60)
+        eff = arb._fetch_effective_stats("s1")
+        assert eff["player1"]["HP"] == "150"  # base 100 + modifier 50
+
+
 @pytest.fixture
 def vm(tmp_path: Path):
     # Injecte le faux embedder dans le singleton : la connexion réelle (chargement

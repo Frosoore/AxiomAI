@@ -25,6 +25,8 @@ the prompt immediately before the user's input, then immediately cleared
 so it cannot affect turn N+2.
 """
 
+import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -38,10 +40,27 @@ from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 from axiom.prompts import (
     HISTORY_TURN_CAP,
     build_narrative_prompt,
-    format_entity_stats_block
+    build_timekeeper_prompt,
+    format_entity_stats_block,
 )
 from axiom.memory import VectorMemory
-from axiom.db_helpers import get_current_time, get_time_of_day_context
+from axiom.db_helpers import (
+    get_current_time,
+    get_spatial_context,
+    get_time_of_day_context,
+)
+
+
+# Common words ignored when matching a turn's input against Lore_Book keywords
+# and entry names — otherwise articles/prepositions (notably the leading "The"
+# in most entry names) match nearly every entry and drown the ranking in noise.
+_LORE_STOPWORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "of", "and", "or", "to", "in", "on", "at", "for", "with",
+    "is", "are", "was", "were", "be", "by", "as", "it", "its", "this", "that",
+    "these", "those", "i", "me", "my", "you", "your", "we", "our", "they",
+    "them", "he", "she", "his", "her", "about", "tell", "what", "who", "where",
+    "from", "into", "do", "does", "did", "go", "get", "us",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +124,6 @@ class ArbitratorEngine:
         self._pending_correction: str | None = None
         self._mode: str = "Normal"
         self._hero_entity_id: str | None = None
-        self._stats_cache: dict[str, dict[str, str]] | None = None
 
     def configure(self, llm: LLMBackend, vector_memory: VectorMemory, time_llm: LLMBackend | None = None) -> None:
         """Inject runtime dependencies before process_turn."""
@@ -114,8 +132,15 @@ class ArbitratorEngine:
         self._time_llm = time_llm if time_llm is not None else llm
 
     def invalidate_stats_cache(self) -> None:
-        """Clear the in-memory stats cache (call after rewind or external DB writes)."""
-        self._stats_cache = None
+        """No-op kept for API compatibility.
+
+        Effective stats (base + modifier overlay) are now re-read from
+        State_Cache + Active_Modifiers on every turn (see
+        `_fetch_effective_stats`), so there is no stale cross-turn cache to
+        clear. Previously this dropped an in-memory snapshot that could keep an
+        *expired* modifier's delta baked in until the next chronicler/rewind —
+        callers (rewind, post-chronicler) still call this harmlessly.
+        """
 
     # ------------------------------------------------------------------
     # Public API
@@ -183,6 +208,7 @@ class ArbitratorEngine:
         # We query for both prior narrative chunks and structured lore
         # Point 2: Pass current_turn_id for Time-Weighted search
         # Mission: Exclude turns that are already in the conversation history (HISTORY_TURN_CAP)
+        # NB: imported locally so tests can patch `axiom.config.load_config`.
         from axiom.config import load_config
         cfg = load_config()
         
@@ -217,8 +243,9 @@ class ArbitratorEngine:
             if eid in relevant_entity_ids
         }
 
-        # Fetch entity names and types
-        from axiom.db_helpers import get_connection
+        # Fetch entity names/types AND the player persona in a single connection
+        # (both feed the prompt below — no need for two round-trips).
+        player_persona = ""
         with get_connection(self._db_path) as conn:
             name_rows = conn.execute("SELECT entity_id, name, entity_type FROM Entities").fetchall()
             id_to_name = {r["entity_id"]: r["name"] for r in name_rows}
@@ -227,6 +254,15 @@ class ArbitratorEngine:
             # If not explicitly named, default to "Player" to give it a proper noun.
             if "player" not in id_to_name:
                 id_to_name["player"] = "Player"
+            try:
+                row = conn.execute(
+                    "SELECT player_persona FROM Saves WHERE save_id = ?;",
+                    (save_id,),
+                ).fetchone()
+                if row and row["player_persona"]:
+                    player_persona = row["player_persona"]
+            except sqlite3.Error:
+                pass
 
         # Step 4 — Build prompt (with pending correction)
         entity_block = format_entity_stats_block(
@@ -252,7 +288,6 @@ class ArbitratorEngine:
         spatial_ctx = None
         player_loc_id = filtered_stats.get(player_entity_id, {}).get("Location")
         if player_loc_id:
-            from axiom.db_helpers import get_spatial_context
             spatial_ctx = get_spatial_context(self._db_path, player_loc_id)
 
         # Phase 12.1: Fetch triggered scheduled events
@@ -261,19 +296,6 @@ class ArbitratorEngine:
         # Map intents to names
         named_intents = {id_to_name.get(eid, eid): intent for eid, intent in (intents or {}).items()}
         hero_name_str = id_to_name.get(hero_entity_id, hero_entity_id) if hero_entity_id else None
-
-        # Fetch player persona from Saves table
-        player_persona = ""
-        try:
-            with get_connection(self._db_path) as conn:
-                row = conn.execute(
-                    "SELECT player_persona FROM Saves WHERE save_id = ?;",
-                    (save_id,),
-                ).fetchone()
-                if row and row["player_persona"]:
-                    player_persona = row["player_persona"]
-        except Exception:
-            pass
 
         # Collect local character names for Group Awareness
         local_character_names = []
@@ -351,14 +373,12 @@ class ArbitratorEngine:
         # scene pace alone — cheaper but coarser. See Pilier 5 / TICKET-015.
         elapsed_minutes: int | None = None
         if cfg.timekeeper_enabled:
-            from axiom.prompts import build_timekeeper_prompt
             prompt = build_timekeeper_prompt(combined_intents_text, narrative_text)
             try:
                 time_llm = getattr(self, "_time_llm", self._llm)
                 tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
                 tk_data = getattr(tk_resp, "tool_call", {}) or {}
                 if not tk_data:
-                    import re, json
                     tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
                     match = re.search(r'\{.*\}', tk_text, re.DOTALL)
                     if match:
@@ -397,6 +417,10 @@ class ArbitratorEngine:
         rejected_changes: list[dict[str, Any]] = []
         rejection_messages: list[str] = []
 
+        # Load the set of defined stat names ONCE per turn (lowercased) instead
+        # of re-querying Stat_Definitions for every single change (was an N+1).
+        defined_stats = self._load_defined_stats() if state_changes else set()
+
         for change in state_changes:
             entity_id: str = change.get("entity_id", "")
             stat_key: str = change.get("stat_key", "")
@@ -404,7 +428,7 @@ class ArbitratorEngine:
             value: Any = change.get("value")
 
             valid, reason = self._validate_change(
-                entity_id, stat_key, delta, value, all_stats
+                entity_id, stat_key, delta, value, all_stats, defined_stats
             )
 
             if valid:
@@ -547,16 +571,14 @@ class ArbitratorEngine:
         self._event_sourcer.append_events_batch(_pending_events)
 
         # Keep the materialised State_Cache in sync with this turn's changes so
-        # DB reads (sidebar load tasks) don't show stats frozen at session load.
-        # _stats_cache fixes the Arbitrator side; this fixes the DB side. (TICKET-002)
+        # DB reads (sidebar load tasks, next turn's stat fetch) don't show stats
+        # frozen at session load. This is also what lets the next turn re-read
+        # fresh effective stats without any in-memory cache. (TICKET-002)
         self._event_sourcer.update_state_cache(save_id, _pending_events)
 
         # Phase 12.1: Mark scheduled events as fired
         for ev in triggered_events:
             self._mark_event_as_fired(save_id, ev["event_id"])
-
-        # Cache the final stats for re-use next turn (avoids re-reading State_Cache)
-        self._stats_cache = all_stats
 
         return ArbitratorResult(
             narrative_text=narrative_text,
@@ -619,7 +641,6 @@ class ArbitratorEngine:
             )
 
         # Streaming path
-        import re
         raw_tokens: list[str] = []
         is_json_block = False
         buffer = ""
@@ -666,9 +687,6 @@ class ArbitratorEngine:
         Returns:
             Dict mapping entity_id -> effective stats dict.
         """
-        if self._stats_cache is not None:
-            return self._stats_cache
-
         from axiom.textfmt import fmt_num
         with get_connection(self._db_path) as conn:
             stat_rows = conn.execute(
@@ -714,8 +732,6 @@ class ArbitratorEngine:
         - Entities of type 'world' or 'faction' (global context).
         - NPCs that share the same 'Location' stat as the player.
         """
-        import re
-
         # 1. Mentions-based detection
         text_to_scan = user_message.lower()
         for msg in history[-3:]:
@@ -790,24 +806,54 @@ class ArbitratorEngine:
         except Exception as e:
             logger.error(f"[ARBITRATOR] Error marking event as fired: {e}")
 
-    def _fetch_relevant_lore(self, save_id: str, user_message: str) -> list[dict]:
+    def _fetch_relevant_lore(self, save_id: str, user_message: str, k: int = 5) -> list[dict]:
         """Fetch Lore Book entries relevant to the current turn.
 
-        Uses RAG to find the most relevant entries from the Lore_Book table.
+        Reads the structured `Lore_Book` table directly and ranks entries by
+        keyword / name overlap with the current input. Returns the top-k
+        matches as `{category, name, content}` dicts (the shape the prompt
+        builder expects), or an empty list when nothing matches.
+
+        Previously this went through VectorMemory and filtered on a metadata
+        key the query never returned (and lore was never embedded), so it
+        always yielded an empty list while still paying a vector query per turn.
+        Lore_Book is universe-level structured data with an explicit `keywords`
+        column — a direct, deterministic SQL lookup is both correct and cheaper.
         """
-        # We query VectorMemory but specifically look for 'lore' type metadata
-        # (Assuming vector_memory.py supports this or we can filter results)
-        results = self._vector_memory.query(save_id, user_message, k=5)
-        
-        relevant_lore: list[dict] = []
-        for r in results:
-            if r.get("metadata", {}).get("type") == "lore":
-                relevant_lore.append({
-                    "category": r["metadata"].get("category", ""),
-                    "name": r["metadata"].get("name", ""),
-                    "content": r["text"]
-                })
-        return relevant_lore
+        text = (user_message or "").lower()
+        if not text:
+            return []
+        words = {w for w in re.findall(r"\b\w+\b", text) if w not in _LORE_STOPWORDS}
+        if not words:
+            return []
+
+        try:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute(
+                    "SELECT category, name, keywords, content FROM Lore_Book;"
+                ).fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"[ARBITRATOR] Error fetching lore book: {e}")
+            return []
+
+        scored: list[tuple[int, dict]] = []
+        for r in rows:
+            name = (r["name"] or "").strip()
+            keywords = (r["keywords"] or "").lower()
+            # Tokenise both the keywords column and the entry name for matching.
+            tokens = set(re.findall(r"\b\w+\b", keywords)) | set(
+                re.findall(r"\b\w+\b", name.lower())
+            )
+            score = len(words & tokens)
+            if score > 0:
+                scored.append((score, {
+                    "category": r["category"] or "",
+                    "name": name,
+                    "content": r["content"] or "",
+                }))
+
+        scored.sort(key=lambda s: s[0], reverse=True)
+        return [entry for _score, entry in scored[:k]]
 
     def _get_travel_distance(self, source_id: str, target_id: str) -> int:
         """Query the distance between two locations in kilometers."""
@@ -823,6 +869,19 @@ class ArbitratorEngine:
             pass
         return 0
 
+    def _load_defined_stats(self) -> set[str]:
+        """Return the set of defined stat names (lowercased) for this universe.
+
+        Read once per turn and passed to `_validate_change` so the stat-restriction
+        rule no longer issues one query per proposed change (former N+1).
+        """
+        try:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
+            return {str(r[0]).lower() for r in rows}
+        except sqlite3.Error:
+            return set()
+
     def _validate_change(
         self,
         entity_id: str,
@@ -830,6 +889,7 @@ class ArbitratorEngine:
         delta: float | None,
         value: Any,
         all_effective_stats: dict[str, dict[str, str]],
+        defined_stats: set[str],
     ) -> tuple[bool, str]:
         """Validate a single proposed state change.
 
@@ -846,6 +906,8 @@ class ArbitratorEngine:
             value:               Absolute assignment value, or None if using delta.
             all_effective_stats: Full map of entity_id -> stats for all active
                                  entities in this save.
+            defined_stats:       Lowercased set of stat names defined in this
+                                 universe (loaded once per turn).
 
         Returns:
             (True, "") if valid, or (False, reason_string) if invalid.
@@ -860,13 +922,8 @@ class ArbitratorEngine:
         # Stat Restriction Rule: Only allow stats defined in Stat_Definitions (case-insensitive)
         # Plus the special 'Description' stat which is allowed for all entities.
         if stat_key.lower() != "description":
-            with get_connection(self._db_path) as conn:
-                row = conn.execute(
-                    "SELECT 1 FROM Stat_Definitions WHERE LOWER(name) = ?;",
-                    (stat_key.lower(),)
-                ).fetchone()
-                if not row:
-                    return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
+            if stat_key.lower() not in defined_stats:
+                return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
 
         # Resource sufficiency rules (prevent stats like HP, Gold, etc. from going below zero)
         entity_stats = all_effective_stats.get(entity_id, {})
@@ -900,7 +957,7 @@ class ArbitratorEngine:
                     return True, ""
                 
                 return False, (
-                    f"the player does not have enough {stat_key} (current: {current_val:.0f})"
+                    f"{entity_id} does not have enough {stat_key} (current: {current_val:.0f})"
                 )
 
         return True, ""
