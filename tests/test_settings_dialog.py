@@ -224,3 +224,18 @@ def test_settings_dialog_doc_tooltips_toggle(qtbot) -> None:
 
     dialog._doc_tooltips_cb.setChecked(True)
     assert dialog.collect_config().doc_tooltips_enabled is True
+
+
+def test_settings_dialog_basic_prompt(qtbot) -> None:
+    """The basic_prompt UI field loads and collects values correctly."""
+    cfg = AppConfig(basic_prompt="Speak only in simple sentences.")
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._basic_prompt.toPlainText() == "Speak only in simple sentences."
+
+    dialog._basic_prompt.setPlainText("Use French words occasionally.")
+
+    updated = dialog.collect_config()
+    assert updated.basic_prompt == "Use French words occasionally."
+

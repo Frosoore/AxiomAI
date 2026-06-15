@@ -149,6 +149,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "audio",
         "timekeeper",
         "doc_tooltips",
+        "basic_prompt",
     ),
     # Chrome of the main window itself (status bar etc.) — shown in the
     # directory, but has no dedicated "explain this page" button.

@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QComboBox,
     QCheckBox,
+    QTextEdit,
 )
 
 from axiom.config import (
@@ -358,10 +359,16 @@ class SettingsDialog(QDialog):
         # TICKET-057 : doc tooltips on hover can be turned off.
         self._doc_tooltips_cb = doc(QCheckBox(tr("show_doc_tooltips")), "settings.doc_tooltips")
 
+        self._basic_prompt = doc(QTextEdit(), "settings.basic_prompt")
+        self._basic_prompt.setAcceptRichText(False)
+        self._basic_prompt.setMaximumHeight(80)
+        self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
+
         self._lang_label = QLabel(tr("language"))
         self._chronicler_label = QLabel(tr("chronicler_minutes_label"))
         self._font_size_label = QLabel(tr("ui_font_size"))
         self._rag_chunks_label = QLabel(tr("rag_chunks"))
+        self._basic_prompt_label = QLabel(tr("basic_prompt_label"))
 
         general_form.addRow(self._lang_label, self._lang_combo)
         general_form.addRow(self._chronicler_label, self._chronicler_spin)
@@ -370,8 +377,10 @@ class SettingsDialog(QDialog):
         general_form.addRow("", self._audio_cb)
         general_form.addRow("", self._timekeeper_cb)
         general_form.addRow("", self._doc_tooltips_cb)
+        general_form.addRow(self._basic_prompt_label, self._basic_prompt)
         
         layout.addWidget(self._general_group)
+
 
         # ---- Buttons ----
         self._buttons = QDialogButtonBox(
@@ -484,6 +493,9 @@ class SettingsDialog(QDialog):
         self._audio_cb.setText(tr("enable_audio"))
         self._timekeeper_cb.setText(tr("timekeeper_enabled"))
         self._doc_tooltips_cb.setText(tr("show_doc_tooltips"))
+        self._basic_prompt_label.setText(tr("basic_prompt_label"))
+        self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
+
         
         # Image Generation tab
         img_tab_idx = self._tabs.indexOf(self._image_widget)
@@ -539,6 +551,7 @@ class SettingsDialog(QDialog):
         self._audio_cb.setChecked(config.enable_audio)
         self._timekeeper_cb.setChecked(config.timekeeper_enabled)
         self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
+        self._basic_prompt.setPlainText(config.basic_prompt)
 
         # Image settings
         self._image_enabled_cb.setChecked(config.image_generation_enabled)
@@ -606,6 +619,7 @@ class SettingsDialog(QDialog):
             doc_tooltips_enabled=self._doc_tooltips_cb.isChecked(),
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
+            basic_prompt=self._basic_prompt.toPlainText().strip(),
             # Image generation settings
             image_generation_enabled=self._image_enabled_cb.isChecked(),
             image_backend=self._image_backend_combo.currentData(),

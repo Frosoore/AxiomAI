@@ -114,12 +114,15 @@ class TestSaveConfig:
             llm_backend="gemini",
             gemini_api_key="my-secret-key",
             chronicler_interval=10,
+            basic_prompt="Speak only in English",
         )
         save_config(original)
         loaded = load_config()
         assert loaded.llm_backend == "gemini"
         assert loaded.gemini_api_key == "my-secret-key"
         assert loaded.chronicler_interval == 10
+        assert loaded.basic_prompt == "Speak only in English"
+
 
     def test_creates_directory(self, tmp_path: Path) -> None:
         """save_config creates any missing parent directories for the settings file."""

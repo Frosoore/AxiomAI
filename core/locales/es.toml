@@ -564,6 +564,11 @@ persona_desc_placeholder = "Descripción de la persona..."
 show_doc_tooltips = "Mostrar burbujas de ayuda al pasar el ratón"
 doc_settings_doc_tooltips_t = "Burbujas de ayuda"
 doc_settings_doc_tooltips = "Muestra una breve explicación al pasar el ratón por cada control. Desactívalas cuando domines la aplicación — los botones ? y Ayuda → Documentación siguen disponibles."
+basic_prompt_label = "Instrucciones personalizadas"
+basic_prompt_placeholder = "Instrucciones personalizadas para el narrador (p. ej., 'Habla solo en inglés', 'Usa frases simples', directrices de comportamiento, jailbreaks...)"
+doc_settings_basic_prompt_t = "Instrucciones personalizadas"
+doc_settings_basic_prompt = "Instrucciones personalizadas del usuario añadidas al prompt del sistema del narrador. Permite imponer un estilo, idioma o directrices específicas."
+
 
 # Diagnostic dialog (TICKET-062 item 4)
 menu_diagnostic = "&Diagnóstico…"
