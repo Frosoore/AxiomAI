@@ -89,7 +89,9 @@ class CreatorStudioView(QWidget):
         self._back_btn = doc(QPushButton(tr("hub")), "creator.back")
         header.addWidget(self._save_btn)
         header.addWidget(self._back_btn)
-        self._help_btn = make_help_button("creator", self)
+        # Tab-aware: the Information button explains the tab you're on, not the
+        # whole Studio (Metadata, Stats, Rules… each have their own page).
+        self._help_btn = make_help_button(self.current_doc_page, self)
         header.addWidget(self._help_btn)
         layout.addLayout(header)
 
@@ -152,14 +154,14 @@ class CreatorStudioView(QWidget):
 
         self._lore_group = QGroupBox(tr("world_lore"))
         lore_layout = QVBoxLayout(self._lore_group)
-        self._lore_edit = doc(QPlainTextEdit(), "creator.world_lore")
+        self._lore_edit = doc(QPlainTextEdit(), "creator_meta.world_lore")
         self._lore_edit.setPlaceholderText(tr("global_lore_placeholder"))
         lore_layout.addWidget(self._lore_edit)
         layout.addWidget(self._lore_group)
 
         self._prompt_group = QGroupBox(tr("sys_prompt_override"))
         prompt_layout = QVBoxLayout(self._prompt_group)
-        self._system_prompt_edit = doc(QPlainTextEdit(), "creator.system_prompt")
+        self._system_prompt_edit = doc(QPlainTextEdit(), "creator_meta.system_prompt")
         self._system_prompt_edit.setPlaceholderText(tr("system_prompt_placeholder"))
         self._system_prompt_edit.setMinimumHeight(80)
         prompt_layout.addWidget(self._system_prompt_edit)
@@ -167,7 +169,7 @@ class CreatorStudioView(QWidget):
 
         self._first_msg_group = QGroupBox(tr("init_narrative"))
         first_msg_layout = QVBoxLayout(self._first_msg_group)
-        self._first_message_edit = doc(QPlainTextEdit(), "creator.first_message")
+        self._first_message_edit = doc(QPlainTextEdit(), "creator_meta.first_message")
         self._first_message_edit.setPlaceholderText(tr("first_msg_placeholder"))
         self._first_message_edit.setMinimumHeight(80)
         first_msg_layout.addWidget(self._first_message_edit)
@@ -175,26 +177,26 @@ class CreatorStudioView(QWidget):
 
         self._tension_group = QGroupBox(tr("world_tension_level"))
         tension_form = QFormLayout(self._tension_group)
-        self._tension_spin = doc(QDoubleSpinBox(), "creator.tension")
+        self._tension_spin = doc(QDoubleSpinBox(), "creator_meta.tension")
         self._tension_spin.setRange(0.0, 1.0)
         self._tension_spin.setSingleStep(0.05)
         self._tension_label_row = QLabel(f"{tr('tension')} (0.0-1.0):")
         tension_form.addRow(self._tension_label_row, self._tension_spin)
 
-        self._temp_spin = doc(QDoubleSpinBox(), "creator.llm_temp")
+        self._temp_spin = doc(QDoubleSpinBox(), "creator_meta.llm_temp")
         self._temp_spin.setRange(0.0, 1.0)
         self._temp_spin.setSingleStep(0.05)
         self._temp_label_row = QLabel(tr("llm_temp"))
         tension_form.addRow(self._temp_label_row, self._temp_spin)
 
-        self._top_p_spin = doc(QDoubleSpinBox(), "creator.llm_top_p")
+        self._top_p_spin = doc(QDoubleSpinBox(), "creator_meta.llm_top_p")
         self._top_p_spin.setRange(0.0, 1.0)
         self._top_p_spin.setSingleStep(0.05)
         self._top_p_label_row = QLabel(tr("llm_top_p"))
         tension_form.addRow(self._top_p_label_row, self._top_p_spin)
 
         from PySide6.QtWidgets import QComboBox, QCheckBox
-        self._verbosity_combo = doc(QComboBox(), "creator.verbosity")
+        self._verbosity_combo = doc(QComboBox(), "creator_meta.verbosity")
         # TICKET-032 : la valeur CANONIQUE vit dans itemData, le texte affiché
         # n'est que la traduction (sinon « équilibré » finissait en base).
         for level in ("short", "balanced", "talkative"):
@@ -205,8 +207,8 @@ class CreatorStudioView(QWidget):
         # Companion Mode Feature
         self._companion_group = QGroupBox(tr("companion_feature"))
         companion_layout = QFormLayout(self._companion_group)
-        self._companion_enabled_check = doc(QCheckBox(tr("enable_companion_mode")), "creator.companion")
-        self._companion_hero_combo = doc(QComboBox(), "creator.companion")
+        self._companion_enabled_check = doc(QCheckBox(tr("enable_companion_mode")), "creator_meta.companion")
+        self._companion_hero_combo = doc(QComboBox(), "creator_meta.companion")
         companion_layout.addRow(self._companion_enabled_check)
         companion_layout.addRow(tr("main_hero"), self._companion_hero_combo)
         layout.addWidget(self._companion_group)
@@ -218,6 +220,14 @@ class CreatorStudioView(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def current_doc_page(self) -> str:
+        """Doc page id for the active tab (drives the tab-aware Information/F1)."""
+        from ui.help_system import CREATOR_TAB_PAGES
+        idx = self._tabs.currentIndex()
+        if 0 <= idx < len(CREATOR_TAB_PAGES):
+            return CREATOR_TAB_PAGES[idx]
+        return "creator"
 
     def retranslate_ui(self) -> None:
         self._universe_label.setText(tr("creator_studio"))

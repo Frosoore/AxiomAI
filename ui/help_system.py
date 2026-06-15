@@ -75,18 +75,15 @@ PAGES: dict[str, tuple[str, ...]] = {
         "send",
         "mini_dico",
     ),
+    # The Creator Studio is split per tab: the base "creator" page holds the
+    # header chrome and the (short) tab summaries shown on hover, while each tab
+    # gets its OWN page ("creator_meta", "creator_stats"…) shown by the
+    # "Information" button / F1, which follows the active tab. This is why
+    # pressing Information on the Stats tab no longer dumps the whole Studio.
     "creator": (
         "save",
         "back",
         "tab_meta",
-        "world_lore",
-        "system_prompt",
-        "first_message",
-        "companion",
-        "tension",
-        "llm_temp",
-        "llm_top_p",
-        "verbosity",
         "tab_stats",
         "tab_entities",
         "tab_map",
@@ -97,6 +94,25 @@ PAGES: dict[str, tuple[str, ...]] = {
         "tab_populate",
         "tab_files",
     ),
+    "creator_meta": (
+        "world_lore",
+        "system_prompt",
+        "first_message",
+        "companion",
+        "tension",
+        "llm_temp",
+        "llm_top_p",
+        "verbosity",
+    ),
+    "creator_stats": (),
+    "creator_entities": (),
+    "creator_map": (),
+    "creator_rules": (),
+    "creator_events": (),
+    "creator_setup": (),
+    "creator_lore": (),
+    "creator_populate": (),
+    "creator_files": (),
     "settings": (
         "tab_llm",
         "base_url",
@@ -153,6 +169,37 @@ TOUR_STEPS: tuple[str, ...] = (
     "help",
 )
 
+# Creator Studio tabs, in their on-screen order: tab index -> its own doc page.
+# The view's "Information" button and the Help menu use this so the explanation
+# always matches the tab you are looking at.
+CREATOR_TAB_PAGES: tuple[str, ...] = (
+    "creator_meta",
+    "creator_stats",
+    "creator_entities",
+    "creator_map",
+    "creator_rules",
+    "creator_events",
+    "creator_setup",
+    "creator_lore",
+    "creator_populate",
+    "creator_files",
+)
+
+# Elements that ALSO carry a long-form details block (`doc_<page>_<el>_d`),
+# rendered only in the "explain this page" dialog and the directory — NEVER in
+# the hover tooltip, which stays short. Add a ref here the moment you write its
+# `_d` keys in the locales (and run tools/doc_check.py).
+DETAILS: frozenset[str] = frozenset({
+    "creator_meta.world_lore",
+    "creator_meta.system_prompt",
+    "creator_meta.first_message",
+    "creator_meta.companion",
+    "creator_meta.tension",
+    "creator_meta.llm_temp",
+    "creator_meta.llm_top_p",
+    "creator_meta.verbosity",
+})
+
 
 # ---------------------------------------------------------------------------
 # Key derivation
@@ -174,13 +221,27 @@ def tour_keys(step: str) -> tuple[str, str]:
     return f"doc_tour_{step}_t", f"doc_tour_{step}"
 
 
+def details_key(ref: str) -> str:
+    """i18n key of an element's long-form details block ('page.element')."""
+    page, element = ref.split(".", 1)
+    return f"doc_{page}_{element}_d"
+
+
+def has_details(ref: str) -> bool:
+    """True if `ref` declares a long-form details block (see DETAILS)."""
+    return ref in DETAILS
+
+
 def all_doc_keys() -> list[str]:
     """Every i18n key the registry requires (used by tools/doc_check.py)."""
     keys: list[str] = []
     for page, elements in PAGES.items():
         keys.extend(page_keys(page))
         for element in elements:
-            keys.extend(entry_keys(f"{page}.{element}"))
+            ref = f"{page}.{element}"
+            keys.extend(entry_keys(ref))
+            if has_details(ref):
+                keys.append(details_key(ref))
     for step in TOUR_STEPS:
         keys.extend(tour_keys(step))
     return keys

@@ -411,6 +411,10 @@ class MainWindow(QMainWindow):
     }
 
     def _current_doc_page(self) -> str:
+        # In the Creator Studio, the active tab decides the page (Metadata,
+        # Stats, Rules…) so Help → Explain / Documentation match what's on screen.
+        if self._stack.currentIndex() == self._CREATOR_INDEX:
+            return self._creator_view.current_doc_page()
         return self._PAGE_BY_INDEX.get(self._stack.currentIndex(), "hub")
 
     def _explain_current_page(self) -> None:

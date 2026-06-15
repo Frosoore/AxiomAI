@@ -33,7 +33,12 @@ from ui import help_system
 
 def _entry_html(ref: str) -> str:
     title_key, body_key = help_system.entry_keys(ref)
-    return f"<p><b>{tr(title_key)}</b><br/>{tr(body_key)}</p>"
+    html = f"<p><b>{tr(title_key)}</b><br/>{tr(body_key)}</p>"
+    # Long-form details (examples, how-to, effect, why) are shown only here and
+    # in the directory — never in the hover tooltip, which keeps the short body.
+    if help_system.has_details(ref):
+        html += f"<div style='margin:-6px 0 14px 0;'>{tr(help_system.details_key(ref))}</div>"
+    return html
 
 
 def _page_html(page: str) -> str:
@@ -149,7 +154,12 @@ class DocDirectoryDialog(QDialog):
         for i in range(self._tree.topLevelItemCount()):
             page_item = self._tree.topLevelItem(i)
             _, page = page_item.data(0, Qt.UserRole)
-            page_visible = False
+            # A page matches on its own title/intro — and always when the search
+            # is empty, so pages with no documented elements (e.g. an editor tab
+            # whose internals aren't individually listed) still show.
+            page_title_key, page_intro_key = help_system.page_keys(page)
+            page_visible = (not needle) or (
+                needle in f"{tr(page_title_key)} {tr(page_intro_key)}".lower())
             for j in range(page_item.childCount()):
                 child = page_item.child(j)
                 _, ref = child.data(0, Qt.UserRole)
@@ -158,10 +168,6 @@ class DocDirectoryDialog(QDialog):
                 match = not needle or needle in haystack
                 child.setHidden(not match)
                 page_visible = page_visible or match
-            # The page row also matches on its own title/intro.
-            page_title_key, page_intro_key = help_system.page_keys(page)
-            if needle and needle in f"{tr(page_title_key)} {tr(page_intro_key)}".lower():
-                page_visible = True
             page_item.setHidden(not page_visible)
 
 
@@ -226,12 +232,22 @@ class QuickTourDialog(QDialog):
         self._show_step()
 
 
-def make_help_button(page: str, parent=None) -> QPushButton:
-    """The 'Information' button placed in each page header (brique 2)."""
+def make_help_button(page, parent=None) -> QPushButton:
+    """The 'Information' button placed in each page header (brique 2).
+
+    `page` may be a page id (str) or a zero-arg callable returning one, resolved
+    at click time — the Creator Studio passes a callable so the dialog always
+    matches the active tab.
+    """
     button = QPushButton(tr("information"), parent)
     button.setStyleSheet(
         "QPushButton { border-radius: 8px; font-weight: bold; padding: 4px 12px; }"
     )
     button.setToolTip(tr("explain_page_btn"))
-    button.clicked.connect(lambda: ExplainPageDialog(page, parent).exec())
+
+    def _open() -> None:
+        resolved = page() if callable(page) else page
+        ExplainPageDialog(resolved, parent).exec()
+
+    button.clicked.connect(_open)
     return button

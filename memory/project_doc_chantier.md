@@ -19,10 +19,17 @@ registre déclaratif unique `ui/help_system.py::PAGES` (208 éléments, 6 pages)
 3 clés préexistantes mal traduites corrigées (`chronicler_interval_label` — cascade
 italien/espagnol dans it/pt/ru/zh/ja/ko —, `univ_params` ×7, `image_api_url` ko).
 Suites vertes 581 + 56. **Structure VALIDÉE GUI le 2026-06-13** (les 4 briques marchent) MAIS
-**contenu jugé TROP SUCCINCT → TICKET-057 reste ouvert** : étoffer les ~242 clés `doc_*` de
-`core/locales/*.toml` (explications complètes, contexte/exemples, le « pourquoi » de chaque
-réglage — EN d'abord puis 10 langues ; périmètre `core/locales/`, pas de code ; trous via
-`tools/doc_check.py`).
+**contenu jugé TROP SUCCINCT → enrichissement = `maintenance/TICKET-057-enrichissement/`.**
+**Passe 1 FAITE le 2026-06-15 (non commité)** : (a) **bug structurel corrigé** — le Creator Studio
+n'avait qu'une page d'aide (F1 dumpait tout) → **découpage par onglet** : F1/« Information » suit
+l'onglet actif (`make_help_button` accepte un callable, `CreatorStudioView.current_doc_page()`,
+`PAGES` = base `creator` + 10 pages `creator_<onglet>`, refs metadata renommées
+`creator.*`→`creator_meta.*`) ; (b) **nouvelle couche de détails riches `_d`** (`help_system.DETAILS`,
+rendue en F1/annuaire SEULEMENT) → le **survol des boutons reste court** (l'utilisateur le jugeait
+déjà bon, à préserver) ; (c) **contenu enrichi 10 langues** : 6 intros de page réécrites + 10
+sous-pages Studio + 8 détails d'éléments Metadata (exemples, comment faire, effet, pourquoi).
+`doc_check` OK (242 clés), i18n verte, 783 tests verts. **Reste (passes suivantes)** : détails `_d`
+élément par élément pour Tabletop/Settings/Hub/Setup (+ option : widgets internes des éditeurs Studio).
 **Retours utilisateur traités (2026-06-12)** : toggle « bulles d'aide au survol » dans les
 paramètres (config `doc_tooltips_enabled` + filtre `install_tooltip_gate` — ne coupe que les
 tooltips de doc, dialogues/audit intacts) ; bug retranslate de la vue setup corrigé (onglet
