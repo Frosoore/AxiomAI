@@ -16,7 +16,15 @@ clés Fireworks.ai embarquées temporairement — **item 2 FAIT le 2026-06-12** 
 dans `core/builtin_keys.py`, rotation auto, plafond modèles pas chers, bouton « Parcourir » les
 modèles, 1ᵉʳ lancement zéro-config → fireworks/`gpt-oss-120b` (l'ancien défaut deepseek-v3p1 est
 mort chez Fireworks). **Item 4 (outil de diagnostic) FAIT — CLI + GUI Aide→Diagnostic.**
-**Items 1, 2, 4 VALIDÉS GUI par l'utilisateur le 2026-06-13.** TICKET-050 (fail-fast 429) FAIT
+**Items 1, 2, 4 VALIDÉS GUI par l'utilisateur le 2026-06-13.** **Item 4 fiabilisé le
+2026-06-15** (étape `beta-diagnostic-venv-i18n`, ⚠ non commité) : le « rien ne marche »
+de `python -m tools.diagnostic --gui` était le **venv** — lancé avec le python système
+(hors `.venv`), torch/chromadb/genai manquaient → rapport faussement « tout cassé ».
+`_maybe_reexec_in_venv()` rebascule dans `.venv/bin/python` au point d'entrée (détection
+par `sys.prefix`, PAS `executable.resolve()` car bin/python = symlink ; garde
+`AXIOM_DIAG_REEXEC` + flag `--no-venv`). + **rapport i18n** (57 clés `diag_*` × 10
+langues). Au passage, fix d'une fuite i18n latente (`_CURRENT_LANG`) via reset dans
+`tests/conftest.py`. TICKET-050 (fail-fast 429) FAIT
 et **CI GitHub Actions FAITE** (`.github/workflows/tests.yml`, 2 lots, matrice 3.11/3.12 — reste
 à confirmer verte au 1ᵉʳ push). **Restent : finir le support Windows + nouvelles captures + GIF**
 (les assets du README datent).

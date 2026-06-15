@@ -19,6 +19,7 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -29,8 +30,22 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.localization import tr
+from core.localization import (
+    SUPPORTED_LANGUAGES,
+    reload_translations,
+    set_language,
+    tr,
+)
 from workers.diagnostic_worker import DiagnosticWorker
+
+
+def _current_language() -> str:
+    """The UI language currently in effect (saved setting or an in-memory override)."""
+    try:
+        from core.localization import _current_language as resolve
+        return resolve()
+    except Exception:
+        return "en"
 
 
 class _TextWindow(QDialog):
@@ -87,7 +102,26 @@ class DiagnosticDialog(QDialog):
         self._child_windows: list[_TextWindow] = []
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(tr("diagnostic_intro")))
+        self._intro = QLabel(tr("diagnostic_intro"))
+        layout.addWidget(self._intro)
+
+        # Language selector — lets a tester read (or copy) the report in another
+        # language without changing the app's saved setting. Transient: it only
+        # overrides the in-memory language (core.localization.set_language).
+        lang_row = QHBoxLayout()
+        self._lang_label = QLabel(tr("language"))
+        lang_row.addWidget(self._lang_label)
+        self._lang_combo = QComboBox()
+        for code, name in SUPPORTED_LANGUAGES.items():
+            self._lang_combo.addItem(name, code)
+        idx = self._lang_combo.findData(_current_language())
+        if idx >= 0:
+            self._lang_combo.setCurrentIndex(idx)
+        # Connect after setting the initial index so construction doesn't re-run.
+        self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        lang_row.addWidget(self._lang_combo)
+        lang_row.addStretch()
+        layout.addLayout(lang_row)
 
         self._report = QPlainTextEdit()
         self._report.setReadOnly(True)
@@ -132,6 +166,11 @@ class DiagnosticDialog(QDialog):
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
+        # The language selector overrides the in-memory language; when this dialog
+        # closes, drop any override and re-read the app's saved language so the
+        # rest of the app isn't left in the language the tester picked here.
+        self.finished.connect(lambda _=0: reload_translations())
+
         # Auto-run the fast health checks on open.
         self._start(run_tests=False)
 
@@ -140,7 +179,31 @@ class DiagnosticDialog(QDialog):
     def _set_busy(self, busy: bool) -> None:
         for btn in (self._refresh_btn, self._tests_btn, self._copy_btn, self._save_btn):
             btn.setEnabled(not busy)
+        self._lang_combo.setEnabled(not busy)
         self._status.setText(tr("diagnostic_running") if busy else "")
+
+    def _on_language_changed(self) -> None:
+        """Switch the report (and this dialog's chrome) to the chosen language.
+
+        Translation happens when the report is built, so we re-run the fast health
+        checks to re-render it in the new language; the choice is in-memory only.
+        """
+        set_language(self._lang_combo.currentData())
+        self._retranslate()
+        self._start(run_tests=False)
+
+    def _retranslate(self) -> None:
+        """Refresh this dialog's own text after a language change (the combo's
+        native language names are language-independent, so they stay as-is)."""
+        self.setWindowTitle(tr("diagnostic_title"))
+        self._intro.setText(tr("diagnostic_intro"))
+        self._lang_label.setText(tr("language"))
+        self._refresh_btn.setText(tr("diagnostic_refresh"))
+        self._tests_btn.setText(tr("diagnostic_run_tests"))
+        self._copy_btn.setText(tr("diagnostic_copy"))
+        self._save_btn.setText(tr("diagnostic_save"))
+        self._warnings_btn.setText(tr("diagnostic_view_warnings"))
+        self._failures_btn.setText(tr("diagnostic_view_failures"))
 
     def _start(self, *, run_tests: bool) -> None:
         if self._worker is not None and self._worker.isRunning():

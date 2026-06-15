@@ -34,7 +34,10 @@ class TestDiagnosticWorker:
         assert len(got) == 1
         report, overall = got[0]
         assert overall == D.WARN
-        assert "[S]" in report and "Overall" in report
+        # Language-neutral: the section marker and the (untranslated) status code
+        # in the footer both confirm format_report ran. The label around it is
+        # localized to the user's language, so don't assert on English words.
+        assert "[S]" in report and D.WARN in report
 
     def test_run_passes_flags_through(self, monkeypatch):
         from workers.diagnostic_worker import DiagnosticWorker
@@ -143,3 +146,26 @@ class TestDiagnosticDialog:
         win._copy()
         assert QApplication.clipboard().text() == "warn A\nwarn B"
         win.close()
+
+    def test_language_combo_switches_and_reruns(self, dialog):
+        from core.localization import _current_language, tr
+        # Pick a language different from the current one.
+        target = "ja" if _current_language() != "ja" else "en"
+        idx = dialog._lang_combo.findData(target)
+        assert idx >= 0
+        dialog._lang_combo.setCurrentIndex(idx)  # fires _on_language_changed
+        # The in-memory language switched and a fresh fast run was requested.
+        assert _current_language() == target
+        assert dialog._worker.kwargs == {"run_tests": False}
+        # The dialog's own chrome followed the language change.
+        assert dialog._refresh_btn.text() == tr("diagnostic_refresh")
+
+    def test_close_restores_app_language(self, dialog):
+        from core.localization import _current_language
+        before = _current_language()
+        # Switch to something else, then close the dialog.
+        target = "ja" if before != "ja" else "en"
+        dialog._lang_combo.setCurrentIndex(dialog._lang_combo.findData(target))
+        assert _current_language() == target
+        dialog.reject()  # emits finished → reload_translations()
+        assert _current_language() == before

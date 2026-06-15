@@ -112,8 +112,12 @@ It is available three ways — all sharing the same checks:
   python -m tools.diagnostic --offline # skip the network/backend check
   ```
 
-> Run these from the project's virtual environment (e.g. `source .venv/bin/activate`
-> first, or use `run.sh`/`run.bat` once to create it).
+> No need to activate anything first: if you run it with the bare system Python,
+> the diagnostic automatically switches to the project's `.venv` (created by
+> `run.sh`/`run.bat`) so it sees the real dependencies. Pass `--no-venv` to
+> diagnose the current interpreter as-is. The report is shown in the app's
+> language; the graphical window also has a language dropdown to switch it on the
+> fly (handy to grab an English copy for a bug report).
 
 ---
 

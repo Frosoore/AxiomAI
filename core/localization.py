@@ -28,6 +28,7 @@ from axiom.textfmt import fmt_num  # ré-export : formatage de nombres (langue-n
 __all__ = [
     "tr", "fmt_num", "SUPPORTED_LANGUAGES", "canonical_verbosity",
     "format_time", "get_translations_dict", "compute_coverage", "reload_translations",
+    "set_language",
 ]
 
 # Supported languages with their native names
@@ -89,6 +90,19 @@ def reload_translations() -> None:
     global _TRANSLATIONS_CACHE, _CURRENT_LANG
     _TRANSLATIONS_CACHE = None
     _CURRENT_LANG = None
+
+
+def set_language(lang: str) -> None:
+    """Override the current UI language **in memory only** (no write to config).
+
+    For transient views that let the user switch the displayed language without
+    changing the saved setting — e.g. the standalone diagnostic window, where a
+    beta tester may want the report in English to paste into a bug report. An
+    unknown code falls back to English. A later `reload_translations()` (e.g. a
+    real settings change) drops this override and re-reads the config.
+    """
+    global _CURRENT_LANG
+    _CURRENT_LANG = lang if lang in SUPPORTED_LANGUAGES else "en"
 
 
 def _current_language() -> str:
