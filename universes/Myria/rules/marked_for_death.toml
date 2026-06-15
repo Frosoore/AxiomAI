@@ -1,0 +1,27 @@
+# At extreme Notoriety you are a walking target: bounty hunters, rival spies and
+# old enemies wear you down. While Notoriety stays >= 90 the bearer loses Health
+# every turn — a deliberate death-spiral that pushes the player to lie low, and a
+# demonstration of rule chaining (this can drop Health to 0 and trigger
+# mortal_collapse in the same turn).
+#
+# The >= 90 threshold also keeps this safe for "*": entities that have no
+# Notoriety stat read as 0 and never match, so only a genuinely infamous actor
+# (in practice, the player) is ever hit.
+rule_id = "marked_for_death"
+priority = 20
+target_entity = "*"
+
+[conditions]
+operator = "AND"
+[[conditions.clauses]]
+stat = "Notoriety"
+comparator = ">="
+value = 90
+
+[[actions]]
+type = "stat_change"
+stat = "Health"
+# Step 8 of the Arbitrator reads the magnitude from `value`; `delta` mirrors it
+# for the pure RulesEngine.apply_actions path. Keep both in sync.
+value = -5
+delta = -5

@@ -1,0 +1,22 @@
+# Once your name travels (Notoriety >= 40) you stop being a stranger in Highport:
+# doors open, but so do the wrong eyes. Sets a canonical Reputation the narrator
+# and the off-screen Chronicler can lean on.
+#
+# Lower priority value than notoriety_hunted so that, when both fire (Notoriety
+# >= 80), "Known" is written first and "Hunted" overwrites it — the final state
+# is the more severe one.
+rule_id = "notoriety_known"
+priority = 30
+target_entity = "*"
+
+[conditions]
+operator = "AND"
+[[conditions.clauses]]
+stat = "Notoriety"
+comparator = ">="
+value = 40
+
+[[actions]]
+type = "set_status"
+stat = "Reputation"
+value = "Known"
