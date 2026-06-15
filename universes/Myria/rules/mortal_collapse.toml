@@ -1,0 +1,19 @@
+# When an entity's Health reaches zero, it is mortally wounded.
+# Operationalises the Health stat's own description ("At 0, you are dying.").
+# The engine writes a canonical "Condition" the narrator must honour next turn,
+# so a body at 0 HP can never be narrated back to its feet.
+rule_id = "mortal_collapse"
+priority = 0
+target_entity = "*"
+
+[conditions]
+operator = "AND"
+[[conditions.clauses]]
+stat = "Health"
+comparator = "<="
+value = 0
+
+[[actions]]
+type = "set_status"
+stat = "Condition"
+value = "Mortally wounded"
