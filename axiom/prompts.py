@@ -669,6 +669,7 @@ def build_narrative_prompt(
     mode: str = "Normal",
     hero_entity_id: str | None = None,
     local_character_names: list[str] | None = None,
+    basic_prompt: str | None = None,
 ) -> list[LLMMessage]:
     """Assemble the full message list for a narrative gameplay turn.
 
@@ -698,14 +699,28 @@ def build_narrative_prompt(
         mode:                   Game mode ('Normal', 'Hardcore', 'Companion').
         hero_entity_id:         The entity ID of the Hero (if applicable).
         local_character_names:  List of names of all characters present in the scene.
+        basic_prompt:           Custom user instructions to append to the system prompt.
 
     Returns:
         list[LLMMessage] ready to pass to any LLMBackend.complete().
     """
     messages: list[LLMMessage] = []
 
+    if basic_prompt is None:
+        try:
+            from axiom.config import load_config
+            cfg = load_config()
+            basic_prompt = getattr(cfg, "basic_prompt", "")
+        except Exception:
+            basic_prompt = ""
+
+    basic_prompt = basic_prompt.strip()
+    if basic_prompt:
+        universe_system_prompt = f"{universe_system_prompt}\n\n{basic_prompt}"
+
     # 1. Primary system prompt
     parts = [universe_system_prompt]
+
     
     # Consolidate core narrative rules
     actor_ids = list(intents.keys()) if intents else ["player"]

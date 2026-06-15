@@ -92,6 +92,7 @@ class AppConfig:
                              still quota-exhausted (429) after retries.
                              Google quotas are per-model, so a different model
                              usually still has budget. Empty = no fallback.
+        basic_prompt:        Custom user-provided system instructions.
         image_generation_enabled: Whether narrative image generation is enabled.
         image_backend:       Image generation backend ("mock", "stable_diffusion", or "comfyui").
         image_api_url:       API base URL for the local image generator.
@@ -135,8 +136,10 @@ class AppConfig:
     doc_tooltips_enabled: bool = True
     rag_chunk_count: int = 5
     language: str = "en"
+    basic_prompt: str = ""
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
+
 
     # Image generation settings
     image_generation_enabled: bool = False

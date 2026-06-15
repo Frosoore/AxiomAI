@@ -5,13 +5,14 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `main`
-**Chantier :** feature-edit-messages (modification dynamique de messages de l'historique) — terminé
+**Chantier :** feature-basic-prompt (zone de texte dans les paramètres pour instructions personnalisées) — terminé, en attente de commit utilisateur
 
 ## Fichiers / modules que je touche en ce moment
 
 | Fichier / module        | Type de modif        | Depuis (date) | Note pour Claude |
 |-------------------------|----------------------|---------------|------------------|
 | _(rien)_                |                      |               |                  |
+
 
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
 

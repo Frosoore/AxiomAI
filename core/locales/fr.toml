@@ -564,6 +564,11 @@ persona_desc_placeholder = "Description du persona..."
 show_doc_tooltips = "Bulles d'aide au survol"
 doc_settings_doc_tooltips_t = "Bulles d'aide"
 doc_settings_doc_tooltips = "Affiche une courte explication au survol de chaque contrôle. Désactivez-les une fois l'app maîtrisée — les boutons ? et Aide → Documentation restent disponibles."
+basic_prompt_label = "Instructions personnalisées"
+basic_prompt_placeholder = "Instructions personnalisées pour le narrateur (ex. : 'Parle seulement en anglais', 'Utilise des phrases simples', consignes comportementales, jailbreaks...)"
+doc_settings_basic_prompt_t = "Instructions personnalisées"
+doc_settings_basic_prompt = "Instructions personnalisées de l'utilisateur ajoutées au prompt système du narrateur. Permet d'imposer un style, une langue ou des consignes spécifiques."
+
 
 # Diagnostic dialog (TICKET-062 item 4)
 menu_diagnostic = "&Diagnostic…"

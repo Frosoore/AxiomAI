@@ -564,6 +564,11 @@ persona_desc_placeholder = "人格描述..."
 show_doc_tooltips = "悬停时显示帮助提示"
 doc_settings_doc_tooltips_t = "帮助提示"
 doc_settings_doc_tooltips = "鼠标悬停在任意控件上时显示简短说明。熟悉应用后可以在此关闭——? 按钮和帮助 → 文档仍然可用。"
+basic_prompt_label = "自定义指令"
+basic_prompt_placeholder = "为AI叙述者编写的自定义指令（例如：“只用英语说”、“使用简单的句子”或自定义行为规范/越狱指令……）"
+doc_settings_basic_prompt_t = "自定义指令"
+doc_settings_basic_prompt = "用户定义的自定义指令，将被附加到叙述者的系统提示词中。可用于强制执行风格、语言或特定行为准则。"
+
 
 # Diagnostic dialog (TICKET-062 item 4)
 menu_diagnostic = "诊断(&D)…"

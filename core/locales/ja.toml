@@ -564,6 +564,11 @@ persona_desc_placeholder = "ペルソナの説明..."
 show_doc_tooltips = "ホバー時にヘルプツールチップを表示"
 doc_settings_doc_tooltips_t = "ヘルプツールチップ"
 doc_settings_doc_tooltips = "コントロールにマウスを乗せると短い説明を表示します。アプリに慣れたらここでオフにできます——? ボタンとヘルプ → ドキュメントは引き続き使えます。"
+basic_prompt_label = "カスタム指示"
+basic_prompt_placeholder = "AIナレーターへのカスタム指示（例：「英語でのみ話す」、「シンプルな文章を使用する」、またはカスタム行動指針/脱獄指示など...）"
+doc_settings_basic_prompt_t = "カスタム指示"
+doc_settings_basic_prompt = "ナレーターのシステムプロンプトに追加されるユーザー定義のカスタム指示。スタイル、言語、特定の行動指針などを強制するのに使用できます。"
+
 
 # Diagnostic dialog (TICKET-062 item 4)
 menu_diagnostic = "診断(&D)…"

@@ -564,6 +564,11 @@ persona_desc_placeholder = "Descrição da persona..."
 show_doc_tooltips = "Mostrar dicas de ajuda ao passar o mouse"
 doc_settings_doc_tooltips_t = "Dicas de ajuda"
 doc_settings_doc_tooltips = "Mostra uma breve explicação ao passar o mouse sobre cada controle. Desative-as quando dominar o aplicativo — os botões ? e Ajuda → Documentação continuam disponíveis."
+basic_prompt_label = "Instruções personalizadas"
+basic_prompt_placeholder = "Instruções personalizadas para o narrador (ex: 'Fale apenas em inglês', 'Use frases simples', diretrizes comportamentais, jailbreaks...)"
+doc_settings_basic_prompt_t = "Instruções personalizadas"
+doc_settings_basic_prompt = "Instruções personalizadas do usuário adicionadas ao prompt do sistema do narrador. Permite impor um estilo, idioma ou diretrizes específicas."
+
 
 # Diagnostic dialog (TICKET-062 item 4)
 menu_diagnostic = "&Diagnóstico…"
