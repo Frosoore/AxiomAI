@@ -397,6 +397,37 @@ class TestEntityEditorSync:
         w._table.setCurrentCell(1, 2)
         assert w._selected_row == 1
 
+    def test_change_entity_type(self, qtbot) -> None:
+        """Changer le type dans le combobox met à jour les données et émet le signal changed."""
+        from PySide6.QtWidgets import QComboBox
+
+        w = self._widget(qtbot)
+        w.populate([
+            {"entity_id": "e0", "entity_type": "npc", "name": "A", "description": "", "stats": {}},
+        ])
+        
+        # Verify initial type
+        combo = w._table.cellWidget(0, 1)
+        assert isinstance(combo, QComboBox)
+        assert combo.currentData() == "npc"
+        
+        # Connect changed signal to a spy/counter
+        changed_count = 0
+        def on_changed():
+            nonlocal changed_count
+            changed_count += 1
+        w.changed.connect(on_changed)
+        
+        # Change type to player
+        idx = combo.findData("player")
+        assert idx >= 0
+        combo.setCurrentIndex(idx)
+        
+        # Verify value updated in entities data and signal emitted
+        assert w._entities_data[0]["entity_type"] == "player"
+        assert w.collect_data()[0]["entity_type"] == "player"
+        assert changed_count == 1
+
 
 class TestRuleEditorSync:
     """L'éditeur de règles : round-trip, navigation, et flush depuis la table.

@@ -164,9 +164,34 @@ class EntityEditorWidget(QWidget):
         self._in_id.setPlaceholderText(tr("id"))
         self._in_name.setPlaceholderText(tr("name"))
         
+        # Translate the add row combo
+        current_in_type = self._in_type.currentData()
+        self._in_type.blockSignals(True)
+        self._in_type.clear()
+        for etype in self._ENTITY_TYPES:
+            self._in_type.addItem(tr(f"entity_{etype}"), etype)
+        idx = self._in_type.findData(current_in_type)
+        if idx >= 0:
+            self._in_type.setCurrentIndex(idx)
+        self._in_type.blockSignals(False)
+        
         self._table.setHorizontalHeaderLabels([
             tr("id"), tr("type"), tr("name"), tr("description")
         ])
+        
+        # Translate all row combos
+        for r in range(self._table.rowCount()):
+            w = self._table.cellWidget(r, 1)
+            if isinstance(w, QComboBox):
+                current_data = w.currentData()
+                w.blockSignals(True)
+                w.clear()
+                for etype in self._ENTITY_TYPES:
+                    w.addItem(tr(f"entity_{etype}"), etype)
+                idx = w.findData(current_data)
+                if idx >= 0:
+                    w.setCurrentIndex(idx)
+                w.blockSignals(False)
         
         self._stats_group.setTitle(tr("initial_stats"))
         self._add_stat_btn.setText(f"{tr('add_stat')} +")
@@ -200,9 +225,12 @@ class EntityEditorWidget(QWidget):
             # Find in data (matching by original position or ID)
             if r < len(self._entities_data):
                 it_id = self._table.item(r, 0)
+                it_type_widget = self._table.cellWidget(r, 1)
                 it_name = self._table.item(r, 2)
                 it_desc = self._table.item(r, 3)
                 if it_id: self._entities_data[r]["entity_id"] = it_id.text().strip()
+                if isinstance(it_type_widget, QComboBox):
+                    self._entities_data[r]["entity_type"] = it_type_widget.currentData()
                 if it_name: self._entities_data[r]["name"] = it_name.text().strip()
                 if it_desc: self._entities_data[r]["description"] = it_desc.text().strip()
         return self._entities_data
@@ -219,17 +247,33 @@ class EntityEditorWidget(QWidget):
         it_id.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_FileDialogDetailedView))
         
         etype = ent.get("entity_type", "npc")
-        it_type = QTableWidgetItem(tr(f"entity_{etype}"))
-        it_type.setData(Qt.UserRole, etype)
-        it_type.setFlags(it_type.flags() & ~Qt.ItemIsEditable)
+        type_combo = QComboBox()
+        for t in self._ENTITY_TYPES:
+            type_combo.addItem(tr(f"entity_{t}"), t)
+        idx = type_combo.findData(etype)
+        if idx >= 0:
+            type_combo.setCurrentIndex(idx)
+        type_combo.currentIndexChanged.connect(self._on_type_combo_changed)
         
         it_name = QTableWidgetItem(ent.get("name", ""))
         it_desc = QTableWidgetItem(ent.get("description", ""))
         
         self._table.setItem(row, 0, it_id)
-        self._table.setItem(row, 1, it_type)
+        self._table.setCellWidget(row, 1, type_combo)
         self._table.setItem(row, 2, it_name)
         self._table.setItem(row, 3, it_desc)
+
+    def _on_type_combo_changed(self, index: int) -> None:
+        combo = self.sender()
+        if not isinstance(combo, QComboBox):
+            return
+        # Find which row this combo belongs to
+        for r in range(self._table.rowCount()):
+            if self._table.cellWidget(r, 1) is combo:
+                if r < len(self._entities_data):
+                    self._entities_data[r]["entity_type"] = combo.currentData()
+                break
+        self.changed.emit()
 
     @Slot()
     def _on_add_clicked(self) -> None:
