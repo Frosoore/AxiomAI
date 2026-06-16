@@ -1,9 +1,10 @@
-# Build & deploy the axiomai-engine documentation site (docs/) to GitHub Pages.
+# Build & deploy the Axiom AI landing page (landing/) and the axiomai-engine
+# documentation site (docs/) to GitHub Pages.
 #
-# Builds both languages (en + fr) and publishes:
-#   https://<owner>.github.io/AxiomAI/        -> redirects to /en/
-#   https://<owner>.github.io/AxiomAI/en/     English site
-#   https://<owner>.github.io/AxiomAI/fr/     French site
+# Publishes:
+#   https://<owner>.github.io/AxiomAI/        -> landing page (landing/)
+#   https://<owner>.github.io/AxiomAI/en/     English documentation
+#   https://<owner>.github.io/AxiomAI/fr/     French documentation
 #
 # One-time setup: in the repo Settings -> Pages, set "Source" to
 # "GitHub Actions". Nothing else to do; every push to main redeploys.
@@ -15,6 +16,7 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "landing/**"
       - "axiom/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -49,20 +51,10 @@ jobs:
       - name: Build French site
         run: sphinx-build -b html -W -D language=fr docs site/fr
 
-      - name: Root redirect to /en/
-        run: |
-          cat > site/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-            <head>
-              <meta charset="utf-8">
-              <meta http-equiv="refresh" content="0; url=en/">
-              <link rel="canonical" href="en/">
-              <title>Axiom Engine documentation</title>
-            </head>
-            <body><a href="en/">Axiom Engine documentation (English)</a></body>
-          </html>
-          EOF
+      # The landing page (landing/) becomes the Pages root, sitting next to
+      # the /en/ and /fr/ documentation builds.
+      - name: Add landing page at the site root
+        run: cp -r landing/. site/
 
       - uses: actions/upload-pages-artifact@v3
         with:

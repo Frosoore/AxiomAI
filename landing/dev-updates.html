@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dev updates · Axiom AI</title>
+        <meta
+            name="description"
+            content="Monthly reports on the state of the Axiom AI codebase: what was added, fixed and changed compared to the previous month."
+        />
+        <meta name="theme-color" content="#1e1e2e" />
+        <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <!-- ===================== ALPHA / TESTER BANNER ===================== -->
+        <div class="alpha-banner" role="alert">
+            <div class="wrap alpha-inner">
+                <span class="alpha-tag">EARLY ALPHA</span>
+                <p>
+                    For testers: until <b>June&nbsp;30</b>, free API keys are
+                    built right in, so you can play with zero setup. The quota
+                    is shared across all testers, but there's plenty of margin,
+                    so go wild. Expect rough edges and breaking changes.
+                </p>
+            </div>
+        </div>
+
+        <!-- ===================== NAV ===================== -->
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="index.html#top">
+                    <img src="assets/icon.svg" alt="Axiom AI logo" />
+                    <b>Axiom&nbsp;AI</b>
+                </a>
+                <nav class="nav-links">
+                    <a href="index.html#how">How it works</a>
+                    <a href="index.html#features">Features</a>
+                    <a href="index.html#roadmap">Roadmap</a>
+                    <a href="index.html#library">For developers</a>
+                    <a href="dev-updates.html">Dev updates</a>
+                    <a
+                        class="nav-cta"
+                        href="https://github.com/Frosoore/AxiomAI"
+                        target="_blank"
+                        rel="noopener"
+                        >GitHub ↗</a
+                    >
+                </nav>
+            </div>
+        </header>
+
+        <!-- ===================== DEV UPDATES ===================== -->
+        <section class="du-hero">
+            <div class="wrap">
+                <p class="eyebrow">Dev updates</p>
+                <h1>
+                    The state of the <span class="mono">codebase</span>, month
+                    by month.
+                </h1>
+                <p>
+                    Once a month we write up where Axiom's code stands compared
+                    to the previous month: what we added, what we fixed, what
+                    changed, and what's still broken. Pick a month to read its
+                    report. For the moment it's kinda a placeholder since it's
+                    the first month we're tracking. However, we'll be updating
+                    it every end of month.
+                </p>
+
+                <div class="du-picker">
+                    <label for="month-select">Month</label>
+                    <select
+                        id="month-select"
+                        onchange="renderUpdate(this.value)"
+                    ></select>
+                </div>
+            </div>
+        </section>
+
+        <section style="padding-top: 8px">
+            <div class="wrap">
+                <div id="du-content"></div>
+                <p style="margin-top: 18px">
+                    <a class="du-back" href="index.html#top"
+                        >← Back to the main page</a
+                    >
+                </p>
+            </div>
+        </section>
+
+        <!-- ===================== FOOTER ===================== -->
+        <footer>
+            <div class="wrap">
+                <div class="foot-grid">
+                    <div class="foot-brand">
+                        <a class="brand" href="index.html#top"
+                            ><img src="assets/icon.svg" alt="" /><b
+                                >Axiom&nbsp;AI</b
+                            ></a
+                        >
+                        <p>
+                            A local-first, deterministic sandbox RPG engine.
+                            Player sovereignty, no data collection, your stories
+                            never leave your machine.
+                        </p>
+                    </div>
+                    <div class="foot-col">
+                        <h5>Project</h5>
+                        <a
+                            href="https://github.com/Frosoore/AxiomAI"
+                            target="_blank"
+                            rel="noopener"
+                            >GitHub repository</a
+                        >
+                        <a
+                            href="https://pypi.org/project/axiomai-engine/"
+                            target="_blank"
+                            rel="noopener"
+                            >PyPI · axiomai-engine</a
+                        >
+                        <a
+                            href="https://frosoore.github.io/AxiomAI/en/"
+                            target="_blank"
+                            rel="noopener"
+                            >Documentation (EN/FR)</a
+                        >
+                        <a
+                            href="https://discord.gg/ttyjqvX3tp"
+                            target="_blank"
+                            rel="noopener"
+                            >Discord community</a
+                        >
+                    </div>
+                    <div class="foot-col">
+                        <h5>Learn</h5>
+                        <a href="index.html#how">How it works</a>
+                        <a href="index.html#why">Why Axiom</a>
+                        <a href="index.html#features">Features</a>
+                        <a href="index.html#roadmap">Roadmap</a>
+                        <a href="index.html#request">Request a feature</a>
+                    </div>
+                </div>
+                <div class="foot-bottom">
+                    <span
+                        >AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span
+                    >
+                    <span>The LLM narrates · the engine adjudicates</span>
+                </div>
+            </div>
+        </footer>
+
+        <!--
+================================================================================
+  HOW TO ADD A MONTHLY DEV UPDATE  (for a human or an LLM)
+================================================================================
+  1. Add ONE object at the TOP of the DEV_UPDATES array below (newest first).
+  2. Fields:
+       id     : "YYYY-MM"           (used in the dropdown value; must be unique)
+       label  : "Month YYYY"        (shown in the dropdown)
+       summary: one or two sentences on the overall direction vs. last month.
+       sections: array of { title, kind, items }
+                 kind ∈ "added" | "fixed" | "changed" | "known"
+                 (controls the colour of the heading)
+                 items: array of short strings. Inline <code>…</code> is allowed.
+  3. Keep it honest: this mirrors AXIOM_STATUS.md in the repo root (the
+     per-commit running log). The monthly entry is a distilled summary of the
+     commits since the previous month.
+  4. Nothing else to touch: the newest entry is selected automatically.
+================================================================================
+-->
+        <script>
+            const DEV_UPDATES = [
+                {
+                    id: "2026-06",
+                    label: "June 2026",
+                    summary:
+                        "Axiom enters its public early-alpha. The focus this month was getting testers in: a default universe, built-in free keys, a self-diagnostic, Windows fixes, and this very website.",
+                    sections: [
+                        {
+                            title: "Added",
+                            kind: "added",
+                            items: [
+                                "Public landing page and this dev-updates page (in <code>landing/</code>, served on GitHub Pages).",
+                                "Built-in self-diagnostic, reachable from the app (Help → Diagnostic) and standalone (<code>python -m tools.diagnostic --gui</code>).",
+                                "Zero-config first launch with temporary built-in keys for testers (valid until June 30).",
+                                "A default universe so new testers have something to play immediately.",
+                            ],
+                        },
+                        {
+                            title: "Fixed",
+                            kind: "fixed",
+                            items: [
+                                "Windows: a class of file-lock crashes (connections that weren't being closed) is resolved; the suite is green on Windows.",
+                                "First-turn freeze caused by an offline embedding model reaching out to the network on load.",
+                            ],
+                        },
+                        {
+                            title: "Changed",
+                            kind: "changed",
+                            items: [
+                                "Status reframed honestly from “beta” to <b>early alpha</b>.",
+                                "Documentation links now point to the docs at <code>/en/</code>; the site root is the landing page.",
+                            ],
+                        },
+                        {
+                            title: "Known rough edges",
+                            kind: "known",
+                            items: [
+                                "The time/turn system is mid-rework (confusion between turn-based logic and in-game time).",
+                                "Rewind to any turn works but is not stable.",
+                                "AI image generation is unstable.",
+                                "The UI around the main chat needs a redesign.",
+                            ],
+                        },
+                    ],
+                },
+                // ↑ Add the next month ABOVE this line (newest first).
+            ];
+
+            const sel = document.getElementById("month-select");
+            const content = document.getElementById("du-content");
+
+            function esc(s) {
+                return String(s);
+            } // items may contain trusted inline HTML (<code>, <b>)
+
+            function renderUpdate(id) {
+                const u = DEV_UPDATES.find((x) => x.id === id);
+                if (!u) {
+                    content.innerHTML =
+                        '<p class="du-empty">No update for this month yet.</p>';
+                    return;
+                }
+                let html = `<article class="du-entry">`;
+                html += `<h2>${u.label}</h2>`;
+                html += `<div class="du-meta">CODEBASE REPORT · ${u.id}</div>`;
+                if (u.summary) html += `<p>${u.summary}</p>`;
+                (u.sections || []).forEach((s) => {
+                    html += `<h3 class="${s.kind || ""}">${s.title}</h3><ul>`;
+                    (s.items || []).forEach((it) => {
+                        html += `<li>${esc(it)}</li>`;
+                    });
+                    html += `</ul>`;
+                });
+                html += `</article>`;
+                content.innerHTML = html;
+            }
+
+            if (DEV_UPDATES.length === 0) {
+                content.innerHTML =
+                    '<p class="du-empty">No dev updates published yet. Check back at the end of the month.</p>';
+            } else {
+                DEV_UPDATES.forEach((u) => {
+                    const opt = document.createElement("option");
+                    opt.value = u.id;
+                    opt.textContent = u.label;
+                    sel.appendChild(opt);
+                });
+                sel.value = DEV_UPDATES[0].id;
+                renderUpdate(sel.value);
+            }
+        </script>
+    </body>
+</html>

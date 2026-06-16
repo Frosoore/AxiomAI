@@ -1,0 +1,33 @@
+name: 💡 Feature request
+description: Suggest a new feature, or an improvement to an existing one. We genuinely add other people's ideas.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape Axiom! Dreamed of something no tool has built? Tell us here.
+        Prefer to chat first? Join the [Discord](https://discord.gg/ttyjqvX3tp).
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type
+      options:
+        - New feature
+        - Improve an existing feature
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do?
+      description: Describe the feature or the change you'd like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why / how would it help?
+      description: Your use case helps us prioritise. (Optional)
+    validations:
+      required: false

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axiom AI: the LLM narrates, the engine adjudicates</title>
+<meta name="description" content="A local-first, open-source RPG engine where the LLM narrates freely and a deterministic engine adjudicates every state change. Headless Python library + desktop app. AGPL-3.0.">
+
+<!-- Open Graph (link preview on HN / Reddit / Discord) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Axiom AI: the LLM narrates, the engine adjudicates">
+<meta property="og:description" content="An open-source RPG engine that lets the LLM narrate freely, then adjudicates every state change against deterministic rules. Local-first. Headless Python library + desktop app.">
+<meta property="og:image" content="assets/in_game.png">
+<meta name="theme-color" content="#1e1e2e">
+
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===================== ALPHA / TESTER BANNER ===================== -->
+<div class="alpha-banner" role="alert">
+  <div class="wrap alpha-inner">
+    <span class="alpha-tag">EARLY ALPHA</span>
+    <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. The quota is shared across all testers, but there's plenty of margin, so go wild. Expect rough edges and breaking changes.</p>
+  </div>
+</div>
+
+<!-- ===================== NAV ===================== -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <img src="assets/icon.svg" alt="Axiom AI logo">
+      <b>Axiom&nbsp;AI</b>
+    </a>
+    <nav class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#library">For developers</a>
+      <a href="dev-updates.html">Dev updates</a>
+      <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ===================== HERO ===================== -->
+<a id="top"></a>
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <div class="tag-row">
+        <span class="tag accent">AGPL-3.0 · open source</span>
+        <span class="tag">local-first</span>
+        <span class="tag">early alpha</span>
+      </div>
+      <h1>The LLM <em>narrates.</em><br>The <span class="mono">engine</span> adjudicates.</h1>
+      <p class="lead">Axiom AI is a deterministic sandbox RPG engine. The model tells the story freely. Then a strict rules engine checks every consequence against the world's logic, so your campaign never quietly forgets your wounds, your gold or the NPC you just killed.</p>
+
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">
+          ★ View on GitHub
+        </a>
+        <a class="btn btn-ghost" href="#how">See how it works ↓</a>
+      </div>
+
+      <div class="install" id="install">
+        <span class="dollar">$</span>
+        <code id="install-cmd">pip install axiomai-engine</code>
+        <button onclick="copyInstall()" id="copy-btn">COPY</button>
+      </div>
+    </div>
+
+    <!-- Animated narrate -> adjudicate loop -->
+    <div class="loop-card" aria-hidden="true">
+      <div class="loop-head">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span>axiom · one turn</span>
+      </div>
+
+      <div class="turn you" style="animation-delay:.1s">
+        <div class="who">You</div>
+        <div class="narr soft">“I toss the merchant a gold coin for the dagger.”</div>
+      </div>
+
+      <div class="turn gm" style="animation-delay:.4s">
+        <div class="who">Narrator (LLM)</div>
+        <div class="narr">You flip a coin onto the counter and slide the blade off the rack.</div>
+      </div>
+
+      <div class="delta">
+        <div class="k">// proposed state changes → adjudicated</div>
+        <div class="line"><span class="ok">✓ inventory +1</span><span class="k">dagger</span></div>
+        <div class="line"><span class="no">✗ gold −1</span><span class="k">balance is 0</span></div>
+        <div class="verdict"><b class="rej">REJECTED:</b> can't spend gold you don't have → correction queued</div>
+      </div>
+
+      <div class="turn gm correct">
+        <div class="who">Narrator · next beat</div>
+        <div class="narr">…you reach for your purse and realize it's empty. The merchant's hand closes over the dagger first.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TRUST STRIP ===================== -->
+<div class="strip">
+  <div class="wrap strip-inner">
+    <span>Runs on <b>Ollama</b></span>
+    <span><b>LM&nbsp;Studio</b></span>
+    <span>any <b>OpenAI-compatible</b> API</span>
+    <span>native <b>Gemini</b></span>
+    <span>local RAG via <b>ChromaDB</b></span>
+    <span>state in <b>SQLite</b></span>
+    <span>imports <b>SillyTavern</b> cards</span>
+  </div>
+</div>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section id="how">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">The design bet</p>
+      <h2 class="section-title">Most tools cage the model. Axiom lets it act, then adjudicates.</h2>
+      <p class="section-lead">Traditional LLM RPG tools gate the model: a rule system decides what's allowed <em>up front</em>, then the LLM narrates inside those bounds. It's consistent, but it forbids you from even trying. Axiom inverts it.</p>
+    </div>
+
+    <div class="thesis-cols reveal">
+      <div class="tcol bad">
+        <h4>The usual way: gate first</h4>
+        <p>Rules pre-approve a move, then the LLM narrates within the cage. Consistent, but restrictive. You can only do what the system already anticipated. The “pure-LLM” alternative is the opposite failure: total freedom, permanent incoherence (the wound heals itself, the spent gold comes back).</p>
+      </div>
+      <div class="tcol good">
+        <h4>Axiom: narrate, then adjudicate</h4>
+        <p>The LLM narrates freely and emits the resulting state changes (HP, gold, inventory, location, time…) as a <b>structured tool call</b>. A deterministic engine adjudicates each change against the universe's definitions. Illegal changes never touch the canonical state. A correction is injected into the next turn, and the narrator walks it back organically.</p>
+      </div>
+    </div>
+
+    <p class="section-lead reveal" style="margin-top:40px;margin-bottom:0">
+      Net effect: <b style="color:var(--text)">world state stays consistent</b>. Only the prose can briefly over-promise before self-correcting. You act first, the GM adjudicates the consequences, exactly like a human game master.
+    </p>
+  </div>
+</section>
+
+<!-- ===================== PHILOSOPHY / WHY AXIOM ===================== -->
+<section id="why" class="philo">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Why Axiom</p>
+      <h2 class="section-title">The exotic features.</h2>
+      <p class="section-lead">Beyond the core design bet, the second thing that makes Axiom <em>Axiom</em> is that we add capabilities simply because we think of them and go “hey, that would be cool.” The further we push it, the more Axiom can do things that are impossible anywhere else.</p>
+    </div>
+
+    <div class="philo-card reveal">
+      <p class="lead-q">The goal is for Axiom to become versatile enough to transform into absolutely anything.</p>
+
+      <p>The further we push the “that would be cool” approach, the more Axiom becomes capable of things that exist nowhere else. <span class="now-tag">live now</span> the world evolves off-screen: during a time skip, a background <mark>Chronicler</mark> advances the world without you, so NPCs move and events unfold while you're away. <span class="soon-tag">roadmap</span> a multiplayer system built on a custom, decentralized connection protocol. Even if no Axiom servers exist anymore, as long as the source code is out there, it will always be possible to play together. (Today multiplayer works locally, in a shared instance; the networked, decentralized layer is what we're building next.)</p>
+
+      <p>And we don't only add <em>our</em> wild ideas. We add other people's too. If you've always dreamed of a feature that has never been implemented anywhere else, <a href="#request">tell us</a> and we'll eventually get to it. A <mark>plugin system</mark> is planned so anyone can add their own features easily, and we intend to launch a free extension store. It would be populated by us at first, and later by the community if things take off.</p>
+
+      <p>That said, we're packing in as many built-in features as possible so you have plenty to play with long before you ever need a plugin. That includes direct import of <mark>SillyTavern</mark> character cards, so you can bring characters you already have straight into a full simulated world.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FEATURES ===================== -->
+<section id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">What's in the box</p>
+      <h2 class="section-title">A whole simulated world, not a chat window.</h2>
+      <p class="section-lead">Everything below exists and runs today. We're in early alpha, though. Some of it is solid, some is still rough or actively being reworked, and we flag that honestly with a tag. Anything that doesn't exist yet lives in the <a href="#roadmap">roadmap</a>, never here.</p>
+    </div>
+
+    <div class="honesty-note reveal">
+      <b>HEADS-UP</b>
+      <span>Tags below mean: <b style="color:var(--peach)">being reworked</b> = works but we're actively changing it; <b style="color:var(--yellow)">unstable</b> = usable but expect bugs; <b style="color:var(--sky)">optional</b> = needs an extra backend. No tag means it's in solid shape for an alpha. The time/turn system in particular is mid-rework (see the roadmap).</span>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat reveal"><div class="ic">⚖</div><h3>Narrate-then-adjudicate</h3><p>An <em>Arbitrator</em> parses the LLM's tool calls, validates every delta against current stats and rules, and commits only what's legal.</p></div>
+
+      <div class="feat reveal"><div class="ic">{ }</div><h3>Universe-as-Code</h3><p>A world is a plain-text TOML/Markdown source tree you can read, edit, diff and version with git. The SQLite <code>.db</code> is just a compiled cache, with hot reload via <code>axiom&nbsp;dev</code>.</p></div>
+
+      <div class="feat reveal"><span class="stab rework">being reworked</span><div class="ic">⏳</div><h3>Causal time &amp; a living world</h3><p>A background <em>Chronicler</em> advances factions and NPCs off-screen while you're away. The time/turn model itself is mid-rework: we're untangling turn-based logic from in-game time, so expect changes here.</p></div>
+
+      <div class="feat reveal"><div class="ic">⌂</div><h3>Local-first &amp; private</h3><p>Run entirely on local models. Nothing leaves your machine. No cloud servers, no telemetry, no data collection. Cloud backends are optional, never required.</p></div>
+
+      <div class="feat reveal"><span class="stab unstable">unstable</span><div class="ic">⟲</div><h3>Event sourcing &amp; rewind</h3><p>Every action is an immutable event. Rewind the timeline to any prior turn with full state reconstruction. It works, but it's not stable yet, and we say so up front.</p></div>
+
+      <div class="feat reveal"><div class="ic">▤</div><h3>Spreadsheet Studio</h3><p>A built-in universe creator: bulk editing, keyboard navigation, a Files tab over the source tree, and AI-assisted population with a diff preview before anything is written.</p></div>
+
+      <div class="feat reveal"><div class="ic">⌕</div><h3>Vector memory (RAG)</h3><p>Local semantic search via ChromaDB + sentence-transformers keeps narrative memory consistent across long campaigns. It runs fully offline, and lore retrieval is getting smarter (see roadmap).</p></div>
+
+      <div class="feat reveal"><div class="ic">☠</div><h3>Game modes</h3><p><b>Normal</b>, <b>Hardcore</b> (character death triggers permanent file deletion + memory wipe) and <b>Companion</b> (an AI hero plays alongside you with its own decision model).</p></div>
+
+      <div class="feat reveal"><div class="ic">▣</div><h3>Portable worlds &amp; saves</h3><p>Export whole universes as <code>.axiom</code> archives and individual playthroughs as <code>.axiomsave</code> files. Duplicate, fork, rename, hand-edit or share them freely.</p></div>
+
+      <div class="feat reveal"><span class="stab unstable">unstable</span><div class="ic">✦</div><h3>AI illustrations</h3><p>Each turn can be illustrated through a local Stable Diffusion WebUI or ComfyUI backend (or Gemini). Generation is unstable for now, but images follow their save through duplication, export and rewind.</p></div>
+
+      <div class="feat reveal"><div class="ic">⌨</div><h3>Headless engine + CLI</h3><p>The same engine drives the desktop app, a full terminal frontend (<code>axiom play</code>), and your own Python scripts. Zero GUI dependencies, published on PyPI.</p></div>
+
+      <div class="feat reveal"><div class="ic">⤓</div><h3>SillyTavern import</h3><p>Bring character cards you already have straight into a full simulated world. Entities, stats and lore come with them.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SCREENSHOTS ===================== -->
+<section id="screens">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">The desktop app</p>
+      <h2 class="section-title">One frontend over a headless engine.</h2>
+      <p class="section-lead">The PySide6/Qt desktop app (10 UI languages) is just one way to drive the engine. The same code runs from a script, a bot or the terminal.</p>
+    </div>
+    <div class="shots reveal">
+      <figure class="shot shot-main">
+        <img src="assets/in_game.png" alt="Axiom AI in-game: narration, stats sidebar, lore book and an AI-generated illustration">
+        <figcaption>In game: narration column, live stats &amp; inventory, lore book, optional per-turn illustration.</figcaption>
+      </figure>
+      <div class="shot-row">
+        <figure class="shot">
+          <img src="assets/main_menu.png" alt="Axiom AI Universe Library">
+          <figcaption>Universe Library: your worlds, import SillyTavern cards, export as archives.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="assets/creator.png" alt="Axiom AI Creator Studio">
+          <figcaption>Creator Studio: spreadsheet-style world building with AI-assisted population.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOR DEVELOPERS ===================== -->
+<section id="library">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">For developers</p>
+      <h2 class="section-title">The engine is a library you can <span style="font-family:var(--font-mono);color:var(--blue);font-size:.82em">import</span>.</h2>
+      <p class="section-lead">The entire game engine ships as a standalone, GUI-free Python package, versioned independently on PyPI. Embed a complete LLM-driven, rules-validated world in your own script, Discord bot or web service. No Qt anywhere.</p>
+    </div>
+
+    <div class="dev-grid">
+      <div class="code-card reveal">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span>game.py</span></div>
+<pre><code><span class="tok-kw">import</span> axiom
+axiom.<span class="tok-fn">help</span>()  <span class="tok-com"># built-in quick-start guide</span>
+
+<span class="tok-kw">from</span> axiom.config <span class="tok-kw">import</span> load_config, build_llm_from_config
+<span class="tok-kw">from</span> axiom.db_helpers <span class="tok-kw">import</span> create_new_save
+
+llm = <span class="tok-fn">build_llm_from_config</span>(<span class="tok-fn">load_config</span>())
+save_id = <span class="tok-fn">create_new_save</span>(<span class="tok-str">"MyUniverse.db"</span>, <span class="tok-str">"Alice"</span>, <span class="tok-str">"Normal"</span>)
+
+session = axiom.<span class="tok-cls">Session</span>(<span class="tok-str">"MyUniverse.db"</span>, save_id, llm=llm)
+result = session.<span class="tok-fn">take_turn</span>(<span class="tok-str">"I open the tavern door."</span>)
+<span class="tok-fn">print</span>(result.narrative_text)</code></pre>
+      </div>
+
+      <div class="reveal">
+        <p class="section-lead" style="margin-bottom:20px">It also installs the <code style="font-family:var(--font-mono);color:var(--green)">axiom</code> command, a full terminal frontend:</p>
+        <ul class="cli-list">
+          <li><span class="cmd">axiom play</span><span class="desc">a text adventure right in your terminal</span></li>
+          <li><span class="cmd">axiom dev</span><span class="desc">hot-reload a universe while you edit it</span></li>
+          <li><span class="cmd">axiom compile</span><span class="desc">universe source tree ⇄ SQLite cache</span></li>
+          <li><span class="cmd">axiom pack / import</span><span class="desc">share worlds as <code>.axiom</code> archives</span></li>
+          <li><span class="cmd">axiom populate</span><span class="desc">AI-assisted universe authoring</span></li>
+          <li><span class="cmd">axiom save-*</span><span class="desc">inspect, edit, fork &amp; export saves</span></li>
+        </ul>
+        <p style="margin-top:22px;color:var(--subtext);font-size:.92rem">
+          Package name <code>axiomai-engine</code> · import name <code>axiom</code>. Full guides &amp; API reference on the
+          <a href="https://frosoore.github.io/AxiomAI/en/" target="_blank" rel="noopener">documentation site ↗</a> (EN/FR).
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ROADMAP ===================== -->
+<section id="roadmap">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Where we're going</p>
+      <h2 class="section-title">Roadmap: clearly not done yet.</h2>
+      <p class="section-lead">None of this exists today. It's where we want to take Axiom. We keep it deliberately separate from the features above, so there's never any confusion about what you actually get right now.</p>
+    </div>
+
+    <div class="road-tiers reveal">
+      <div class="road-col next">
+        <h3>Next up</h3>
+        <p class="sub">What we're actively working toward.</p>
+        <ul class="road-list">
+          <li><span class="marker">▸</span><div><span class="rl-title">Rework the time system</span><span class="rl-desc">Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Save system &amp; universe-format QC</span><span class="rl-desc">Harden the save format and the universe file form, with proper quality control.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Plugin system</span><span class="rl-desc">Modify Axiom yourself. Add your own features and rules cleanly.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">NPC memory + Actor model</span><span class="rl-desc">Give NPCs their own persistent memory and a proper actor architecture.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Test-system rework</span><span class="rl-desc">Plus a plugin-test feature, so new tests are trivial to add.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Embedding / vector improvements</span><span class="rl-desc">Smarter semantic memory and lore retrieval (synonyms &amp; meaning, not just keywords).</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Rework the main-chat UI</span><span class="rl-desc">The interface around the main chat feels weird right now. We're redesigning that area specifically.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">UI / UX redesign</span><span class="rl-desc">A broader pass over the whole desktop experience.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Jailbreak toolkit</span><span class="rl-desc">A jailbreak library, auto-testing of which ones work, and bring-your-own jailbreaks.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Keep the library docs fresh</span><span class="rl-desc">Regular updates to the Python engine documentation.</span></div></li>
+        </ul>
+      </div>
+
+      <div class="road-col far">
+        <h3>Far away</h3>
+        <p class="sub">Bigger bets, further out.</p>
+        <ul class="road-list">
+          <li><span class="marker">◇</span><div><span class="rl-title">Web UI for the engine</span><span class="rl-desc">Play Axiom from the browser, on top of the headless engine.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Free plugin store</span><span class="rl-desc">Search &amp; install plugins. Curated by us at first, then the community if it grows.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Auto plugin creator</span><span class="rl-desc">Let your AI build a plugin for you from plain instructions.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Decentralized multiplayer · <code>SHN</code></span><span class="rl-desc">Our own serverless P2P protocol: as long as the source exists, multiplayer always works. (Local shared-instance play already works today.)</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Our own database · <code>sQript</code></span><span class="rl-desc">Replace SQL with a purpose-built database language &amp; format. Under design.</span></div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== REQUEST A FEATURE ===================== -->
+<section id="request">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Your turn</p>
+      <h2 class="section-title">Dreamed of a feature nobody has built?</h2>
+      <p class="section-lead">We add other people's wild ideas too. Tell us what you want: a brand-new feature, or an improvement to something that already exists. The form prepares a GitHub issue you can post in one click.</p>
+    </div>
+
+    <div class="form-wrap reveal">
+      <form class="feature-form" id="feature-form" onsubmit="submitFeature(event)">
+        <div class="ff-row">
+          <span class="lbl">I want to…</span>
+          <div class="seg">
+            <label><input type="radio" name="ftype" value="feature" checked><span>Request a new feature</span></label>
+            <label><input type="radio" name="ftype" value="improve"><span>Improve an existing feature</span></label>
+          </div>
+        </div>
+
+        <div class="ff-row">
+          <label class="lbl" for="f-title">Short title <span class="req">*</span></label>
+          <input type="text" id="f-title" required maxlength="90" placeholder="e.g. Dice-roll resolution for skill checks">
+        </div>
+
+        <div class="ff-row">
+          <label class="lbl" for="f-desc">What should it do? <span class="req">*</span></label>
+          <textarea id="f-desc" required placeholder="Describe the feature or the change you'd like to see."></textarea>
+        </div>
+
+        <div class="ff-row">
+          <label class="lbl" for="f-help">Why would it help / how would you use it?</label>
+          <textarea id="f-help" placeholder="Optional. Your use case helps us prioritise."></textarea>
+        </div>
+
+        <div class="ff-actions">
+          <button type="submit" class="btn btn-primary">Open a prefilled GitHub issue ↗</button>
+          <span class="ff-note">Opens GitHub with everything filled in. Review and click “Submit”. A free GitHub account is required.</span>
+        </div>
+      </form>
+
+      <div class="discord-line">
+        <span>No GitHub account, or just want to chat about it?</span>
+        <a class="btn btn-discord" href="https://discord.gg/ttyjqvX3tp" target="_blank" rel="noopener">Join our Discord</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CTA ===================== -->
+<section>
+  <div class="wrap">
+    <div class="cta-band reveal">
+      <h2>Come break it.</h2>
+      <p>Try it, stress-test the engine, write a ruleset, or just play and tell us what a good AI game master should actually do. Feedback on the narrate-then-adjudicate model especially welcome.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">★ Get it on GitHub</a>
+        <a class="btn btn-discord" href="https://discord.gg/ttyjqvX3tp" target="_blank" rel="noopener">Join the Discord</a>
+        <a class="btn btn-ghost" href="https://pypi.org/project/axiomai-engine/" target="_blank" rel="noopener">pip install axiomai-engine</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="#top"><img src="assets/icon.svg" alt=""><b>Axiom&nbsp;AI</b></a>
+        <p>A local-first, deterministic sandbox RPG engine. Player sovereignty, no data collection, your stories never leave your machine.</p>
+      </div>
+      <div class="foot-col">
+        <h5>Project</h5>
+        <a href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub repository</a>
+        <a href="https://pypi.org/project/axiomai-engine/" target="_blank" rel="noopener">PyPI · axiomai-engine</a>
+        <a href="https://frosoore.github.io/AxiomAI/en/" target="_blank" rel="noopener">Documentation (EN/FR)</a>
+        <a href="https://discord.gg/ttyjqvX3tp" target="_blank" rel="noopener">Discord community</a>
+      </div>
+      <div class="foot-col">
+        <h5>Learn</h5>
+        <a href="#how">How it works</a>
+        <a href="#why">Why Axiom</a>
+        <a href="#features">Features</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="dev-updates.html">Dev updates</a>
+        <a href="#request">Request a feature</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span>
+      <span>The LLM narrates · the engine adjudicates</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+function copyInstall() {
+  const txt = document.getElementById('install-cmd').textContent;
+  const btn = document.getElementById('copy-btn');
+  navigator.clipboard.writeText(txt).then(() => {
+    btn.textContent = 'COPIED';
+    setTimeout(() => { btn.textContent = 'COPY'; }, 1600);
+  });
+}
+
+function submitFeature(e) {
+  e.preventDefault();
+  const type  = document.querySelector('input[name=ftype]:checked').value;
+  const title = document.getElementById('f-title').value.trim();
+  const desc  = document.getElementById('f-desc').value.trim();
+  const help  = document.getElementById('f-help').value.trim();
+  if (!title || !desc) return;
+  const kind  = type === 'improve' ? 'Improve' : 'Feature';
+  const issueTitle = `[${kind}] ${title}`;
+  let body = `**Type:** ${type === 'improve' ? 'Improve an existing feature' : 'New feature request'}\n\n`;
+  body += `**What it should do:**\n${desc}\n\n`;
+  if (help) body += `**Why / how it would help:**\n${help}\n\n`;
+  body += `---\n_Submitted via the Axiom AI website._`;
+  const url = 'https://github.com/Frosoore/AxiomAI/issues/new'
+    + '?title=' + encodeURIComponent(issueTitle)
+    + '&labels=' + encodeURIComponent('enhancement')
+    + '&body='  + encodeURIComponent(body);
+  window.open(url, '_blank', 'noopener');
+}
+
+// scroll reveal
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
