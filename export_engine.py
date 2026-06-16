@@ -91,7 +91,7 @@ print(result.narrative_text)
 
 Guides (Universe-as-Code, CLI, saves, populate, backends, images) and full API
 reference, in English and French:
-**https://frosoore.github.io/AxiomAI/**
+**https://frosoore.github.io/AxiomAI/en/**
 
 ## Project
 

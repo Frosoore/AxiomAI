@@ -45,7 +45,7 @@ dependencies = [
 # de retrouver le repo (l'app GUI vit dans le même mono-repo que le moteur).
 [project.urls]
 Homepage = "https://github.com/Frosoore/AxiomAI"
-Documentation = "https://frosoore.github.io/AxiomAI/"
+Documentation = "https://frosoore.github.io/AxiomAI/en/"
 Repository = "https://github.com/Frosoore/AxiomAI"
 Issues = "https://github.com/Frosoore/AxiomAI/issues"
 
