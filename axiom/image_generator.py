@@ -77,17 +77,13 @@ class ImageGenerator:
         clean_narrative = _strip_media_tags(narrative_text)
 
         system_prompt = (
-            "You are a visual prompt generator for AI image models like Stable Diffusion and ComfyUI.\n"
-            "Given a piece of narrative text and context (character description, location, game state), "
-            "your task is to return a clean, descriptive, comma-separated list of visual keywords (prompt) "
-            "optimized for text-to-image generation.\n\n"
-            "CRITICAL RULES:\n"
-            "1. Only return the comma-separated prompt. Do NOT include phrases like 'Here is the prompt:', "
-            "'Description:', or any markdown quotes/formatting.\n"
-            "2. Keep the prompt descriptive, focusing on characters, clothing, actions, environment, lighting, and style "
-            "(e.g., 'digital oil painting', 'fantasy concept art', 'highly detailed').\n"
-            "3. Keep the output under 75 words.\n"
-            "4. Do NOT write conversational text."
+            "You are a visual prompt generator. Your task is to translate the provided game narrative and context into a single, cohesive, high-quality visual description (prompt) for a text-to-image AI.\n\n"
+            "Rules:\n"
+            "- Write the output as a single, coherent, natural language sentence or short paragraph describing the main characters, their actions, and the immediate environment.\n"
+            "- Focus on the central visual event of the scene. Avoid abstract keywords, and instead describe concrete visual details that match the story's setting (whether modern, fantasy, sci-fi, etc.).\n"
+            "- Add a few style and lighting keywords at the end, separated by commas (e.g., 'detailed digital painting, dramatic lighting').\n"
+            "- Do NOT return introductory phrases, quotes, bullet points, lists of disjointed words, or explanations. Only return the final description itself.\n"
+            "- Keep the output under 60 words."
         )
 
         user_content = f"Narrative Text:\n{clean_narrative}\n"
@@ -157,7 +153,7 @@ class ImageGenerator:
                 url = f"{api_url.rstrip('/')}/sdapi/v1/txt2img"
                 payload = {
                     "prompt": prompt,
-                    "negative_prompt": "blurry, low quality, distorted, extra limbs, bad anatomy, text, watermark",
+                    "negative_prompt": "deformed, bad anatomy, disfigured, poorly drawn face, mutated, extra limbs, ugly, blurry, bad hands, bad fingers, missing fingers, extra fingers, watermark, signature, text, low quality, worst quality",
                     "steps": self.config.image_steps,
                     "width": self.config.image_width,
                     "height": self.config.image_height,
@@ -429,7 +425,7 @@ class ImageGenerator:
                     "class_type": "CLIPTextEncode",
                     "inputs": {
                         "clip": ["4", 1],
-                        "text": "blurry, low quality, distorted, extra limbs, bad anatomy, text, watermark",
+                        "text": "deformed, bad anatomy, disfigured, poorly drawn face, mutated, extra limbs, ugly, blurry, bad hands, bad fingers, missing fingers, extra fingers, watermark, signature, text, low quality, worst quality",
                     },
                 },
                 "8": {

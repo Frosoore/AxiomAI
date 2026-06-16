@@ -286,9 +286,20 @@ class ChatDisplayWidget(QWidget):
 
         while buf:
             if self._in_json_fence:
+                if self._json_fence_close is None:
+                    # Suppress everything to the end of the stream
+                    if force:
+                        buf = ""
+                        self._in_json_fence = False
+                    break
+
                 # Waiting for the closing fence matching the opener (~~~ or ```)
                 close_pos = buf.find(self._json_fence_close)
                 if close_pos == -1:
+                    if force:
+                        # Stream finished but fence is unclosed; discard the rest of the fence content
+                        buf = ""
+                        self._in_json_fence = False
                     # Not yet found - keep everything buffered
                     break
                 # Consume through the close fence (and any trailing newline)
@@ -301,12 +312,28 @@ class ChatDisplayWidget(QWidget):
                 # Earliest opener of any known fence style wins
                 open_pos = -1
                 opener_len = 0
+                matched_close = None
+                
+                # 1. Check standard closed/known fences
                 for fence_open, fence_close in self._JSON_FENCES:
                     pos = buf.find(fence_open)
                     if pos != -1 and (open_pos == -1 or pos < open_pos):
                         open_pos = pos
                         opener_len = len(fence_open)
-                        self._json_fence_close = fence_close
+                        matched_close = fence_close
+                
+                # 2. Check for raw/unclosed JSON object start: "\n{" or if it starts with "{" at the very beginning of the response
+                raw_pos = buf.find("\n{")
+                if raw_pos != -1 and (open_pos == -1 or raw_pos < open_pos):
+                    open_pos = raw_pos
+                    opener_len = len("\n{")
+                    matched_close = None
+                
+                if not self._in_json_fence and buf.startswith("{"):
+                    open_pos = 0
+                    opener_len = 1
+                    matched_close = None
+
                 if open_pos == -1:
                     # No complete fence ahead.
                     if force:
@@ -320,6 +347,11 @@ class ChatDisplayWidget(QWidget):
                             if buf.endswith(fence_open[:length]):
                                 overlap = max(overlap, length)
                                 break
+                    # Also watch overlap for "\n{"
+                    for length in range(len("\n{") - 1, 0, -1):
+                        if buf.endswith(("\n{")[:length]):
+                            overlap = max(overlap, length)
+                            break
 
                     safe_len = len(buf) - overlap
                     out_parts.append(buf[:safe_len])
@@ -329,6 +361,7 @@ class ChatDisplayWidget(QWidget):
                 out_parts.append(buf[:open_pos])
                 buf = buf[open_pos + opener_len:]
                 self._in_json_fence = True
+                self._json_fence_close = matched_close
 
         self._token_buf = buf
         return "".join(out_parts)

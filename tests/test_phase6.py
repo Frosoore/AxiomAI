@@ -344,6 +344,35 @@ class TestJsonFenceFiltering:
         r3 = f.feed("~")
         assert "~~~" not in (r1 + r2 + r3)
 
+    def test_unclosed_fence_dropped_on_force_flush(self) -> None:
+        """An unclosed JSON fence is suppressed during streaming and discarded on final flush."""
+        f = self._make()
+        result = ""
+        for ch in "Prose.\n~~~json\n{\"key\": \"val":
+            result += f.feed(ch)
+        # Suppressed so far
+        assert "key" not in result
+        
+        # Now force final flush
+        from ui.widgets.chat_display import ChatDisplayWidget
+        f._token_buf += "" # nothing new
+        final = ChatDisplayWidget._flush_token_buffer(f, force=True)
+        assert "key" not in final
+        assert "Prose." in result or "Prose." in final
+
+    def test_raw_json_start_dropped_on_force_flush(self) -> None:
+        """A raw JSON start (\n{) is suppressed during streaming and discarded on final flush."""
+        f = self._make()
+        result = ""
+        for ch in "Prose.\n{\n  \"state_changes\": []":
+            result += f.feed(ch)
+        assert "state_changes" not in result
+        
+        from ui.widgets.chat_display import ChatDisplayWidget
+        final = ChatDisplayWidget._flush_token_buffer(f, force=True)
+        assert "state_changes" not in final
+        assert "Prose." in result or "Prose." in final
+
 
 # ---------------------------------------------------------------------------
 # 6.7 — UI Form Synchronization

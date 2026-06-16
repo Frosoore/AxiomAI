@@ -139,6 +139,7 @@ class AppConfig:
     basic_prompt: str = ""
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
+    trim_sentences: bool = True
 
 
     # Image generation settings

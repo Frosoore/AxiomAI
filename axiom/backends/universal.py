@@ -209,6 +209,9 @@ class UniversalClient(LLMBackend):
             # instead of raising KeyError (TICKET-066).
             raw_text = choice.get("message", {}).get("content") or ""
             reason = choice.get("finish_reason", "stop")
+            if reason in ("length", "max_tokens"):
+                reason = "length"
+            self.last_finish_reason = reason
 
             narrative, tool_call = self.parse_tool_call(raw_text)
             return LLMResponse(
@@ -244,6 +247,7 @@ class UniversalClient(LLMBackend):
                             and self._rotate_key()):
                         continue
                     response.raise_for_status()
+                    self.last_finish_reason = "stop"
                     for line in response.iter_lines():
                         if not line:
                             continue
@@ -253,7 +257,14 @@ class UniversalClient(LLMBackend):
                                 break
                             try:
                                 chunk = json.loads(data_str)
-                                delta = chunk["choices"][0].get("delta", {})
+                                choice = chunk["choices"][0]
+                                if "finish_reason" in choice and choice["finish_reason"]:
+                                    reason = choice["finish_reason"]
+                                    if reason in ("length", "max_tokens"):
+                                        self.last_finish_reason = "length"
+                                    else:
+                                        self.last_finish_reason = reason
+                                delta = choice.get("delta", {})
                                 content = delta.get("content", "")
                                 if content:
                                     yield content

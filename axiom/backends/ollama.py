@@ -164,6 +164,7 @@ class OllamaClient(LLMBackend):
                 f"Unexpected Ollama response structure: {exc}\nBody: {body}"
             ) from exc
 
+        self.last_finish_reason = finish_reason
         narrative, tool_call = self.parse_tool_call(raw_content)
         return LLMResponse(
             narrative_text=narrative,
@@ -224,6 +225,7 @@ class OllamaClient(LLMBackend):
             payload["format"] = "json"
 
         try:
+            self.last_finish_reason = "stop"
             with httpx.stream(
                 "POST",
                 f"{self._base_url}/api/chat",
@@ -246,6 +248,9 @@ class OllamaClient(LLMBackend):
                     if token:
                         yield token
                     if chunk.get("done", False):
+                        done_reason = chunk.get("done_reason")
+                        if done_reason == "length":
+                            self.last_finish_reason = "length"
                         break
 
         except httpx.ConnectError as exc:

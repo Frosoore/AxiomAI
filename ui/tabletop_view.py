@@ -661,6 +661,11 @@ class TabletopView(HardcoreMixin, QWidget):
 
         self._chat.set_send_enabled(True)
 
+        # Rebuild chat from history to clean up any malformed JSON streaming leaks
+        from axiom import paths
+        assets_dir = paths.get_assets_dir() / self._save_id
+        self._chat.rebuild_from_history(self._history, assets_dir=assets_dir)
+
         # Force a DB sync of the sidebar
         self._db_worker.load_full_game_state(self._save_id)
 

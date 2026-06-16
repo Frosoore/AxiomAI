@@ -67,6 +67,27 @@ class LLMResponse:
     tool_call: dict | list | None
     finish_reason: str
 
+    @staticmethod
+    def _trim_incomplete_sentence(text: str) -> str:
+        text = text.strip()
+        if not text:
+            return text
+
+        # Check if the text already ends with a sentence terminator (complete sentence)
+        # We allow trailing quotes, parentheses, brackets, or whitespace after the terminator.
+        if re.search(r'[.!?。！？]+["\'”»\s\)]*$', text):
+            return text
+
+        pattern = re.compile(r'([.!?。！？]+["\'”»\s\)]*)')
+        matches = list(pattern.finditer(text))
+        if not matches:
+            return text
+        last_match = matches[-1]
+        end_pos = last_match.end()
+        if end_pos < len(text):
+            return text[:end_pos].strip()
+        return text
+
 
 # ---------------------------------------------------------------------------
 # Custom exceptions
@@ -134,6 +155,7 @@ class LLMBackend(ABC):
 
     on_status = None        # Callable[[str], None] | None
     cancel_event = None     # threading.Event | None
+    last_finish_reason: str = "stop"
 
     def _notify(self, message: str) -> None:
         if self.on_status is not None:
@@ -241,20 +263,56 @@ class LLMBackend(ABC):
             response with the JSON block removed, and tool_call is the
             parsed dict/list, or None if no valid JSON was found.
         """
-        # 1. Try fenced blocks first (prioritize ~~~json as per spec)
+        # Helper to repair and parse JSON
+        def try_repair_and_parse(s: str) -> dict | list | None:
+            s_clean = s.strip()
+            # 1. Try parsing directly
+            try:
+                data = json.loads(s_clean)
+                return cls._normalize_json(data)
+            except json.JSONDecodeError:
+                pass
+
+            # 2. Try repairing
+            try:
+                repaired = cls._repair_json_string(s_clean)
+                data = json.loads(repaired)
+                return cls._normalize_json(data)
+            except json.JSONDecodeError:
+                pass
+            return None
+
+        # A. Try closed fenced blocks first (prioritize ~~~json as per spec)
         for pattern in _FENCE_PATTERNS:
             match = pattern.search(raw_response)
             if match:
                 json_str = match.group(1).strip()
                 narrative = pattern.sub("", raw_response).strip()
-                try:
-                    data = json.loads(json_str)
-                    return narrative, cls._normalize_json(data)
-                except json.JSONDecodeError:
-                    continue
+                data = try_repair_and_parse(json_str)
+                return narrative, data
 
-        # 2. Fallback: Heuristic search for largest JSON-looking block
-        # Support both objects {...} and arrays [...]
+        # B. Try finding an unclosed/malformed fence opener
+        # Search from the end for any known fence openers
+        fence_openers = ["~~~json", "```json", "~~~", "```"]
+        last_opener_idx = -1
+        opener_len = 0
+        for opener in fence_openers:
+            idx = raw_response.rfind(opener)
+            if idx > last_opener_idx:
+                last_opener_idx = idx
+                opener_len = len(opener)
+
+        if last_opener_idx != -1:
+            narrative = raw_response[:last_opener_idx].strip()
+            json_str = raw_response[last_opener_idx + opener_len:].strip()
+            # If the json_str ends with closer, strip it (though if closed, pattern above should have matched)
+            for closer in ["~~~", "```"]:
+                if json_str.endswith(closer):
+                    json_str = json_str[:-len(closer)].strip()
+            data = try_repair_and_parse(json_str)
+            return narrative, data
+
+        # C. Try heuristic search for closed JSON structures (object or array)
         json_pattern = re.compile(r"([\{\[].*[\}\]])", re.DOTALL)
         match = json_pattern.search(raw_response)
         if match:
@@ -262,14 +320,70 @@ class LLMBackend(ABC):
             start_idx = raw_response.find(json_str)
             end_idx = start_idx + len(json_str)
             narrative = (raw_response[:start_idx] + raw_response[end_idx:]).strip()
-            try:
-                data = json.loads(json_str)
-                narrative = re.sub(r'[\s\*]*(?:~~+json|~~~|```json|```)[\s\*~`]*$', '', narrative).strip()
-                return narrative, cls._normalize_json(data)
-            except json.JSONDecodeError:
-                pass
+            # Clean up trailing fence remnants if any
+            narrative = re.sub(r'[\s\*]*(?:~~+json|~~~|```json|```)[\s\*~`]*$', '', narrative).strip()
+            data = try_repair_and_parse(json_str)
+            return narrative, data
+
+        # D. Try finding an unclosed/malformed JSON object starting with `{` at the end
+        last_brace_idx = raw_response.rfind("{")
+        if last_brace_idx != -1:
+            text_after = raw_response[last_brace_idx:]
+            if re.search(r'"[^"]*"\s*:', text_after):
+                narrative = raw_response[:last_brace_idx].strip()
+                json_str = text_after.strip()
+                data = try_repair_and_parse(json_str)
+                return narrative, data
 
         return raw_response.strip(), None
+
+    @classmethod
+    def _repair_json_string(cls, s: str) -> str:
+        """Attempt to repair common JSON syntax errors (like missing closing brackets)."""
+        s = s.strip()
+        if not s:
+            return s
+        in_string = False
+        escaped = False
+        stack = []
+        
+        repaired_chars = []
+        for char in s:
+            if escaped:
+                escaped = False
+                repaired_chars.append(char)
+                continue
+            if char == '\\':
+                escaped = True
+                repaired_chars.append(char)
+                continue
+            if char == '"':
+                in_string = not in_string
+                repaired_chars.append(char)
+                continue
+            
+            if not in_string:
+                if char in ('{', '['):
+                    stack.append(char)
+                elif char == '}':
+                    if stack and stack[-1] == '{':
+                        stack.pop()
+                elif char == ']':
+                    if stack and stack[-1] == '[':
+                        stack.pop()
+            repaired_chars.append(char)
+        
+        if in_string:
+            repaired_chars.append('"')
+            
+        while stack:
+            open_char = stack.pop()
+            if open_char == '{':
+                repaired_chars.append('}')
+            elif open_char == '[':
+                repaired_chars.append(']')
+                
+        return "".join(repaired_chars)
 
     @classmethod
     def _normalize_json(cls, data: Any) -> dict | list | None:

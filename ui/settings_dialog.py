@@ -359,6 +359,9 @@ class SettingsDialog(QDialog):
         # TICKET-057 : doc tooltips on hover can be turned off.
         self._doc_tooltips_cb = doc(QCheckBox(tr("show_doc_tooltips")), "settings.doc_tooltips")
 
+        # Trim Sentences toggle
+        self._trim_sentences_cb = doc(QCheckBox(tr("trim_sentences")), "settings.trim_sentences")
+
         self._basic_prompt = doc(QTextEdit(), "settings.basic_prompt")
         self._basic_prompt.setAcceptRichText(False)
         self._basic_prompt.setMaximumHeight(80)
@@ -377,6 +380,7 @@ class SettingsDialog(QDialog):
         general_form.addRow("", self._audio_cb)
         general_form.addRow("", self._timekeeper_cb)
         general_form.addRow("", self._doc_tooltips_cb)
+        general_form.addRow("", self._trim_sentences_cb)
         general_form.addRow(self._basic_prompt_label, self._basic_prompt)
         
         layout.addWidget(self._general_group)
@@ -493,6 +497,7 @@ class SettingsDialog(QDialog):
         self._audio_cb.setText(tr("enable_audio"))
         self._timekeeper_cb.setText(tr("timekeeper_enabled"))
         self._doc_tooltips_cb.setText(tr("show_doc_tooltips"))
+        self._trim_sentences_cb.setText(tr("trim_sentences"))
         self._basic_prompt_label.setText(tr("basic_prompt_label"))
         self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
 
@@ -551,6 +556,7 @@ class SettingsDialog(QDialog):
         self._audio_cb.setChecked(config.enable_audio)
         self._timekeeper_cb.setChecked(config.timekeeper_enabled)
         self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
+        self._trim_sentences_cb.setChecked(config.trim_sentences)
         self._basic_prompt.setPlainText(config.basic_prompt)
 
         # Image settings
@@ -617,6 +623,7 @@ class SettingsDialog(QDialog):
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),
             doc_tooltips_enabled=self._doc_tooltips_cb.isChecked(),
+            trim_sentences=self._trim_sentences_cb.isChecked(),
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),

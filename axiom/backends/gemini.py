@@ -361,6 +361,7 @@ class GeminiClient(LLMBackend):
             raise LLMParseError("Gemini response returned None text.")
 
         finish_reason = self._extract_finish_reason(response)
+        self.last_finish_reason = finish_reason
         narrative, tool_call = self.parse_tool_call(raw_content)
 
         return LLMResponse(
@@ -476,9 +477,13 @@ class GeminiClient(LLMBackend):
             raise
 
         try:
+            self.last_finish_reason = "stop"
             chunks = [first_chunk] if first_chunk is not None else []
             for chunk in chunks:
                 try:
+                    finish = self._extract_finish_reason(chunk)
+                    if finish != "stop":
+                        self.last_finish_reason = finish
                     text = chunk.text
                     if text:
                         yield text
@@ -486,6 +491,9 @@ class GeminiClient(LLMBackend):
                     pass
             for chunk in stream:
                 try:
+                    finish = self._extract_finish_reason(chunk)
+                    if finish != "stop":
+                        self.last_finish_reason = finish
                     text = chunk.text
                     if text:
                         yield text

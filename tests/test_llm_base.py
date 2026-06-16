@@ -171,6 +171,35 @@ class TestParseToolCallErrors:
         text, tool = LLMBackend.parse_tool_call(raw)
         assert tool is None
 
+    def test_unclosed_fence_repaired_successfully(self) -> None:
+        """An unclosed fence with incomplete JSON is stripped from narrative and repaired."""
+        raw = "Hello.\n~~~json\n{\"state_changes\": [], \"narrative_events\": [\"guild_intro"
+        text, tool = LLMBackend.parse_tool_call(raw)
+        assert text == "Hello."
+        assert tool is not None
+        assert tool["narrative_events"] == ["guild_intro"]
+
+    def test_unclosed_raw_json_at_end_stripped_and_repaired(self) -> None:
+        """Raw unclosed JSON object at the end of narrative is stripped and repaired."""
+        raw = (
+            "Nadine looks to you expectantly.\n\n"
+            "{\n"
+            "  \"state_changes\": [],\n"
+            "  \"inventory_changes\": [],\n"
+            "  \"narrative_events\": [\"guild_intro]\n"
+        )
+        text, tool = LLMBackend.parse_tool_call(raw)
+        assert text == "Nadine looks to you expectantly."
+        assert tool is not None
+        assert tool["narrative_events"] == ["guild_intro]"]
+
+    def test_malformed_json_stripped_even_if_unparseable(self) -> None:
+        """Extremely malformed JSON that cannot be parsed/repaired is still stripped from narrative to avoid leaking."""
+        raw = "Some story text.\n{\n  \"state_changes\": invalid syntax here"
+        text, tool = LLMBackend.parse_tool_call(raw)
+        assert text == "Some story text."
+        assert tool is None
+
 
 # ---------------------------------------------------------------------------
 # Custom exceptions
@@ -193,3 +222,79 @@ class TestExceptions:
         the other), so callers can catch them separately."""
         assert not issubclass(LLMConnectionError, LLMParseError)
         assert not issubclass(LLMParseError, LLMConnectionError)
+
+
+class TestTrimSentences:
+    def test_trim_incomplete_sentence_helper(self) -> None:
+        """Test _trim_incomplete_sentence with various inputs."""
+        # Standard case: incomplete sentence at end
+        t1 = "Nadine looks nervous. She points to a notice with neat handwriting. It pays 8 silver and the write-up says the area's safe—just watch out for wild"
+        res1 = LLMResponse._trim_incomplete_sentence(t1)
+        assert res1 == "Nadine looks nervous. She points to a notice with neat handwriting."
+
+        # Case: already complete sentence
+        t2 = "Nadine looks nervous. She points to a notice with neat handwriting."
+        res2 = LLMResponse._trim_incomplete_sentence(t2)
+        assert res2 == "Nadine looks nervous. She points to a notice with neat handwriting."
+
+        # Dialogue quotes case
+        t3 = "Nadine says, \"Hello Nadine! How are you doing?\" and then"
+        res3 = LLMResponse._trim_incomplete_sentence(t3)
+        assert res3 == "Nadine says, \"Hello Nadine! How are you doing?\""
+
+        # Spanish/Inverted case or other punctuation
+        t4 = "¡Hola Nadine! ¿Cómo estás? Me llamo Juan y"
+        res4 = LLMResponse._trim_incomplete_sentence(t4)
+        assert res4 == "¡Hola Nadine! ¿Cómo estás?"
+
+        # Chinese / Japanese punctuation
+        t5 = "彼女は微笑んだ。そして、手を伸ばして"
+        res5 = LLMResponse._trim_incomplete_sentence(t5)
+        assert res5 == "彼女は微笑んだ。"
+
+    def test_arbitrator_trim_integration(self, monkeypatch) -> None:
+        """Test that ArbitratorEngine._call_llm triggers trimming based on config and finish_reason/completeness."""
+        from axiom.arbitrator import ArbitratorEngine
+        from axiom.backends.base import LLMResponse, LLMBackend
+        
+        # Create a mock LLMBackend
+        class FakeLLM(LLMBackend):
+            def __init__(self, response):
+                self.resp = response
+                self.last_finish_reason = response.finish_reason
+            def complete(self, *args, **kwargs):
+                return self.resp
+            def stream_tokens(self, *args, **kwargs):
+                pass
+            def is_available(self):
+                return True
+                
+        # 1. trim_sentences = True, finish_reason = length
+        class MockConfigTrue:
+            trim_sentences = True
+            
+        monkeypatch.setattr("axiom.config.load_config", lambda: MockConfigTrue())
+        
+        raw_text = "Nadine looks nervous. She points to a notice with neat handwriting. It pays 8 silver and the write-up says the area's safe—just watch out for wild"
+        
+        # Test case A: finish_reason is length
+        fake_llm = FakeLLM(LLMResponse(narrative_text=raw_text, tool_call=None, finish_reason="length"))
+        arb = ArbitratorEngine(db_path=":memory:", rules_list=[])
+        arb.configure(fake_llm, None)
+        res = arb._call_llm(messages=[], stream_token_callback=None)
+        assert res.narrative_text == "Nadine looks nervous. She points to a notice with neat handwriting."
+        
+        # Test case B: finish_reason is stop, but sentence is incomplete (should trim because it's incomplete)
+        fake_llm = FakeLLM(LLMResponse(narrative_text=raw_text, tool_call=None, finish_reason="stop"))
+        arb.configure(fake_llm, None)
+        res = arb._call_llm(messages=[], stream_token_callback=None)
+        assert res.narrative_text == "Nadine looks nervous. She points to a notice with neat handwriting."
+
+        # Test case C: trim_sentences = False, finish_reason is length (should NOT trim)
+        class MockConfigFalse:
+            trim_sentences = False
+        monkeypatch.setattr("axiom.config.load_config", lambda: MockConfigFalse())
+        fake_llm = FakeLLM(LLMResponse(narrative_text=raw_text, tool_call=None, finish_reason="length"))
+        arb.configure(fake_llm, None)
+        res = arb._call_llm(messages=[], stream_token_callback=None)
+        assert res.narrative_text == raw_text

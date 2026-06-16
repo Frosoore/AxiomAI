@@ -149,6 +149,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "audio",
         "timekeeper",
         "doc_tooltips",
+        "trim_sentences",
         "basic_prompt",
     ),
     # Chrome of the main window itself (status bar etc.) — shown in the

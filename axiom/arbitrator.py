@@ -637,48 +637,62 @@ class ArbitratorEngine:
             LLMConnectionError: If the LLM is unreachable during streaming.
         """
         if stream_token_callback is None:
-            return self._llm.complete(
+            resp = self._llm.complete(
                 messages, 
                 temperature=temperature, 
                 top_p=top_p, 
                 stop_sequences=stop_sequences,
                 max_tokens=max_tokens
             )
+        else:
+            # Streaming path
+            raw_tokens: list[str] = []
+            is_json_block = False
+            buffer = ""
+            for token in self._llm.stream_tokens(
+                messages, 
+                temperature=temperature, 
+                top_p=top_p, 
+                stop_sequences=stop_sequences,
+                max_tokens=max_tokens
+            ):
+                raw_tokens.append(token)
+                if not is_json_block:
+                    buffer += token
+                    match = re.search(r'(~~+json|~~~|```json|```)', buffer)
+                    if match:
+                        is_json_block = True
+                        idx = match.start()
+                        if idx > 0:
+                            stream_token_callback(buffer[:idx])
+                    elif len(buffer) > 15:
+                        stream_token_callback(buffer[:-15])
+                        buffer = buffer[-15:]
 
-        # Streaming path
-        raw_tokens: list[str] = []
-        is_json_block = False
-        buffer = ""
-        for token in self._llm.stream_tokens(
-            messages, 
-            temperature=temperature, 
-            top_p=top_p, 
-            stop_sequences=stop_sequences,
-            max_tokens=max_tokens
-        ):
-            raw_tokens.append(token)
-            if not is_json_block:
-                buffer += token
-                match = re.search(r'(~~+json|~~~|```json|```)', buffer)
-                if match:
-                    is_json_block = True
-                    idx = match.start()
-                    if idx > 0:
-                        stream_token_callback(buffer[:idx])
-                elif len(buffer) > 15:
-                    stream_token_callback(buffer[:-15])
-                    buffer = buffer[-15:]
+            if not is_json_block and buffer:
+                stream_token_callback(buffer)
 
-        if not is_json_block and buffer:
-            stream_token_callback(buffer)
+            full_raw = "".join(raw_tokens)
+            narrative, tool_call = self._llm.parse_tool_call(full_raw)
+            resp = LLMResponse(
+                narrative_text=narrative,
+                tool_call=tool_call,
+                finish_reason=self._llm.last_finish_reason,
+            )
 
-        full_raw = "".join(raw_tokens)
-        narrative, tool_call = self._llm.parse_tool_call(full_raw)
-        return LLMResponse(
-            narrative_text=narrative,
-            tool_call=tool_call,
-            finish_reason="stop",
-        )
+        # Apply narrator-specific "Trim Sentences" post-processing
+        from axiom.config import load_config
+        try:
+            config = load_config()
+            if getattr(config, "trim_sentences", True):
+                # Trim if finish_reason is length OR if the narrative text does not end with a sentence terminator
+                is_incomplete = not re.search(r'[.!?。！？]+["\'”»\s\)]*$', resp.narrative_text.strip())
+                if resp.finish_reason == "length" or is_incomplete:
+                    resp.narrative_text = LLMResponse._trim_incomplete_sentence(resp.narrative_text)
+        except Exception:
+            pass
+
+        return resp
 
     def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
         """Fetch all active entity stats and apply modifier overlays.
