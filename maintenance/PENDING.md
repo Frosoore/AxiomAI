@@ -20,6 +20,10 @@
 | TICKET-069| **Validation Windows sur machine réelle** : 🔄 **gros lot fait les 2026-06-14** (crash WinError 32 résolu, classe connexion-non-fermée corrigée moteur+app, suite 753✅, **`run.bat`/startup_check OK + `main.py` atteint la boucle d'événements sans crash**, **audio requalifié quasi nul** : Ogg/FLAC/AAC supportés sur Win11 + aucun asset audio embarqué — cf. `TICKET-062-windows-support/CHANGELOG.md`). Reste : **un vrai tour de jeu GUI** + génération d'images locale | ouvert — bien allégé |
 | TICKET-070| **torch ne charge pas sous Windows** (`OSError WinError 126`) : **VC++ Redistributable x64 manquant**. App dégradée gracieusement (no-op + warning) ; **diagnostic FAIL actionnable** (`_check_embedding_runtime`) **+ alerte GUI au lancement** avec lien de téléchargement (`ui/runtime_check.py`, i18n ×10, marqueur « ne plus afficher »). `requirements.txt` impossible (composant système, pas un paquet pip). Reste action utilisateur → **installer vc_redist.x64.exe** | ouvert — environnement (code côté app = FAIT) |
 | TICKET-072| **Lore Book : passer la récupération en recherche sémantique (vectorielle)** plutôt que par mots-clés SQL. La correction B1 (audit 2026-06-14) a réparé une feature morte via un match SQL `keywords`/nom — correct et déterministe, mais **sans synonymes ni proximité de sens**, ce qui est moins bon pour la narration. Cible : vectoriser les entrées `Lore_Book` (`chunk_type="lore"`) et les ranker par similarité, en gardant un repli mots-clés | ouvert — amélioration narration |
+| TICKET-073| **Focus boost RAG : ajouter les noms des persos en scène** au `focus_terms` de `memory.query` (le **lieu** est déjà câblé, Phase 1 Hindsight item 4). Bloqué par l'ordre : la table id→nom est construite *après* la requête RAG dans `arbitrator.py` ; trouver comment fournir les noms sans réordonner le hot path (petite lecture ciblée, ou réordonnancement maîtrisé) | ouvert — amélioration narration (suite chantier Hindsight) |
+| TICKET-074| **Rewind n'annule pas les `Active_Modifiers`** : la table des buffs/débuffs est clé par `minutes_remaining` (pas de colonne `turn_id`), donc `checkpoint.rewind` (qui supprime par `turn_id > N`) ne la restaure pas à l'état du tour N | ouvert — incohérence rewind (axe minutes vs tours), découvert en investiguant le temps causal (2026-06-18) |
+| TICKET-075| **Rewind ne « dé-tire » pas les `Fired_Scheduled_Events`** : table clé `(save_id, event_id)`, jamais purgée au rewind → un événement programmé tiré à la minute 500 reste marqué tiré même si on rembobine avant, donc il ne se redéclenche pas | ouvert — incohérence rewind (axe minutes vs tours), même découverte |
+| TICKET-076| **Résidu legacy `config.chronicler_interval`** (en *tours*, plus utilisé pour le déclenchement depuis TICKET-018, qui passe par `chronicler_minutes_interval` en *minutes*) : champ mort qui fait croire à deux systèmes de temps. À retirer (ou documenter) après vérif qu'aucun chemin ne le lit plus | ouvert — nettoyage/clarté (axe tours vs minutes) |
 
 Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -322,3 +326,60 @@ bonne cible.
 
 **Priorité :** moyenne — amélioration de qualité narrative, pas un bug (la feature marche). Lié à
 [[B1]] de l'audit moteur et à la couche `axiom/memory.py`.
+
+---
+
+## TICKET-074 — Rewind n'annule pas les `Active_Modifiers`
+
+**Découvert le 2026-06-18** en investiguant le rapport temps causal ↔ tours (avant Phase 3 Hindsight).
+
+`checkpoint.rewind` supprime tout ce qui a `turn_id > N` : `Event_Log`, `Snapshots`, `Timeline`,
+`Facts`, puis reconstruit le `State_Cache`. Mais la table **`Active_Modifiers`** (buffs/débuffs
+temporaires) **n'a pas de colonne `turn_id`** — elle est clé par `modifier_id` et décomptée en
+`minutes_remaining` (`axiom/modifiers.py::tick_modifiers`). Le rewind **ne la touche pas** : après un
+rembobinage, un modificateur posé *après* le tour N reste présent (ou un modificateur qui aurait dû
+être encore actif au tour N a déjà été décompté/supprimé). L'overlay de stats est recalculé via
+`rebuild_state_cache`, mais l'**état du buffer de modifiers lui-même** n'est pas rétabli au tour N.
+
+**Pistes.** Soit ajouter une colonne `turn_id` (ou `applied_turn_id`) aux `Active_Modifiers` et les
+purger/rejouer au rewind comme le reste ; soit reconstruire la table à partir des events modifiers du
+`Event_Log` survivants (si les poses de modifiers sont event-sourcées). À croiser avec
+`rebuild_state_cache`.
+
+**Priorité :** moyenne — incohérence de rewind dans un cas de bord (buffs temporaires + rembobinage).
+Indépendant des Phases Hindsight (qui restent strictement turn-keyed).
+
+---
+
+## TICKET-075 — Rewind ne « dé-tire » pas les `Fired_Scheduled_Events`
+
+**Découvert le 2026-06-18** (même investigation que TICKET-074).
+
+Les événements programmés se déclenchent à une minute-cible absolue ; une fois tirés, ils sont
+marqués dans **`Fired_Scheduled_Events`**, clé `(save_id, event_id)` — **sans `turn_id`**.
+`checkpoint.rewind` ne purge pas cette table. Conséquence : un événement programmé tiré à la minute
+500, si on rembobine à un tour antérieur (horloge ramenée sous 500), **reste marqué tiré** et ne se
+redéclenchera pas, alors que côté monde le temps n'a « pas encore » atteint sa minute.
+
+**Pistes.** Enregistrer le `turn_id` (ou la `in_game_time`) de déclenchement dans
+`Fired_Scheduled_Events` et purger au rewind les lignes dont le déclenchement est postérieur au tour
+cible. Vérifier le sens voulu : un saut temporel re-traversé doit-il refaire l'événement ?
+
+**Priorité :** moyenne — incohérence de rewind sur les événements programmés.
+
+---
+
+## TICKET-076 — Résidu legacy `config.chronicler_interval` (tours) vs `chronicler_minutes_interval` (minutes)
+
+**Découvert le 2026-06-18** (même investigation). `AppConfig` porte **deux** champs Chronicler :
+- `chronicler_interval` (en **tours**) — **LEGACY**, plus utilisé pour le déclenchement depuis
+  TICKET-018 ; conservé pour rétro-compat des vieux settings, et `collect_config` le préserve tel quel.
+- `chronicler_minutes_interval` (en **minutes**) — le vrai déclencheur (`ChroniclerEngine.should_trigger`
+  franchit un palier de minutes de jeu).
+
+Le champ mort entretient l'impression qu'il existe « deux systèmes de temps » (tours vs minutes) alors
+qu'il n'y en a qu'un (Timeline = un pont `turn_id ↔ in_game_time`). À **retirer** (ou commenter
+clairement comme purement historique) après un grep confirmant qu'aucun chemin de déclenchement ne le
+lit plus. Attention à la migration des settings existants (ne pas casser le chargement).
+
+**Priorité :** basse — nettoyage/clarté, pas un bug fonctionnel.

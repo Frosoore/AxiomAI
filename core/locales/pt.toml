@@ -686,3 +686,67 @@ doc_creator_meta_tension_d = "<b>O que faz:</b> um cursor 0.0–1.0 que diz ao n
 doc_creator_meta_llm_temp_d = "<b>O que faz:</b> a criatividade da IA para este universo, de 0.0 a 1.0. <b>Baixa</b> (≈0.2) = focada, previsível, nos carris; <b>alta</b> (≈0.8) = inventiva, surpreendente, por vezes disparatada. <b>Como afinar:</b> se a narração se repete, sobe-a; se divaga ou se contradiz, baixa-a. <b>Recomendação:</b> 0.6–0.8 serve para a maioria das histórias. Isto fixa o valor por omissão do universo; o valor global das Definições aplica-se se um universo não o definir."
 doc_creator_meta_llm_top_p_d = "<b>O que faz:</b> amostragem por núcleo — outro controlo de criatividade que limita quanto do vocabulário da IA é usado (0.0–1.0). <b>Alto</b> (≈0.95) = a paleta completa e variada; <b>baixo</b> (≈0.5) = só as palavras mais prováveis, ou seja prosa mais plana e segura. <b>Como usar:</b> normalmente deixa-o perto de 0.9–1.0 e molda a criatividade com a Temperatura; baixa-o só se a escrita se soltar demais. <b>Nota:</b> Temperatura e top-p interagem — muda um de cada vez."
 doc_creator_meta_verbosity_d = "<b>O que faz:</b> quanta prosa o narrador escreve por turno. <b>Curto</b> = beats apertados e ágeis; <b>Equilibrado</b> = um bom parágrafo; <b>Tagarela</b> = cenas ricas e descritivas. <b>Como escolher:</b> Curto para ação rápida ou ritmo play-by-post, Tagarela para sessões imersivas e romanescas. <b>Efeito:</b> muda o comprimento e o detalhe, não o que de facto acontece. É o valor por omissão do universo."
+
+# --- Memory tab (Phase 2: living memory / fact extraction) ---
+tab_memory = "Memória"
+memory_mode_label = "Modo de memória:"
+memory_mode_lite = "Leve (offline, determinístico)"
+memory_mode_living = "Vivo (fatos por IA)"
+memory_fact_interval_label = "Extrair fatos a cada (turnos):"
+memory_fact_model_label = "Modelo de extração de fatos:"
+memory_fact_model_placeholder = "padrão (modelo do jogo)"
+memory_interval_off = "Apenas manual"
+memory_reranker_label = "Reclassificação neural da busca em memória"
+extract_now = "Extrair memória agora"
+memory_extracted_fmt = "Memória atualizada ({count} novos fatos)."
+
+# --- Memory tab integrated doc (TICKET-057 / Phase 2) ---
+doc_settings_tab_memory_t = "Memória"
+doc_settings_tab_memory = "Como o jogo lembra a sua história: busca híbrida offline (Leve) ou, além disso, fatos destilados pela IA que alimentam turnos futuros (Vivo)."
+doc_settings_memory_mode_t = "Modo de memória"
+doc_settings_memory_mode = "Leve mantém a memória totalmente offline e determinística (apenas busca híbrida). Vivo também pede à IA destilar cada turno em fatos duráveis lembrados depois. Escolhido por save."
+doc_settings_memory_interval_t = "Intervalo de extração de fatos"
+doc_settings_memory_interval = "No modo Vivo, extrai fatos a cada N turnos (agrupados para limitar o custo). Defina «Apenas manual» para extrair sob demanda com o botão."
+doc_settings_memory_model_t = "Modelo de extração de fatos"
+doc_settings_memory_model = "Modelo opcional mais barato/rápido usado só para destilar fatos. Deixe vazio para reutilizar o modelo principal do jogo."
+doc_settings_memory_reranker_t = "Reclassificação neural"
+doc_settings_memory_reranker = "Reclassifica a busca em memória com um pequeno cross-encoder para recordação mais precisa. Desligado por padrão: baixa um modelo de ~90 MB e precisa de um runtime nativo saudável."
+doc_settings_extract_now_t = "Extrair memória agora"
+doc_settings_extract_now = "Destila os turnos recentes em fatos imediatamente e reinicia o contador do intervalo. Ativo apenas no modo Vivo durante uma sessão."
+
+# --- Settings per-tab help (TICKET-057 enrichment / Phase 2) ---
+doc_page_settings_llm_t = "Configurações — Backend LLM"
+doc_page_settings_llm = "Esta aba aponta o Axiom para a IA que escreve a história. Para um modelo local (ex. Ollama em http://localhost:11434/v1) ou qualquer servidor compatível com OpenAI. O <b>modelo principal</b> conduz a narração; <b>Extração</b> e <b>Tempo</b> são pequenos modelos auxiliares para tarefas de fundo (analisar sua ação, deduzir o tempo decorrido) — um modelo minúsculo como llama3.2:1b basta. Clique <b>Testar conexão</b> para confirmar que o servidor responde. Para nuvens hospedadas (Gemini, Claude…), use a aba Nuvem."
+doc_page_settings_cloud_t = "Configurações — Provedores na nuvem"
+doc_page_settings_cloud = "Escolha um provedor hospedado (Gemini, Claude, Venice, Fireworks, OpenAI, OpenRouter) e cole a chave API. Cada provedor guarda a própria chave e modelo, então alternar não perde nada. <b>Exemplo:</b> Fireworks, chave fw_…, modelo accounts/fireworks/models/gpt-oss-120b, depois <b>Explorar modelos</b>. <b>Testar conexão</b> faz uma chamada real de um token para pegar um nome de modelo errado. Modelo de reserva e requisições/minuto são só do Gemini."
+doc_page_settings_params_t = "Configurações — Geração"
+doc_page_settings_params = "Moldam COMO o narrador escreve para o universo atual. A <b>Temperatura</b> (0–1) é a criatividade: cerca de 0,2 = focado e previsível, cerca de 0,8 = inventivo e surpreendente; 0,6–0,8 serve à maioria. O <b>Top-p</b> limita o vocabulário — deixe perto de 0,9–1,0 e ajuste a criatividade pela Temperatura. Mude um de cada vez: se a prosa se repete, suba a Temperatura; se divaga, baixe. São os padrões do universo."
+doc_page_settings_personas_t = "Configurações — Personas"
+doc_page_settings_personas = "Personas são fichas de personagem salvas que você pode inserir em qualquer nova partida, para não reescrever seu herói favorito toda vez. Edite aqui o nome, a descrição e os traços de um modelo; ele aparece como opção no preparo da partida. <b>Exemplo:</b> uma persona Detetive Calejado com história e voz fixas, reusada em vários universos noir."
+doc_page_settings_image_t = "Configurações — Ilustração"
+doc_page_settings_image = "Transforme momentos do relato em imagens. Escolha um backend: <b>Gemini</b> (nuvem, reusa sua chave de texto — o mais fácil), um servidor local <b>Stable Diffusion</b> WebUI / <b>ComfyUI</b>, ou <b>mock</b> para testar. Defina tamanho (ex. 512×512), passos e orientação (CFG) para equilibrar qualidade e velocidade. <b>Atraso máx. por imagem</b> protege máquinas lentas. <b>Exemplo:</b> um SD WebUI local iniciado com --api → URL http://127.0.0.1:7860 e escolha stable_diffusion."
+doc_page_settings_memory_t = "Configurações — Memória"
+doc_page_settings_memory = "Controla como o Axiom lembra sua história em sessões longas. <b>Leve</b> (padrão) é totalmente offline e determinístico: encontra momentos passados relevantes por significado e palavras-chave, sem IA e sem rede. <b>Vivo</b> ainda pede à IA, em segundo plano, destilar cada turno em <i>fatos</i> duráveis (por exemplo: Kael queimou a ponte de Voss para deter o exército) recuperados e alimentados aos turnos seguintes — o mundo fica coerente centenas de turnos depois. <b>Extrair a cada N turnos</b> agrupa esse trabalho; o <b>modelo de extração</b> permite um mais barato; a <b>reclassificação neural</b> afia a busca. <b>Exemplo:</b> uma campanha longa em que um NPC deve lembrar uma traição do turno 12 → use Vivo."
+doc_page_settings_general_t = "Configurações — Geral"
+doc_page_settings_general = "Opções globais do app, sempre visíveis abaixo das abas. <b>Idioma</b> muda toda a interface (10 idiomas). <b>Intervalo do Cronista</b> = com que frequência, em minutos de jogo, o mundo simula eventos fora de cena. <b>Fragmentos de memória RAG</b> = quantos trechos passados alimentam o narrador por turno (mais = melhor memória, mais lento). <b>Cronometrista de IA</b> gasta uma chamada de IA extra por turno para tempo preciso. <b>Prompt básico</b> injeta suas instruções permanentes em cada turno (tom, regras, estilo)."
+doc_settings_memory_mode_d = "<b>Exemplo:</b> numa campanha de 300 turnos, Leve ainda mostra a cena em que você conheceu o mercador ao voltar à loja dele, por correspondência de palavras e significado — na hora e offline. Vivo vai além: registrou que o jogador insultou o mercador como um fato, então esse fato reaparece e a IA pode fazê-lo guardar rancor. <b>Compromisso:</b> Leve não custa nada e nunca chama a rede; Vivo custa chamadas de IA de fundo e precisa de chave/rede. <b>Dica:</b> o modo é por save."
+doc_settings_memory_interval_d = "<b>O que N significa:</b> com N=5 o jogo espera 5 novos turnos acontecerem e então destila esses 5 turnos de uma vez (uma chamada de IA em vez de cinco). <b>0 / Apenas manual:</b> nada automático — clique Extrair memória agora quando quiser um checkpoint de fatos. <b>Dica:</b> um N pequeno (3–5) mantém os fatos frescos em cenas rápidas; um grande (10+) economiza em trechos lentos e falados."
+doc_settings_memory_reranker_d = "<b>O que faz:</b> a busca comum ordena memórias por uma pontuação de similaridade rápida. Um cross-encoder relê cada candidato <i>junto</i> com sua situação atual e os reordena, de modo que a memória realmente pertinente sobe acima de outra que só compartilha palavras. <b>Exemplo:</b> para uma consulta sobre o juramento quebrado, a busca simples poderia colocar no topo qualquer trecho que cite juramento, enquanto o reordenador promove a cena exata em que ele foi quebrado. <b>Custo:</b> baixa um modelo de ~90 MB e roda localmente na CPU, somando um pouco de tempo por busca; desligado por padrão, desativa-se com segurança se faltar o runtime nativo."
+
+# --- Memory: evolving beliefs (Phase 3) ---
+memory_beliefs_label = "Crenças evolutivas (os personagens lembram e revisam)"
+doc_settings_memory_beliefs_t = "Crenças evolutivas"
+doc_settings_memory_beliefs = "Além dos fatos, destila-os em crenças que mudam ao longo do tempo (uma ideia do Hindsight): um personagem guarda rancor ou revê uma opinião. Requer o modo Vivo e adiciona mais uma passagem de IA em segundo plano após a extração de fatos. Desligado por padrão."
+doc_settings_memory_beliefs_d = "<b>Como funciona:</b> uma passagem em segundo plano agrupa os novos fatos em crenças duráveis (observações) — o mercador guarda rancor do jogador — que ganham peso (provas) à medida que mais fatos as apoiam, e são revistas ou descartadas quando fatos as contradizem. As crenças são dadas à IA antes das memórias brutas, então um NPC reage de forma coerente a algo que você fez centenas de turnos atrás. <b>Custo:</b> uma segunda chamada de IA em segundo plano após a extração de fatos. <b>Seguro no rebobinar:</b> rebobinar um turno reverte as crenças junto com os fatos de que vieram."
+
+# --- Character memory styles (Phase 4 B-3) ---
+belief_missions_title = "Estilos de memória dos personagens"
+belief_missions_placeholder = "Um por linha — ex. Mercador: lembra ofensas e dívidas"
+doc_creator_meta_belief_missions_t = "Estilos de memória dos personagens"
+doc_creator_meta_belief_missions = "Para a memória Viva com crenças, diz à IA como cada personagem lembra. Um por linha como Nome: o que costuma lembrar. Um NPC rancoroso rumina traições, um mercador dívidas — assim cada um forma crenças conforme seu caráter."
+doc_creator_meta_belief_missions_d = "<b>O que faz:</b> na memória Viva com crenças, a IA destila os eventos em crenças duráveis por personagem; este campo diz a ela COMO cada um lembra, para reagir conforme o caráter. <b>Formato:</b> uma linha por personagem, Nome: o que costuma lembrar. <b>Exemplos:</b> Mercador: lembra ofensas e dívidas — Capitão: lembra juramentos e quem os cumpriu — Ladrão: lembra alvos fáceis e rotas de fuga. <b>Nota:</b> os nomes coincidem com suas entidades; sem linha usa o padrão do universo. Só afeta o modo Vivo."
+
+# --- Prompt caching (Phase 4 B-4) ---
+memory_prompt_cache_label = "Cache de prompt (Gemini, economia de custo)"
+doc_settings_memory_prompt_cache_t = "Cache de prompt"
+doc_settings_memory_prompt_cache = "Coloca em cache o prompt de sistema estável no Gemini para reduzir o custo de tokens de entrada em chamadas repetidas (ex. o trabalho de fundo de fatos/crenças no modo Vivo). Só ajuda se o prompt for grande o suficiente — senão não faz nada com segurança — e só no backend Gemini. Desligado por padrão."

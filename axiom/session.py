@@ -125,7 +125,20 @@ class Session:
         self._data_root = data_root
 
         if vector_memory is None:
-            vector_memory = VectorMemory(persist_dir=str(vector_base / save_id))
+            # Optional cross-encoder reranker, opt-in via config (default OFF).
+            # Self-disables to a no-op if its model can't load; config failure
+            # must never break session construction.
+            reranker = None
+            try:
+                from axiom.config import load_config
+                if load_config().memory_reranker_enabled:
+                    from axiom.retrieval import CrossEncoderReranker
+                    reranker = CrossEncoderReranker()
+            except Exception:
+                reranker = None
+            vector_memory = VectorMemory(
+                persist_dir=str(vector_base / save_id), reranker=reranker
+            )
         self._vector_memory = vector_memory
 
         rules = load_rules_for_session(self._db_path)
@@ -658,7 +671,7 @@ class Session:
         rag_chunks = []
         if self._vector_memory:
             rag_res = self._vector_memory.query(self._save_id, hero_ent.get("name", "Hero"), k=2)
-            rag_chunks = [r["text"] for r in rag_res if r.get("metadata", {}).get("type") != "lore"]
+            rag_chunks = [r["text"] for r in rag_res if r.get("chunk_type") != "lore"]
 
         # Map intents to names for readability in the hero prompt
         named_intents = {}

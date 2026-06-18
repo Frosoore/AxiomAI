@@ -685,3 +685,67 @@ doc_creator_meta_tension_d = "<b>Was es tut:</b> ein Regler 0.0–1.0, der dem E
 doc_creator_meta_llm_temp_d = "<b>Was es tut:</b> die Kreativität der KI für dieses Universum, 0.0 bis 1.0. <b>Niedrig</b> (≈0.2) = fokussiert, vorhersehbar, auf Schienen; <b>hoch</b> (≈0.8) = einfallsreich, überraschend, mitunter schräg. <b>Wie einstellen:</b> wirkt die Erzählung repetitiv, erhöhe sie; driftet sie ab oder widerspricht sich, senke sie. <b>Empfehlung:</b> 0.6–0.8 passt für die meisten Erzählungen. Dies setzt den Universums-Standard; der globale Wert aus den Einstellungen gilt, wenn ein Universum ihn nicht festlegt."
 doc_creator_meta_llm_top_p_d = "<b>Was es tut:</b> Nucleus-Sampling — eine weitere Kreativitätssteuerung, die begrenzt, wie viel vom Wortschatz der KI genutzt wird (0.0–1.0). <b>Hoch</b> (≈0.95) = die volle, vielfältige Palette; <b>niedrig</b> (≈0.5) = nur die wahrscheinlichsten Wörter, also schlichtere, sicherere Prosa. <b>Wie man es nutzt:</b> lass es meist nahe 0.9–1.0 und forme die Kreativität über die Temperatur; senke es nur, wenn der Text zu locker wird. <b>Hinweis:</b> Temperatur und Top-p wirken zusammen — ändere nur eines zugleich."
 doc_creator_meta_verbosity_d = "<b>Was es tut:</b> wie viel Prosa der Erzähler pro Zug schreibt. <b>Kurz</b> = knappe, flott bewegte Beats; <b>Ausgewogen</b> = ein solider Absatz; <b>Gesprächig</b> = reiche, beschreibende Szenen. <b>Wie wählen:</b> Kurz für schnelle Action oder Play-by-Post-Tempo, Gesprächig für immersive, romanhafte Sitzungen. <b>Effekt:</b> es ändert Länge und Detail, nicht das tatsächliche Geschehen. Dies ist der Standard des Universums."
+
+# --- Memory tab (Phase 2: living memory / fact extraction) ---
+tab_memory = "Erinnerung"
+memory_mode_label = "Erinnerungsmodus:"
+memory_mode_lite = "Leicht (offline, deterministisch)"
+memory_mode_living = "Lebendig (KI-Fakten)"
+memory_fact_interval_label = "Fakten extrahieren alle (Züge):"
+memory_fact_model_label = "Modell zur Faktenextraktion:"
+memory_fact_model_placeholder = "Standard (Spielmodell)"
+memory_interval_off = "Nur manuell"
+memory_reranker_label = "Neuronales Reranking der Erinnerungssuche"
+extract_now = "Erinnerung jetzt extrahieren"
+memory_extracted_fmt = "Erinnerung aktualisiert ({count} neue Fakten)."
+
+# --- Memory tab integrated doc (TICKET-057 / Phase 2) ---
+doc_settings_tab_memory_t = "Erinnerung"
+doc_settings_tab_memory = "Wie das Spiel sich an deine Geschichte erinnert: Offline-Hybridsuche (Leicht) oder zusätzlich von der KI destillierte Fakten, die spätere Züge speisen (Lebendig)."
+doc_settings_memory_mode_t = "Erinnerungsmodus"
+doc_settings_memory_mode = "Leicht hält die Erinnerung vollständig offline und deterministisch (nur Hybridsuche). Lebendig lässt die KI zusätzlich jeden Zug zu dauerhaften, später abrufbaren Fakten destillieren. Pro Spielstand wählbar."
+doc_settings_memory_interval_t = "Intervall der Faktenextraktion"
+doc_settings_memory_interval = "Im Modus Lebendig alle N Züge Fakten extrahieren (gebündelt zur Kostenbegrenzung). Auf „Nur manuell“ setzen, um stattdessen per Knopf bei Bedarf zu extrahieren."
+doc_settings_memory_model_t = "Modell zur Faktenextraktion"
+doc_settings_memory_model = "Optionales günstigeres/schnelleres Modell nur zum Destillieren von Fakten. Leer lassen, um das Hauptmodell des Spiels zu verwenden."
+doc_settings_memory_reranker_t = "Neuronales Reranking"
+doc_settings_memory_reranker = "Sortiert die Erinnerungssuche mit einem kleinen Cross-Encoder neu für schärferen Abruf. Standardmäßig aus: lädt ein ~90 MB großes Modell und braucht eine gesunde native Laufzeit."
+doc_settings_extract_now_t = "Erinnerung jetzt extrahieren"
+doc_settings_extract_now = "Destilliert die jüngsten Züge sofort zu Fakten und setzt den Intervallzähler zurück. Nur im Modus Lebendig während einer Sitzung aktiv."
+
+# --- Settings per-tab help (TICKET-057 enrichment / Phase 2) ---
+doc_page_settings_llm_t = "Einstellungen — LLM-Backend"
+doc_page_settings_llm = "Dieser Reiter verbindet Axiom mit der KI, die die Geschichte schreibt. Für ein lokales Modell (z. B. Ollama unter http://localhost:11434/v1) oder einen OpenAI-kompatiblen Server. Das <b>Hauptmodell</b> steuert die Erzählung; <b>Extraktion</b> und <b>Zeit</b> sind kleine Hilfsmodelle für Hintergrundaufgaben (deine Aktion parsen, verstrichene Zeit ableiten) — ein winziges Modell wie llama3.2:1b reicht. <b>Verbindung testen</b> prüft, ob der Server antwortet. Für gehostete Clouds (Gemini, Claude…) nutze den Reiter Cloud."
+doc_page_settings_cloud_t = "Einstellungen — Cloud-Anbieter"
+doc_page_settings_cloud = "Wähle einen gehosteten Anbieter (Gemini, Claude, Venice, Fireworks, OpenAI, OpenRouter) und füge seinen API-Schlüssel ein. Jeder Anbieter behält eigenen Schlüssel und eigenes Modell, Wechseln verliert nichts. <b>Beispiel:</b> Fireworks, Schlüssel fw_…, Modell accounts/fireworks/models/gpt-oss-120b, dann <b>Modelle durchsuchen</b>. <b>Verbindung testen</b> macht einen echten Ein-Token-Aufruf, um einen falschen Modellnamen zu erkennen. Fallback-Modell und Anfragen/Minute gelten nur für Gemini."
+doc_page_settings_params_t = "Einstellungen — Generierung"
+doc_page_settings_params = "Diese steuern, WIE der Erzähler für das aktuelle Universum schreibt. <b>Temperatur</b> (0–1) ist Kreativität: etwa 0,2 = fokussiert und vorhersehbar, etwa 0,8 = erfinderisch und überraschend; 0,6–0,8 passt den meisten Geschichten. <b>Top-p</b> begrenzt den Wortschatz — meist bei 0,9–1,0 lassen und Kreativität über die Temperatur regeln. Ändere eins nach dem anderen: wiederholt sich der Text, Temperatur erhöhen; driftet er, senken. Das sind die Universum-Standards."
+doc_page_settings_personas_t = "Einstellungen — Personas"
+doc_page_settings_personas = "Personas sind gespeicherte Charakterbögen, die du in jedes neue Spiel einfügen kannst, damit du deinen Lieblingshelden nicht jedes Mal neu schreibst. Bearbeite hier Name, Beschreibung und Eigenschaften einer Vorlage; sie erscheint dann zur Auswahl beim Spielaufbau. <b>Beispiel:</b> eine Persona Abgebrühter Detektiv mit fester Vorgeschichte und Stimme, in mehreren Noir-Universen wiederverwendet."
+doc_page_settings_image_t = "Einstellungen — Illustration"
+doc_page_settings_image = "Verwandle Erzählmomente in Bilder. Wähle ein Backend: <b>Gemini</b> (Cloud, nutzt deinen Textschlüssel — am einfachsten), einen lokalen <b>Stable Diffusion</b> WebUI / <b>ComfyUI</b> Server oder <b>mock</b> zum Testen. Stelle Größe (z. B. 512×512), Schritte und Guidance (CFG) ein, um Qualität gegen Geschwindigkeit abzuwägen. <b>Max. Verzögerung pro Bild</b> schützt langsame Rechner. <b>Beispiel:</b> ein lokales SD WebUI mit --api gestartet → URL http://127.0.0.1:7860, wähle stable_diffusion."
+doc_page_settings_memory_t = "Einstellungen — Erinnerung"
+doc_page_settings_memory = "Steuert, wie Axiom sich über lange Sitzungen an deine Geschichte erinnert. <b>Leicht</b> (Standard) ist völlig offline und deterministisch: findet relevante vergangene Momente über Bedeutung und Stichwörter, ohne KI und ohne Netz. <b>Lebendig</b> lässt die KI zusätzlich im Hintergrund jeden Zug zu dauerhaften <i>Fakten</i> destillieren (z. B.: Kael verbrannte die Brücke bei Voss, um das Heer zu stoppen), die später wieder eingespeist werden — die Welt bleibt hunderte Züge später konsistent. <b>Alle N Züge extrahieren</b> bündelt das; das <b>Extraktionsmodell</b> erlaubt ein günstigeres Modell; <b>neuronales Reranking</b> schärft die Suche. <b>Beispiel:</b> eine lange Kampagne, in der ein NPC einen Verrat aus Zug 12 erinnern soll → Lebendig."
+doc_page_settings_general_t = "Einstellungen — Allgemein"
+doc_page_settings_general = "App-weite Optionen, immer unter den Reitern sichtbar. <b>Sprache</b> wechselt die ganze Oberfläche (10 Sprachen). <b>Chronist-Intervall</b> = wie oft, in Spielminuten, die Welt Ereignisse abseits der Bühne simuliert. <b>RAG-Erinnerungsstücke</b> = wie viele frühere Passagen den Erzähler je Zug speisen (mehr = besser, langsamer). <b>KI-Zeitwächter</b> nutzt einen zusätzlichen KI-Aufruf je Zug für präzise Zeit. <b>Basis-Prompt</b> fügt deine festen Anweisungen in jeden Zug ein (Ton, Regeln, Stil)."
+doc_settings_memory_mode_d = "<b>Beispiel:</b> in einer 300-Züge-Kampagne zeigt Leicht beim Rückkehr zum Laden weiterhin die Szene, in der du den Händler getroffen hast, über Wort- und Bedeutungsabgleich — sofort und offline. Lebendig geht weiter: es hat festgehalten, dass der Spieler den Händler beleidigt hat, also taucht dieser Fakt wieder auf und die KI kann ihn grollen lassen. <b>Abwägung:</b> Leicht kostet nichts und ruft nie hinaus; Lebendig kostet Hintergrund-KI-Aufrufe und braucht Schlüssel/Netz. <b>Tipp:</b> der Modus gilt pro Spielstand."
+doc_settings_memory_interval_d = "<b>Was N bedeutet:</b> bei N=5 wartet das Spiel, bis 5 neue Züge vorbei sind, und destilliert diese 5 Züge auf einmal (ein KI-Aufruf statt fünf). <b>0 / Nur manuell:</b> nichts geschieht automatisch — drücke Erinnerung jetzt extrahieren, wenn du einen Fakten-Checkpoint willst. <b>Tipp:</b> kleines N (3–5) hält Fakten in schnellen Szenen frisch; großes N (10+) spart Kosten in langen, gesprächigen Passagen."
+doc_settings_memory_reranker_d = "<b>Was es tut:</b> die normale Suche ordnet Erinnerungen nach einem schnellen Ähnlichkeitswert. Ein Cross-Encoder liest jeden Kandidaten <i>zusammen mit</i> deiner aktuellen Lage erneut und ordnet neu, sodass die wirklich passende Erinnerung über eine steigt, die nur Wörter teilt. <b>Beispiel:</b> bei einer Anfrage zum gebrochenen Eid könnte die einfache Suche jede Passage mit Eid nach oben setzen, während das Reranking die genaue Szene des Eidbruchs hochstuft. <b>Kosten:</b> es lädt ein ~90-MB-Modell und läuft lokal auf der CPU, etwas Zeit je Suche; standardmäßig aus, deaktiviert sich sicher, wenn die native Laufzeit fehlt."
+
+# --- Memory: evolving beliefs (Phase 3) ---
+memory_beliefs_label = "Sich entwickelnde Überzeugungen (Figuren erinnern sich und revidieren)"
+doc_settings_memory_beliefs_t = "Sich entwickelnde Überzeugungen"
+doc_settings_memory_beliefs = "Zusätzlich zu den Fakten destilliert sie zu Überzeugungen, die sich mit der Zeit ändern (eine Hindsight-Idee): eine Figur trägt Groll oder revidiert eine Meinung. Erfordert den Modus Lebendig und fügt nach der Faktenextraktion einen weiteren KI-Hintergrunddurchlauf hinzu. Standardmäßig aus."
+doc_settings_memory_beliefs_d = "<b>So funktioniert es:</b> ein Hintergrunddurchlauf gruppiert die neuen Fakten zu dauerhaften Überzeugungen (Observations) — der Händler grollt dem Spieler — die an Gewicht (Belege) gewinnen, je mehr Fakten sie stützen, und revidiert oder verworfen werden, wenn Fakten ihnen widersprechen. Überzeugungen werden der KI vor den rohen Erinnerungen gegeben, sodass ein NPC konsistent auf etwas reagiert, das du vor Hunderten von Zügen getan hast. <b>Kosten:</b> ein zweiter KI-Hintergrundaufruf nach der Faktenextraktion. <b>Rollback-sicher:</b> das Zurückspulen eines Zuges rollt Überzeugungen mit den Fakten zurück, aus denen sie stammen."
+
+# --- Character memory styles (Phase 4 B-3) ---
+belief_missions_title = "Erinnerungsstile der Figuren"
+belief_missions_placeholder = "Einer pro Zeile — z. B. Händler: merkt sich Kränkungen und Schulden"
+doc_creator_meta_belief_missions_t = "Erinnerungsstile der Figuren"
+doc_creator_meta_belief_missions = "Für lebendige Erinnerung mit Überzeugungen sagt es der KI, wie sich jede Figur erinnert. Einer pro Zeile als Name: woran sie sich eher erinnert. Ein nachtragender NPC grübelt über Verrat, ein Händler über Schulden — so bildet jeder Überzeugungen im Charakter."
+doc_creator_meta_belief_missions_d = "<b>Was es tut:</b> in lebendiger Erinnerung mit Überzeugungen destilliert die KI Ereignisse zu dauerhaften Überzeugungen je Figur; dieses Feld sagt ihr, WIE sich jede erinnert, damit sie im Charakter reagiert. <b>Format:</b> eine Zeile je Figur, Name: woran sie sich erinnert. <b>Beispiele:</b> Händler: merkt sich Kränkungen und Schulden — Hauptmann: merkt sich Eide und wer sie hielt — Dieb: merkt sich leichte Ziele und Fluchtwege. <b>Hinweis:</b> Namen entsprechen deinen Entitäten; ohne Zeile gilt die Universum-Vorgabe. Betrifft nur den Modus Lebendig."
+
+# --- Prompt caching (Phase 4 B-4) ---
+memory_prompt_cache_label = "Prompt-Caching (Gemini, Kostenersparnis)"
+doc_settings_memory_prompt_cache_t = "Prompt-Caching"
+doc_settings_memory_prompt_cache = "Cacht den stabilen System-Prompt bei Gemini, um die Eingabe-Token-Kosten bei wiederholten Aufrufen zu senken (z. B. Hintergrundarbeit für Fakten/Überzeugungen im Modus Lebendig). Hilft nur, wenn der Prompt groß genug ist — sonst passiert gefahrlos nichts — und nur beim Gemini-Backend. Standardmäßig aus."

@@ -361,6 +361,8 @@ class MainWindow(QMainWindow):
             db_path = self._creator_view._db_path
             
         dialog = SettingsDialog(config=load_config(), db_path=db_path, parent=self)
+        # "Extract memory now" (Memory tab) acts on the live tabletop session.
+        dialog.extract_now_requested.connect(self._tabletop_view.extract_facts_now)
         if dialog.exec() == QDialog.Accepted:
             # The language may have changed: drop the cached current language so
             # tr() picks up the new one (App-M4).

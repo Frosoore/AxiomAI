@@ -12,7 +12,7 @@ No network calls on the main thread.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -41,6 +41,7 @@ from axiom.config import (
     OPENAI_COMPAT_PROVIDERS,
     build_llm_from_config,
     get_builtin_keys,
+    memory_mode_is_living,
     save_config,
     uses_builtin_keys,
     GLOBAL_DB_FILE,
@@ -104,7 +105,13 @@ class SettingsDialog(QDialog):
         config:  The current AppConfig to display.
         db_path: Optional path to the active universe database.
         parent:  Optional Qt parent widget.
+
+    Signals:
+        extract_now_requested(): The user clicked "Extract memory now" on the
+            Memory tab; the owner wires this to the live session's extractor.
     """
+
+    extract_now_requested = Signal()
 
     def __init__(self, config: AppConfig, db_path: str | None = None, parent=None) -> None:
         super().__init__(parent)
@@ -330,6 +337,47 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._image_widget, tr("tab_image"))
         doc_tab(self._tabs, 4, "settings.tab_image")
 
+        # ---- Memory tab (Phase 2: lite/living mode + fact extraction) ----
+        self._memory_widget = QWidget()
+        memory_form = QFormLayout(self._memory_widget)
+
+        self._memory_mode_combo = doc(QComboBox(), "settings.memory_mode")
+        self._memory_mode_combo.addItem(tr("memory_mode_lite"), "lite")
+        self._memory_mode_combo.addItem(tr("memory_mode_living"), "living")
+
+        self._memory_interval_spin = doc(QSpinBox(), "settings.memory_interval")
+        self._memory_interval_spin.setRange(0, 100)
+        self._memory_interval_spin.setSpecialValueText(tr("memory_interval_off"))
+
+        self._memory_model_edit = doc(QLineEdit(), "settings.memory_model")
+        self._memory_model_edit.setPlaceholderText(tr("memory_fact_model_placeholder"))
+
+        self._memory_reranker_cb = doc(QCheckBox(tr("memory_reranker_label")), "settings.memory_reranker")
+
+        self._memory_beliefs_cb = doc(QCheckBox(tr("memory_beliefs_label")), "settings.memory_beliefs")
+
+        self._memory_prompt_cache_cb = doc(QCheckBox(tr("memory_prompt_cache_label")), "settings.memory_prompt_cache")
+
+        self._memory_extract_btn = doc(QPushButton(tr("extract_now")), "settings.extract_now")
+
+        self._memory_mode_label = QLabel(tr("memory_mode_label"))
+        self._memory_interval_label = QLabel(tr("memory_fact_interval_label"))
+        self._memory_model_label = QLabel(tr("memory_fact_model_label"))
+
+        memory_form.addRow(self._memory_mode_label, self._memory_mode_combo)
+        memory_form.addRow(self._memory_interval_label, self._memory_interval_spin)
+        memory_form.addRow(self._memory_model_label, self._memory_model_edit)
+        memory_form.addRow("", self._memory_reranker_cb)
+        memory_form.addRow("", self._memory_beliefs_cb)
+        memory_form.addRow("", self._memory_prompt_cache_cb)
+        memory_form.addRow("", self._memory_extract_btn)
+
+        self._tabs.addTab(self._memory_widget, tr("tab_memory"))
+        doc_tab(self._tabs, self._tabs.indexOf(self._memory_widget), "settings.tab_memory")
+
+        self._memory_mode_combo.currentIndexChanged.connect(self._on_memory_mode_changed)
+        self._memory_extract_btn.clicked.connect(self._on_extract_now)
+
         layout.addWidget(self._tabs)
 
         # ---- General section ----
@@ -451,6 +499,30 @@ class SettingsDialog(QDialog):
         self._sync_cloud_fields()
 
     # ------------------------------------------------------------------
+    # Memory tab helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_memory_controls(self) -> None:
+        """Enable interval/model/extract only when living mode is selected.
+
+        'Extract now' also needs an active session (db_path) to act on.
+        """
+        living = self._memory_mode_combo.currentData() == "living"
+        self._memory_interval_spin.setEnabled(living)
+        self._memory_model_edit.setEnabled(living)
+        self._memory_beliefs_cb.setEnabled(living)
+        self._memory_extract_btn.setEnabled(living and bool(self._db_path))
+
+    @Slot()
+    def _on_memory_mode_changed(self) -> None:
+        self._refresh_memory_controls()
+
+    @Slot()
+    def _on_extract_now(self) -> None:
+        """Ask the owner to distil the live session's recent turns into facts."""
+        self.extract_now_requested.emit()
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -517,6 +589,22 @@ class SettingsDialog(QDialog):
         self._image_timeout_label.setText(tr("image_timeout"))
         self._image_workflow_label.setText(tr("image_workflow"))
 
+        # Memory tab
+        mem_tab_idx = self._tabs.indexOf(self._memory_widget)
+        if mem_tab_idx >= 0:
+            self._tabs.setTabText(mem_tab_idx, tr("tab_memory"))
+        self._memory_mode_label.setText(tr("memory_mode_label"))
+        self._memory_mode_combo.setItemText(0, tr("memory_mode_lite"))
+        self._memory_mode_combo.setItemText(1, tr("memory_mode_living"))
+        self._memory_interval_label.setText(tr("memory_fact_interval_label"))
+        self._memory_interval_spin.setSpecialValueText(tr("memory_interval_off"))
+        self._memory_model_label.setText(tr("memory_fact_model_label"))
+        self._memory_model_edit.setPlaceholderText(tr("memory_fact_model_placeholder"))
+        self._memory_reranker_cb.setText(tr("memory_reranker_label"))
+        self._memory_beliefs_cb.setText(tr("memory_beliefs_label"))
+        self._memory_prompt_cache_cb.setText(tr("memory_prompt_cache_label"))
+        self._memory_extract_btn.setText(tr("extract_now"))
+
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()
 
@@ -558,6 +646,19 @@ class SettingsDialog(QDialog):
         self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
         self._trim_sentences_cb.setChecked(config.trim_sentences)
         self._basic_prompt.setPlainText(config.basic_prompt)
+
+        # Memory settings (Phase 2)
+        mem_idx = self._memory_mode_combo.findData(
+            "living" if memory_mode_is_living(config) else "lite"
+        )
+        if mem_idx >= 0:
+            self._memory_mode_combo.setCurrentIndex(mem_idx)
+        self._memory_interval_spin.setValue(config.memory_fact_interval)
+        self._memory_model_edit.setText(config.memory_fact_model)
+        self._memory_reranker_cb.setChecked(config.memory_reranker_enabled)
+        self._memory_beliefs_cb.setChecked(config.memory_beliefs_enabled)
+        self._memory_prompt_cache_cb.setChecked(config.memory_prompt_cache_enabled)
+        self._refresh_memory_controls()
 
         # Image settings
         self._image_enabled_cb.setChecked(config.image_generation_enabled)
@@ -627,6 +728,14 @@ class SettingsDialog(QDialog):
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
+            # Memory settings (Phase 2) — must be read back here or saving the
+            # dialog would silently reset them to their defaults.
+            memory_mode=self._memory_mode_combo.currentData() or "lite",
+            memory_fact_interval=self._memory_interval_spin.value(),
+            memory_fact_model=self._memory_model_edit.text().strip(),
+            memory_reranker_enabled=self._memory_reranker_cb.isChecked(),
+            memory_beliefs_enabled=self._memory_beliefs_cb.isChecked(),
+            memory_prompt_cache_enabled=self._memory_prompt_cache_cb.isChecked(),
             # Image generation settings
             image_generation_enabled=self._image_enabled_cb.isChecked(),
             image_backend=self._image_backend_combo.currentData(),
@@ -702,9 +811,14 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def _show_help(self) -> None:
-        """TICKET-057 : open the 'explain this page' dialog for Settings."""
-        from ui.help_dialogs import ExplainPageDialog
-        ExplainPageDialog("settings", self).exec()
+        """TICKET-057 : open the 'explain this page' dialog for the active tab.
+
+        Tab-aware (like the Creator Studio): the explanation matches the tab you
+        are looking at, then appends the always-visible General section.
+        """
+        from ui.help_dialogs import ExplainPageDialog, settings_tab_help_html
+        title, html = settings_tab_help_html(self._tabs.currentIndex())
+        ExplainPageDialog("settings", self, html=html, title=title).exec()
 
     @Slot()
     def _on_save(self) -> None:

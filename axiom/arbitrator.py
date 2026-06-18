@@ -218,15 +218,23 @@ class ArbitratorEngine:
         
         # Calculate the oldest turn ID still in the history window
         max_turn_id = max(0, turn_id - HISTORY_TURN_CAP)
-        
+
+        # Focus the retrieval on the current scene: the player's location (held as
+        # a "Location" stat, already fetched above) gently boosts memories about
+        # the here-and-now. On-scene character names would need the id→name map
+        # built later in this method — left as a follow-up to avoid reordering.
+        player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
+        focus_terms = [player_loc] if player_loc else None
+
         rag_results = self._vector_memory.query(
-            save_id, 
-            combined_intents_text, 
-            k=cfg.rag_chunk_count, 
+            save_id,
+            combined_intents_text,
+            k=cfg.rag_chunk_count,
             current_turn_id=turn_id,
-            max_turn_id=max_turn_id
+            max_turn_id=max_turn_id,
+            focus_terms=focus_terms,
         )
-        rag_chunks = [r["text"] for r in rag_results if r.get("metadata", {}).get("type") != "lore"]
+        rag_chunks = [r["text"] for r in rag_results if r.get("chunk_type") != "lore"]
         
         # Step 3 — Relevant Context Filtering (Context Optimization)
         # Only send stats for entities that are "active" in the current context
@@ -313,6 +321,32 @@ class ArbitratorEngine:
                     if name.lower() == "player":
                         name = "Player"
                     local_character_names.append(name)
+
+        # Living memory mode: surface distilled long-term facts (those about the
+        # characters on scene, then the most recent ones) as extra [MEMORY] lines.
+        # Lite mode never calls this, so the deterministic path is unchanged.
+        from axiom.config import memory_mode_is_living, memory_beliefs_active
+        if memory_mode_is_living(cfg):
+            fact_lines = self._fetch_relevant_facts(
+                save_id,
+                max_turn_id=turn_id,
+                on_scene=local_character_names,
+                limit=cfg.rag_chunk_count,
+            )
+            # Hierarchy of recall (most synthetic first): beliefs, then facts,
+            # then the raw narrative chunks. Beliefs only when opted in (Phase 3).
+            prefix: list[str] = []
+            if memory_beliefs_active(cfg):
+                belief_lines = self._fetch_relevant_beliefs(
+                    save_id,
+                    max_turn_id=turn_id,
+                    on_scene=local_character_names,
+                    limit=cfg.rag_chunk_count,
+                )
+                prefix += [f"Belief: {s}" for s in belief_lines]
+            prefix += [f"Known fact: {s}" for s in fact_lines]
+            if prefix:
+                rag_chunks = prefix + rag_chunks
 
         messages = build_narrative_prompt(
             universe_system_prompt=universe_system_prompt,
@@ -824,6 +858,98 @@ class ArbitratorEngine:
                 conn.commit()
         except Exception as e:
             logger.error(f"[ARBITRATOR] Error marking event as fired: {e}")
+
+    def _fetch_relevant_facts(
+        self,
+        save_id: str,
+        max_turn_id: int,
+        on_scene: list[str],
+        limit: int,
+    ) -> list[str]:
+        """Return up to `limit` fact statements for the living-mode prompt.
+
+        Prioritises facts that mention an on-scene character (what we *know*
+        about who's here), then fills the remainder with the most recent facts.
+        Bounded by `max_turn_id` so a rewound turn never resurfaces a future
+        fact. Degrades to an empty list on any error (never breaks a turn).
+        """
+        if limit <= 0:
+            return []
+        try:
+            from axiom import facts as facts_mod
+
+            seen: set[str] = set()
+            ordered: list[str] = []
+
+            def _add(fact_list):
+                for f in fact_list:
+                    if f.statement and f.statement not in seen:
+                        seen.add(f.statement)
+                        ordered.append(f.statement)
+
+            for name in dict.fromkeys(n for n in (on_scene or []) if n):
+                if len(ordered) >= limit:
+                    break
+                _add(facts_mod.get_facts(
+                    self._db_path, save_id, max_turn_id=max_turn_id,
+                    entity=name, limit=limit,
+                ))
+
+            if len(ordered) < limit:
+                _add(facts_mod.get_facts(
+                    self._db_path, save_id, max_turn_id=max_turn_id, limit=limit,
+                ))
+
+            return ordered[:limit]
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Error fetching living-mode facts: {e}")
+            return []
+
+    def _fetch_relevant_beliefs(
+        self,
+        save_id: str,
+        max_turn_id: int,
+        on_scene: list[str],
+        limit: int,
+    ) -> list[str]:
+        """Return up to `limit` belief statements for the living-mode prompt.
+
+        Prioritises beliefs about an on-scene character (what this scene's people
+        *think/remember*), then fills with the most recently updated beliefs.
+        Bounded by `max_turn_id` (a rewound turn never resurfaces a future
+        belief). Degrades to an empty list on any error (never breaks a turn).
+        """
+        if limit <= 0:
+            return []
+        try:
+            from axiom import observations as obs_mod
+
+            seen: set[str] = set()
+            ordered: list[str] = []
+
+            def _add(obs_list):
+                for o in obs_list:
+                    if o.statement and o.statement not in seen:
+                        seen.add(o.statement)
+                        ordered.append(o.statement)
+
+            for name in dict.fromkeys(n for n in (on_scene or []) if n):
+                if len(ordered) >= limit:
+                    break
+                _add(obs_mod.get_observations(
+                    self._db_path, save_id, max_turn_id=max_turn_id,
+                    subject=name, limit=limit,
+                ))
+
+            if len(ordered) < limit:
+                _add(obs_mod.get_observations(
+                    self._db_path, save_id, max_turn_id=max_turn_id, limit=limit,
+                ))
+
+            return ordered[:limit]
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Error fetching living-mode beliefs: {e}")
+            return []
 
     def _fetch_relevant_lore(self, save_id: str, user_message: str, k: int = 5) -> list[dict]:
         """Fetch Lore Book entries relevant to the current turn.

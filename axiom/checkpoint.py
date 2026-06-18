@@ -80,7 +80,24 @@ class CheckpointManager:
                 "DELETE FROM Timeline WHERE save_id = ? AND turn_id > ?;",
                 (save_id, target_turn_id)
             )
-            
+
+            # Living-mode structured facts are turn-tagged → drop the future ones
+            # in this same transaction so events and derived facts roll back
+            # atomically. ensure_ first: older save DBs may predate the table.
+            from axiom.schema import ensure_facts_table
+            ensure_facts_table(conn)
+            conn.execute(
+                "DELETE FROM Facts WHERE save_id = ? AND turn_id > ?;",
+                (save_id, target_turn_id)
+            )
+
+            # Living-mode beliefs (Phase 3) derive from several turns, so they
+            # cannot just be deleted by turn_id: drop those created after the
+            # target and recompute the survivors from their sources at turns
+            # <= target — in this same transaction as the facts they build on.
+            from axiom.observations import rollback_observations
+            rollback_observations(conn, save_id, target_turn_id)
+
             conn.commit()
 
         self._event_sourcer.rebuild_state_cache(save_id, up_to_turn_id=target_turn_id)

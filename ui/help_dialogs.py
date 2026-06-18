@@ -41,6 +41,39 @@ def _entry_html(ref: str) -> str:
     return html
 
 
+def _intro_with_elements_html(intro_page: str, element_refs) -> str:
+    """Rich intro of `intro_page` followed by the given element entries.
+
+    Used by the tab-aware Settings help: the intro is a per-tab page, the
+    elements live under the flat "settings" page (e.g. "settings.base_url").
+    """
+    title_key, intro_key = help_system.page_keys(intro_page)
+    parts = [f"<h2>{tr(title_key)}</h2>", f"<p>{tr(intro_key)}</p><hr/>"]
+    for ref in element_refs:
+        parts.append(_entry_html(ref))
+    return "\n".join(parts)
+
+
+def settings_tab_help_html(tab_index: int) -> tuple[str, str]:
+    """(window title, HTML) explaining the active Settings tab + the General
+    section (which is always visible below the tabs)."""
+    pages = help_system.SETTINGS_TAB_PAGES
+    intro_page, elements = (
+        pages[tab_index] if 0 <= tab_index < len(pages)
+        else help_system.SETTINGS_GENERAL_PAGE
+    )
+    tab_refs = [f"settings.{e}" for e in elements]
+    html = _intro_with_elements_html(intro_page, tab_refs)
+
+    gen_page, gen_elements = help_system.SETTINGS_GENERAL_PAGE
+    if intro_page != gen_page:
+        gen_refs = [f"settings.{e}" for e in gen_elements]
+        html += "\n<hr/>\n" + _intro_with_elements_html(gen_page, gen_refs)
+
+    title = tr(help_system.page_keys(intro_page)[0])
+    return title, html
+
+
 def _page_html(page: str) -> str:
     """Full HTML of one page: intro then every element."""
     title_key, intro_key = help_system.page_keys(page)
@@ -53,16 +86,20 @@ def _page_html(page: str) -> str:
 class ExplainPageDialog(QDialog):
     """Brique 2 : the 'explain this page' dialog for a single page."""
 
-    def __init__(self, page: str, parent=None) -> None:
+    def __init__(self, page: str, parent=None, *, html: str | None = None,
+                 title: str | None = None) -> None:
         super().__init__(parent)
-        title_key, _ = help_system.page_keys(page)
-        self.setWindowTitle(tr(title_key))
+        if html is None:
+            title_key, _ = help_system.page_keys(page)
+            title = tr(title_key)
+            html = _page_html(page)
+        self.setWindowTitle(title)
         self.setMinimumSize(560, 520)
 
         layout = QVBoxLayout(self)
         browser = QTextBrowser()
         browser.setOpenExternalLinks(True)
-        browser.setHtml(_page_html(page))
+        browser.setHtml(html)
         layout.addWidget(browser)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)

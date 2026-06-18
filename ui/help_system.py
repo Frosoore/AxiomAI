@@ -99,6 +99,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "system_prompt",
         "first_message",
         "companion",
+        "belief_missions",
         "tension",
         "llm_temp",
         "llm_top_p",
@@ -151,7 +152,26 @@ PAGES: dict[str, tuple[str, ...]] = {
         "doc_tooltips",
         "trim_sentences",
         "basic_prompt",
+        "tab_memory",
+        "memory_mode",
+        "memory_interval",
+        "memory_model",
+        "memory_reranker",
+        "memory_beliefs",
+        "memory_prompt_cache",
+        "extract_now",
     ),
+    # Per-tab intro pages for the Settings dialog's "Information" button. Intro
+    # only (no own elements): the elements stay under the flat "settings" page
+    # above (no key renames); these pages just carry a rich, tab-specific
+    # explanation that the tab-aware help composes with the relevant elements.
+    "settings_llm": (),
+    "settings_cloud": (),
+    "settings_params": (),
+    "settings_personas": (),
+    "settings_image": (),
+    "settings_memory": (),
+    "settings_general": (),
     # Chrome of the main window itself (status bar etc.) — shown in the
     # directory, but has no dedicated "explain this page" button.
     "app": (
@@ -187,6 +207,38 @@ CREATOR_TAB_PAGES: tuple[str, ...] = (
     "creator_files",
 )
 
+# Settings dialog: QTabWidget index -> (intro page id, element names shown).
+# Element names reference the flat "settings" page (e.g. "settings.base_url").
+# The tab-aware "Information" button renders the intro page's rich text then the
+# listed elements; the General group (always visible below the tabs) is appended.
+SETTINGS_TAB_PAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("settings_llm", (
+        "tab_llm", "base_url", "api_key", "main_model",
+        "extraction_model", "time_model", "test_connection",
+    )),
+    ("settings_cloud", (
+        "tab_cloud", "cloud_provider", "cloud_key", "cloud_model",
+        "browse_models", "gemini_fallback", "llm_rpm",
+    )),
+    ("settings_params", ("tab_params", "llm_temp", "llm_top_p")),
+    ("settings_personas", ("tab_personas",)),
+    ("settings_image", (
+        "tab_image", "image_enable", "image_backend", "image_url",
+        "image_gemini_model", "image_size", "image_steps", "image_cfg",
+        "image_timeout", "image_workflow",
+    )),
+    ("settings_memory", (
+        "tab_memory", "memory_mode", "memory_interval", "memory_model",
+        "memory_reranker", "memory_beliefs", "memory_prompt_cache", "extract_now",
+    )),
+)
+SETTINGS_GENERAL_PAGE: tuple[str, tuple[str, ...]] = (
+    "settings_general", (
+        "language", "chronicler", "font_size", "rag_chunks", "audio",
+        "timekeeper", "doc_tooltips", "trim_sentences", "basic_prompt",
+    ),
+)
+
 # Elements that ALSO carry a long-form details block (`doc_<page>_<el>_d`),
 # rendered only in the "explain this page" dialog and the directory — NEVER in
 # the hover tooltip, which stays short. Add a ref here the moment you write its
@@ -200,6 +252,11 @@ DETAILS: frozenset[str] = frozenset({
     "creator_meta.llm_temp",
     "creator_meta.llm_top_p",
     "creator_meta.verbosity",
+    "creator_meta.belief_missions",
+    "settings.memory_mode",
+    "settings.memory_interval",
+    "settings.memory_reranker",
+    "settings.memory_beliefs",
 })
 
 

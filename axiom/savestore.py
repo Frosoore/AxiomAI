@@ -415,6 +415,14 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Fired_Scheduled_Events", ("save_id", "event_id")),
     ("Items_Inventory", ("save_id", "entity_id", "item_id", "quantity")),
     ("Active_Modifiers", ("modifier_id", "save_id", "entity_id", "stat_key", "delta", "minutes_remaining")),
+    # Living-mode memory (Phase 2 facts, Phase 3 beliefs) travels with the save.
+    # These tables are created lazily, so a save that never used living mode may
+    # not have them in the source DB — the copy loop skips absent source tables.
+    ("Facts", ("fact_id", "save_id", "turn_id", "fact_type", "who", "what",
+               "fact_when", "fact_where", "why", "entities", "statement")),
+    ("Observations", ("observation_id", "save_id", "subject", "statement",
+                      "proof_count", "sources", "history", "created_turn_id",
+                      "updated_turn_id", "stale")),
 ]
 
 _MANIFEST_NAME = "manifest.toml"
@@ -439,7 +447,16 @@ def extract_save(universe_db: str | Path, save_id: str) -> Path:
         conn.execute("ATTACH DATABASE ? AS universe;", (str(universe_db),))
         conn.execute("PRAGMA defer_foreign_keys=ON;")
         conn.execute("BEGIN;")
+        # Lazily-created tables (Facts/Observations) may be absent from an older
+        # source DB — copy only what the source actually has.
+        source_tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM universe.sqlite_master WHERE type = 'table';"
+            ).fetchall()
+        }
         for table, columns in _RUNTIME_COPY:
+            if table not in source_tables:
+                continue
             cols = ", ".join(columns)
             conn.execute(
                 f"INSERT INTO main.{table} ({cols}) "

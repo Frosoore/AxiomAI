@@ -22,6 +22,8 @@ ID              : UUID string, generated per chunk
 import uuid
 from typing import Any
 
+from axiom.retrieval import fusion, lexical
+
 # Lazy imports for heavy libraries
 try:
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
@@ -31,6 +33,50 @@ except ImportError:
 
 _COLLECTION_NAME: str = "narrative_memory"
 _EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+
+# --- Scoring calibration ----------------------------------------------------
+# Algorithm adapted from Hindsight (MIT, search/reranking.py::apply_combined_scoring).
+# Instead of letting recency *multiply down* a relevant memory (old behaviour:
+# semantic × time_weight, time_weight in [0.10, 1.0] — a 200-turn-old but highly
+# relevant memory was crushed to 10% of its score), recency is applied as a
+# *multiplicative modulation around a neutral 0.5*:
+#
+#     recency_boost = 1 + RECENCY_ALPHA * (recency - 0.5)   # in [1-α/2, 1+α/2]
+#     final_score   = semantic_score * recency_boost
+#
+# So semantic relevance stays the dominant signal and recency only nudges the
+# order (±α/2). recency itself decays linearly over the turn horizon and is held
+# *neutral* (0.5 → boost 1.0) for lore / turn 0 / when no current turn is known.
+_RECENCY_ALPHA: float = 0.2        # max relative recency adjustment → ±10%
+_RECENCY_TURN_HORIZON: int = 100   # turns over which recency decays to its floor
+_RECENCY_FLOOR: float = 0.1        # recency value of the oldest memories
+
+# How many extra candidates each retrieval arm over-fetches before fusion/trim.
+_CANDIDATE_FANOUT: int = 3
+_CANDIDATE_FLOOR: int = 20
+
+# Flat additive bump for a chunk that mentions a "focus" term (the current
+# location, an on-scene character). Adapted from Hindsight's additive strategy
+# boost (search/recall_boost.py, "medium" level = 0.2): added to the final score
+# (base in ~[0,1] × recency), so on-scene memories surface without overriding a
+# strong direct relevance match.
+_FOCUS_BOOST: float = 0.2
+
+
+def _recency_boost(turn_id: int, chunk_type: str, current_turn_id: int | None) -> float:
+    """Recency as a multiplicative modulation around a neutral 0.5.
+
+    Returns a factor in ``[1 - α/2, 1 + α/2]``. Held neutral (1.0) for lore, the
+    seed turn (0), or when no current turn is known, so old-but-relevant memories
+    are nudged, never crushed (see module-level scoring note).
+    """
+    if current_turn_id is None or chunk_type == "lore" or turn_id == 0:
+        recency = 0.5
+    else:
+        age = max(0, current_turn_id - turn_id)
+        recency = max(_RECENCY_FLOOR, 1.0 - (age / _RECENCY_TURN_HORIZON))
+    return 1.0 + _RECENCY_ALPHA * (recency - 0.5)
+
 
 _runtime_warned = False
 
@@ -119,7 +165,7 @@ class VectorMemory:
                      Created automatically if it does not exist.
     """
 
-    def __init__(self, persist_dir: str) -> None:
+    def __init__(self, persist_dir: str, reranker: Any | None = None) -> None:
         self._persist_dir = persist_dir
         self._chroma_client = None
         self._collection = None
@@ -127,6 +173,9 @@ class VectorMemory:
         # missing on Windows). Semantic memory then degrades to a no-op so the
         # game stays playable instead of crashing every turn.
         self._disabled = False
+        # Optional cross-encoder reranker (CrossEncoderReranker). OFF unless the
+        # caller injects one; it self-disables to a no-op if its model can't load.
+        self._reranker = reranker
 
     def _ensure_connected(self) -> None:
         """Lazy-init ChromaDB only when first used.
@@ -185,18 +234,27 @@ class VectorMemory:
         k: int = 5,
         current_turn_id: int | None = None,
         max_turn_id: int | None = None,
+        focus_terms: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Retrieve the top-k most relevant chunks using Time-Weighted search."""
+        """Retrieve the top-k most relevant chunks using hybrid scored search.
+
+        Args:
+            focus_terms: Optional "here-and-now" terms (current location name,
+                on-scene character names). A chunk whose text mentions any of
+                them gets a small additive boost so memories about the current
+                scene surface more readily. No effect when omitted.
+        """
         if not query_text or not query_text.strip():
             raise ValueError("Query text must not be empty.")
 
         self._ensure_connected()
         if self._disabled:
             return []
-        # Fetch more candidates than k to allow for re-ranking
-        candidate_count = max(k * 3, 20)
-        
-        # Build filter condition
+        # Over-fetch candidates per arm before fusion/trim so a good chunk that
+        # ranks mid-pack in one arm can still be rescued by the other.
+        fanout = max(k * _CANDIDATE_FANOUT, _CANDIDATE_FLOOR)
+
+        # Build filter condition (shared by both arms).
         where_cond: dict[str, Any] = {"save_id": save_id}
         if max_turn_id is not None:
             where_cond = {
@@ -206,51 +264,119 @@ class VectorMemory:
                 ]
             }
 
-        # How many docs exist for this save. Each save has its OWN collection
-        # (persist_dir is per save_id), so count() is exactly this save's chunk
-        # count — a cheap metadata read, instead of get() which used to
-        # materialise every chunk's document + metadata just to size the query.
+        # Each save has its OWN collection (persist_dir is per save_id), so
+        # count() is exactly this save's chunk count — a cheap metadata read.
         available = self._collection.count()
         if available == 0:
             return []
 
-        fetch_k = min(candidate_count, available)
+        fetch_k = min(fanout, available)
 
-        results = self._collection.query(
+        # --- Arm 1: semantic (ChromaDB ANN) -------------------------------
+        sem = self._collection.query(
             query_texts=[query_text],
             n_results=fetch_k,
             where=where_cond,
         )
+        sem_ids = sem.get("ids", [[]])[0]
+        sem_docs = sem.get("documents", [[]])[0]
+        sem_metas = sem.get("metadatas", [[]])[0]
+        sem_dists = sem.get("distances", [[]])[0]
+
+        # Per-doc record store, keyed by Chroma's stable chunk id.
+        records: dict[str, dict[str, Any]] = {}
+        for did, doc, meta, dist in zip(sem_ids, sem_docs, sem_metas, sem_dists):
+            records[did] = {
+                "text": doc,
+                "turn_id": int(meta.get("turn_id", 0)),
+                "chunk_type": str(meta.get("chunk_type", "narrative")),
+                "distance": float(dist),
+                "semantic_score": max(0.0, 1.0 - (float(dist) / 2.0)),
+            }
+        semantic_ranked = list(sem_ids)
+
+        # --- Arm 2: lexical (BM25 over the save's corpus) -----------------
+        # Lexical recall can surface an exact token (a name, an item) the
+        # embedding arm misses. Needs the actual texts, so we fetch the corpus
+        # here (degrades to semantic-only if rank_bm25 is unavailable).
+        lexical_ranked: list[str] = []
+        if lexical.is_available():
+            corpus = self._collection.get(
+                where=where_cond,
+                include=["documents", "metadatas"],
+            )
+            corpus_ids = corpus.get("ids", []) or []
+            corpus_docs = corpus.get("documents", []) or []
+            corpus_metas = corpus.get("metadatas", []) or []
+            lexical_ranked = lexical.rank_by_bm25(query_text, corpus_ids, corpus_docs)[:fetch_k]
+            # Backfill records for lexical-only hits the semantic arm never saw.
+            meta_by_id = dict(zip(corpus_ids, corpus_metas))
+            doc_by_id = dict(zip(corpus_ids, corpus_docs))
+            for did in lexical_ranked:
+                if did not in records:
+                    meta = meta_by_id.get(did, {}) or {}
+                    records[did] = {
+                        "text": doc_by_id.get(did, ""),
+                        "turn_id": int(meta.get("turn_id", 0)),
+                        "chunk_type": str(meta.get("chunk_type", "narrative")),
+                        "distance": None,
+                        "semantic_score": 0.0,
+                    }
+
+        # --- Fuse + score -------------------------------------------------
+        if lexical_ranked:
+            # Two arms → Reciprocal Rank Fusion. The (batch-normalised) RRF score
+            # is the post-fusion base: it stays smooth (a doc found by both arms
+            # outscores one found by a single arm) and incomparable per-arm scales
+            # never leak in. No cross-encoder yet — item 3 will replace this base.
+            fused = fusion.reciprocal_rank_fusion([
+                fusion.cap_per_source(semantic_ranked, fetch_k),
+                fusion.cap_per_source(lexical_ranked, fetch_k),
+            ])
+            order = [doc_id for doc_id, _ in fused]
+            max_rrf = max((score for _, score in fused), default=1.0) or 1.0
+            base_by_id = {doc_id: score / max_rrf for doc_id, score in fused}
+        else:
+            # Single arm → keep the smooth semantic score as the base.
+            order = semantic_ranked
+            base_by_id = {did: records[did]["semantic_score"] for did in order}
+
+        # Optional cross-encoder rerank: the most accurate relevance signal,
+        # replacing the fused base when enabled. No-op (None) when unavailable,
+        # leaving the fused/semantic base untouched.
+        if self._reranker is not None and order:
+            ce_scores = self._reranker.rerank(
+                query_text, [records[did]["text"] for did in order]
+            )
+            if ce_scores is not None:
+                base_by_id = {did: ce_scores[i] for i, did in enumerate(order)}
+
+        # Pre-tokenise focus terms once: a chunk matches a term when all of the
+        # term's tokens appear in it (so "Black Keep" needs both, but a single
+        # name still matches), avoiding substring false positives.
+        focus_token_sets: list[set[str]] = []
+        for term in focus_terms or []:
+            toks = set(lexical.tokenize(term))
+            if toks:
+                focus_token_sets.append(toks)
 
         candidates: list[dict[str, Any]] = []
-        documents = results.get("documents", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0]
-
-        for doc, meta, dist in zip(documents, metadatas, distances):
-            turn_id = int(meta.get("turn_id", 0))
-            chunk_type = str(meta.get("chunk_type", "narrative"))
-            
-            # 1. Semantic Score (0.0 to 1.0, 1.0 is perfect match)
-            # ChromaDB cosine distance: 0.0 is perfect, 2.0 is opposite
-            semantic_score = max(0.0, 1.0 - (float(dist) / 2.0))
-            
-            # 2. Recency Weight (0.1 to 1.0)
-            if current_turn_id is None or chunk_type == "lore" or turn_id == 0:
-                time_weight = 1.0
-            else:
-                # Linear decay: Lose 1% weight per turn of age, cap at 10%
-                age = max(0, current_turn_id - turn_id)
-                time_weight = max(0.1, 1.0 - (age * 0.01))
-            
-            final_score = semantic_score * time_weight
-            
+        for doc_id in order:
+            rec = records.get(doc_id)
+            if rec is None:
+                continue
+            boost = _recency_boost(rec["turn_id"], rec["chunk_type"], current_turn_id)
+            score = base_by_id[doc_id] * boost
+            if focus_token_sets:
+                chunk_tokens = set(lexical.tokenize(rec["text"]))
+                if any(fs <= chunk_tokens for fs in focus_token_sets):
+                    score += _FOCUS_BOOST
             candidates.append({
-                "text": doc,
-                "turn_id": turn_id,
-                "chunk_type": chunk_type,
-                "distance": float(dist),
-                "score": final_score
+                "text": rec["text"],
+                "turn_id": rec["turn_id"],
+                "chunk_type": rec["chunk_type"],
+                "distance": rec["distance"],
+                "score": score,
             })
 
         # Sort by final score descending and take top k

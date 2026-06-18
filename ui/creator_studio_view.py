@@ -175,6 +175,17 @@ class CreatorStudioView(QWidget):
         first_msg_layout.addWidget(self._first_message_edit)
         layout.addWidget(self._first_msg_group)
 
+        # B-3: per-character memory styles (one "Name: what they remember" per
+        # line). Stored in Universe_Meta as belief_missions JSON; drives how the
+        # living-memory consolidator forms beliefs for each character.
+        self._belief_missions_group = QGroupBox(tr("belief_missions_title"))
+        bm_layout = QVBoxLayout(self._belief_missions_group)
+        self._belief_missions_edit = doc(QPlainTextEdit(), "creator_meta.belief_missions")
+        self._belief_missions_edit.setPlaceholderText(tr("belief_missions_placeholder"))
+        self._belief_missions_edit.setMinimumHeight(60)
+        bm_layout.addWidget(self._belief_missions_edit)
+        layout.addWidget(self._belief_missions_group)
+
         self._tension_group = QGroupBox(tr("world_tension_level"))
         tension_form = QFormLayout(self._tension_group)
         self._tension_spin = doc(QDoubleSpinBox(), "creator_meta.tension")
@@ -248,6 +259,8 @@ class CreatorStudioView(QWidget):
         self._lore_group.setTitle(tr("world_lore"))
         self._prompt_group.setTitle(tr("sys_prompt_override"))
         self._first_msg_group.setTitle(tr("init_narrative"))
+        self._belief_missions_group.setTitle(tr("belief_missions_title"))
+        self._belief_missions_edit.setPlaceholderText(tr("belief_missions_placeholder"))
         self._tension_group.setTitle(tr("world_tension_level"))
         self._tension_label_row.setText(f"{tr('tension')} (0.0-1.0):")
         self._temp_label_row.setText(tr("llm_temp"))
@@ -346,8 +359,13 @@ class CreatorStudioView(QWidget):
             "llm_verbosity": self._verbosity_combo.currentData() or "balanced",
             "companion_mode_enabled": "1" if self._companion_enabled_check.isChecked() else "0",
             "companion_hero_id": self._companion_hero_combo.currentData() or "",
-            "calendar_config": cal_meta.get("calendar_config", "{}")
+            "calendar_config": cal_meta.get("calendar_config", "{}"),
         }
+        # B-3: per-character memory styles → belief_missions JSON (empty = absent).
+        import json as _json
+        from axiom.missions import parse_missions_text
+        _bm = parse_missions_text(self._belief_missions_edit.toPlainText())
+        meta["belief_missions"] = _json.dumps(_bm, ensure_ascii=False) if _bm else ""
 
         data = {
             "meta": meta,
@@ -417,6 +435,11 @@ class CreatorStudioView(QWidget):
         self._lore_edit.setPlainText(meta.get("global_lore", ""))
         self._system_prompt_edit.setPlainText(meta.get("system_prompt", ""))
         self._first_message_edit.setPlainText(meta.get("first_message", ""))
+        # B-3: belief_missions JSON → "Name: mission" lines.
+        from axiom.missions import get_belief_missions_from_value, missions_to_text
+        self._belief_missions_edit.setPlainText(
+            missions_to_text(get_belief_missions_from_value(meta.get("belief_missions", "")))
+        )
         # Meta values come from user-editable sources (universe.toml, imported
         # .axiom) — a malformed number must not crash the Studio.
         self._tension_spin.setValue(_meta_float(meta, "world_tension_level", 0.3))

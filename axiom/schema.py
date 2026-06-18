@@ -116,6 +116,50 @@ CREATE TABLE IF NOT EXISTS Lore_Book (
 );
 """
 
+# Structured facts extracted from the narrative by the LLM in "living" memory
+# mode (Hindsight-inspired who/what/when/where/why model, causal links deferred).
+# Lives in the same DB as Event_Log / State_Cache, keyed by save_id + turn_id, so
+# CheckpointManager.rewind deletes future facts in the same transaction as events.
+_DDL_FACTS = """
+CREATE TABLE IF NOT EXISTS Facts (
+    fact_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id     TEXT NOT NULL,
+    turn_id     INTEGER NOT NULL,
+    fact_type   TEXT NOT NULL DEFAULT 'world',
+    who         TEXT NOT NULL DEFAULT '',
+    what        TEXT NOT NULL DEFAULT '',
+    fact_when   TEXT NOT NULL DEFAULT '',
+    fact_where  TEXT NOT NULL DEFAULT '',
+    why         TEXT NOT NULL DEFAULT '',
+    entities    TEXT NOT NULL DEFAULT '',
+    statement   TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE
+);
+"""
+
+# Consolidated beliefs ("observations", Hindsight-inspired) distilled from Facts
+# by the LLM in "living" memory mode, Phase 3. A belief evolves (CREATE/UPDATE/
+# DELETE) and remembers WHICH facts support it via `sources` (a JSON list of
+# {fact_id, turn_id}). The turn ids are the rollback key: rewinding to turn N
+# drops beliefs created after N and recomputes the proof_count of the survivors
+# from their sources at turns <= N — so beliefs roll back atomically with the
+# facts and events they derive from. Same DB as Facts / Event_Log.
+_DDL_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS Observations (
+    observation_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id         TEXT NOT NULL,
+    subject         TEXT NOT NULL DEFAULT '',
+    statement       TEXT NOT NULL,
+    proof_count     INTEGER NOT NULL DEFAULT 1,
+    sources         TEXT NOT NULL DEFAULT '[]',
+    history         TEXT NOT NULL DEFAULT '[]',
+    created_turn_id INTEGER NOT NULL DEFAULT 0,
+    updated_turn_id INTEGER NOT NULL DEFAULT 0,
+    stale           INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE
+);
+"""
+
 _DDL_GLOBAL_PERSONAS = """
 CREATE TABLE IF NOT EXISTS Global_Personas (
     persona_id   TEXT PRIMARY KEY,
@@ -244,6 +288,8 @@ _ALL_DDL: list[str] = [
     _DDL_EVENT_LOG,
     _DDL_STATE_CACHE,
     _DDL_LORE_BOOK,
+    _DDL_FACTS,
+    _DDL_OBSERVATIONS,
     _DDL_SNAPSHOTS,
     _DDL_TIMELINE,
     _DDL_SCHEDULED_EVENTS,
@@ -267,6 +313,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Event_Log",
     "State_Cache",
     "Lore_Book",
+    "Facts",
+    "Observations",
     "Snapshots",
     "Timeline",
     "Scheduled_Events",
@@ -293,7 +341,36 @@ _DDL_INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_event_log_save_turn ON Event_Log(save_id, turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_active_modifiers_save ON Active_Modifiers(save_id);",
     "CREATE INDEX IF NOT EXISTS idx_timeline_save_turn ON Timeline(save_id, turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_facts_save_turn ON Facts(save_id, turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_observations_save_turn ON Observations(save_id, updated_turn_id);",
 ]
+
+
+def ensure_facts_table(conn: "sqlite3.Connection") -> None:
+    """Create the Facts table + index on an already-open connection if missing.
+
+    Lets the facts storage layer (and rewind) self-migrate save DBs provisioned
+    before the Facts table existed, without a central migration runner. Idempotent
+    (CREATE … IF NOT EXISTS); reuses the caller's transaction.
+    """
+    conn.execute(_DDL_FACTS)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_facts_save_turn ON Facts(save_id, turn_id);"
+    )
+
+
+def ensure_observations_table(conn: "sqlite3.Connection") -> None:
+    """Create the Observations table + index on an open connection if missing.
+
+    Self-migration for save DBs provisioned before the beliefs layer existed
+    (Phase 3), mirroring ensure_facts_table. Idempotent; reuses the caller's
+    transaction so rewind can roll beliefs back atomically with facts/events.
+    """
+    conn.execute(_DDL_OBSERVATIONS)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_observations_save_turn "
+        "ON Observations(save_id, updated_turn_id);"
+    )
 
 
 # ---------------------------------------------------------------------------

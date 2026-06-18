@@ -33,9 +33,11 @@ print(result.narrative_text)
   save state by hand.
 - **Causal time** — an in-game clock advances with the story; an off-screen
   "Chronicler" simulates the rest of the world while the player is away.
-- **Vector memory (RAG)** — long-term narrative memory backed by a local vector
-  store; the structured Lore Book is retrieved by keyword from the universe
-  database.
+- **Hybrid narrative memory** — long-term recall over a local vector store,
+  combining semantic and lexical (BM25) search with rank fusion, turn-aware
+  recency and an optional neural reranker. An opt-in *living* mode additionally
+  distils each turn into structured facts the world can remember. See the
+  [Memory guide](guides/memory.md).
 - **Content generation** — populate a universe (entities, lore, map, rules…)
   with an LLM, from the command line or from Python.
 - **Optional scene illustration** — generate an image per turn via Stable
@@ -69,6 +71,7 @@ guides/saves
 guides/populate
 guides/backends
 guides/images
+guides/memory
 ```
 
 ```{toctree}

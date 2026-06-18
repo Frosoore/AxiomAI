@@ -176,6 +176,59 @@ class TestQuery:
         results = vm.query("save1", "only chunk", k=100)
         assert len(results) == 1
 
+    def test_result_carries_score(self, vm: VectorMemory) -> None:
+        """Each result carries a numeric combined score."""
+        vm.embed_chunk("save1", 1, "the hero slays the beast")
+        results = vm.query("save1", "hero", k=1, current_turn_id=1)
+        assert isinstance(results[0]["score"], float)
+
+    def test_recency_modulation_does_not_crush_old_relevant_chunk(
+        self, vm: VectorMemory
+    ) -> None:
+        """An old but on-topic chunk keeps almost all its score; recency only
+        modulates by ±10% (Hindsight-style multiplicative boost) instead of the
+        old behaviour that multiplied a 200-turn-old memory down to 10%.
+
+        We embed the same text at an old and a recent turn so their semantic
+        relevance to the query is identical: the only difference is recency.
+        The old chunk's score must stay within ~20% of the recent one, never
+        collapse to a fraction of it.
+        """
+        vm.embed_chunk("save1", 1, "the ancient dragon guards the relic")
+        vm.embed_chunk("save1", 300, "the ancient dragon guards the relic")
+
+        results = vm.query("save1", "ancient dragon relic", k=2, current_turn_id=300)
+        scores = {r["turn_id"]: r["score"] for r in results}
+        assert set(scores) == {1, 300}
+        # Recency only modulates by ±10% around a near-identical base, so the old
+        # chunk keeps the large majority of the recent one's score — never the
+        # ~10x collapse of the previous semantic×time_weight scheme.
+        assert scores[1] >= scores[300] * 0.7
+
+    def test_focus_term_boosts_on_scene_chunk(self, vm: VectorMemory) -> None:
+        """A chunk mentioning a focus term (the current location) is lifted above
+        an equally-relevant chunk that does not, without focus changing recency."""
+        vm.embed_chunk("save1", 1, "a meeting happened in the great hall of Eldoria")
+        vm.embed_chunk("save1", 1, "a meeting happened in some other distant place")
+
+        focused = vm.query(
+            "save1", "a meeting happened", k=2, current_turn_id=1, focus_terms=["Eldoria"]
+        )
+        assert "Eldoria" in focused[0]["text"]
+
+    def test_focus_term_requires_all_tokens(self, vm: VectorMemory) -> None:
+        """A multi-word focus term only matches when every token is present."""
+        vm.embed_chunk("save1", 1, "the black market thrives at night")
+        partial = vm.query(
+            "save1", "market", k=1, current_turn_id=1, focus_terms=["Black Keep"]
+        )
+        full = vm.query(
+            "save1", "market", k=1, current_turn_id=1, focus_terms=["black market"]
+        )
+        # "Black Keep" needs both 'black' and 'keep' (only 'black' present → no
+        # boost); "black market" matches fully → boosted above the partial case.
+        assert full[0]["score"] > partial[0]["score"]
+
     def test_query_filters_by_max_turn_id(self, vm: VectorMemory) -> None:
         """query(max_turn_id=N) excludes chunks from turns later than N."""
         # Arrange: create chunks across different turns
@@ -193,6 +246,38 @@ class TestQuery:
         assert 5 in turn_ids
         assert 10 in turn_ids
         assert 15 not in turn_ids
+
+
+# ---------------------------------------------------------------------------
+# Optional cross-encoder reranker wiring
+# ---------------------------------------------------------------------------
+
+class _FakeCE:
+    """Scores any document containing 'relic' as highly relevant, else not."""
+
+    def predict(self, pairs):
+        return [9.0 if "relic" in doc else -9.0 for _q, doc in pairs]
+
+
+class TestRerankerWiring:
+    def test_reranker_dominates_ordering(self, tmp_path: Path) -> None:
+        """When a reranker is injected, its relevance judgement drives the final
+        order — here the 'relic' chunk surfaces first regardless of recency."""
+        from axiom.retrieval.reranker import CrossEncoderReranker
+
+        saved = _EmbeddingSingleton._instance
+        _EmbeddingSingleton._instance = _FakeEmbeddingFn()
+        try:
+            vm = VectorMemory(
+                persist_dir=str(tmp_path / "chroma"),
+                reranker=CrossEncoderReranker(model=_FakeCE()),
+            )
+            vm.embed_chunk("s", 1, "a dusty old relic lies in the vault")
+            vm.embed_chunk("s", 2, "the weather is mild and sunny today")
+            results = vm.query("s", "tell me something", k=2, current_turn_id=2)
+            assert "relic" in results[0]["text"]
+        finally:
+            _EmbeddingSingleton._instance = saved
 
 
 # ---------------------------------------------------------------------------

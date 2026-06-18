@@ -688,3 +688,67 @@ doc_creator_meta_tension_d = "<b>What it does:</b> a 0.0–1.0 dial telling the 
 doc_creator_meta_llm_temp_d = "<b>What it does:</b> the AI's creativity for this universe, 0.0 to 1.0. <b>Low</b> (≈0.2) = focused, predictable, on-the-rails; <b>high</b> (≈0.8) = inventive, surprising, occasionally off-the-wall. <b>How to tune it:</b> if the narration feels repetitive, raise it; if it drifts or contradicts itself, lower it. <b>Recommendation:</b> 0.6–0.8 suits most storytelling. This sets the universe default; the global Settings value applies when a universe leaves it unset."
 doc_creator_meta_llm_top_p_d = "<b>What it does:</b> nucleus sampling — another creativity control that limits how much of the AI's vocabulary it draws from (0.0–1.0). <b>High</b> (≈0.95) = the full, varied palette; <b>low</b> (≈0.5) = only the most likely words, i.e. plainer, safer prose. <b>How to use it:</b> usually leave it near 0.9–1.0 and shape creativity with Temperature instead; lower it only if the writing gets too loose. <b>Note:</b> Temperature and top-p interact — change one at a time."
 doc_creator_meta_verbosity_d = "<b>What it does:</b> how much prose the narrator writes per turn. <b>Short</b> = tight, fast-moving beats; <b>Balanced</b> = a healthy paragraph; <b>Talkative</b> = rich, descriptive scenes. <b>How to choose:</b> Short for snappy action or play-by-post pace, Talkative for immersive, novelistic sessions. <b>Effect:</b> it changes length and detail, not what actually happens. This is the universe's default."
+
+# --- Memory tab (Phase 2: living memory / fact extraction) ---
+tab_memory = "Memory"
+memory_mode_label = "Memory mode:"
+memory_mode_lite = "Lite (offline, deterministic)"
+memory_mode_living = "Living (AI facts)"
+memory_fact_interval_label = "Extract facts every (turns):"
+memory_fact_model_label = "Fact extraction model:"
+memory_fact_model_placeholder = "default (game model)"
+memory_interval_off = "Manual only"
+memory_reranker_label = "Neural reranking of memory search"
+extract_now = "Extract memory now"
+memory_extracted_fmt = "Memory updated ({count} new facts)."
+
+# --- Memory tab integrated doc (TICKET-057 / Phase 2) ---
+doc_settings_tab_memory_t = "Memory"
+doc_settings_tab_memory = "How the game remembers your story: offline hybrid search (Lite), or additionally AI-distilled facts that feed future turns (Living)."
+doc_settings_memory_mode_t = "Memory mode"
+doc_settings_memory_mode = "Lite keeps memory fully offline and deterministic (hybrid search only). Living also asks the AI to distil each turn into durable facts recalled later. Chosen per save."
+doc_settings_memory_interval_t = "Fact extraction interval"
+doc_settings_memory_interval = "In Living mode, extract facts every N turns (batched to bound cost). Set to 'Manual only' to extract on demand with the button instead."
+doc_settings_memory_model_t = "Fact extraction model"
+doc_settings_memory_model = "Optional cheaper/faster model used only to distil facts. Leave empty to reuse the game's main model."
+doc_settings_memory_reranker_t = "Neural reranking"
+doc_settings_memory_reranker = "Re-rank memory search with a small cross-encoder for sharper recall. Off by default: it downloads a ~90 MB model and needs a healthy native runtime."
+doc_settings_extract_now_t = "Extract memory now"
+doc_settings_extract_now = "Distil the recent turns into facts immediately and reset the interval counter. Only active in Living mode during a session."
+
+# --- Settings per-tab help (TICKET-057 enrichment / Phase 2) ---
+doc_page_settings_llm_t = "Settings — LLM Backend"
+doc_page_settings_llm = "This tab points Axiom at the AI that writes the story. Use it for a local model (e.g. Ollama at http://localhost:11434/v1) or any OpenAI-compatible server. <b>Main model</b> drives the narration; <b>Extraction</b> and <b>Time</b> are small auxiliary models for background tasks (parsing your action, deducing elapsed time) — a tiny model like llama3.2:1b is enough there. Press <b>Test connection</b> to confirm the server answers before you play. For hosted clouds (Gemini, Claude…), use the Cloud tab instead."
+doc_page_settings_cloud_t = "Settings — Cloud Providers"
+doc_page_settings_cloud = "Pick a hosted provider (Gemini, Claude, Venice, Fireworks, OpenAI, OpenRouter) and paste its API key. Each provider keeps its own key and model, so switching back and forth loses nothing. <b>Example:</b> choose Fireworks, key fw_…, model accounts/fireworks/models/gpt-oss-120b, then <b>Browse models</b> to see what your account can run. <b>Test connection</b> does a real one-token call to catch a wrong model name. The fallback model and requests/minute rows are Gemini-only."
+doc_page_settings_params_t = "Settings — Generation"
+doc_page_settings_params = "These shape HOW the narrator writes for the current universe. <b>Temperature</b> (0–1) is creativity: about 0.2 = focused and predictable, about 0.8 = inventive and surprising; 0.6–0.8 suits most stories. <b>Top-p</b> limits the vocabulary pool — usually leave it near 0.9–1.0 and tune creativity with Temperature instead. Change one at a time: if the prose repeats, raise Temperature; if it drifts, lower it. These are the universe defaults."
+doc_page_settings_personas_t = "Settings — Personas"
+doc_page_settings_personas = "Personas are saved character sheets you can drop into any new game, so you do not rewrite your favourite hero each time. Edit a template name, description and traits here; it then appears as a pick during game setup. <b>Example:</b> a Grizzled Detective persona with a fixed backstory and voice, reused across several noir universes."
+doc_page_settings_image_t = "Settings — Illustration"
+doc_page_settings_image = "Turn narrative moments into pictures. Choose a backend: <b>Gemini</b> (cloud, reuses your text key — easiest), a local <b>Stable Diffusion</b> WebUI / <b>ComfyUI</b> server, or <b>mock</b> for testing. Set the size (e.g. 512×512), steps and guidance (CFG) to trade quality against speed. <b>Max delay per image</b> protects slow machines. <b>Example:</b> a local SD WebUI launched with --api → set the URL to http://127.0.0.1:7860 and pick stable_diffusion."
+doc_page_settings_memory_t = "Settings — Memory"
+doc_page_settings_memory = "Controls how Axiom recalls your story across long sessions. <b>Lite</b> (default) is fully offline and deterministic: it finds relevant past moments by meaning and keywords, no AI and no network. <b>Living</b> additionally asks the AI, in the background, to distil each turn into durable <i>facts</i> (for example: Kael burned the bridge at Voss to stop the army) recalled and fed to later turns — so the world stays consistent hundreds of turns later. <b>Extract every N turns</b> batches that work; the <b>extraction model</b> lets a cheaper model do it; <b>neural reranking</b> sharpens search results. <b>Example:</b> a long campaign where an NPC should remember a betrayal from turn 12 → use Living."
+doc_page_settings_general_t = "Settings — General"
+doc_page_settings_general = "App-wide options, always shown below the tabs. <b>Language</b> switches the whole interface (10 languages). <b>Chronicler interval</b> is how often, in in-game minutes, the world simulates off-screen events. <b>RAG memory chunks</b> is how many past passages feed the narrator each turn (more = better recall, slower). <b>AI Timekeeper</b> spends one extra AI call per turn for precise elapsed time. <b>Basic prompt</b> injects your own standing instructions into every turn (tone, rules, style)."
+doc_settings_memory_mode_d = "<b>Example:</b> in a 300-turn campaign, Lite still surfaces the scene where you met the merchant when you return to his shop, by matching words and meaning — instantly and offline. Living goes further: it recorded that the player insulted the merchant as a fact, so that fact resurfaces and the AI can have him hold a grudge. <b>Trade-off:</b> Lite costs nothing and never calls out; Living costs background AI calls and needs a key/network. <b>Tip:</b> the mode is per save."
+doc_settings_memory_interval_d = "<b>What N means:</b> with N=5 the game waits until 5 new turns have happened, then distils those 5 turns at once (one AI call instead of five). <b>0 / Manual only:</b> nothing happens automatically — press Extract memory now when you want a checkpoint of facts. <b>Tip:</b> a small N (3–5) keeps facts fresh in fast scenes; a larger N (10+) saves cost in slow, talky stretches."
+doc_settings_memory_reranker_d = "<b>What it does:</b> ordinary search ranks memories by a fast similarity score. A cross-encoder re-reads each candidate <i>together with</i> your current situation and re-orders them, so the truly on-topic memory rises above one that merely shares words. <b>Example:</b> for a query about the broken oath, plain search might top-rank any passage mentioning oath, while the reranker promotes the exact scene where the oath was broken. <b>Cost:</b> it downloads a ~90 MB model and runs locally on CPU, adding a little time per search; off by default, it safely disables itself if the native runtime is missing."
+
+# --- Memory: evolving beliefs (Phase 3) ---
+memory_beliefs_label = "Evolving beliefs (characters remember & revise)"
+doc_settings_memory_beliefs_t = "Evolving beliefs"
+doc_settings_memory_beliefs = "On top of the facts, distil them into beliefs that update over time (a Hindsight idea): a character holds a grudge or revises an opinion. Needs Living mode and adds one more background AI pass after fact extraction. Off by default."
+doc_settings_memory_beliefs_d = "<b>How it works:</b> a background pass groups the new facts into durable beliefs (observations) — the merchant resents the player — that gain weight (proof) as more facts support them and are revised or dropped when facts contradict them. Beliefs are fed to the AI ahead of raw memories, so an NPC reacts consistently to something you did hundreds of turns ago. <b>Cost:</b> a second background AI call after fact extraction. <b>Rollback-safe:</b> rewinding a turn rolls beliefs back together with the facts they came from."
+
+# --- Character memory styles (Phase 4 B-3) ---
+belief_missions_title = "Character memory styles"
+belief_missions_placeholder = "One per line — e.g. Merchant: remembers slights and debts"
+doc_creator_meta_belief_missions_t = "Character memory styles"
+doc_creator_meta_belief_missions = "For Living memory with beliefs on, tells the AI how each character remembers. One per line as Name: what they tend to remember. A rancorous NPC dwells on betrayals, a merchant on debts — so each forms beliefs in character."
+doc_creator_meta_belief_missions_d = "<b>What it does:</b> in Living memory with beliefs on, the AI distils events into lasting beliefs per character; this field tells it HOW each one remembers, so they react in character. <b>Format:</b> one line per character, Name: what they tend to remember. <b>Examples:</b> Merchant: remembers slights and debts — Captain: remembers oaths and who kept them — Thief: remembers easy marks and escape routes. <b>Note:</b> names match your entities; anyone without a line uses the universe default. Only affects Living mode."
+
+# --- Prompt caching (Phase 4 B-4) ---
+memory_prompt_cache_label = "Prompt caching (Gemini, cost saving)"
+doc_settings_memory_prompt_cache_t = "Prompt caching"
+doc_settings_memory_prompt_cache = "Caches the stable system prompt on Gemini to cut input-token cost on repeated calls (e.g. background fact/belief work in Living mode). Only helps when the prompt is large enough to qualify — it safely does nothing otherwise — and only on the Gemini backend. Off by default."
