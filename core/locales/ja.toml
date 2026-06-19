@@ -739,6 +739,12 @@ doc_settings_memory_beliefs_t = "進化する信念"
 doc_settings_memory_beliefs = "事実に加えて、それらを時とともに更新される信念へ抽出します（Hindsight の発想）。キャラクターが恨みを抱いたり意見を見直したりします。リビングモードが必要で、事実抽出の後にもう一度バックグラウンドの AI 処理を加えます。既定はオフ。"
 doc_settings_memory_beliefs_d = "<b>仕組み：</b>バックグラウンド処理が新しい事実を持続的な信念（観察）にまとめます——商人がプレイヤーを恨む——。支持する事実が増えるほど重み（証拠）が増し、矛盾する事実が出れば見直されたり破棄されたりします。信念は生の記憶より先に AI へ渡されるため、NPC は数百ターン前のあなたの行為にも一貫して反応します。<b>コスト：</b>事実抽出の後にもう一度バックグラウンドの AI 呼び出し。<b>ロールバック安全：</b>ターンを巻き戻すと、信念はその元になった事実とともに戻ります。"
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "生きたプロフィール（厳選されたキャラ/世界メモ）"
+doc_settings_memory_mental_models_t = "生きたプロフィール"
+doc_settings_memory_mental_models = "信念の上に、各キャラクター（および世界）を AI が最初に読む短い「生きたプロフィール」に凝縮します（Hindsight のアイデア）。信念を有効にした「リビング」モードが必要で、バックグラウンドの AI 処理が一回追加されます。既定ではオフです。"
+doc_settings_memory_mental_models_d = "<b>仕組み：</b>信念が更新された後、バックグラウンド処理が、信念が変化した各キャラクターについて 2〜4 文のプロフィールを書き直します——今の人物像、関係、遺恨など。このプロフィールは AI に伝える内容の最上部に置かれるため、長いキャンペーンの記憶が断片的な事実ではなく一貫したキャラクターメモとして届きます。<b>信念が必要：</b>プロフィールは信念から抽出されるため、「進化する信念」が有効な場合のみ機能します。<b>コスト：</b>変化したキャラクターごとにバックグラウンド AI 呼び出しが一回追加（ターンごとに上限あり）。<b>巻き戻し対応：</b>巻き戻すと後で形成されたプロフィールは削除され、残りは巻き戻した信念から再生成されます。"
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "キャラクターの記憶スタイル"
 belief_missions_placeholder = "1 行に 1 つ——例: 商人: 侮辱と借りを覚えている"
@@ -754,6 +760,9 @@ doc_settings_memory_prompt_cache = "安定したシステムプロンプトを G
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "記憶を見る…"
 memory_browser_title = "物語の記憶"
+memory_browser_tab_models = "プロフィール"
+memory_browser_empty_models = "プロフィールはまだありません——「生きたプロフィール」を有効にして数ターンプレイしてください。"
+memory_browser_col_profile = "プロフィール"
 memory_browser_tab_beliefs = "信念"
 memory_browser_tab_facts = "事実"
 memory_browser_col_subject = "対象"

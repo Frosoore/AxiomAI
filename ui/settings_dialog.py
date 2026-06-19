@@ -366,6 +366,8 @@ class SettingsDialog(QDialog):
 
         self._memory_beliefs_cb = doc(QCheckBox(tr("memory_beliefs_label")), "settings.memory_beliefs")
 
+        self._memory_mental_models_cb = doc(QCheckBox(tr("memory_mental_models_label")), "settings.memory_mental_models")
+
         self._memory_prompt_cache_cb = doc(QCheckBox(tr("memory_prompt_cache_label")), "settings.memory_prompt_cache")
 
         self._memory_extract_btn = doc(QPushButton(tr("extract_now")), "settings.extract_now")
@@ -381,6 +383,7 @@ class SettingsDialog(QDialog):
         memory_form.addRow(self._memory_model_label, self._memory_model_edit)
         memory_form.addRow("", self._memory_reranker_cb)
         memory_form.addRow("", self._memory_beliefs_cb)
+        memory_form.addRow("", self._memory_mental_models_cb)
         memory_form.addRow("", self._memory_prompt_cache_cb)
         memory_form.addRow("", self._memory_extract_btn)
         memory_form.addRow("", self._memory_browse_btn)
@@ -389,6 +392,8 @@ class SettingsDialog(QDialog):
         doc_tab(self._tabs, self._tabs.indexOf(self._memory_widget), "settings.tab_memory")
 
         self._memory_mode_combo.currentIndexChanged.connect(self._on_memory_mode_changed)
+        # Mental models build on beliefs → keep their toggle gated on the beliefs one.
+        self._memory_beliefs_cb.toggled.connect(self._refresh_memory_controls)
         self._memory_extract_btn.clicked.connect(self._on_extract_now)
         self._memory_browse_btn.clicked.connect(self._on_view_memory)
 
@@ -525,6 +530,8 @@ class SettingsDialog(QDialog):
         self._memory_interval_spin.setEnabled(living)
         self._memory_model_edit.setEnabled(living)
         self._memory_beliefs_cb.setEnabled(living)
+        # Mental models are distilled from beliefs → only selectable with beliefs on.
+        self._memory_mental_models_cb.setEnabled(living and self._memory_beliefs_cb.isChecked())
         self._memory_extract_btn.setEnabled(living and bool(self._db_path))
         # Browsing is read-only (works outside living mode — an old save may hold
         # memory to inspect) but needs an *active play session*: memory belongs to
@@ -625,6 +632,7 @@ class SettingsDialog(QDialog):
         self._memory_model_edit.setPlaceholderText(tr("memory_fact_model_placeholder"))
         self._memory_reranker_cb.setText(tr("memory_reranker_label"))
         self._memory_beliefs_cb.setText(tr("memory_beliefs_label"))
+        self._memory_mental_models_cb.setText(tr("memory_mental_models_label"))
         self._memory_prompt_cache_cb.setText(tr("memory_prompt_cache_label"))
         self._memory_extract_btn.setText(tr("extract_now"))
         self._memory_browse_btn.setText(tr("memory_browser_btn"))
@@ -678,6 +686,7 @@ class SettingsDialog(QDialog):
         self._memory_model_edit.setText(config.memory_fact_model)
         self._memory_reranker_cb.setChecked(config.memory_reranker_enabled)
         self._memory_beliefs_cb.setChecked(config.memory_beliefs_enabled)
+        self._memory_mental_models_cb.setChecked(config.memory_mental_models_enabled)
         self._memory_prompt_cache_cb.setChecked(config.memory_prompt_cache_enabled)
         self._refresh_memory_controls()
 
@@ -751,6 +760,7 @@ class SettingsDialog(QDialog):
             memory_fact_model=self._memory_model_edit.text().strip(),
             memory_reranker_enabled=self._memory_reranker_cb.isChecked(),
             memory_beliefs_enabled=self._memory_beliefs_cb.isChecked(),
+            memory_mental_models_enabled=self._memory_mental_models_cb.isChecked(),
             memory_prompt_cache_enabled=self._memory_prompt_cache_cb.isChecked(),
             # Image generation settings
             image_generation_enabled=self._image_enabled_cb.isChecked(),

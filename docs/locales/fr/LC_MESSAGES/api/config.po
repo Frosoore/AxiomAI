@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.2\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-19 02:30+0200\n"
+"POT-Creation-Date: 2026-06-19 23:58+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -58,9 +58,9 @@ msgid "User preferences for Axiom AI."
 msgstr "Préférences utilisateur d'Axiom AI."
 
 #: ../../api/config.md axiom.config.get_builtin_keys
-#: axiom.config.memory_beliefs_active axiom.config.memory_mode_is_living
-#: axiom.config.resolve_extraction_model axiom.config.resolve_time_model
-#: axiom.config.uses_builtin_keys of
+#: axiom.config.memory_beliefs_active axiom.config.memory_mental_models_active
+#: axiom.config.memory_mode_is_living axiom.config.resolve_extraction_model
+#: axiom.config.resolve_time_model axiom.config.uses_builtin_keys of
 msgid "Parameters"
 msgstr "Paramètres"
 
@@ -306,13 +306,14 @@ msgid ""
 msgstr ""
 
 #: ../../api/config.md axiom.config.get_builtin_keys
-#: axiom.config.memory_beliefs_active axiom.config.memory_mode_is_living
-#: axiom.config.resolve_extraction_model axiom.config.resolve_time_model
-#: axiom.config.uses_builtin_keys axiom.paths.get_app_cache_dir
-#: axiom.paths.get_app_config_dir axiom.paths.get_app_data_dir
-#: axiom.paths.get_assets_dir axiom.paths.get_config_dir
-#: axiom.paths.get_log_dir axiom.paths.get_saves_dir axiom.paths.get_vector_dir
-#: axiom.paths.has_config_override axiom.paths.reset of
+#: axiom.config.memory_beliefs_active axiom.config.memory_mental_models_active
+#: axiom.config.memory_mode_is_living axiom.config.resolve_extraction_model
+#: axiom.config.resolve_time_model axiom.config.uses_builtin_keys
+#: axiom.paths.get_app_cache_dir axiom.paths.get_app_config_dir
+#: axiom.paths.get_app_data_dir axiom.paths.get_assets_dir
+#: axiom.paths.get_config_dir axiom.paths.get_log_dir axiom.paths.get_saves_dir
+#: axiom.paths.get_vector_dir axiom.paths.has_config_override axiom.paths.reset
+#: of
 msgid "Return type"
 msgstr "Type de retour"
 
@@ -424,6 +425,17 @@ msgstr ""
 msgid ""
 "Requires living memory AND the explicit beliefs opt-in, so the extra "
 "consolidation LLM pass never fires in lite mode or without the toggle."
+msgstr ""
+
+#: axiom.config.memory_mental_models_active:1 of
+msgid "True when curated mental models (§7.8) should be built and injected."
+msgstr ""
+
+#: axiom.config.memory_mental_models_active:3 of
+msgid ""
+"Requires evolving beliefs (a model is distilled *from* beliefs) AND the "
+"explicit mental-models opt-in, so this extra LLM pass never fires without"
+" both."
 msgstr ""
 
 #: axiom.config.build_llm_from_config:1 of

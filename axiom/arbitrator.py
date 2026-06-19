@@ -362,7 +362,9 @@ class ArbitratorEngine:
         # Living memory mode: surface distilled long-term facts (those about the
         # characters on scene, then the most recent ones) as extra [MEMORY] lines.
         # Lite mode never calls this, so the deterministic path is unchanged.
-        from axiom.config import memory_mode_is_living, memory_beliefs_active
+        from axiom.config import (
+            memory_mode_is_living, memory_beliefs_active, memory_mental_models_active
+        )
         if memory_mode_is_living(cfg):
             fact_lines = self._fetch_relevant_facts(
                 save_id,
@@ -370,9 +372,18 @@ class ArbitratorEngine:
                 on_scene=local_character_names,
                 limit=cfg.rag_chunk_count,
             )
-            # Hierarchy of recall (most synthetic first): beliefs, then facts,
-            # then the raw narrative chunks. Beliefs only when opted in (Phase 3).
+            # Hierarchy of recall (most synthetic first): mental models, then
+            # beliefs, then facts, then the raw narrative chunks. Each upper layer
+            # is opt-in (Phase 3 beliefs, §7.8 mental models).
             prefix: list[str] = []
+            if memory_mental_models_active(cfg):
+                model_lines = self._fetch_relevant_mental_models(
+                    save_id,
+                    max_turn_id=turn_id,
+                    on_scene=local_character_names,
+                    limit=min(cfg.rag_chunk_count, 4),
+                )
+                prefix += [f"Profile: {s}" for s in model_lines]
             if memory_beliefs_active(cfg):
                 belief_lines = self._fetch_relevant_beliefs(
                     save_id,
@@ -1018,6 +1029,55 @@ class ArbitratorEngine:
             return ordered[:limit]
         except Exception as e:
             logger.error(f"[ARBITRATOR] Error fetching living-mode beliefs: {e}")
+            return []
+
+    def _fetch_relevant_mental_models(
+        self,
+        save_id: str,
+        max_turn_id: int,
+        on_scene: list[str],
+        limit: int,
+    ) -> list[str]:
+        """Return up to `limit` mental-model summaries for the living-mode prompt.
+
+        Mental models are the most synthetic recall layer (§7.8): one curated
+        profile per subject. Prioritises models about an on-scene character (whose
+        profile the scene most needs), then fills with the most recently refreshed.
+        Bounded by `max_turn_id` (a rewound turn never resurfaces a future model).
+        Degrades to an empty list on any error (never breaks a turn).
+        """
+        if limit <= 0:
+            return []
+        try:
+            from axiom import mental_models as mm_mod
+
+            all_models = mm_mod.get_mental_models(
+                self._db_path, save_id, max_turn_id=max_turn_id
+            )
+            names = {n.strip().lower() for n in (on_scene or []) if n}
+
+            seen: set[str] = set()
+            ordered: list[str] = []
+
+            def _add_if(predicate) -> None:
+                for m in all_models:
+                    if len(ordered) >= limit:
+                        break
+                    summary = (m.summary or "").strip()
+                    if not summary or summary in seen or not predicate(m):
+                        continue
+                    seen.add(summary)
+                    label = m.subject.strip()
+                    ordered.append(f"{label}: {summary}" if label else summary)
+
+            # Pass 1: profiles of a character on scene. Pass 2: most recent.
+            if names:
+                _add_if(lambda m: m.subject.strip().lower() in names)
+            _add_if(lambda m: True)
+
+            return ordered[:limit]
+        except Exception as e:
+            logger.error(f"[ARBITRATOR] Error fetching living-mode mental models: {e}")
             return []
 
     def _fetch_relevant_lore(self, save_id: str, user_message: str, k: int = 5) -> list[dict]:

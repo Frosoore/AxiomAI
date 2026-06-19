@@ -741,6 +741,12 @@ doc_settings_memory_beliefs_t = "Evolving beliefs"
 doc_settings_memory_beliefs = "On top of the facts, distil them into beliefs that update over time (a Hindsight idea): a character holds a grudge or revises an opinion. Needs Living mode and adds one more background AI pass after fact extraction. Off by default."
 doc_settings_memory_beliefs_d = "<b>How it works:</b> a background pass groups the new facts into durable beliefs (observations) — the merchant resents the player — that gain weight (proof) as more facts support them and are revised or dropped when facts contradict them. Beliefs are fed to the AI ahead of raw memories, so an NPC reacts consistently to something you did hundreds of turns ago. <b>Cost:</b> a second background AI call after fact extraction. <b>Rollback-safe:</b> rewinding a turn rolls beliefs back together with the facts they came from."
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "Living profiles (curated character/world notes)"
+doc_settings_memory_mental_models_t = "Living profiles"
+doc_settings_memory_mental_models = "Above the beliefs, distil each character (and the world) into a short living profile the AI reads first (a Hindsight idea). Needs Living mode with beliefs on, and adds one more background AI pass. Off by default."
+doc_settings_memory_mental_models_d = "<b>How it works:</b> after beliefs are updated, a background pass rewrites a 2-4 sentence profile of each character whose beliefs changed — who they are now, their relationships and grudges. This profile sits at the very top of what the AI is told, so a long campaign's memory lands as a coherent character note instead of scattered facts. <b>Needs beliefs:</b> a profile is distilled from beliefs, so this only works with Evolving beliefs on. <b>Cost:</b> one more background AI call per changed character (capped per turn). <b>Rollback-safe:</b> rewinding drops profiles formed later and refreshes the rest from the rewound beliefs."
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "Character memory styles"
 belief_missions_placeholder = "One per line — e.g. Merchant: remembers slights and debts"
@@ -756,6 +762,9 @@ doc_settings_memory_prompt_cache = "Caches the stable system prompt on Gemini to
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "Browse memory…"
 memory_browser_title = "Story memory"
+memory_browser_tab_models = "Profiles"
+memory_browser_empty_models = "No profiles yet — enable Living profiles and play a few turns."
+memory_browser_col_profile = "Profile"
 memory_browser_tab_beliefs = "Beliefs"
 memory_browser_tab_facts = "Facts"
 memory_browser_col_subject = "Subject"

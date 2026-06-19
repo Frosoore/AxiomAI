@@ -99,5 +99,17 @@ moteur** EN+FR à jour (section *Belief trends* + cache BM25 + scoping consolida
 `docs/guides/memory.md` ; FR via gettext `.po`/`.mo`), notes d'API non touchées (auto). Suites vertes.
 **Ouvert** : 082 (modèles mentaux §7.8 / directives §7.9 / extraction temporelle §7.5).
 
+**Modèles mentaux (§7.8) PORTÉS le 2026-06-20** (⚠ NON commité, `maintenance/hindsight-mental-models/`)
+— TICKET-082 partiel. Couche la plus synthétique au-dessus des croyances : une fiche vivante par sujet
+(perso ou monde). Moteur : table `Mental_Models` (`UNIQUE(save_id,subject)`, auto-migration),
+`axiom/mental_models.py` (upsert/get/count/stale + rollback turn-keyed branché dans `checkpoint.rewind`),
+`axiom/reflect.py` (résumé LLM par sujet, graceful, seuil 3 croyances ; `affected_subjects`),
+`config.memory_mental_models_enabled` + `memory_mental_models_active` (exige croyances), injection
+`Profile:` en tête dans l'arbitrator, refresh post-consolidation dans `fact_worker` (sujets touchés +
+stale, cap 3), export `.axiomsave`. App : toggle « Profils vivants » (grisé hors croyances) + onglet
+« Profils » du memory browser + i18n ×10 + doc Sphinx EN/FR (builds -W EXIT 0). Tests : `test_mental_models`,
+`test_reflect`, `test_fact_worker` (+2) ; périmètre **244 verts**. **Agent tool-calling Hindsight NON porté**
+(trop lourd solo) ; **directives §7.9 et extraction temporelle §7.5 NON portées** (redondant / peu pertinent).
+
 Respecter [[user-profile-non-coder]] (expliquer les dépendances/archi avant de trancher) et
 [[feedback-execution-style]] (no superpowers, no commit sans feu vert).

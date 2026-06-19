@@ -119,6 +119,72 @@ def test_worker_beliefs_off_creates_no_observation(qtbot, tmp_path) -> None:
     assert count_observations(db_path, save_id) == 0  # consolidation never ran
 
 
+def _seed_beliefs(db_path: str, save_id: str, subject: str, n: int) -> None:
+    from axiom.observations import Observation, insert_observation
+    for i in range(n):
+        insert_observation(db_path, save_id, Observation(
+            statement=f"{subject} fact {i}", subject=subject,
+            sources=[{"fact_id": 100 + i, "turn_id": 1}],
+            created_turn_id=1, updated_turn_id=1))
+
+
+def test_worker_refreshes_mental_model_when_enabled(qtbot, tmp_path) -> None:
+    """With refresh_mental_models=True, a changed subject with enough beliefs
+    gets a profile written from the LLM's prose.
+
+    The canned payload serves all three calls: extract/consolidate read the
+    tool_call dict, reflect reads narrative_text. Voss is pre-seeded with enough
+    beliefs to clear the MIN_BELIEFS_FOR_MODEL threshold.
+    """
+    from axiom.mental_models import get_mental_models
+    db_path, save_id = _make_save(tmp_path)
+    _seed_beliefs(db_path, save_id, "Voss", 3)
+    payload = {
+        "facts": [_FACT],
+        "actions": [{"action": "create", "subject": "Voss",
+                     "statement": "Kael is an enemy of Voss", "source_fact_ids": [1]}],
+    }
+    llm = _FakeLLM(tool_call=payload)
+    llm._text = "Voss is a town scarred by Kael's sabotage."  # reflect reads this
+
+    # _FakeLLM.complete ignores narrative_text; give it one for the reflect call.
+    def complete(messages, **kwargs):
+        llm.calls += 1
+        return LLMResponse(narrative_text=llm._text, tool_call=payload, finish_reason="stop")
+    llm.complete = complete
+
+    worker = FactExtractWorker(
+        llm, db_path, save_id, turn_id=3,
+        narrative_text="Kael set the bridge alight.",
+        consolidate_beliefs=True, refresh_mental_models=True,
+    )
+    worker.run()
+
+    models = get_mental_models(db_path, save_id, subject="Voss")
+    assert len(models) == 1
+    assert models[0].summary == "Voss is a town scarred by Kael's sabotage."
+    assert models[0].updated_turn_id == 3
+
+
+def test_worker_no_model_when_refresh_off(qtbot, tmp_path) -> None:
+    from axiom.mental_models import count_mental_models
+    db_path, save_id = _make_save(tmp_path)
+    _seed_beliefs(db_path, save_id, "Voss", 3)
+    payload = {
+        "facts": [_FACT],
+        "actions": [{"action": "create", "subject": "Voss",
+                     "statement": "Kael is an enemy of Voss", "source_fact_ids": [1]}],
+    }
+    llm = _FakeLLM(tool_call=payload)
+    worker = FactExtractWorker(
+        llm, db_path, save_id, turn_id=3,
+        narrative_text="Kael set the bridge alight.",
+        consolidate_beliefs=True, refresh_mental_models=False,
+    )
+    worker.run()
+    assert count_mental_models(db_path, save_id) == 0
+
+
 def test_worker_dead_backend_is_graceful(qtbot, tmp_path) -> None:
     db_path, save_id = _make_save(tmp_path)
     llm = _FakeLLM(raise_exc=RuntimeError("provider down"))

@@ -149,6 +149,11 @@ class AppConfig:
     # game. Off by default — it is an extra background LLM pass on top of fact
     # extraction. Only consulted when memory_mode is "living".
     memory_beliefs_enabled: bool = False
+    # Living mode, §7.8: also distil each subject's beliefs into a curated *mental
+    # model* (a short living profile) that sits above the beliefs in the recall
+    # hierarchy. Off by default — it is yet another background LLM pass, and it
+    # builds on beliefs, so it only does anything when beliefs are also enabled.
+    memory_mental_models_enabled: bool = False
     # Optional neural reranking of memory search (cross-encoder). OFF by default:
     # it downloads a ~90 MB torch model and needs a healthy native runtime
     # (fragile on Windows, TICKET-070). When off, search uses fused
@@ -377,6 +382,17 @@ def memory_beliefs_active(config: AppConfig) -> bool:
     """
     return memory_mode_is_living(config) and bool(
         getattr(config, "memory_beliefs_enabled", False)
+    )
+
+
+def memory_mental_models_active(config: AppConfig) -> bool:
+    """True when curated mental models (§7.8) should be built and injected.
+
+    Requires evolving beliefs (a model is distilled *from* beliefs) AND the
+    explicit mental-models opt-in, so this extra LLM pass never fires without both.
+    """
+    return memory_beliefs_active(config) and bool(
+        getattr(config, "memory_mental_models_enabled", False)
     )
 
 

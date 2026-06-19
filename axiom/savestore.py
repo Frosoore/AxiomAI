@@ -424,6 +424,8 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Observations", ("observation_id", "save_id", "subject", "statement",
                       "proof_count", "sources", "history", "created_turn_id",
                       "updated_turn_id", "stale")),
+    ("Mental_Models", ("model_id", "save_id", "subject", "summary", "sources",
+                       "created_turn_id", "updated_turn_id", "stale")),
 ]
 
 _MANIFEST_NAME = "manifest.toml"

@@ -24,6 +24,10 @@ from axiom.factextract import extract_facts
 from axiom.facts import insert_facts
 from axiom.observations import apply_consolidation, get_observations
 
+# Cap on how many subjects get a (costly LLM) mental-model refresh in one pass, so
+# a turn that touches many beliefs never fans out into a burst of LLM calls.
+_MAX_MODEL_REFRESH = 3
+
 
 class FactExtractWorker(QThread):
     """Extracts facts from a narrative slice and persists them.
@@ -59,6 +63,7 @@ class FactExtractWorker(QThread):
         when_hint: str | None = None,
         max_facts: int = 8,
         consolidate_beliefs: bool = False,
+        refresh_mental_models: bool = False,
     ) -> None:
         super().__init__()
         self._llm = llm
@@ -71,6 +76,8 @@ class FactExtractWorker(QThread):
         self._max_facts = max_facts
         # Phase 3: also consolidate the new facts into evolving beliefs.
         self._consolidate_beliefs = consolidate_beliefs
+        # §7.8: also refresh the curated mental models for changed subjects.
+        self._refresh_mental_models = refresh_mental_models
 
     def run(self) -> None:
         """Extract then store. Never raises (background, non-blocking)."""
@@ -126,5 +133,47 @@ class FactExtractWorker(QThread):
             apply_consolidation(
                 self._db_path, self._save_id, self._turn_id, actions, fact_turn_map
             )
+            # §7.8: refresh the curated mental models of the subjects whose beliefs
+            # just changed (isolated so a refresh failure never touches the beliefs).
+            if self._refresh_mental_models:
+                self._do_refresh_models(actions, mission)
         except Exception as exc:
             self.error_occurred.emit(f"Belief consolidation failed: {exc}")
+
+    def _do_refresh_models(self, actions, mission) -> None:
+        """Regenerate mental models for the changed subjects (+ any stale ones).
+
+        Bounded per pass and best-effort: a reflection failure is swallowed (the
+        existing profile simply isn't refreshed this turn).
+        """
+        try:
+            from axiom.mental_models import stale_subjects, upsert_mental_model
+            from axiom.observations import get_observations
+            from axiom.reflect import affected_subjects, reflect
+
+            subjects = affected_subjects(actions)
+            seen = {s.strip().lower() for s in subjects}
+            # Also regenerate models a rewind left stale, even if their beliefs
+            # didn't change this pass.
+            for s in stale_subjects(
+                self._db_path, self._save_id, max_turn_id=self._turn_id
+            ):
+                if s.strip().lower() not in seen:
+                    subjects.append(s)
+                    seen.add(s.strip().lower())
+
+            for subj in subjects[:_MAX_MODEL_REFRESH]:
+                beliefs = get_observations(
+                    self._db_path, self._save_id,
+                    subject=subj, max_turn_id=self._turn_id,
+                )
+                summary = reflect(self._llm, subj, beliefs, mission=mission)
+                if not summary:
+                    continue
+                src = [o.observation_id for o in beliefs if o.observation_id is not None]
+                upsert_mental_model(
+                    self._db_path, self._save_id, subj, summary,
+                    self._turn_id, sources=src,
+                )
+        except Exception as exc:
+            self.error_occurred.emit(f"Mental model refresh failed: {exc}")

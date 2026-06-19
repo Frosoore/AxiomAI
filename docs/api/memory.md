@@ -4,7 +4,8 @@ The narrative memory subsystem. In every mode it provides hybrid search
 (`axiom.memory` + `axiom.retrieval`); in *living* mode it additionally distils
 the narrative into structured **facts** (`axiom.facts` + `axiom.factextract`)
 and, with beliefs enabled, into evolving **observations** (`axiom.observations` +
-`axiom.consolidate`) shaped by per-character **missions** (`axiom.missions`).
+`axiom.consolidate`) shaped by per-character **missions** (`axiom.missions`) and,
+one layer up, curated **mental models** (`axiom.mental_models` + `axiom.reflect`).
 See the [Memory guide](../guides/memory.md) for the concepts.
 
 ## `axiom.memory`
@@ -67,5 +68,19 @@ See the [Memory guide](../guides/memory.md) for the concepts.
 
 ```{eval-rst}
 .. automodule:: axiom.missions
+   :members:
+```
+
+## `axiom.mental_models`
+
+```{eval-rst}
+.. automodule:: axiom.mental_models
+   :members:
+```
+
+## `axiom.reflect`
+
+```{eval-rst}
+.. automodule:: axiom.reflect
    :members:
 ```

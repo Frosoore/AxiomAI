@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.2\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-19 02:30+0200\n"
+"POT-Creation-Date: 2026-06-19 23:58+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -642,40 +642,42 @@ msgstr ""
 
 #: axiom.checkpoint.CheckpointManager.rewind:10 of
 msgid ""
-"Roll back living-mode memory: future ``Facts`` are dropped and beliefs "
-"are recomputed from their surviving sources "
-"(:func:`axiom.observations.rollback_observations`)."
+"Roll back living-mode memory: future ``Facts`` are dropped, beliefs are "
+"recomputed from their surviving sources "
+"(:func:`axiom.observations.rollback_observations`) and mental models "
+"created after the target are dropped / flagged stale "
+"(:func:`axiom.mental_models.rollback_mental_models`)."
 msgstr ""
 
-#: axiom.checkpoint.CheckpointManager.rewind:13 of
+#: axiom.checkpoint.CheckpointManager.rewind:15 of
 msgid ""
 "Restore temporary modifiers (buffs/debuffs) to their turn-N state from "
 "the per-turn snapshot (:func:`axiom.modifiers.rollback_modifiers`) — they"
 " decay in minutes and are not event-sourced, so they cannot be replayed."
 msgstr ""
 
-#: axiom.checkpoint.CheckpointManager.rewind:17 of
+#: axiom.checkpoint.CheckpointManager.rewind:19 of
 msgid ""
 "Un-fire scheduled events that fired after the target turn, so they can "
 "trigger again when the clock re-crosses their minute."
 msgstr ""
 
-#: axiom.checkpoint.CheckpointManager.rewind:19 of
+#: axiom.checkpoint.CheckpointManager.rewind:21 of
 #, fuzzy
 msgid "Rebuild ``State_Cache`` from the surviving events."
 msgstr "Reconstruire le State_Cache depuis les événements survivants."
 
-#: axiom.checkpoint.CheckpointManager.rewind:21 of
+#: axiom.checkpoint.CheckpointManager.rewind:23 of
 msgid ""
 "Note: the semantic memory store is a separate concern, rolled back by the"
 " caller via :meth:`axiom.memory.VectorMemory.rollback`."
 msgstr ""
 
-#: axiom.checkpoint.CheckpointManager.rewind:24 of
+#: axiom.checkpoint.CheckpointManager.rewind:26 of
 msgid "The save to rewind."
 msgstr "La save à rembobiner."
 
-#: axiom.checkpoint.CheckpointManager.rewind:25 of
+#: axiom.checkpoint.CheckpointManager.rewind:27 of
 msgid ""
 "The turn to revert to (inclusive).  All events with turn_id strictly "
 "greater than this value are permanently removed."
@@ -683,7 +685,7 @@ msgstr ""
 "Le tour auquel revenir (inclus).  Tous les événements dont le turn_id est"
 " strictement supérieur à cette valeur sont définitivement supprimés."
 
-#: axiom.checkpoint.CheckpointManager.rewind:29 of
+#: axiom.checkpoint.CheckpointManager.rewind:31 of
 msgid "A dict with keys deleted_events and rebuilt_to_turn."
 msgstr "Un dict avec les clés deleted_events et rebuilt_to_turn."
 
@@ -693,7 +695,7 @@ msgstr "Lève"
 
 #: axiom.checkpoint.CheckpointManager.delete_save:12
 #: axiom.checkpoint.CheckpointManager.list_checkpoints:11
-#: axiom.checkpoint.CheckpointManager.rewind:32
+#: axiom.checkpoint.CheckpointManager.rewind:34
 #: axiom.events.EventSourcer.get_current_stats:9 of
 msgid "On any database failure."
 msgstr "Sur tout échec de base de données."
@@ -1055,4 +1057,11 @@ msgstr ""
 #~ msgstr ""
 #~ "Supprimer (DELETE) toutes les lignes "
 #~ "Event_Log où turn_id > target_turn_id."
+
+#~ msgid ""
+#~ "Roll back living-mode memory: future "
+#~ "``Facts`` are dropped and beliefs are"
+#~ " recomputed from their surviving sources"
+#~ " (:func:`axiom.observations.rollback_observations`)."
+#~ msgstr ""
 

@@ -1,5 +1,17 @@
 # CHANGELOG — QA Hindsight
 
+## 2026-06-19 (2ᵉ passe) — Re-revue + correctif #1 + nouveaux findings
+
+Seconde passe de contrôle qualité du chantier Hindsight. **Verdict reconfirmé : aucun bug bloquant.**
+- **Corrigé** : `axiom/observations.py::compute_trend` — variable morte `old_cutoff` (calculée, jamais
+  utilisée ; la fenêtre « ancienne » n'a en fait pas de borne basse). Retrait + commentaires rendus
+  honnêtes sur la normalisation des bandes. Comportement inchangé (`old_turns` toujours utilisé pour la
+  période de densité), `test_observations.py` 18 verts.
+- **Loggés en PENDING** (non corrigés) : TICKET-083 (fuite temporelle `created_turn_id` au rewind),
+  TICKET-084 (budget prompt living = 3× `rag_chunk_count`), TICKET-085 (`collection.get()` plein corpus
+  au cache-hit BM25). #4 (lecture plein-table par tour dans `_fetch_relevant_facts/_beliefs`) **non
+  loggé** : déjà connu/assumé par TICKET-079.
+
 ## 2026-06-19 — Audit qualité + correctifs (TICKET-077→080) + feature Trend (081)
 
 Contrôle qualité du chantier Hindsight (recherche hybride + faits + croyances + lore).

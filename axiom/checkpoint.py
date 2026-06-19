@@ -43,9 +43,11 @@ class CheckpointManager:
           1. Count the future events to delete (for the summary).
           2. DELETE the future ``Event_Log`` rows, plus the ``Snapshots`` and
              ``Timeline`` rows for later turns.
-          3. Roll back living-mode memory: future ``Facts`` are dropped and
-             beliefs are recomputed from their surviving sources
-             (:func:`axiom.observations.rollback_observations`).
+          3. Roll back living-mode memory: future ``Facts`` are dropped, beliefs
+             are recomputed from their surviving sources
+             (:func:`axiom.observations.rollback_observations`) and mental models
+             created after the target are dropped / flagged stale
+             (:func:`axiom.mental_models.rollback_mental_models`).
           4. Restore temporary modifiers (buffs/debuffs) to their turn-N state
              from the per-turn snapshot
              (:func:`axiom.modifiers.rollback_modifiers`) — they decay in minutes
@@ -113,6 +115,12 @@ class CheckpointManager:
             # <= target — in this same transaction as the facts they build on.
             from axiom.observations import rollback_observations
             rollback_observations(conn, save_id, target_turn_id)
+
+            # Mental models (§7.8) are summaries distilled from beliefs: drop those
+            # created after the target and flag the survivors stale so the next
+            # refresh regenerates them from the rewound beliefs (same transaction).
+            from axiom.mental_models import rollback_mental_models
+            rollback_mental_models(conn, save_id, target_turn_id)
 
             # Temporary modifiers (buffs/debuffs) decay in minutes and aren't
             # event-sourced, so they can't be replayed: restore them from the

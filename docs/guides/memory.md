@@ -26,6 +26,7 @@ The mode is a per-save preference, read from
 | Hybrid search | yes | yes |
 | LLM fact extraction | no | yes (background) |
 | Evolving beliefs | no | optional ({py:attr}`~axiom.config.AppConfig.memory_beliefs_enabled`) |
+| Mental models | no | optional ({py:attr}`~axiom.config.AppConfig.memory_mental_models_enabled`) |
 | Network required | no | yes (LLM) |
 | Determinism | total | tested with a mocked LLM |
 | Cost | none | bounded (every *N* turns) |
@@ -151,8 +152,9 @@ batch — those about the characters the new facts mention, topped up with the m
 recent — capped by `consolidate`'s `max_existing` argument.
 
 At prompt-building time the Arbitrator surfaces memory as a **hierarchy**, most
-synthetic first: relevant *beliefs*, then *facts*, then raw narrative chunks — so
-the narrator leads with what the world has concluded, backed by the specifics.
+synthetic first: relevant *mental models* (when enabled), then *beliefs*, then
+*facts*, then raw narrative chunks — so the narrator leads with what the world has
+concluded, backed by the specifics.
 
 ### Belief rollback
 
@@ -186,6 +188,32 @@ At prompt-building time the Arbitrator annotates only the *directional* trends
 resents the player (strengthening)"* — leaving the quiet `new` / `stable` cases
 unmarked, so the narrator can tell an intensifying grudge from a fading one
 without bloating the prompt.
+
+### Mental models
+
+One layer above beliefs sit **mental models** — a single curated, living *profile*
+per subject (a character, or `""` for the world), enabled with
+{py:attr}`axiom.config.AppConfig.memory_mental_models_enabled` (use
+{py:func}`axiom.config.memory_mental_models_active`; it requires beliefs to be
+active, since a model is distilled *from* beliefs). Where a belief is one durable
+statement, a model is a short paragraph that answers "who is this now?", so a long
+campaign's memory reaches the narrator as a coherent character note rather than a
+pile of statements. The idea is adapted from Hindsight's `reflect/` layer, minus
+the heavy tool-calling agent: for a single-player game one regenerated paragraph
+per subject is enough.
+
+A model ({py:class}`axiom.mental_models.MentalModel`) is written by
+{py:func}`axiom.reflect.reflect` from the subject's beliefs and stored — one row
+per `(save_id, subject)` — via {py:func}`axiom.mental_models.upsert_mental_model`.
+After consolidation, the background job refreshes the models of the subjects whose
+beliefs just changed (plus any left stale by a rewind), capped per pass to bound
+LLM cost; subjects with fewer than a few beliefs are skipped (a model only earns
+its keep once memory accumulates).
+
+**Rollback.** A model is fully reconstructible from its beliefs, so
+{py:func}`axiom.mental_models.rollback_mental_models` (run inside the rewind
+transaction) just drops models *created* after the target turn and flags the
+survivors `stale`, so the next refresh regenerates them from the rewound beliefs.
 
 ### Per-character memory styles
 

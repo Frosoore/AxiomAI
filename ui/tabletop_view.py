@@ -48,6 +48,7 @@ from axiom.config import (
     build_llm_from_config,
     memory_mode_is_living,
     memory_beliefs_active,
+    memory_mental_models_active,
 )
 from axiom.time_system import TimeSystem, CalendarConfig
 from axiom.logger import logger
@@ -1062,6 +1063,7 @@ class TabletopView(HardcoreMixin, QWidget):
             known_entities=known,
             when_hint=when_hint,
             consolidate_beliefs=memory_beliefs_active(cfg),
+            refresh_mental_models=memory_mental_models_active(cfg),
         )
         self._fact_worker.facts_extracted.connect(self._on_facts_extracted)
         self._fact_worker.status_update.connect(self._main_window.on_status_update)

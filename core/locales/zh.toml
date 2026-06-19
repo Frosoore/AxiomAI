@@ -739,6 +739,12 @@ doc_settings_memory_beliefs_t = "演化的信念"
 doc_settings_memory_beliefs = "在事实之上，将其提炼为随时间演化的信念（Hindsight 的理念）：角色会怀恨在心或修正看法。需要活跃模式，并在事实提取后再增加一次后台 AI 处理。默认关闭。"
 doc_settings_memory_beliefs_d = "<b>原理：</b>一次后台处理会把新事实归并为持久的信念（观察）——商人怀恨玩家——随着更多事实支持而增加权重（证据），当事实相抵触时被修正或丢弃。信念会先于原始记忆提供给 AI，因此 NPC 能对你数百回合前的行为作出一致反应。<b>成本：</b>事实提取后再进行一次后台 AI 调用。<b>回退安全：</b>回退某回合会连同信念所依据的事实一起回滚。"
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "动态档案（精选的角色/世界笔记）"
+doc_settings_memory_mental_models_t = "动态档案"
+doc_settings_memory_mental_models = "在信念之上，将每个角色（以及世界）浓缩成一份简短的动态档案，AI 会优先阅读（源自 Hindsight 的理念）。需要开启「活跃」模式并启用信念，并会额外增加一次后台 AI 处理。默认关闭。"
+doc_settings_memory_mental_models_d = "<b>工作原理：</b>信念更新后，后台处理会为每个信念发生变化的角色重写一份 2 至 4 句的档案——他现在是谁、他的关系和恩怨。这份档案位于告知 AI 的内容的最前面，因此长期战役的记忆会以连贯的角色笔记呈现，而不是零散的事实。<b>需要信念：</b>档案是从信念中提炼出来的，因此仅在启用「演化信念」时有效。<b>成本：</b>每个发生变化的角色额外一次后台 AI 调用（每回合有上限）。<b>回溯安全：</b>回溯会删除之后形成的档案，并根据回溯后的信念重新生成其余档案。"
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "角色记忆风格"
 belief_missions_placeholder = "每行一个——例如 商人：记住怠慢与欠债"
@@ -754,6 +760,9 @@ doc_settings_memory_prompt_cache = "在 Gemini 上缓存稳定的系统提示词
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "浏览记忆…"
 memory_browser_title = "故事记忆"
+memory_browser_tab_models = "档案"
+memory_browser_empty_models = "暂无档案——启用「动态档案」并进行几个回合。"
+memory_browser_col_profile = "档案"
 memory_browser_tab_beliefs = "信念"
 memory_browser_tab_facts = "事实"
 memory_browser_col_subject = "对象"

@@ -160,6 +160,27 @@ CREATE TABLE IF NOT EXISTS Observations (
 );
 """
 
+# Mental models (Hindsight §7.8): one curated, synthetic profile per subject (a
+# character, or "" for the world), sitting *above* the beliefs in the recall
+# hierarchy. Regenerated periodically by the LLM from the subject's beliefs, so a
+# model is always reconstructible — rollback only needs to drop models created
+# after the target turn and flag the survivors stale for the next refresh. Same DB
+# as Observations / Facts. ``sources`` holds the observation_ids it was built from.
+_DDL_MENTAL_MODELS = """
+CREATE TABLE IF NOT EXISTS Mental_Models (
+    model_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    save_id         TEXT NOT NULL,
+    subject         TEXT NOT NULL DEFAULT '',
+    summary         TEXT NOT NULL,
+    sources         TEXT NOT NULL DEFAULT '[]',
+    created_turn_id INTEGER NOT NULL DEFAULT 0,
+    updated_turn_id INTEGER NOT NULL DEFAULT 0,
+    stale           INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (save_id, subject),
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE
+);
+"""
+
 _DDL_GLOBAL_PERSONAS = """
 CREATE TABLE IF NOT EXISTS Global_Personas (
     persona_id   TEXT PRIMARY KEY,
@@ -307,6 +328,7 @@ _ALL_DDL: list[str] = [
     _DDL_LORE_BOOK,
     _DDL_FACTS,
     _DDL_OBSERVATIONS,
+    _DDL_MENTAL_MODELS,
     _DDL_SNAPSHOTS,
     _DDL_MODIFIER_SNAPSHOTS,
     _DDL_TIMELINE,
@@ -333,6 +355,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Lore_Book",
     "Facts",
     "Observations",
+    "Mental_Models",
     "Snapshots",
     "Modifier_Snapshots",
     "Timeline",
@@ -362,6 +385,7 @@ _DDL_INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_timeline_save_turn ON Timeline(save_id, turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_facts_save_turn ON Facts(save_id, turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_observations_save_turn ON Observations(save_id, updated_turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_mental_models_save_turn ON Mental_Models(save_id, updated_turn_id);",
 ]
 
 
@@ -389,6 +413,20 @@ def ensure_observations_table(conn: "sqlite3.Connection") -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_observations_save_turn "
         "ON Observations(save_id, updated_turn_id);"
+    )
+
+
+def ensure_mental_models_table(conn: "sqlite3.Connection") -> None:
+    """Create the Mental_Models table + index on an open connection if missing.
+
+    Self-migration for save DBs provisioned before the mental-models layer existed
+    (Hindsight §7.8), mirroring ensure_observations_table. Idempotent; reuses the
+    caller's transaction so rewind can roll models back atomically with beliefs.
+    """
+    conn.execute(_DDL_MENTAL_MODELS)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mental_models_save_turn "
+        "ON Mental_Models(save_id, updated_turn_id);"
     )
 
 

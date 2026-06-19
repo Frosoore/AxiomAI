@@ -43,9 +43,12 @@ TREND_WEAKENING = "weakening"
 TREND_NEW = "new"
 TREND_STALE = "stale"
 
-# Turn windows: a source within the last _TREND_RECENT_TURNS is "recent"; one
-# older than _TREND_OLD_TURNS is "old"; the rest is the middle band. The 1:3 ratio
-# mirrors Hindsight's 30/90-day split.
+# Turn windows: a source within the last _TREND_RECENT_TURNS counts as "recent";
+# everything before that is "older" (the older band has no lower bound — every
+# remaining source counts). To compare like with like we normalise each band by a
+# span: recent over _TREND_RECENT_TURNS turns, older over a nominal
+# (_TREND_OLD_TURNS - _TREND_RECENT_TURNS) turns, so a 1:3 ratio mirrors
+# Hindsight's 30/90-day split.
 _TREND_RECENT_TURNS = 15
 _TREND_OLD_TURNS = 45
 
@@ -75,11 +78,10 @@ def compute_trend(
         return TREND_STABLE  # no signal → neutral
 
     recent_cutoff = now_turn - recent_turns
-    old_cutoff = now_turn - old_turns
     recent = [t for t in turns if t > recent_cutoff]
     if not recent:
         return TREND_STALE
-    older = [t for t in turns if t <= recent_cutoff]  # old + middle band
+    older = [t for t in turns if t <= recent_cutoff]  # everything before "recent"
     if not older:
         return TREND_NEW
 

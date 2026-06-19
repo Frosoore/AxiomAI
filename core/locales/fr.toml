@@ -739,6 +739,12 @@ doc_settings_memory_beliefs_t = "Croyances évolutives"
 doc_settings_memory_beliefs = "En plus des faits, les distille en croyances qui évoluent dans le temps (idée de Hindsight) : un personnage garde rancune ou révise son opinion. Nécessite le mode Vivant et ajoute une passe IA de fond après l'extraction des faits. Désactivé par défaut."
 doc_settings_memory_beliefs_d = "<b>Comment ça marche :</b> une passe de fond regroupe les nouveaux faits en croyances durables (observations) — le marchand en veut au joueur — qui gagnent du poids (preuves) à mesure que des faits les soutiennent, et sont révisées ou abandonnées quand des faits les contredisent. Les croyances sont fournies à l'IA avant les souvenirs bruts, donc un PNJ réagit de façon cohérente à un acte commis des centaines de tours plus tôt. <b>Coût :</b> un second appel IA de fond après l'extraction des faits. <b>Rollback sûr :</b> rembobiner un tour fait reculer les croyances avec les faits dont elles viennent."
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "Profils vivants (fiches de perso/monde curées)"
+doc_settings_memory_mental_models_t = "Profils vivants"
+doc_settings_memory_mental_models = "Au-dessus des croyances, condense chaque personnage (et le monde) en une courte fiche vivante que l'IA lit en premier (une idée de Hindsight). Nécessite le mode Vivant avec les croyances activées, et ajoute une passe IA de fond supplémentaire. Désactivé par défaut."
+doc_settings_memory_mental_models_d = "<b>Comment ça marche :</b> après la mise à jour des croyances, une passe de fond réécrit une fiche de 2 à 4 phrases pour chaque personnage dont les croyances ont changé — qui il est désormais, ses relations, ses rancunes. Cette fiche est placée tout en haut de ce qu'on dit à l'IA, si bien que la mémoire d'une longue partie arrive comme une note de personnage cohérente plutôt qu'en faits épars. <b>Nécessite les croyances :</b> une fiche est distillée à partir des croyances, donc cela ne fonctionne qu'avec « Croyances évolutives » activé. <b>Coût :</b> un appel IA de fond de plus par personnage modifié (plafonné par tour). <b>Compatible rembobinage :</b> revenir en arrière supprime les fiches formées plus tard et régénère les autres à partir des croyances rembobinées."
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "Styles de mémoire des personnages"
 belief_missions_placeholder = "Un par ligne — ex. Marchand : retient les affronts et les dettes"
@@ -754,6 +760,9 @@ doc_settings_memory_prompt_cache = "Met en cache le prompt système stable côt�
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "Explorer la mémoire…"
 memory_browser_title = "Mémoire de l'histoire"
+memory_browser_tab_models = "Profils"
+memory_browser_empty_models = "Aucun profil pour l'instant — activez « Profils vivants » et jouez quelques tours."
+memory_browser_col_profile = "Profil"
 memory_browser_tab_beliefs = "Croyances"
 memory_browser_tab_facts = "Faits"
 memory_browser_col_subject = "Sujet"

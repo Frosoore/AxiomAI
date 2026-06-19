@@ -739,6 +739,12 @@ doc_settings_memory_beliefs_t = "Convinzioni evolutive"
 doc_settings_memory_beliefs = "Oltre ai fatti, li distilla in convinzioni che evolvono nel tempo (un'idea di Hindsight): un personaggio serba rancore o rivede un'opinione. Richiede la modalità Viva e aggiunge un'altra passata IA in background dopo l'estrazione dei fatti. Disattivato di default."
 doc_settings_memory_beliefs_d = "<b>Come funziona:</b> una passata in background raggruppa i nuovi fatti in convinzioni durature (osservazioni) — il mercante serba rancore verso il giocatore — che guadagnano peso (prove) man mano che altri fatti le sostengono, e vengono riviste o scartate quando i fatti le contraddicono. Le convinzioni sono fornite all'IA prima dei ricordi grezzi, così un PNG reagisce in modo coerente a qualcosa che hai fatto centinaia di turni prima. <b>Costo:</b> una seconda chiamata IA in background dopo l'estrazione dei fatti. <b>Sicuro al rollback:</b> riavvolgere un turno riporta indietro le convinzioni insieme ai fatti da cui derivano."
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "Profili vivi (note curate su personaggi/mondo)"
+doc_settings_memory_mental_models_t = "Profili vivi"
+doc_settings_memory_mental_models = "Sopra le convinzioni, condensa ogni personaggio (e il mondo) in un breve profilo vivo che l'IA legge per primo (un'idea di Hindsight). Richiede la modalità Vivo con le convinzioni attive e aggiunge un'ulteriore passata IA in background. Disattivato per impostazione predefinita."
+doc_settings_memory_mental_models_d = "<b>Come funziona:</b> dopo l'aggiornamento delle convinzioni, una passata in background riscrive un profilo di 2-4 frasi per ogni personaggio le cui convinzioni sono cambiate — chi è ora, le sue relazioni e i suoi rancori. Questo profilo è collocato in cima a ciò che viene detto all'IA, così la memoria di una lunga campagna arriva come una nota di personaggio coerente invece che come fatti sparsi. <b>Richiede le convinzioni:</b> un profilo è distillato dalle convinzioni, quindi funziona solo con «Convinzioni evolutive» attivo. <b>Costo:</b> una chiamata IA in background in più per ogni personaggio modificato (limitata per turno). <b>Sicuro al riavvolgimento:</b> riavvolgere elimina i profili formati dopo e rigenera gli altri dalle convinzioni riavvolte."
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "Stili di memoria dei personaggi"
 belief_missions_placeholder = "Uno per riga — es. Mercante: ricorda torti e debiti"
@@ -754,6 +760,9 @@ doc_settings_memory_prompt_cache = "Memorizza nella cache il prompt di sistema s
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "Esplora la memoria…"
 memory_browser_title = "Memoria della storia"
+memory_browser_tab_models = "Profili"
+memory_browser_empty_models = "Ancora nessun profilo: attiva «Profili vivi» e gioca qualche turno."
+memory_browser_col_profile = "Profilo"
 memory_browser_tab_beliefs = "Convinzioni"
 memory_browser_tab_facts = "Fatti"
 memory_browser_col_subject = "Soggetto"

@@ -74,6 +74,7 @@ class MemoryBrowserDialog(QDialog):
             layout.addWidget(QLabel(tr("memory_browser_no_session")))
         else:
             tabs = QTabWidget()
+            tabs.addTab(self._build_models_tab(), tr("memory_browser_tab_models"))
             tabs.addTab(self._build_beliefs_tab(), tr("memory_browser_tab_beliefs"))
             tabs.addTab(self._build_facts_tab(), tr("memory_browser_tab_facts"))
             layout.addWidget(tabs)
@@ -82,6 +83,41 @@ class MemoryBrowserDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+    # ----------------------------------------------------------- mental models
+    def _build_models_tab(self) -> QWidget:
+        from axiom.mental_models import get_mental_models
+
+        widget = QWidget()
+        vbox = QVBoxLayout(widget)
+        try:
+            models = get_mental_models(self._db_path, self._save_id,
+                                       max_turn_id=self._now_turn)
+        except Exception:
+            models = []
+
+        if not models:
+            vbox.addWidget(QLabel(tr("memory_browser_empty_models")))
+            return widget
+
+        headers = [
+            tr("memory_browser_col_subject"),
+            tr("memory_browser_col_profile"),
+            tr("memory_browser_col_turn"),
+        ]
+        table = _readonly_table(headers)
+        table.setRowCount(len(models))
+        for row, m in enumerate(models):
+            subject = m.subject.strip() or tr("memory_browser_world")
+            table.setItem(row, 0, QTableWidgetItem(subject))
+            table.setItem(row, 1, QTableWidgetItem(m.summary))
+            turn_item = QTableWidgetItem(str(m.updated_turn_id))
+            turn_item.setTextAlignment(Qt.AlignCenter)
+            table.setItem(row, 2, turn_item)
+
+        self._tune_columns(table, stretch_col=1)
+        vbox.addWidget(table)
+        return widget
 
     # ------------------------------------------------------------------ beliefs
     def _build_beliefs_tab(self) -> QWidget:

@@ -739,6 +739,12 @@ doc_settings_memory_beliefs_t = "Crenças evolutivas"
 doc_settings_memory_beliefs = "Além dos fatos, destila-os em crenças que mudam ao longo do tempo (uma ideia do Hindsight): um personagem guarda rancor ou revê uma opinião. Requer o modo Vivo e adiciona mais uma passagem de IA em segundo plano após a extração de fatos. Desligado por padrão."
 doc_settings_memory_beliefs_d = "<b>Como funciona:</b> uma passagem em segundo plano agrupa os novos fatos em crenças duráveis (observações) — o mercador guarda rancor do jogador — que ganham peso (provas) à medida que mais fatos as apoiam, e são revistas ou descartadas quando fatos as contradizem. As crenças são dadas à IA antes das memórias brutas, então um NPC reage de forma coerente a algo que você fez centenas de turnos atrás. <b>Custo:</b> uma segunda chamada de IA em segundo plano após a extração de fatos. <b>Seguro no rebobinar:</b> rebobinar um turno reverte as crenças junto com os fatos de que vieram."
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "Perfis vivos (notas curadas de personagem/mundo)"
+doc_settings_memory_mental_models_t = "Perfis vivos"
+doc_settings_memory_mental_models = "Acima das crenças, condensa cada personagem (e o mundo) num breve perfil vivo que a IA lê primeiro (uma ideia do Hindsight). Requer o modo Vivo com as crenças ativadas e acrescenta mais uma passagem de IA em segundo plano. Desativado por padrão."
+doc_settings_memory_mental_models_d = "<b>Como funciona:</b> depois de atualizar as crenças, uma passagem em segundo plano reescreve um perfil de 2 a 4 frases de cada personagem cujas crenças mudaram — quem ele é agora, as suas relações e rancores. Esse perfil fica no topo do que é dito à IA, de modo que a memória de uma campanha longa chega como uma nota de personagem coerente em vez de factos dispersos. <b>Precisa de crenças:</b> um perfil é destilado das crenças, por isso só funciona com «Crenças evolutivas» ativado. <b>Custo:</b> mais uma chamada de IA em segundo plano por personagem alterado (limitada por turno). <b>Seguro a rebobinagem:</b> rebobinar descarta os perfis formados depois e regenera os restantes a partir das crenças rebobinadas."
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "Estilos de memória dos personagens"
 belief_missions_placeholder = "Um por linha — ex. Mercador: lembra ofensas e dívidas"
@@ -754,6 +760,9 @@ doc_settings_memory_prompt_cache = "Coloca em cache o prompt de sistema estável
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "Explorar a memória…"
 memory_browser_title = "Memória da história"
+memory_browser_tab_models = "Perfis"
+memory_browser_empty_models = "Ainda sem perfis: ative «Perfis vivos» e jogue alguns turnos."
+memory_browser_col_profile = "Perfil"
 memory_browser_tab_beliefs = "Crenças"
 memory_browser_tab_facts = "Fatos"
 memory_browser_col_subject = "Sujeito"

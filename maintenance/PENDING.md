@@ -29,7 +29,10 @@
 | TICKET-079| **Lectures N+1 plein-table** dans `_fetch_relevant_facts/_beliefs` + `limit` Python au lieu de SQL | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
 | TICKET-080| **Couplage fragile `zip(facts, new_ids)`** dans `fact_worker` (repose sur insert_facts ne sautant jamais) | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
 | TICKET-081| **Feature : `Trend` déterministe sur les croyances** (moteur + injection prompt + **vue GUI** « Explorer la mémoire ») — idée Hindsight | ✅ implémenté, GUI+doc inclus (⚠ non commité, 2026-06-19) — `maintenance/qa-hindsight-2026-06-19/` |
-| TICKET-082| **Features Hindsight non portées** : modèles mentaux (§7.8), directives/persona (§7.9), extraction temporelle (§7.5) | ouvert — reportées, gros périmètre |
+| TICKET-082| **Features Hindsight non portées** : ~~modèles mentaux (§7.8)~~ **✅ portés (2026-06-20, ⚠ non commité, `maintenance/hindsight-mental-models/`)** ; restent directives/persona (§7.9) + extraction temporelle (§7.5) | partiel — 7.8 fait ; 7.9/7.5 fermés (redondants / peu pertinents) |
+| TICKET-083| **Croyances : fuite temporelle au rewind** (`created_turn_id = min(tours des sources)` → une croyance survit à un rembobinage avant qu'elle ait été consolidée) | ouvert — QA Hindsight 2 (2026-06-19), sévérité basse-moyenne |
+| TICKET-084| **Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`** (croyances + faits + chunks narratifs cumulés) | ouvert — QA Hindsight 2 (2026-06-19), coût tokens |
+| TICKET-085| **Cache BM25 : `collection.get()` plein corpus tourne encore au cache-hit** (seul le build d'index est caché) | ouvert — QA Hindsight 2 (2026-06-19), micro-opt mineure |
 
 Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -487,11 +490,76 @@ trends* dans `docs/guides/memory.md` + `.po` FR), hors notes d'API (auto). **Plu
 ## TICKET-082 — Features Hindsight délibérément non portées
 
 **Recensé le 2026-06-19.** Reportées (gros périmètre, pas demandées) :
-- **Modèles mentaux (§7.8)** + **directives/persona (§7.9)** — couche `reflect/` agentique (résumés
-  curés de plus haut niveau au-dessus des croyances, boucle d'outils).
-- **Extraction temporelle (§7.5)** — `search/temporal_extraction.py`.
+- ~~**Modèles mentaux (§7.8)**~~ **✅ PORTÉ le 2026-06-20** (⚠ non commité,
+  `maintenance/hindsight-mental-models/`) : fiche synthétique vivante par sujet au-dessus des
+  croyances (`axiom/mental_models.py` + `axiom/reflect.py`), refresh LLM mode Vivant, rollback
+  turn-keyed, injection `Profile:` en tête, toggle GUI + onglet browser + i18n ×10 + doc EN/FR.
+  **L'agent tool-calling complet de Hindsight n'a PAS été porté** (trop lourd pour un jeu solo) —
+  on a gardé le principe (une couche synthétique régénérée), pas la boucle d'outils.
+- **Directives/persona (§7.9)** — règles impératives au LLM. **Décision (2026-06-19) : non porté**,
+  redondant avec le Basic Prompt, les personas joueur/globales et les missions de croyance (B-3).
+- **Extraction temporelle (§7.5)** — `search/temporal_extraction.py`. **Décision : non porté**,
+  peu pertinent (Axiom raisonne en temps de jeu / `turn_id`, pas en dates calendaires).
 - **`recall_boost` niveaux par bras / weighted-RRF** — tuning de déploiement multi-bras ; on a porté la
   version simplifiée (boost additif de focus). Probablement superflu à notre échelle.
 - **`tags` filtering / scopes** — rejoint TICKET-077 (scoper la consolidation).
 
 **Priorité :** basse — backlog d'idées.
+
+---
+
+## TICKET-083 — Croyances : fuite temporelle au rewind (`created_turn_id`)
+
+**Découvert le 2026-06-19** (2ᵉ passe QA du chantier Hindsight).
+
+`axiom/observations.py::apply_consolidation` (branche CREATE) stampe
+`created_turn_id = min(tours des sources)`, **pas le tour T où la consolidation a tourné**. Or le
+rollback (`rollback_observations`) supprime sur `created_turn_id > target`. Donc une croyance
+consolidée au tour T à partir de faits plus anciens **survit à un rembobinage à un tour situé entre
+sa plus vieille source et T**, alors que la passe de consolidation n'avait pas encore eu lieu à ce
+moment-là → fuite de « connaissance future » vers le passé, bornée à ~l'intervalle de consolidation
+(`memory_fact_interval`).
+
+**Piste.** Soit stamper `created_turn_id = turn_id` (le tour de consolidation) — la croyance
+disparaît alors proprement si on rembobine avant sa formation ; soit assumer le comportement actuel et
+le documenter. Vérifier l'effet sur les sources : les `sources` restent turn-keyed et sont déjà
+filtrées correctement au rewind, donc seul le critère de suppression de la croyance entière est en jeu.
+
+**Priorité :** basse-moyenne — incohérence de rewind dans un cas de bord (croyance bâtie sur faits
+anciens + rembobinage). Aucun impact hors mode « living » + croyances.
+
+---
+
+## TICKET-084 — Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`
+
+**Découvert le 2026-06-19** (2ᵉ passe QA Hindsight).
+
+`axiom/arbitrator.py` (~l.367-386, mode living) injecte **trois** blocs dimensionnés chacun par
+`cfg.rag_chunk_count` : croyances (si activées) + faits + chunks narratifs. L'utilisateur qui règle
+`rag_chunk_count` s'attend probablement à un **total**, pas à un triplement du contexte (coût tokens
+×3 dans le pire cas, mode « living » + croyances).
+
+**Piste.** Soit un budget partagé (répartir `rag_chunk_count` entre les trois sources), soit des
+sous-quotas explicites/configurables (ex. `memory_belief_count`, `memory_fact_count`), soit documenter
+clairement que le total grimpe en living. À arbitrer avec la qualité de rappel (les trois niveaux sont
+complémentaires : croyances synthétiques → faits atomiques → prose brute).
+
+**Priorité :** basse — coût/clarté, pas un bug. Pertinent seulement en mode « living ».
+
+---
+
+## TICKET-085 — Cache BM25 : `collection.get()` plein corpus encore exécuté au cache-hit
+
+**Découvert le 2026-06-19** (2ᵉ passe QA Hindsight).
+
+`axiom/memory.py::query` : même quand l'index BM25 est réutilisé (cache-hit TICKET-078), le
+`self._collection.get(where=where_cond, include=["documents","metadatas"])` recharge **tout** le corpus
+filtré à chaque requête (nécessaire aujourd'hui pour calculer l'empreinte d'ids ET pour le backfill des
+hits lexicaux-seuls). Seul le coût dominant (tokenisation + IDF dans `build_bm25`) est caché ; la
+lecture Chroma plein-corpus, elle, reste par requête.
+
+**Piste (si jamais ça devient chaud).** Mettre aussi `corpus_docs`/`corpus_metas` en cache à côté de
+l'index (clé identique), invalidés par la même empreinte — au prix d'un peu de RAM. Gain réel surtout
+sur le corpus lore figé ; négligeable sur petits volumes. À ne faire que si un profilage le justifie.
+
+**Priorité :** très basse — micro-optimisation. Le fix TICKET-078 (le vrai poste de coût) tient.

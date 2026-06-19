@@ -738,6 +738,12 @@ doc_settings_memory_beliefs_t = "Sich entwickelnde Überzeugungen"
 doc_settings_memory_beliefs = "Zusätzlich zu den Fakten destilliert sie zu Überzeugungen, die sich mit der Zeit ändern (eine Hindsight-Idee): eine Figur trägt Groll oder revidiert eine Meinung. Erfordert den Modus Lebendig und fügt nach der Faktenextraktion einen weiteren KI-Hintergrunddurchlauf hinzu. Standardmäßig aus."
 doc_settings_memory_beliefs_d = "<b>So funktioniert es:</b> ein Hintergrunddurchlauf gruppiert die neuen Fakten zu dauerhaften Überzeugungen (Observations) — der Händler grollt dem Spieler — die an Gewicht (Belege) gewinnen, je mehr Fakten sie stützen, und revidiert oder verworfen werden, wenn Fakten ihnen widersprechen. Überzeugungen werden der KI vor den rohen Erinnerungen gegeben, sodass ein NPC konsistent auf etwas reagiert, das du vor Hunderten von Zügen getan hast. <b>Kosten:</b> ein zweiter KI-Hintergrundaufruf nach der Faktenextraktion. <b>Rollback-sicher:</b> das Zurückspulen eines Zuges rollt Überzeugungen mit den Fakten zurück, aus denen sie stammen."
 
+# --- Memory: mental models (§7.8) ---
+memory_mental_models_label = "Lebendige Profile (kuratierte Charakter-/Weltnotizen)"
+doc_settings_memory_mental_models_t = "Lebendige Profile"
+doc_settings_memory_mental_models = "Über den Überzeugungen verdichtet diese Funktion jeden Charakter (und die Welt) zu einem kurzen, lebendigen Profil, das die KI zuerst liest (eine Hindsight-Idee). Erfordert den Lebendig-Modus mit aktivierten Überzeugungen und fügt einen weiteren KI-Durchlauf im Hintergrund hinzu. Standardmäßig aus."
+doc_settings_memory_mental_models_d = "<b>So funktioniert es:</b> Nach dem Aktualisieren der Überzeugungen schreibt ein Hintergrunddurchlauf ein Profil von 2 bis 4 Sätzen für jeden Charakter, dessen Überzeugungen sich geändert haben — wer er jetzt ist, seine Beziehungen und sein Groll. Dieses Profil steht ganz oben in dem, was der KI mitgeteilt wird, sodass die Erinnerung einer langen Kampagne als zusammenhängende Charakternotiz statt als verstreute Fakten ankommt. <b>Benötigt Überzeugungen:</b> Ein Profil wird aus Überzeugungen destilliert und funktioniert daher nur bei aktivierten sich entwickelnden Überzeugungen. <b>Kosten:</b> ein weiterer KI-Hintergrundaufruf pro geändertem Charakter (pro Zug begrenzt). <b>Rückspul-sicher:</b> Beim Zurückspulen werden später gebildete Profile verworfen und die übrigen aus den zurückgespulten Überzeugungen neu erstellt."
+
 # --- Character memory styles (Phase 4 B-3) ---
 belief_missions_title = "Erinnerungsstile der Figuren"
 belief_missions_placeholder = "Einer pro Zeile — z. B. Händler: merkt sich Kränkungen und Schulden"
@@ -753,6 +759,9 @@ doc_settings_memory_prompt_cache = "Cacht den stabilen System-Prompt bei Gemini,
 # --- Memory browser (TICKET-081 GUI: beliefs + facts viewer) ---
 memory_browser_btn = "Gedächtnis durchsuchen…"
 memory_browser_title = "Gedächtnis der Geschichte"
+memory_browser_tab_models = "Profile"
+memory_browser_empty_models = "Noch keine Profile — aktivieren Sie Lebendige Profile und spielen Sie einige Züge."
+memory_browser_col_profile = "Profil"
 memory_browser_tab_beliefs = "Überzeugungen"
 memory_browser_tab_facts = "Fakten"
 memory_browser_col_subject = "Subjekt"

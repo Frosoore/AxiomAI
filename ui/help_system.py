@@ -158,6 +158,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "memory_model",
         "memory_reranker",
         "memory_beliefs",
+        "memory_mental_models",
         "memory_prompt_cache",
         "extract_now",
         "memory_browser",
@@ -230,7 +231,8 @@ SETTINGS_TAB_PAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
     ("settings_memory", (
         "tab_memory", "memory_mode", "memory_interval", "memory_model",
-        "memory_reranker", "memory_beliefs", "memory_prompt_cache", "extract_now",
+        "memory_reranker", "memory_beliefs", "memory_mental_models",
+        "memory_prompt_cache", "extract_now",
     )),
 )
 SETTINGS_GENERAL_PAGE: tuple[str, tuple[str, ...]] = (
@@ -258,6 +260,7 @@ DETAILS: frozenset[str] = frozenset({
     "settings.memory_interval",
     "settings.memory_reranker",
     "settings.memory_beliefs",
+    "settings.memory_mental_models",
 })
 
 
