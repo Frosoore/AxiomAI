@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.6\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-19 03:05+0200\n"
+"POT-Creation-Date: 2026-06-19 18:33+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -102,12 +102,13 @@ msgstr ""
 #: axiom.memory.preload_embedding_runtime axiom.missions.get_belief_missions
 #: axiom.missions.get_belief_missions_from_value
 #: axiom.missions.get_universe_mission axiom.missions.missions_to_text
-#: axiom.missions.parse_missions_text axiom.observations.count_observations
+#: axiom.missions.parse_missions_text axiom.observations.Observation.trend
+#: axiom.observations.compute_trend axiom.observations.count_observations
 #: axiom.observations.insert_observation
 #: axiom.observations.rollback_observations
 #: axiom.observations.rollback_observations_standalone
 #: axiom.retrieval.fusion.cap_per_source axiom.retrieval.lexical.is_available
-#: axiom.retrieval.lexical.tokenize
+#: axiom.retrieval.lexical.rank_with_bm25 axiom.retrieval.lexical.tokenize
 #: axiom.retrieval.reranker.CrossEncoderReranker.rerank of
 msgid "Return type"
 msgstr ""
@@ -125,11 +126,13 @@ msgstr ""
 #: axiom.missions.get_belief_missions
 #: axiom.missions.get_belief_missions_from_value
 #: axiom.missions.get_universe_mission axiom.missions.missions_to_text
-#: axiom.missions.parse_missions_text axiom.observations.Observation
-#: axiom.observations.count_observations axiom.observations.insert_observation
+#: axiom.missions.parse_missions_text axiom.observations.Observation.trend
+#: axiom.observations.compute_trend axiom.observations.count_observations
+#: axiom.observations.insert_observation
 #: axiom.observations.rollback_observations
 #: axiom.observations.rollback_observations_standalone
-#: axiom.retrieval.fusion.cap_per_source axiom.retrieval.lexical.tokenize
+#: axiom.retrieval.fusion.cap_per_source axiom.retrieval.lexical.build_bm25
+#: axiom.retrieval.lexical.rank_with_bm25 axiom.retrieval.lexical.tokenize
 #: axiom.retrieval.reranker.CrossEncoderReranker.rerank of
 msgid "Parameters"
 msgstr ""
@@ -330,23 +333,54 @@ msgid ""
 "one token."
 msgstr ""
 
+#: axiom.retrieval.lexical.build_bm25:1 of
+msgid "Build a BM25 index over ``corpus_texts`` (or ``None`` if unavailable)."
+msgstr ""
+
+#: axiom.retrieval.lexical.build_bm25:3 of
+msgid ""
+"Split out from :func:`rank_by_bm25` so callers can *cache* the index when"
+" the corpus is unchanged (building it tokenises the whole corpus and "
+"computes IDF — the expensive part), then score many queries against it "
+"cheaply."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_with_bm25:1 of
+msgid "Rank ``corpus_ids`` against a pre-built ``bm25`` index, best first."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_with_bm25:3 of
+msgid ""
+"``corpus_ids`` must be aligned 1:1 with the texts the index was built "
+"from. Returns an empty list when the index is ``None`` or the query has "
+"no usable tokens; drops zero-score docs (no lexical signal). Ties keep "
+"input order."
+msgstr ""
+
 #: axiom.retrieval.lexical.rank_by_bm25:1 of
 msgid "Rank ``corpus_ids`` by BM25 relevance to ``query_text``, best first."
 msgstr ""
 
 #: axiom.retrieval.lexical.rank_by_bm25:3 of
-msgid "The raw query string."
-msgstr ""
-
-#: axiom.retrieval.lexical.rank_by_bm25:4 of
-msgid "Stable ids, aligned 1:1 with ``corpus_texts``."
-msgstr ""
-
-#: axiom.retrieval.lexical.rank_by_bm25:5 of
-msgid "The chunk texts to score against the query."
+msgid ""
+"Convenience wrapper that builds a one-shot index then scores. Hot paths "
+"that reuse a stable corpus should cache :func:`build_bm25` and call "
+":func:`rank_with_bm25` instead."
 msgstr ""
 
 #: axiom.retrieval.lexical.rank_by_bm25:7 of
+msgid "The raw query string."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:8 of
+msgid "Stable ids, aligned 1:1 with ``corpus_texts``."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:9 of
+msgid "The chunk texts to score against the query."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:11 of
 msgid ""
 "``corpus_ids`` reordered by descending BM25 score, dropping documents "
 "whose score is zero (no query-term overlap → no lexical signal). Returns "
@@ -468,6 +502,14 @@ msgid ""
 "extracting a turn should first ``rollback_facts`` to that turn."
 msgstr ""
 
+#: axiom.facts.insert_facts:7 of
+msgid ""
+"Side effect: each ``Fact`` that is actually inserted has its ``fact_id`` "
+"and ``turn_id`` set in place, so the caller can use the objects directly "
+"without re-aligning a separate id list (skipped/blank facts keep "
+"``fact_id=None``)."
+msgstr ""
+
 #: axiom.facts.get_facts:1 of
 msgid "Fetch a save's facts, most recent first."
 msgstr ""
@@ -550,7 +592,7 @@ msgstr ""
 msgid "Extract structured facts from ``narrative_text`` using ``llm``."
 msgstr ""
 
-#: axiom.consolidate.consolidate:7 axiom.factextract.extract_facts:3 of
+#: axiom.consolidate.consolidate:9 axiom.factextract.extract_facts:3 of
 msgid ""
 "Returns ``[]`` for empty input or on any backend/parse failure (never "
 "raises), so a living-mode background job can call it fire-and-forget."
@@ -613,6 +655,43 @@ msgid ""
 "with the facts/events they were built from."
 msgstr ""
 
+#: axiom.observations.compute_trend:1 of
+msgid "Classify a belief's trend from the turn ids of its supporting sources."
+msgstr ""
+
+#: axiom.observations.compute_trend:3 of
+msgid "Returns one of the ``TREND_*`` constants:"
+msgstr ""
+
+#: axiom.observations.compute_trend:5 of
+msgid "``NEW``           — every source falls in the recent window;"
+msgstr ""
+
+#: axiom.observations.compute_trend:6 of
+msgid "``STRENGTHENING`` — denser recent evidence than older (ratio > 1.5);"
+msgstr ""
+
+#: axiom.observations.compute_trend:7 of
+msgid "``WEAKENING``     — sparser recent evidence than older (ratio < 0.5);"
+msgstr ""
+
+#: axiom.observations.compute_trend:8 of
+msgid "``STALE``         — no source in the recent window (may be outdated);"
+msgstr ""
+
+#: axiom.observations.compute_trend:9 of
+msgid ""
+"``STABLE``        — steady, or trend unknown (no sources / no current "
+"turn)."
+msgstr ""
+
+#: axiom.observations.compute_trend:11 of
+msgid ""
+"Deterministic and side-effect free. ``now_turn`` is the current turn (the"
+" rewind horizon during replay), so the trend is always read at the right "
+"\"now\"."
+msgstr ""
+
 #: axiom.observations.Observation:1 of
 msgid "One consolidated belief."
 msgstr ""
@@ -623,6 +702,10 @@ msgid ""
 "``sources`` is a list of ``{\"fact_id\": int, \"turn_id\": int}`` dicts —"
 " the facts backing the belief and the turns they came from (the rollback "
 "key)."
+msgstr ""
+
+#: axiom.observations.Observation.trend:1 of
+msgid "This belief's trend at ``now_turn`` (see :func:`compute_trend`)."
 msgstr ""
 
 #: axiom.observations.insert_observation:1 of
@@ -778,6 +861,12 @@ msgstr ""
 msgid ""
 "Per-character memory styles ``{entity_name: mission}`` (B-3) — only those"
 " whose character appears in this batch are shown."
+msgstr ""
+
+#: axiom.consolidate.consolidate:6 of
+msgid ""
+"Cap on existing beliefs shown to the LLM (TICKET-077); scoped to the "
+"batch's characters + most recent. ``<= 0`` disables."
 msgstr ""
 
 #: ../../api/memory.md:66

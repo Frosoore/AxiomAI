@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.6\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-19 03:05+0200\n"
+"POT-Creation-Date: 2026-06-19 18:33+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -203,13 +203,20 @@ msgstr ""
 msgid ""
 "**Lexical arm** — BM25 over the save's chunks "
 "([`rank_bm25`](https://pypi.org/project/rank-bm25/)), which rescues an "
-"*exact* token the embeddings miss (a proper noun, an item)."
+"*exact* token the embeddings miss (a proper noun, an item). The BM25 "
+"index is cached and only rebuilt when the corpus actually changes (keyed "
+"by the chunk id-set), so a stable subset like the lore is not re-indexed "
+"every turn."
 msgstr ""
 "**Bras lexical** — BM25 sur les fragments de la partie "
 "([`rank_bm25`](https://pypi.org/project/rank-bm25/)), qui rattrape un "
-"token *exact* que les embeddings manquent (un nom propre, un objet)."
+"token *exact* que les embeddings manquent (un nom propre, un objet). "
+"L'index BM25 est mis en cache et n'est reconstruit que lorsque le corpus "
+"change réellement (clé = l'ensemble des identifiants de fragments), si "
+"bien qu'un sous-ensemble stable comme le lore n'est pas réindexé à chaque "
+"tour."
 
-#: ../../guides/memory.md:52
+#: ../../guides/memory.md:55
 #, python-brace-format
 msgid ""
 "**Rank fusion** — the two ranked lists are merged with Reciprocal Rank "
@@ -221,7 +228,7 @@ msgstr ""
 "({py:func}`axiom.retrieval.fusion.reciprocal_rank_fusion`) ; le score RRF"
 " normalisé est la pertinence de base."
 
-#: ../../guides/memory.md:55
+#: ../../guides/memory.md:58
 msgid ""
 "**Recency modulation** — turn-age nudges the score by a small factor "
 "(±10%) so a relevant-but-old memory is ranked down, never crushed."
@@ -230,7 +237,7 @@ msgstr ""
 "facteur (±10 %) afin qu'un souvenir pertinent mais ancien soit "
 "rétrogradé, jamais écrasé."
 
-#: ../../guides/memory.md:57
+#: ../../guides/memory.md:60
 msgid ""
 "**Focus boost** — chunks that mention the current scene get a flat "
 "additive bump via the `focus_terms` argument: the player's current "
@@ -242,7 +249,7 @@ msgstr ""
 "courant du joueur *et* les noms des personnages qui le partagent, pour "
 "que les souvenirs sur qui et où vous êtes remontent plus facilement."
 
-#: ../../guides/memory.md:61
+#: ../../guides/memory.md:64
 #, python-brace-format
 msgid ""
 "**Optional reranker** — when "
@@ -260,7 +267,7 @@ msgstr ""
 "modèle torch d'environ 90 Mo) et se réduit à un no-op quand son runtime "
 "est indisponible."
 
-#: ../../guides/memory.md:68
+#: ../../guides/memory.md:71
 msgid ""
 "Every step is offline and deterministic; the reranker is the only "
 "optional dependency and it always has a safe fallback."
@@ -268,11 +275,11 @@ msgstr ""
 "Chaque étape est hors-ligne et déterministe ; le reranker est la seule "
 "dépendance optionnelle et dispose toujours d'un repli sûr."
 
-#: ../../guides/memory.md:71
+#: ../../guides/memory.md:74
 msgid "Lore Book retrieval"
 msgstr "Récupération du Lore Book"
 
-#: ../../guides/memory.md:73
+#: ../../guides/memory.md:76
 msgid ""
 "A universe's **Lore Book** is static, authored world knowledge (factions,"
 " places, history) — separate from the per-turn narrative. Each turn the "
@@ -280,10 +287,10 @@ msgid ""
 msgstr ""
 "Le **Lore Book** d'un univers est un savoir du monde statique et rédigé "
 "(factions, lieux, histoire) — distinct de la narration tour par tour. À "
-"chaque tour, le moteur fait remonter les entrées pertinentes pour l'entrée "
-"du joueur, en deux étapes :"
+"chaque tour, le moteur fait remonter les entrées pertinentes pour "
+"l'entrée du joueur, en deux étapes :"
 
-#: ../../guides/memory.md:77
+#: ../../guides/memory.md:80
 msgid ""
 "**Semantic match** — the Lore Book is embedded into the same per-save "
 "store (tagged `chunk_type=\"lore\"`, at turn 0 so it survives any rewind)"
@@ -292,12 +299,13 @@ msgid ""
 " session (and after a hot reload)."
 msgstr ""
 "**Correspondance sémantique** — le Lore Book est vectorisé dans le même "
-"store par partie (étiqueté `chunk_type=\"lore\"`, au tour 0 pour survivre à "
-"tout rewind) et apparié par le *sens*, si bien que « trahison » peut faire "
-"remonter une entrée parlant d'un « coup d'État » même sans le mot exact. "
-"L'embedding est rafraîchi une fois par session (et après un hot reload)."
+"store par partie (étiqueté `chunk_type=\"lore\"`, au tour 0 pour survivre"
+" à tout rewind) et apparié par le *sens*, si bien que « trahison » peut "
+"faire remonter une entrée parlant d'un « coup d'État » même sans le mot "
+"exact. L'embedding est rafraîchi une fois par session (et après un hot "
+"reload)."
 
-#: ../../guides/memory.md:81
+#: ../../guides/memory.md:84
 msgid ""
 "**Link expansion** — the semantic hits are then expanded with a few "
 "*related* entries (same category, or shared keywords), an idea adapted "
@@ -305,28 +313,28 @@ msgid ""
 "small lore table (no precomputed graph), giving the narrator associative "
 "context, not just direct hits."
 msgstr ""
-"**Link expansion** — les hits sémantiques sont ensuite élargis à quelques "
-"entrées *liées* (même catégorie, ou mots-clés partagés), une idée adaptée "
-"du link expansion de Hindsight. C'est calculé à la volée sur la petite "
-"table de lore (sans graphe pré-calculé), donnant au narrateur un contexte "
-"associatif, pas seulement les hits directs."
+"**Link expansion** — les hits sémantiques sont ensuite élargis à quelques"
+" entrées *liées* (même catégorie, ou mots-clés partagés), une idée "
+"adaptée du link expansion de Hindsight. C'est calculé à la volée sur la "
+"petite table de lore (sans graphe pré-calculé), donnant au narrateur un "
+"contexte associatif, pas seulement les hits directs."
 
-#: ../../guides/memory.md:86
+#: ../../guides/memory.md:89
 msgid ""
 "When the embedding runtime is unavailable (e.g. Windows without the torch"
 " runtime), retrieval falls back to a deterministic keyword overlap on the"
 " structured table, so the lore never disappears."
 msgstr ""
 "Quand le runtime d'embedding est indisponible (par ex. Windows sans le "
-"runtime torch), la récupération se rabat sur un recouvrement de mots-clés "
-"déterministe sur la table structurée, pour que le lore ne disparaisse "
+"runtime torch), la récupération se rabat sur un recouvrement de mots-clés"
+" déterministe sur la table structurée, pour que le lore ne disparaisse "
 "jamais."
 
-#: ../../guides/memory.md:90
+#: ../../guides/memory.md:93
 msgid "Cognitive layer (living mode)"
 msgstr "Couche cognitive (mode vivant)"
 
-#: ../../guides/memory.md:92
+#: ../../guides/memory.md:95
 msgid ""
 "In `living` mode the engine additionally distils the narrative into "
 "atomic **facts** — a who/what/when/where/why model adapted from the "
@@ -336,7 +344,7 @@ msgstr ""
 "atomiques — un modèle qui/quoi/quand/où/pourquoi adapté du système de "
 "mémoire [Hindsight](https://github.com/vectorize-io/hindsight)."
 
-#: ../../guides/memory.md:96
+#: ../../guides/memory.md:99
 #, python-brace-format
 msgid ""
 "A fact ({py:class}`axiom.facts.Fact`) carries a canonical `statement`, a "
@@ -353,7 +361,7 @@ msgstr ""
 " la boucle de tour) et stockés via {py:func}`axiom.facts.insert_facts`, "
 "étiquetés avec leur `turn_id`."
 
-#: ../../guides/memory.md:109
+#: ../../guides/memory.md:112
 #, python-brace-format
 msgid ""
 "Because facts are turn-tagged, rollback stays trivial: a rewind drops "
@@ -369,7 +377,7 @@ msgstr ""
 "**fire and forget** — tout échec (LLM hors-ligne, sortie invalide) ne "
 "produit aucun fait et n'interrompt jamais le jeu."
 
-#: ../../guides/memory.md:115
+#: ../../guides/memory.md:118
 msgid ""
 "At prompt-building time the Arbitrator surfaces the most relevant facts "
 "(those about the on-scene characters, then the most recent) as additional"
@@ -381,11 +389,11 @@ msgstr ""
 "plus récents) comme lignes de mémoire supplémentaires, pour que le "
 "narrateur reste cohérent avec ce que le monde a appris."
 
-#: ../../guides/memory.md:119
+#: ../../guides/memory.md:122
 msgid "Cost control"
 msgstr "Maîtrise du coût"
 
-#: ../../guides/memory.md:121
+#: ../../guides/memory.md:124
 #, python-brace-format
 msgid ""
 "Fact extraction is batched: "
@@ -403,11 +411,11 @@ msgstr ""
 "configuré), pour qu'un modèle moins cher et plus rapide fasse "
 "l'extraction."
 
-#: ../../guides/memory.md:127
+#: ../../guides/memory.md:130
 msgid "Beliefs (living mode, opt-in)"
 msgstr "Croyances (mode vivant, opt-in)"
 
-#: ../../guides/memory.md:129
+#: ../../guides/memory.md:132
 #, python-brace-format
 msgid ""
 "Facts are immutable observations of single moments. On top of them, Axiom"
@@ -426,7 +434,7 @@ msgstr ""
 "cela requiert le mode vivant *et* l'opt-in). C'est ce qui permet à un PNJ"
 " de garder rancune des centaines de tours après que vous l'avez lésé."
 
-#: ../../guides/memory.md:136
+#: ../../guides/memory.md:139
 #, python-brace-format
 msgid ""
 "A belief ({py:class}`axiom.observations.Observation`) carries a canonical"
@@ -438,7 +446,7 @@ msgstr ""
 "— surtout — ses `sources` : les faits qui l'étayent, sous forme de paires"
 " `{fact_id, turn_id}`."
 
-#: ../../guides/memory.md:140
+#: ../../guides/memory.md:143
 #, python-brace-format
 msgid ""
 "After a batch of facts is stored, "
@@ -447,7 +455,11 @@ msgid ""
 "{py:func}`axiom.observations.apply_consolidation` applies them "
 "deterministically (a new belief, a reinforced one with merged sources, or"
 " a contradicted one removed). Like extraction, consolidation is "
-"background and fire-and-forget."
+"background and fire-and-forget. To keep the prompt (and its cost) bounded"
+" as beliefs accumulate over a long campaign, the consolidator is only "
+"shown the beliefs relevant to the batch — those about the characters the "
+"new facts mention, topped up with the most recent — capped by "
+"`consolidate`'s `max_existing` argument."
 msgstr ""
 "Après le stockage d'un lot de faits, "
 "{py:func}`axiom.consolidate.consolidate` demande au LLM comment les "
@@ -455,9 +467,14 @@ msgstr ""
 " ; {py:func}`axiom.observations.apply_consolidation` les applique de "
 "façon déterministe (une nouvelle croyance, une croyance renforcée aux "
 "sources fusionnées, ou une croyance contredite supprimée). Comme "
-"l'extraction, la consolidation est en arrière-plan et fire-and-forget."
+"l'extraction, la consolidation est en arrière-plan et fire-and-forget. "
+"Pour garder le prompt (et son coût) borné à mesure que les croyances "
+"s'accumulent sur une longue campagne, on ne montre au consolidateur que "
+"les croyances pertinentes pour le lot — celles concernant les personnages"
+" cités par les nouveaux faits, complétées par les plus récentes — "
+"plafonnées par l'argument `max_existing` de `consolidate`."
 
-#: ../../guides/memory.md:147
+#: ../../guides/memory.md:153
 msgid ""
 "At prompt-building time the Arbitrator surfaces memory as a "
 "**hierarchy**, most synthetic first: relevant *beliefs*, then *facts*, "
@@ -470,11 +487,11 @@ msgstr ""
 " le narrateur commence par ce que le monde a conclu, étayé par les "
 "détails."
 
-#: ../../guides/memory.md:151
+#: ../../guides/memory.md:157
 msgid "Belief rollback"
 msgstr "Rollback des croyances"
 
-#: ../../guides/memory.md:153
+#: ../../guides/memory.md:159
 #, python-brace-format
 msgid ""
 "Beliefs derive from several turns, so they cannot be dropped by a single "
@@ -496,11 +513,79 @@ msgstr ""
 "`proof_count`. Les croyances reculent ainsi de façon atomique avec les "
 "faits et événements dont elles sont issues."
 
-#: ../../guides/memory.md:161
+#: ../../guides/memory.md:167
+msgid "Belief trends"
+msgstr "Tendances des croyances"
+
+#: ../../guides/memory.md:169
+msgid ""
+"A belief also has a *direction*: is it gaining ground, fading, or going "
+"stale? That signal can be read for free from the turn distribution of its"
+" `sources`, with no extra LLM call — an idea adapted from Hindsight, "
+"transposed from wall-clock time to Axiom's native `turn_id` axis (so it "
+"stays correct across rewinds)."
+msgstr ""
+"Une croyance a aussi une *direction* : gagne-t-elle du terrain, s'estompe-"
+"t-elle ou devient-elle obsolète ? Ce signal se lit gratuitement dans la "
+"distribution par tour de ses `sources`, sans appel LLM supplémentaire — "
+"une idée adaptée de Hindsight, transposée du temps réel vers l'axe natif "
+"`turn_id` d'Axiom (elle reste donc correcte à travers les rembobinages)."
+
+#: ../../guides/memory.md:174
+#, python-brace-format
+msgid ""
+"{py:func}`axiom.observations.compute_trend` (and the convenience "
+"{py:meth}`axiom.observations.Observation.trend`) classifies a belief at "
+"the current turn as one of:"
+msgstr ""
+"{py:func}`axiom.observations.compute_trend` (et la méthode pratique "
+"{py:meth}`axiom.observations.Observation.trend`) classe une croyance au "
+"tour courant parmi :"
+
+#: ../../guides/memory.md:178
+msgid "`new` — all its evidence is recent;"
+msgstr "`new` — toutes ses preuves sont récentes ;"
+
+#: ../../guides/memory.md:179
+msgid "`strengthening` — denser recent evidence than older;"
+msgstr "`strengthening` — preuves récentes plus denses que les anciennes ;"
+
+#: ../../guides/memory.md:180
+msgid "`weakening` — sparser recent evidence than older;"
+msgstr "`weakening` — preuves récentes plus rares que les anciennes ;"
+
+#: ../../guides/memory.md:181
+msgid "`stale` — no evidence in the recent window (it may be outdated);"
+msgstr ""
+"`stale` — aucune preuve dans la fenêtre récente (elle est peut-être "
+"obsolète) ;"
+
+#: ../../guides/memory.md:182
+msgid "`stable` — steady, or no signal (no sources / unknown current turn)."
+msgstr ""
+"`stable` — stable, ou aucun signal (pas de sources / tour courant "
+"inconnu)."
+
+#: ../../guides/memory.md:184
+msgid ""
+"At prompt-building time the Arbitrator annotates only the *directional* "
+"trends (`strengthening` / `weakening` / `stale`) onto the belief line — "
+"e.g. *\"The smith resents the player (strengthening)\"* — leaving the "
+"quiet `new` / `stable` cases unmarked, so the narrator can tell an "
+"intensifying grudge from a fading one without bloating the prompt."
+msgstr ""
+"Lors de la construction du prompt, l'Arbitrator n'annote que les "
+"tendances *directionnelles* (`strengthening` / `weakening` / `stale`) sur "
+"la ligne de croyance — par ex. *« The smith resents the player "
+"(strengthening) »* — laissant nus les cas discrets `new` / `stable`, afin "
+"que le narrateur distingue une rancune qui s'intensifie d'une rancune qui "
+"s'estompe sans alourdir le prompt."
+
+#: ../../guides/memory.md:190
 msgid "Per-character memory styles"
 msgstr "Styles de mémoire par personnage"
 
-#: ../../guides/memory.md:163
+#: ../../guides/memory.md:192
 #, python-brace-format
 msgid ""
 "Different characters remember differently: a rancorous NPC dwells on "
@@ -516,11 +601,11 @@ msgstr ""
 "retour avec la source Universe-as-Code et voyagent avec les parties) et "
 "sont lues par {py:mod}`axiom.missions` :"
 
-#: ../../guides/memory.md:169
+#: ../../guides/memory.md:198
 msgid "`belief_mission` — the universe-wide default;"
 msgstr "`belief_mission` — le défaut à l'échelle de l'univers ;"
 
-#: ../../guides/memory.md:170
+#: ../../guides/memory.md:199
 #, python-brace-format
 msgid ""
 "`belief_missions` — a JSON `{entity_name: mission}` of per-character "
@@ -531,7 +616,7 @@ msgstr ""
 "personnage, éditable dans l'onglet *Metadata* du Creator Studio sous "
 "forme de lignes `Name: ce dont il se souvient`."
 
-#: ../../guides/memory.md:174
+#: ../../guides/memory.md:203
 msgid ""
 "The consolidator includes the styles of the characters in play, so each "
 "forms beliefs in character."
@@ -539,11 +624,11 @@ msgstr ""
 "Le consolidateur inclut les styles des personnages en jeu, pour que "
 "chacun forme ses croyances dans son caractère."
 
-#: ../../guides/memory.md:177
+#: ../../guides/memory.md:206
 msgid "Prompt caching"
 msgstr "Cache de prompt"
 
-#: ../../guides/memory.md:179
+#: ../../guides/memory.md:208
 #, python-brace-format
 msgid ""
 "For the background living-mode calls on the Gemini backend, optional "

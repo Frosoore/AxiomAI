@@ -160,6 +160,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "memory_beliefs",
         "memory_prompt_cache",
         "extract_now",
+        "memory_browser",
     ),
     # Per-tab intro pages for the Settings dialog's "Information" button. Intro
     # only (no own elements): the elements stay under the flat "settings" page

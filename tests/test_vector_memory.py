@@ -451,3 +451,31 @@ class TestLoreSync:
         vm.rollback("save1", target_turn_id=3)  # lore is at turn 0 → kept
         hits = vm.query("save1", "Highport", k=5, chunk_type="lore")
         assert [h["entry_id"] for h in hits] == ["coup"]
+
+
+# ---------------------------------------------------------------------------
+# BM25 index cache (TICKET-078)
+# ---------------------------------------------------------------------------
+
+class TestBM25Cache:
+    def test_reuses_index_on_unchanged_corpus(self, vm: VectorMemory) -> None:
+        """A stable corpus (e.g. lore) builds its BM25 index once, then reuses it."""
+        vm.sync_lore("save1", [
+            {"entry_id": "coup", "text": "The Coup of Highport toppled the king."},
+            {"entry_id": "house", "text": "House Arodan rules the north."},
+        ])
+        from axiom.retrieval import lexical
+        with patch.object(lexical, "build_bm25", wraps=lexical.build_bm25) as spy:
+            vm.query("save1", "Highport king", k=5, chunk_type="lore")
+            vm.query("save1", "Arodan north", k=5, chunk_type="lore")
+            assert spy.call_count == 1  # built once, reused on the second query
+
+    def test_rebuilds_when_corpus_changes(self, vm: VectorMemory) -> None:
+        """Embedding a new chunk changes the id-set → the index is rebuilt."""
+        vm.embed_chunk("save1", 1, "The hero crossed the bridge.")
+        from axiom.retrieval import lexical
+        with patch.object(lexical, "build_bm25", wraps=lexical.build_bm25) as spy:
+            vm.query("save1", "hero bridge", k=5, exclude_chunk_type="lore")
+            vm.embed_chunk("save1", 2, "The hero met a stranger.")
+            vm.query("save1", "hero stranger", k=5, exclude_chunk_type="lore")
+            assert spy.call_count == 2  # corpus grew → fresh index each time

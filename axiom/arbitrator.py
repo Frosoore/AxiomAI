@@ -926,27 +926,30 @@ class ArbitratorEngine:
         try:
             from axiom import facts as facts_mod
 
+            # One fetch (most-recent-first), then prioritise in memory — instead
+            # of one full-table query per on-scene name (TICKET-079).
+            all_facts = facts_mod.get_facts(
+                self._db_path, save_id, max_turn_id=max_turn_id
+            )
+            names = {n.strip().lower() for n in (on_scene or []) if n}
+
             seen: set[str] = set()
             ordered: list[str] = []
 
-            def _add(fact_list):
-                for f in fact_list:
-                    if f.statement and f.statement not in seen:
-                        seen.add(f.statement)
-                        ordered.append(f.statement)
+            def _add_if(predicate) -> None:
+                for f in all_facts:
+                    if len(ordered) >= limit:
+                        break
+                    if not f.statement or f.statement in seen or not predicate(f):
+                        continue
+                    seen.add(f.statement)
+                    ordered.append(f.statement)
 
-            for name in dict.fromkeys(n for n in (on_scene or []) if n):
-                if len(ordered) >= limit:
-                    break
-                _add(facts_mod.get_facts(
-                    self._db_path, save_id, max_turn_id=max_turn_id,
-                    entity=name, limit=limit,
-                ))
-
-            if len(ordered) < limit:
-                _add(facts_mod.get_facts(
-                    self._db_path, save_id, max_turn_id=max_turn_id, limit=limit,
-                ))
+            # Pass 1: facts mentioning a character on scene (what we *know* about
+            # who's here). Pass 2: fill the remainder with the most recent.
+            if names:
+                _add_if(lambda f: any(e.strip().lower() in names for e in f.entities))
+            _add_if(lambda f: True)
 
             return ordered[:limit]
         except Exception as e:
@@ -965,34 +968,52 @@ class ArbitratorEngine:
         Prioritises beliefs about an on-scene character (what this scene's people
         *think/remember*), then fills with the most recently updated beliefs.
         Bounded by `max_turn_id` (a rewound turn never resurfaces a future
-        belief). Degrades to an empty list on any error (never breaks a turn).
+        belief). Each statement is tagged with its trend when it carries a signal
+        (e.g. "… (strengthening)"), so the narrator can tell an intensifying
+        belief from a fading one (TICKET-081). Degrades to an empty list on any
+        error (never breaks a turn).
         """
         if limit <= 0:
             return []
         try:
             from axiom import observations as obs_mod
 
+            # One fetch (most-recently-updated first), then prioritise in memory
+            # instead of one full-table query per on-scene name (TICKET-079).
+            all_obs = obs_mod.get_observations(
+                self._db_path, save_id, max_turn_id=max_turn_id
+            )
+            names = {n.strip().lower() for n in (on_scene or []) if n}
+
+            # Annotate only the directional trends — strengthening/weakening/stale
+            # carry narrative signal; stable/new are the quiet default, left plain
+            # to keep the prompt lean.
+            _SIGNAL_TRENDS = (
+                obs_mod.TREND_STRENGTHENING,
+                obs_mod.TREND_WEAKENING,
+                obs_mod.TREND_STALE,
+            )
+
+            def _format(o) -> str:
+                trend = o.trend(max_turn_id)
+                return f"{o.statement} ({trend})" if trend in _SIGNAL_TRENDS else o.statement
+
             seen: set[str] = set()
             ordered: list[str] = []
 
-            def _add(obs_list):
-                for o in obs_list:
-                    if o.statement and o.statement not in seen:
-                        seen.add(o.statement)
-                        ordered.append(o.statement)
+            def _add_if(predicate) -> None:
+                for o in all_obs:
+                    if len(ordered) >= limit:
+                        break
+                    if not o.statement or o.statement in seen or not predicate(o):
+                        continue
+                    seen.add(o.statement)
+                    ordered.append(_format(o))
 
-            for name in dict.fromkeys(n for n in (on_scene or []) if n):
-                if len(ordered) >= limit:
-                    break
-                _add(obs_mod.get_observations(
-                    self._db_path, save_id, max_turn_id=max_turn_id,
-                    subject=name, limit=limit,
-                ))
-
-            if len(ordered) < limit:
-                _add(obs_mod.get_observations(
-                    self._db_path, save_id, max_turn_id=max_turn_id, limit=limit,
-                ))
+            # Pass 1: beliefs about a character on scene. Pass 2: most recent.
+            if names:
+                _add_if(lambda o: o.subject.strip().lower() in names)
+            _add_if(lambda o: True)
 
             return ordered[:limit]
         except Exception as e:

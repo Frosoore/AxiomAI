@@ -359,10 +359,21 @@ class MainWindow(QMainWindow):
         db_path = self._active_db_path
         if self._stack.currentIndex() == self._CREATOR_INDEX:
             db_path = self._creator_view._db_path
-            
-        dialog = SettingsDialog(config=load_config(), db_path=db_path, parent=self)
+
+        # Memory is per save: only offer to browse it when an actual play session
+        # is on screen (the tabletop), not from the Hub or the Creator Studio
+        # where no save is selected (otherwise it would show a stale prior game).
+        can_browse_memory = (
+            self._stack.currentIndex() == self._TABLETOP_INDEX
+            and bool(self._active_save_id)
+        )
+        dialog = SettingsDialog(config=load_config(), db_path=db_path, parent=self,
+                                can_browse_memory=can_browse_memory)
         # "Extract memory now" (Memory tab) acts on the live tabletop session.
         dialog.extract_now_requested.connect(self._tabletop_view.extract_facts_now)
+        # "Browse memory" opens the read-only browser on the live session (it has
+        # the save id / current turn the settings dialog does not).
+        dialog.view_memory_requested.connect(self._tabletop_view.open_memory_browser)
         if dialog.exec() == QDialog.Accepted:
             # The language may have changed: drop the cached current language so
             # tr() picks up the new one (App-M4).

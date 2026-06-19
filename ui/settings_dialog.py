@@ -109,16 +109,26 @@ class SettingsDialog(QDialog):
     Signals:
         extract_now_requested(): The user clicked "Extract memory now" on the
             Memory tab; the owner wires this to the live session's extractor.
+        view_memory_requested(): The user clicked "Browse memory"; the owner opens
+            the read-only memory browser on the live session (it has the save id /
+            current turn the dialog does not).
     """
 
     extract_now_requested = Signal()
+    view_memory_requested = Signal()
 
-    def __init__(self, config: AppConfig, db_path: str | None = None, parent=None) -> None:
+    def __init__(self, config: AppConfig, db_path: str | None = None, parent=None,
+                 can_browse_memory: bool = False) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("settings_title"))
         self.setMinimumWidth(460)
         self._config = config
         self._db_path = db_path
+        # Memory is per *save*, not per universe: browsing only makes sense for a
+        # live play session (the tabletop). The settings dialog knows db_path (a
+        # universe) but not the save, so the owner tells us whether a session is
+        # active. Off in the Hub / Creator Studio (no save selected).
+        self._can_browse_memory = can_browse_memory
         self._test_worker: ConnectionTestWorker | None = None
         self._db_worker: DbWorker | None = None
         self._universe_meta: dict = {}
@@ -360,6 +370,8 @@ class SettingsDialog(QDialog):
 
         self._memory_extract_btn = doc(QPushButton(tr("extract_now")), "settings.extract_now")
 
+        self._memory_browse_btn = doc(QPushButton(tr("memory_browser_btn")), "settings.memory_browser")
+
         self._memory_mode_label = QLabel(tr("memory_mode_label"))
         self._memory_interval_label = QLabel(tr("memory_fact_interval_label"))
         self._memory_model_label = QLabel(tr("memory_fact_model_label"))
@@ -371,12 +383,14 @@ class SettingsDialog(QDialog):
         memory_form.addRow("", self._memory_beliefs_cb)
         memory_form.addRow("", self._memory_prompt_cache_cb)
         memory_form.addRow("", self._memory_extract_btn)
+        memory_form.addRow("", self._memory_browse_btn)
 
         self._tabs.addTab(self._memory_widget, tr("tab_memory"))
         doc_tab(self._tabs, self._tabs.indexOf(self._memory_widget), "settings.tab_memory")
 
         self._memory_mode_combo.currentIndexChanged.connect(self._on_memory_mode_changed)
         self._memory_extract_btn.clicked.connect(self._on_extract_now)
+        self._memory_browse_btn.clicked.connect(self._on_view_memory)
 
         layout.addWidget(self._tabs)
 
@@ -512,6 +526,10 @@ class SettingsDialog(QDialog):
         self._memory_model_edit.setEnabled(living)
         self._memory_beliefs_cb.setEnabled(living)
         self._memory_extract_btn.setEnabled(living and bool(self._db_path))
+        # Browsing is read-only (works outside living mode — an old save may hold
+        # memory to inspect) but needs an *active play session*: memory belongs to
+        # a save, not a universe, so it is off in the Hub / Creator Studio.
+        self._memory_browse_btn.setEnabled(self._can_browse_memory)
 
     @Slot()
     def _on_memory_mode_changed(self) -> None:
@@ -521,6 +539,11 @@ class SettingsDialog(QDialog):
     def _on_extract_now(self) -> None:
         """Ask the owner to distil the live session's recent turns into facts."""
         self.extract_now_requested.emit()
+
+    @Slot()
+    def _on_view_memory(self) -> None:
+        """Ask the owner to open the read-only memory browser on the session."""
+        self.view_memory_requested.emit()
 
     # ------------------------------------------------------------------
     # Public API
@@ -604,6 +627,7 @@ class SettingsDialog(QDialog):
         self._memory_beliefs_cb.setText(tr("memory_beliefs_label"))
         self._memory_prompt_cache_cb.setText(tr("memory_prompt_cache_label"))
         self._memory_extract_btn.setText(tr("extract_now"))
+        self._memory_browse_btn.setText(tr("memory_browser_btn"))
 
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()

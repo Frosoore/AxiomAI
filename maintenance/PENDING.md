@@ -24,6 +24,12 @@
 | TICKET-074| **Rewind restaure les `Active_Modifiers`** (buffs/débuffs) | ✅ implémenté (⚠ non commité, 2026-06-19, Option A snapshot par tour) — `maintenance/hindsight-followups-073-076/` |
 | TICKET-075| **Rewind « dé-tire » les `Fired_Scheduled_Events`** | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/hindsight-followups-073-076/` |
 | TICKET-076| **Résidu legacy `config.chronicler_interval` retiré** | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/hindsight-followups-073-076/` |
+| TICKET-077| **Consolidation : prompt non borné** (toutes les croyances envoyées au LLM à chaque passe) | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
+| TICKET-078| **BM25 reconstruit depuis tout le corpus à chaque `query()`** (O(N)/requête, plusieurs/tour) | ✅ corrigé (cache d'index, ⚠ non commité, 2026-06-19) — QA Hindsight |
+| TICKET-079| **Lectures N+1 plein-table** dans `_fetch_relevant_facts/_beliefs` + `limit` Python au lieu de SQL | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
+| TICKET-080| **Couplage fragile `zip(facts, new_ids)`** dans `fact_worker` (repose sur insert_facts ne sautant jamais) | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
+| TICKET-081| **Feature : `Trend` déterministe sur les croyances** (moteur + injection prompt + **vue GUI** « Explorer la mémoire ») — idée Hindsight | ✅ implémenté, GUI+doc inclus (⚠ non commité, 2026-06-19) — `maintenance/qa-hindsight-2026-06-19/` |
+| TICKET-082| **Features Hindsight non portées** : modèles mentaux (§7.8), directives/persona (§7.9), extraction temporelle (§7.5) | ouvert — reportées, gros périmètre |
 
 Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -383,3 +389,109 @@ clairement comme purement historique) après un grep confirmant qu'aucun chemin 
 lit plus. Attention à la migration des settings existants (ne pas casser le chargement).
 
 **Priorité :** basse — nettoyage/clarté, pas un bug fonctionnel.
+
+---
+
+## TICKET-077 — Consolidation des croyances : prompt LLM non borné
+
+**Découvert le 2026-06-19** (QA du chantier Hindsight).
+
+`workers/fact_worker.py::_run_consolidation` charge **toutes** les croyances de la save
+(`get_observations(..., max_turn_id=turn_id)` sans `limit`) et `axiom/consolidate.py::_build_messages`
+les liste **toutes** (`_obs_line` par croyance). Sur une longue campagne le prompt de consolidation
+enfle en O(total croyances) à **chaque passe** → coût LLM croissant **et** qualité dégradée (le modèle
+est noyé sous des croyances hors-sujet). Hindsight scope la consolidation par sujet/tags.
+
+**Correctif appliqué.** Scoper `existing` aux croyances pertinentes pour le batch : sujets cités par
+les nouveaux faits (entities/who/subject) + complément des plus récemment mises à jour, le tout plafonné
+(`consolidate(..., max_existing=N)`). Le filtre se fait côté faits (déjà en mémoire), pas de scan SQL
+supplémentaire.
+
+**Priorité :** haute — c'est le poste de coût le plus lourd du mode « living » en usage réel.
+
+---
+
+## TICKET-078 — BM25 reconstruit depuis tout le corpus à chaque requête
+
+**Découvert le 2026-06-19** (QA Hindsight).
+
+`axiom/memory.py::query` (bras lexical) appelle `collection.get(tous les docs)` puis tokenise tout le
+corpus et reconstruit un `BM25Okapi` à **chaque** appel — plusieurs fois par tour. O(N) par requête où
+N = nb de chunks de la save. Hindsight s'appuie sur un index `tsvector` Postgres persistant.
+
+**Correctif appliqué.** Cache d'index BM25 par save, invalidé sur changement du nombre de chunks
+(`count()` — proxy bon marché et suffisant : nos chunks sont append-only par tour, rollback supprime →
+count change). Tokenisation + construction réutilisées tant que le corpus est stable. Dégradation
+inchangée si `rank_bm25` absent.
+
+**Priorité :** moyenne-haute — dominant en mémoire/CPU sur longues parties.
+
+---
+
+## TICKET-079 — Lectures N+1 plein-table dans le fetch faits/croyances (living)
+
+**Découvert le 2026-06-19** (QA Hindsight).
+
+`arbitrator._fetch_relevant_facts/_fetch_relevant_beliefs` appellent `get_facts`/`get_observations`
+**une fois par perso en scène**, et chaque appel fait `SELECT * FROM …` **sans `LIMIT` SQL** (le `limit`
+est appliqué en Python *après* avoir tout chargé/désérialisé). M persos ⇒ M+1 scans complets par tour.
+
+**Correctif appliqué.** (1) Pousser `LIMIT` en SQL quand il n'y a pas de filtre entité/sujet. (2) Dans
+l'arbitrator, charger les faits/croyances **une seule fois** (borné `max_turn_id`) puis prioriser
+on-scene vs récents en mémoire, au lieu d'une requête par nom.
+
+**Priorité :** moyenne.
+
+---
+
+## TICKET-080 — Couplage fragile `zip(facts, new_ids)` dans fact_worker
+
+**Découvert le 2026-06-19** (QA Hindsight).
+
+`fact_worker._run_consolidation` aligne `facts` et `new_ids` par `zip`, en s'appuyant sur le fait que
+`insert_facts` ne saute **jamais** une ligne (vrai aujourd'hui car `extract_facts` a déjà retiré les
+statements vides). Si `insert_facts` venait à filtrer (déjà le cas pour un statement vide), les ids se
+désaligneraient → croyances reliées aux mauvais faits.
+
+**Correctif appliqué.** `insert_facts` renseigne `fact.fact_id`/`fact.turn_id` sur les objets `Fact`
+qu'il insère réellement et renvoie la liste alignée ; le worker n'a plus à reconstruire l'alignement.
+
+**Priorité :** basse — robustesse (pas de bug observable aujourd'hui).
+
+---
+
+## TICKET-081 — Feature : `Trend` déterministe sur les croyances ✅
+
+**Découvert le 2026-06-19** (mining Hindsight `reflect/observations.py`), **implémenté le 2026-06-19**
+(⚠ non commité, `maintenance/qa-hindsight-2026-06-19/`).
+
+Hindsight calcule pour chaque observation un **trend** (`STABLE`/`STRENGTHENING`/`WEAKENING`/`NEW`/
+`STALE`) **déterministiquement** depuis la distribution temporelle de ses preuves. Notre modèle stocke
+déjà `sources=[{fact_id, turn_id}]` → calculé **sans LLM, zéro coût**, sur l'axe `turn_id` (correct au
+rewind).
+
+**Livré.** `axiom/observations.py::compute_trend(source_turns, now_turn)` + constantes `TREND_*` +
+`Observation.trend(now_turn)` (fenêtres 15/45 tours, ratio de densité récent/ancien à la Hindsight).
+L'arbitrator (`_fetch_relevant_beliefs`) annote les croyances **à signal directionnel** seulement
+(`strengthening`/`weakening`/`stale` → « … (stale) ») ; `new`/`stable` restent nus pour garder le prompt
+léger. Aucun changement de schéma (calcul à la volée). +7 tests.
+
+**Vue GUI livrée (2026-06-19)** : `ui/memory_browser.py::MemoryBrowserDialog` (lecture seule, onglets
+Croyances [avec tendance colorée] + Faits, bornés au tour courant), bouton « Explorer la mémoire… » dans
+l'onglet Mémoire des réglages (signal `view_memory_requested` → `tabletop_view.open_memory_browser`),
+i18n 24 clés ×10, tests `tests/test_memory_browser.py`. **Doc Sphinx** EN+FR mise à jour (section *Belief
+trends* dans `docs/guides/memory.md` + `.po` FR), hors notes d'API (auto). **Plus rien d'ouvert sur 081.**
+
+---
+
+## TICKET-082 — Features Hindsight délibérément non portées
+
+**Recensé le 2026-06-19.** Reportées (gros périmètre, pas demandées) :
+- **Modèles mentaux (§7.8)** + **directives/persona (§7.9)** — couche `reflect/` agentique (résumés
+  curés de plus haut niveau au-dessus des croyances, boucle d'outils).
+- **Extraction temporelle (§7.5)** — `search/temporal_extraction.py`.
+- **`recall_boost` niveaux par bras / weighted-RRF** — tuning de déploiement multi-bras ; on a porté la
+  version simplifiée (boost additif de focus). Probablement superflu à notre échelle.
+- **`tags` filtering / scopes** — rejoint TICKET-077 (scoper la consolidation).
+
+**Priorité :** basse — backlog d'idées.

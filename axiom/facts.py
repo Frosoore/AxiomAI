@@ -77,6 +77,10 @@ def insert_facts(db_path: str, save_id: str, turn_id: int, facts: list[Fact]) ->
     Empty statements are skipped (an extractor that found nothing is normal and
     must not write blank rows). Idempotency is the caller's concern: re-extracting
     a turn should first ``rollback_facts`` to that turn.
+
+    Side effect: each ``Fact`` that is actually inserted has its ``fact_id`` and
+    ``turn_id`` set in place, so the caller can use the objects directly without
+    re-aligning a separate id list (skipped/blank facts keep ``fact_id=None``).
     """
     if not facts:
         return []
@@ -107,7 +111,9 @@ def insert_facts(db_path: str, save_id: str, turn_id: int, facts: list[Fact]) ->
                     statement,
                 ),
             )
-            new_ids.append(int(cur.lastrowid))
+            f.fact_id = int(cur.lastrowid)
+            f.turn_id = turn_id
+            new_ids.append(f.fact_id)
         conn.commit()
     return new_ids
 
@@ -135,6 +141,12 @@ def get_facts(
         sql += " AND turn_id <= ?"
         params.append(max_turn_id)
     sql += " ORDER BY turn_id DESC, fact_id DESC"
+    # Push the cap into SQL when there is no post-filter, so we don't materialise
+    # the whole table just to slice it. With an entity filter the cap must stay in
+    # Python (rows are dropped *after* the JSON entities match).
+    if limit is not None and entity is None:
+        sql += " LIMIT ?"
+        params.append(int(limit))
 
     with get_connection(db_path) as conn:
         ensure_facts_table(conn)
@@ -144,8 +156,8 @@ def get_facts(
     if entity is not None:
         needle = entity.strip().lower()
         facts = [f for f in facts if any(e.lower() == needle for e in f.entities)]
-    if limit is not None:
-        facts = facts[:limit]
+        if limit is not None:
+            facts = facts[:limit]
     return facts
 
 

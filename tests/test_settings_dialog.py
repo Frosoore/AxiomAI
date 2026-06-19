@@ -198,6 +198,32 @@ def test_settings_dialog_extract_now_emits(qtbot, tmp_path) -> None:
     assert fired == [True]
 
 
+def test_settings_dialog_browse_memory_gated_on_active_session(qtbot, tmp_path) -> None:
+    """Browse memory is enabled only when an actual play session is active.
+
+    Memory is per-save, so a universe db_path alone (Hub / Creator Studio) must
+    NOT enable it — otherwise it would open a stale, unrelated prior game.
+    """
+    from axiom.schema import create_universe_db
+    db_path = str(tmp_path / "universe.db")
+    create_universe_db(db_path)
+
+    # A universe is loaded (db_path) but no active session → still disabled.
+    dialog = SettingsDialog(AppConfig(memory_mode="living"), db_path=db_path)
+    qtbot.addWidget(dialog)
+    assert not dialog._memory_browse_btn.isEnabled()
+
+    # An active session → enabled, and emits on click.
+    dialog2 = SettingsDialog(AppConfig(memory_mode="lite"), db_path=db_path,
+                             can_browse_memory=True)
+    qtbot.addWidget(dialog2)
+    assert dialog2._memory_browse_btn.isEnabled()  # read-only, even in lite mode
+    fired: list[bool] = []
+    dialog2.view_memory_requested.connect(lambda: fired.append(True))
+    dialog2._memory_browse_btn.click()
+    assert fired == [True]
+
+
 def test_settings_tab_help_is_tab_aware(qtbot) -> None:
     """The 'Information' help composes the active tab's rich intro + its elements
     + the always-visible General section."""

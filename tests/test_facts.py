@@ -69,6 +69,16 @@ class TestInsertAndGet:
         assert facts.insert_facts(db_path, "s1", 1, []) == []
         assert facts.count_facts(db_path, "s1") == 0
 
+    def test_insert_stamps_id_and_turn_in_place(self, db_path: str) -> None:
+        # TICKET-080: the inserted Fact objects carry their new id + turn, so the
+        # caller never has to re-align a separate id list. Skipped (blank) facts
+        # keep fact_id=None.
+        blank = Fact(statement="   ")
+        real = Fact(statement="real fact")
+        ids = facts.insert_facts(db_path, "s1", 7, [blank, real])
+        assert blank.fact_id is None
+        assert real.fact_id == ids[0] and real.turn_id == 7
+
     def test_max_turn_id_filter(self, db_path: str) -> None:
         facts.insert_facts(db_path, "s1", 2, [Fact(statement="early")])
         facts.insert_facts(db_path, "s1", 8, [Fact(statement="late")])

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from axiom.backends.base import LLMResponse
-from axiom.consolidate import ConsolidationAction, consolidate
+from axiom.consolidate import ConsolidationAction, _scope_existing, consolidate
 from axiom.facts import Fact
 from axiom import observations
 from axiom.observations import Observation, apply_consolidation
@@ -81,6 +81,53 @@ def test_drops_hallucinated_fact_ids_and_unknown_beliefs():
 def test_graceful_on_backend_failure():
     llm = _FakeLLM(raise_exc=RuntimeError("down"))
     assert consolidate(llm, [_fact(1, 1, "f")], []) == []
+
+
+# ----------------------------------------------------------- _scope_existing (077)
+
+def _obs(oid: int, subject: str) -> Observation:
+    return Observation(statement=f"belief {oid}", subject=subject, observation_id=oid)
+
+
+def test_scope_existing_noop_within_budget():
+    existing = [_obs(i, "X") for i in range(3)]
+    assert _scope_existing([], existing, max_existing=24) is existing
+
+
+def test_scope_existing_disabled_when_zero():
+    existing = [_obs(i, "X") for i in range(50)]
+    assert _scope_existing([], existing, max_existing=0) is existing
+
+
+def test_scope_existing_prefers_batch_subjects_then_recent():
+    # 30 beliefs (recent-first order), only #25 is about "Mira" (the batch subject).
+    existing = [_obs(i, "Mira" if i == 25 else "Other") for i in range(30)]
+    facts = [Fact(statement="Mira returns", who="Mira", entities=["Mira"], fact_id=1, turn_id=2)]
+    scoped = _scope_existing(facts, existing, max_existing=5)
+    assert len(scoped) == 5
+    assert scoped[0].observation_id == 25  # the Mira belief is rescued first
+    # remainder filled with the most recent (input order), no duplicate of #25.
+    assert [o.observation_id for o in scoped[1:]] == [0, 1, 2, 3]
+
+
+def test_consolidate_only_shows_scoped_beliefs(db_path: str):
+    captured = {}
+
+    class _CapturingLLM:
+        calls = 0
+
+        def complete(self, messages, **kwargs):
+            type(self).calls += 1
+            captured["user"] = messages[-1]["content"]
+            return LLMResponse(narrative_text="", tool_call={"actions": []}, finish_reason="stop")
+
+    existing = [_obs(i, "Other") for i in range(30)] + [_obs(99, "Mira")]
+    facts = [_fact(1, 2, "Mira returns")]
+    facts[0].entities = ["Mira"]
+    consolidate(_CapturingLLM(), facts, existing, max_existing=5)
+    prompt = captured["user"]
+    assert "[belief 99]" in prompt          # the on-subject belief is shown
+    assert prompt.count("[belief ") == 5    # bounded to max_existing
 
 
 # ---------------------------------------------------------- apply_consolidation()

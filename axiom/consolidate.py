@@ -32,6 +32,51 @@ _DEFAULT_MISSION = (
     "changes of state, relationships, grudges, debts, promises and reputations."
 )
 
+# Upper bound on how many existing beliefs are shown to the consolidator in one
+# pass. Beliefs accumulate over a campaign; sending *all* of them every pass
+# bloats the prompt (cost) and drowns the model in off-topic beliefs. We scope to
+# those about the characters in the batch, then top up with the most recent.
+_MAX_EXISTING_DEFAULT = 24
+
+
+def _scope_existing(
+    new_facts: list[Fact], existing: list[Observation], max_existing: int
+) -> list[Observation]:
+    """Pick the beliefs worth showing the consolidator for this batch.
+
+    Keeps beliefs whose ``subject`` is a character cited by the new facts (the
+    ones most likely to need updating), then fills the remaining budget with the
+    most recently updated beliefs. ``existing`` is assumed most-recent-first
+    (``get_observations`` order). No-op when already within budget.
+    """
+    if max_existing <= 0 or len(existing) <= max_existing:
+        return existing
+    subjects: set[str] = set()
+    for f in new_facts:
+        for e in (f.entities or []):
+            if e:
+                subjects.add(e.strip().lower())
+        if f.who:
+            subjects.add(f.who.strip().lower())
+
+    chosen: list[Observation] = []
+    chosen_ids: set = set()
+    # Pass 1: beliefs about a character in play.
+    for o in existing:
+        if len(chosen) >= max_existing:
+            break
+        if o.subject and o.subject.strip().lower() in subjects:
+            chosen.append(o)
+            chosen_ids.add(id(o))
+    # Pass 2: top up with the most recent (input order) until the budget is full.
+    for o in existing:
+        if len(chosen) >= max_existing:
+            break
+        if id(o) not in chosen_ids:
+            chosen.append(o)
+            chosen_ids.add(id(o))
+    return chosen
+
 _SYSTEM_PROMPT = """\
 You maintain a character/world memory of durable BELIEFS for a narrative game. \
 You are given the beliefs currently held and a batch of new facts, and you decide \
@@ -206,6 +251,7 @@ def consolidate(
     *,
     mission: str | None = None,
     missions: dict[str, str] | None = None,
+    max_existing: int = _MAX_EXISTING_DEFAULT,
 ) -> list[ConsolidationAction]:
     """Ask ``llm`` how the beliefs should change given ``new_facts``.
 
@@ -213,6 +259,8 @@ def consolidate(
         mission: The universe-wide default mission (what this world remembers).
         missions: Per-character memory styles ``{entity_name: mission}`` (B-3) —
             only those whose character appears in this batch are shown.
+        max_existing: Cap on existing beliefs shown to the LLM (TICKET-077);
+            scoped to the batch's characters + most recent. ``<= 0`` disables.
 
     Returns ``[]`` for empty input or on any backend/parse failure (never raises),
     so a living-mode background job can call it fire-and-forget.
@@ -220,7 +268,8 @@ def consolidate(
     facts = [f for f in new_facts if f.fact_id is not None and (f.statement or "").strip()]
     if not facts:
         return []
-    messages = _build_messages(facts, existing, mission or _DEFAULT_MISSION, missions)
+    scoped = _scope_existing(facts, existing, max_existing)
+    messages = _build_messages(facts, scoped, mission or _DEFAULT_MISSION, missions)
     try:
         resp = llm.complete(messages, response_format="json", temperature=0.2)
     except Exception:

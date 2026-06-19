@@ -89,25 +89,26 @@ class FactExtractWorker(QThread):
             new_ids = insert_facts(self._db_path, self._save_id, self._turn_id, facts)
             self.facts_extracted.emit(len(new_ids))
             if self._consolidate_beliefs and new_ids:
-                self._run_consolidation(facts, new_ids)
+                self._run_consolidation(facts)
         except Exception as exc:  # storage failure — keep the game running
             self.error_occurred.emit(f"Fact extraction failed: {exc}")
 
-    def _run_consolidation(self, facts, new_ids) -> None:
+    def _run_consolidation(self, facts) -> None:
         """Distil the just-stored facts into evolving beliefs (Phase 3).
 
         Best-effort and isolated: a consolidation failure must not undo the
         facts already stored nor break the turn.
         """
         try:
-            # insert_facts skips blank statements; extract_facts already dropped
-            # those, so ids line up with the facts in order. Tag each fact with
-            # its new id + this turn so the consolidator can cite real sources.
-            stored = []
-            for fact, fid in zip(facts, new_ids):
-                fact.fact_id = fid
-                fact.turn_id = self._turn_id
-                stored.append(fact)
+            # insert_facts stamped fact_id/turn_id in place on every fact it
+            # actually wrote (skipped/blank ones keep fact_id=None), so the
+            # consolidator only ever cites real, stored sources.
+            stored = [f for f in facts if f.fact_id is not None]
+            if not stored:
+                return
+            # get_observations returns most-recently-updated first; consolidate()
+            # scopes this to the beliefs relevant to the batch + recent, capped,
+            # so the LLM prompt stays bounded on long campaigns (TICKET-077).
             existing = get_observations(
                 self._db_path, self._save_id, max_turn_id=self._turn_id
             )

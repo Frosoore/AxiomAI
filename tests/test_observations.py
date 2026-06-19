@@ -174,6 +174,15 @@ class TestArbitratorBeliefInjection:
         assert self._arb(db_path)._fetch_relevant_beliefs(
             "s1", max_turn_id=10, on_scene=["Merchant"], limit=5) == []
 
+    def test_annotates_directional_trend(self, db_path: str) -> None:
+        # A belief whose only evidence is far in the past → stale at turn 100.
+        observations.insert_observation(db_path, "s1", Observation(
+            statement="An old debt to the smith", subject="Smith",
+            sources=[_src(1, 5)], created_turn_id=5, updated_turn_id=5))
+        lines = self._arb(db_path)._fetch_relevant_beliefs(
+            "s1", max_turn_id=100, on_scene=["Smith"], limit=5)
+        assert lines == ["An old debt to the smith (stale)"]
+
 
 class TestConfigGate:
     def test_beliefs_require_living_and_opt_in(self) -> None:
@@ -185,3 +194,41 @@ class TestConfigGate:
         assert memory_beliefs_active(on) is True
         # Beliefs never fire in lite even if the flag is set.
         assert memory_beliefs_active(AppConfig(memory_beliefs_enabled=True)) is False
+
+
+# ----------------------------------------------------------- compute_trend (081)
+
+class TestComputeTrend:
+    def test_no_sources_or_no_now_is_stable(self) -> None:
+        from axiom.observations import compute_trend, TREND_STABLE
+        assert compute_trend([], now_turn=100) == TREND_STABLE
+        assert compute_trend([5, 6], now_turn=None) == TREND_STABLE
+
+    def test_all_recent_is_new(self) -> None:
+        from axiom.observations import compute_trend, TREND_NEW
+        # now=100, recent window = last 15 turns → all sources in [86, 100].
+        assert compute_trend([95, 98, 100], now_turn=100) == TREND_NEW
+
+    def test_no_recent_is_stale(self) -> None:
+        from axiom.observations import compute_trend, TREND_STALE
+        # All sources older than the recent cutoff (100 - 15 = 85).
+        assert compute_trend([10, 30, 50], now_turn=100) == TREND_STALE
+
+    def test_denser_recent_is_strengthening(self) -> None:
+        from axiom.observations import compute_trend, TREND_STRENGTHENING
+        # now=100: recent=[90..100] dense (4), older band sparse (1 at turn 60).
+        trend = compute_trend([60, 90, 95, 98, 100], now_turn=100)
+        assert trend == TREND_STRENGTHENING
+
+    def test_sparser_recent_is_weakening(self) -> None:
+        from axiom.observations import compute_trend, TREND_WEAKENING
+        # Many old sources, a single faint recent one → fading.
+        trend = compute_trend([50, 52, 54, 56, 58, 60, 95], now_turn=100)
+        assert trend == TREND_WEAKENING
+
+    def test_observation_method_uses_sources(self) -> None:
+        from axiom.observations import Observation, TREND_STALE
+        o = Observation(statement="An old grudge",
+                        sources=[{"fact_id": 1, "turn_id": 5}])
+        assert o.trend(now_turn=100) == TREND_STALE
+        assert o.trend(now_turn=8) != TREND_STALE  # fresh when "now" is near

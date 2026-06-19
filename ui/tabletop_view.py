@@ -996,6 +996,16 @@ class TabletopView(HardcoreMixin, QWidget):
         if interval > 0 and self._fact_turn_counter >= interval:
             self._run_fact_extraction(cfg)
 
+    def open_memory_browser(self) -> None:
+        """Open the read-only memory browser on the current session.
+
+        Shows the distilled beliefs (with trend) and facts for this save, bounded
+        by the current turn. Read-only, so it works even outside living mode (an
+        old save may already hold memory to inspect).
+        """
+        from ui.memory_browser import MemoryBrowserDialog
+        MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
+
     def extract_facts_now(self) -> None:
         """Manual trigger (the settings 'extract now' button).
 

@@ -43,8 +43,49 @@ def tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
 
 
+def build_bm25(corpus_texts: list[str]):
+    """Build a BM25 index over ``corpus_texts`` (or ``None`` if unavailable).
+
+    Split out from :func:`rank_by_bm25` so callers can *cache* the index when the
+    corpus is unchanged (building it tokenises the whole corpus and computes IDF
+    — the expensive part), then score many queries against it cheaply.
+    """
+    if BM25Okapi is None or not corpus_texts:
+        return None
+    tokenized_corpus = [tokenize(text) for text in corpus_texts]
+    # BM25Okapi requires every document to have at least one token; substitute a
+    # neutral placeholder for empty docs so indices stay aligned with corpus_ids.
+    tokenized_corpus = [toks if toks else [""] for toks in tokenized_corpus]
+    return BM25Okapi(tokenized_corpus)
+
+
+def rank_with_bm25(bm25, query_text: str, corpus_ids: list[str]) -> list[str]:
+    """Rank ``corpus_ids`` against a pre-built ``bm25`` index, best first.
+
+    ``corpus_ids`` must be aligned 1:1 with the texts the index was built from.
+    Returns an empty list when the index is ``None`` or the query has no usable
+    tokens; drops zero-score docs (no lexical signal). Ties keep input order.
+    """
+    if bm25 is None or not corpus_ids:
+        return []
+    query_tokens = tokenize(query_text)
+    if not query_tokens:
+        return []
+    scores = bm25.get_scores(query_tokens)
+    ranked = sorted(
+        zip(corpus_ids, scores),
+        key=lambda pair: pair[1],
+        reverse=True,
+    )
+    return [doc_id for doc_id, score in ranked if score > 0.0]
+
+
 def rank_by_bm25(query_text: str, corpus_ids: list[str], corpus_texts: list[str]) -> list[str]:
     """Rank ``corpus_ids`` by BM25 relevance to ``query_text``, best first.
+
+    Convenience wrapper that builds a one-shot index then scores. Hot paths that
+    reuse a stable corpus should cache :func:`build_bm25` and call
+    :func:`rank_with_bm25` instead.
 
     Args:
         query_text: The raw query string.
@@ -57,24 +98,6 @@ def rank_by_bm25(query_text: str, corpus_ids: list[str], corpus_texts: list[str]
         an empty list when BM25 is unavailable or the query has no usable tokens.
         Ties keep the input order (deterministic).
     """
-    if BM25Okapi is None or not corpus_ids:
+    if not corpus_ids:
         return []
-
-    query_tokens = tokenize(query_text)
-    if not query_tokens:
-        return []
-
-    tokenized_corpus = [tokenize(text) for text in corpus_texts]
-    # BM25Okapi requires every document to have at least one token; substitute a
-    # neutral placeholder for empty docs so indices stay aligned with corpus_ids.
-    tokenized_corpus = [toks if toks else [""] for toks in tokenized_corpus]
-
-    bm25 = BM25Okapi(tokenized_corpus)
-    scores = bm25.get_scores(query_tokens)
-
-    ranked = sorted(
-        zip(corpus_ids, scores),
-        key=lambda pair: pair[1],
-        reverse=True,
-    )
-    return [doc_id for doc_id, score in ranked if score > 0.0]
+    return rank_with_bm25(build_bm25(corpus_texts), query_text, corpus_ids)

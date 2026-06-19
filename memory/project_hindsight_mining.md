@@ -79,5 +79,25 @@ le lore. Suite **908 verte**, doc EN+FR (sphinx -W EXIT 0). **→ Tout le chanti
 faits + croyances + 073/074/075/076 + 072) est désormais clos.** Restent NON demandés : modèles mentaux
 (§7.8), directives/persona (§7.9), extraction temporelle (§7.5).
 
+**QA du chantier (2026-06-19, ⚠ NON commité, `maintenance/qa-hindsight-2026-06-19/`)** : gros contrôle
+qualité demandé. Verdict = code de très haute qualité, **aucun bug de correction**. 6 findings de
+coût/scaling (mode « living ») + robustesse → PENDING TICKET-077→082. **4 corrigés** : 077 (prompt de
+consolidation borné : `consolidate(max_existing=24)` scope aux sujets du batch + récentes), 078 (cache
+d'index BM25 dans `memory.query` par empreinte d'ids du corpus → le lore figé ne reconstruit plus chaque
+tour ; `lexical.build_bm25`/`rank_with_bm25` séparés), 079 (`get_facts`/`get_observations` `LIMIT` SQL
+sans filtre ; arbitrator `_fetch_relevant_facts/_beliefs` = 1 lecture + priorisation mémoire, M+1→1), 080
+(`insert_facts` stampe `fact_id`/`turn_id` en place, fin du couplage `zip` dans `fact_worker`). Suite
+périmètre vert + tests neufs (scope_existing, stamping, cache BM25). **TICKET-081 (feature `Trend`)
+IMPLÉMENTÉ ensuite** : `axiom/observations.py::compute_trend(source_turns, now_turn)` + `TREND_*` +
+`Observation.trend()` (algo Hindsight `reflect/observations.py` transposé jours→`turn_id`, fenêtres
+15/45, zéro LLM, calcul à la volée, pas de schéma) ; arbitrator annote les croyances à signal directionnel
+(`strengthening`/`weakening`/`stale` → « … (stale) »), `new`/`stable` nues. **Vue GUI livrée** :
+`ui/memory_browser.py::MemoryBrowserDialog` (lecture seule, onglets Croyances [tendance colorée] + Faits,
+bornés au tour courant) + bouton « Explorer la mémoire… » dans les réglages (signal `view_memory_requested`
+→ `tabletop_view.open_memory_browser`), i18n 24 clés ×10, tests `test_memory_browser.py`. **Doc Sphinx
+moteur** EN+FR à jour (section *Belief trends* + cache BM25 + scoping consolidation dans
+`docs/guides/memory.md` ; FR via gettext `.po`/`.mo`), notes d'API non touchées (auto). Suites vertes.
+**Ouvert** : 082 (modèles mentaux §7.8 / directives §7.9 / extraction temporelle §7.5).
+
 Respecter [[user-profile-non-coder]] (expliquer les dépendances/archi avant de trancher) et
 [[feedback-execution-style]] (no superpowers, no commit sans feu vert).

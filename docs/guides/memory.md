@@ -49,6 +49,9 @@ chunk from a later turn.
    (meaning-based recall).
 2. **Lexical arm** — BM25 over the save's chunks ([`rank_bm25`](https://pypi.org/project/rank-bm25/)),
    which rescues an *exact* token the embeddings miss (a proper noun, an item).
+   The BM25 index is cached and only rebuilt when the corpus actually changes
+   (keyed by the chunk id-set), so a stable subset like the lore is not
+   re-indexed every turn.
 3. **Rank fusion** — the two ranked lists are merged with Reciprocal Rank Fusion
    ({py:func}`axiom.retrieval.fusion.reciprocal_rank_fusion`); the normalised RRF
    score is the base relevance.
@@ -142,7 +145,10 @@ the LLM how the beliefs should change and returns CREATE / UPDATE / DELETE
 actions; {py:func}`axiom.observations.apply_consolidation` applies them
 deterministically (a new belief, a reinforced one with merged sources, or a
 contradicted one removed). Like extraction, consolidation is background and
-fire-and-forget.
+fire-and-forget. To keep the prompt (and its cost) bounded as beliefs accumulate
+over a long campaign, the consolidator is only shown the beliefs relevant to the
+batch — those about the characters the new facts mention, topped up with the most
+recent — capped by `consolidate`'s `max_existing` argument.
 
 At prompt-building time the Arbitrator surfaces memory as a **hierarchy**, most
 synthetic first: relevant *beliefs*, then *facts*, then raw narrative chunks — so
@@ -157,6 +163,29 @@ Beliefs derive from several turns, so they cannot be dropped by a single
 turn *N* deletes every belief *created* after *N* and, for the survivors, keeps
 only the sources at turns `<= N`, recomputing `proof_count`. Beliefs thus roll
 back atomically with the facts and events they were built from.
+
+### Belief trends
+
+A belief also has a *direction*: is it gaining ground, fading, or going stale?
+That signal can be read for free from the turn distribution of its `sources`, with
+no extra LLM call — an idea adapted from Hindsight, transposed from wall-clock
+time to Axiom's native `turn_id` axis (so it stays correct across rewinds).
+
+{py:func}`axiom.observations.compute_trend` (and the convenience
+{py:meth}`axiom.observations.Observation.trend`) classifies a belief at the
+current turn as one of:
+
+- `new` — all its evidence is recent;
+- `strengthening` — denser recent evidence than older;
+- `weakening` — sparser recent evidence than older;
+- `stale` — no evidence in the recent window (it may be outdated);
+- `stable` — steady, or no signal (no sources / unknown current turn).
+
+At prompt-building time the Arbitrator annotates only the *directional* trends
+(`strengthening` / `weakening` / `stale`) onto the belief line — e.g. *"The smith
+resents the player (strengthening)"* — leaving the quiet `new` / `stable` cases
+unmarked, so the narrator can tell an intensifying grudge from a fading one
+without bloating the prompt.
 
 ### Per-character memory styles
 

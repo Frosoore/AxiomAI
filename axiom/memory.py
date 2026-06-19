@@ -19,6 +19,7 @@ Metadata fields : save_id (str), turn_id (int), chunk_type (str)
 ID              : UUID string, generated per chunk
 """
 
+import json
 import uuid
 from typing import Any
 
@@ -176,6 +177,19 @@ class VectorMemory:
         # Optional cross-encoder reranker (CrossEncoderReranker). OFF unless the
         # caller injects one; it self-disables to a no-op if its model can't load.
         self._reranker = reranker
+        # BM25 index cache, keyed by the query's where-filter signature. Building a
+        # BM25 index tokenises the whole corpus + computes IDF (the expensive part
+        # of the lexical arm); rebuilding it identically every turn is wasteful for
+        # a corpus that did not change (e.g. the lore subset, embedded once per
+        # session). Value: (fingerprint, bm25, built_ids). The fingerprint is the
+        # corpus's id-set — sound because every content change mints a fresh chunk
+        # uuid (embed adds; update_turn_narrative deletes-then-adds), so an
+        # unchanged id-set means unchanged content. ``built_ids`` is the id order
+        # the index was built against (Chroma's get() does not promise a stable
+        # order across calls, and BM25 scoring aligns by position). The growing
+        # narrative corpus changes its id-set each turn and correctly rebuilds.
+        # (TICKET-078)
+        self._bm25_cache: dict[str, tuple[int, Any, list[str]]] = {}
 
     def _ensure_connected(self) -> None:
         """Lazy-init ChromaDB only when first used.
@@ -327,7 +341,23 @@ class VectorMemory:
             corpus_ids = corpus.get("ids", []) or []
             corpus_docs = corpus.get("documents", []) or []
             corpus_metas = corpus.get("metadatas", []) or []
-            lexical_ranked = lexical.rank_by_bm25(query_text, corpus_ids, corpus_docs)[:fetch_k]
+            # Reuse a cached BM25 index when the corpus (id-set) is unchanged;
+            # otherwise (re)build and cache it. Skips tokenising + IDF for stable
+            # corpora like the lore subset (TICKET-078).
+            cache_key = json.dumps(where_cond, sort_keys=True)
+            fingerprint = hash(frozenset(corpus_ids))
+            cached = self._bm25_cache.get(cache_key)
+            if cached is not None and cached[0] == fingerprint:
+                _, bm25, ranked_ids = cached
+            else:
+                bm25 = lexical.build_bm25(corpus_docs)
+                ranked_ids = corpus_ids  # the order the index was built against
+                # A handful of stable query shapes in play; rewind/replay can add
+                # transient max_turn_id variants, so cap to avoid slow growth.
+                if len(self._bm25_cache) >= 8:
+                    self._bm25_cache.clear()
+                self._bm25_cache[cache_key] = (fingerprint, bm25, ranked_ids)
+            lexical_ranked = lexical.rank_with_bm25(bm25, query_text, ranked_ids)[:fetch_k]
             # Backfill records for lexical-only hits the semantic arm never saw.
             meta_by_id = dict(zip(corpus_ids, corpus_metas))
             doc_by_id = dict(zip(corpus_ids, corpus_docs))

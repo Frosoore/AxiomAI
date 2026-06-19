@@ -30,6 +30,72 @@ from dataclasses import dataclass, field
 
 from axiom.schema import ensure_observations_table, get_connection
 
+# --- Belief trends (deterministic, no LLM) ----------------------------------
+# Idea adapted from Hindsight (MIT, reflect/observations.py::compute_trend): a
+# belief's *direction* — is it gaining ground, fading, going stale? — can be read
+# straight off the turn distribution of its supporting sources, for free. Their
+# axis is wall-clock days; ours is ``turn_id`` (the engine's native time line, so
+# it stays correct across rewinds). Surfaced in the prompt so the narrator can
+# tell an intensifying grudge from a fading one. (TICKET-081)
+TREND_STABLE = "stable"
+TREND_STRENGTHENING = "strengthening"
+TREND_WEAKENING = "weakening"
+TREND_NEW = "new"
+TREND_STALE = "stale"
+
+# Turn windows: a source within the last _TREND_RECENT_TURNS is "recent"; one
+# older than _TREND_OLD_TURNS is "old"; the rest is the middle band. The 1:3 ratio
+# mirrors Hindsight's 30/90-day split.
+_TREND_RECENT_TURNS = 15
+_TREND_OLD_TURNS = 45
+
+
+def compute_trend(
+    source_turns,
+    now_turn: int | None,
+    *,
+    recent_turns: int = _TREND_RECENT_TURNS,
+    old_turns: int = _TREND_OLD_TURNS,
+) -> str:
+    """Classify a belief's trend from the turn ids of its supporting sources.
+
+    Returns one of the ``TREND_*`` constants:
+
+    - ``NEW``           — every source falls in the recent window;
+    - ``STRENGTHENING`` — denser recent evidence than older (ratio > 1.5);
+    - ``WEAKENING``     — sparser recent evidence than older (ratio < 0.5);
+    - ``STALE``         — no source in the recent window (may be outdated);
+    - ``STABLE``        — steady, or trend unknown (no sources / no current turn).
+
+    Deterministic and side-effect free. ``now_turn`` is the current turn (the
+    rewind horizon during replay), so the trend is always read at the right "now".
+    """
+    turns = [int(t) for t in source_turns if t is not None]
+    if not turns or now_turn is None:
+        return TREND_STABLE  # no signal → neutral
+
+    recent_cutoff = now_turn - recent_turns
+    old_cutoff = now_turn - old_turns
+    recent = [t for t in turns if t > recent_cutoff]
+    if not recent:
+        return TREND_STALE
+    older = [t for t in turns if t <= recent_cutoff]  # old + middle band
+    if not older:
+        return TREND_NEW
+
+    recent_density = len(recent) / recent_turns if recent_turns > 0 else 0.0
+    older_period = old_turns - recent_turns
+    older_density = len(older) / older_period if older_period > 0 else 0.0
+    if older_density == 0.0:
+        return TREND_NEW
+
+    ratio = recent_density / older_density
+    if ratio > 1.5:
+        return TREND_STRENGTHENING
+    if ratio < 0.5:
+        return TREND_WEAKENING
+    return TREND_STABLE
+
 
 @dataclass
 class Observation:
@@ -48,6 +114,10 @@ class Observation:
     updated_turn_id: int = 0
     stale: bool = False
     observation_id: int | None = None
+
+    def trend(self, now_turn: int | None) -> str:
+        """This belief's trend at ``now_turn`` (see :func:`compute_trend`)."""
+        return compute_trend((s.get("turn_id") for s in self.sources), now_turn)
 
 
 def _loads_list(raw) -> list:
@@ -154,6 +224,11 @@ def get_observations(
         sql += " AND created_turn_id <= ?"
         params.append(max_turn_id)
     sql += " ORDER BY updated_turn_id DESC, observation_id DESC"
+    # Push the cap into SQL when there is no subject post-filter (rows are dropped
+    # in Python after the case-insensitive subject match otherwise).
+    if limit is not None and subject is None:
+        sql += " LIMIT ?"
+        params.append(int(limit))
 
     with get_connection(db_path) as conn:
         ensure_observations_table(conn)
@@ -163,8 +238,8 @@ def get_observations(
     if subject is not None:
         needle = subject.strip().lower()
         obs = [o for o in obs if o.subject.strip().lower() == needle]
-    if limit is not None:
-        obs = obs[:limit]
+        if limit is not None:
+            obs = obs[:limit]
     return obs
 
 
