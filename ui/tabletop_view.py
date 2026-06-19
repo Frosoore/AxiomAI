@@ -43,7 +43,13 @@ from axiom.db_helpers import get_max_turn_id, load_rules_for_session, load_saves
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
 from workers.vector_worker import VectorWorker, VectorInitWorker
-from axiom.config import load_config, build_llm_from_config
+from axiom.config import (
+    load_config,
+    build_llm_from_config,
+    memory_mode_is_living,
+    memory_beliefs_active,
+    memory_mental_models_active,
+)
 from axiom.time_system import TimeSystem, CalendarConfig
 from axiom.logger import logger
 from core.localization import tr, format_time
@@ -51,6 +57,7 @@ from core.localization import tr, format_time
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
     from axiom.memory import VectorMemory
+    from workers.fact_worker import FactExtractWorker
 
 
 class TabletopView(HardcoreMixin, QWidget):
@@ -106,6 +113,13 @@ class TabletopView(HardcoreMixin, QWidget):
         self._vector_worker: VectorWorker | None = None
         self._vector_init_worker: VectorInitWorker | None = None
         self._hardcore_worker: HardcoreWorker | None = None
+        # Living memory (Phase 2 item 4): background fact extraction. The pending
+        # buffer accumulates each turn's narrative so a periodic run distils the
+        # whole window since the last extraction (no skipped turns); the counter
+        # fires every memory_fact_interval turns. Reset on rewind / new session.
+        self._fact_worker: "FactExtractWorker | None" = None
+        self._fact_turn_counter: int = 0
+        self._fact_pending: list[str] = []
         # TICKET-030/042 : une seule canonisation à la fois (le « Canon auto »
         # par tour ne doit pas écraser un worker encore en vol).
         self._canon_busy: bool = False
@@ -294,6 +308,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._global_lore = ""
         self._lore_book = []
         self._first_message_shown = False
+        self._fact_pending = []
+        self._fact_turn_counter = 0
 
         # Synchronise time from DB BEFORE other async loads
         self._resume_turn_id()
@@ -673,6 +689,9 @@ class TabletopView(HardcoreMixin, QWidget):
         # tour vient enrichir la définition de l'univers, en silence.
         self._maybe_auto_canonize(narrative_text)
 
+        # Living memory: queue this turn and (every N turns) distil to facts.
+        self._accumulate_and_maybe_extract(narrative_text)
+
     @Slot(int, int)
     def _on_variant_requested(self, turn_id: int, variant_index: int) -> None:
         """Switch the active narrative variant in the DB and rebuild chat."""
@@ -882,6 +901,10 @@ class TabletopView(HardcoreMixin, QWidget):
         self._rewind_in_progress = False
         if self._arbitrator is not None:
             self._arbitrator.invalidate_stats_cache()
+        # Rewound turns must not be re-distilled (their facts were rolled back
+        # atomically by CheckpointManager.rewind).
+        self._fact_pending = []
+        self._fact_turn_counter = 0
         self._resume_turn_id()
         self._db_worker.load_session_history(self._save_id)
         self._db_worker.load_stats(self._save_id)
@@ -952,6 +975,106 @@ class TabletopView(HardcoreMixin, QWidget):
         self._canon_worker.error_occurred.connect(self._on_canon_silent_error)
         self._canon_worker.generation_cancelled.connect(self._on_canon_cancelled)
         self._canon_worker.canonize_story(narrative_text, preview=False)
+
+    # ------------------------------------------------------------------
+    # Living memory — background fact extraction (Phase 2 item 4)
+    # ------------------------------------------------------------------
+
+    def _accumulate_and_maybe_extract(self, narrative_text: str) -> None:
+        """In living mode, buffer the turn and extract facts every N turns.
+
+        Lite mode is a no-op (zero network, deterministic) — the LLM is never
+        touched. Interval 0 disables periodic extraction (manual button only).
+        """
+        if not narrative_text.strip():
+            return
+        cfg = load_config()
+        if not memory_mode_is_living(cfg):
+            return
+        self._fact_pending.append(narrative_text.strip())
+        self._fact_turn_counter += 1
+        interval = int(getattr(cfg, "memory_fact_interval", 0) or 0)
+        if interval > 0 and self._fact_turn_counter >= interval:
+            self._run_fact_extraction(cfg)
+
+    def open_memory_browser(self) -> None:
+        """Open the read-only memory browser on the current session.
+
+        Shows the distilled beliefs (with trend) and facts for this save, bounded
+        by the current turn. Read-only, so it works even outside living mode (an
+        old save may already hold memory to inspect).
+        """
+        from ui.memory_browser import MemoryBrowserDialog
+        MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
+
+    def extract_facts_now(self) -> None:
+        """Manual trigger (the settings 'extract now' button).
+
+        Distils the buffered turns immediately and resets the counter. Only acts
+        in living mode with an active session; otherwise it is a silent no-op.
+        """
+        if not self._db_path or not self._save_id:
+            return
+        cfg = load_config()
+        if not memory_mode_is_living(cfg):
+            return
+        self._run_fact_extraction(cfg)
+
+    def _run_fact_extraction(self, cfg) -> None:
+        """Start the background fact worker for the buffered narrative."""
+        if not self._fact_pending or self._llm is None:
+            # Nothing new to distil (or no backend yet): still reset the counter
+            # so the next window starts fresh.
+            self._fact_turn_counter = 0
+            return
+        if self._fact_worker is not None and self._fact_worker.isRunning():
+            # A previous distillation is still in flight — keep buffering, don't
+            # start a second one. The counter resets so we retry next interval.
+            self._fact_turn_counter = 0
+            return
+
+        # Pick the extraction backend: reuse the game LLM, or build a cheaper
+        # override if the user set one. A build failure falls back to the game
+        # LLM (extract_facts itself degrades gracefully on a dead backend).
+        override = str(getattr(cfg, "memory_fact_model", "") or "").strip()
+        llm = self._llm
+        if override:
+            try:
+                llm = build_llm_from_config(cfg, model_override=override)
+            except Exception:
+                llm = self._llm
+
+        narrative = "\n\n".join(self._fact_pending)
+        known = [e["name"] for e in self._entities if e.get("name")]
+        when_hint = self._format_time(self._current_time)
+
+        # Drain the buffer and reset the counter now: facts already in flight
+        # must not be re-extracted if more turns arrive meanwhile.
+        self._fact_pending = []
+        self._fact_turn_counter = 0
+
+        from workers.fact_worker import FactExtractWorker
+        self._fact_worker = FactExtractWorker(
+            llm,
+            self._db_path,
+            self._save_id,
+            self._turn_id,
+            narrative,
+            known_entities=known,
+            when_hint=when_hint,
+            consolidate_beliefs=memory_beliefs_active(cfg),
+            refresh_mental_models=memory_mental_models_active(cfg),
+        )
+        self._fact_worker.facts_extracted.connect(self._on_facts_extracted)
+        self._fact_worker.status_update.connect(self._main_window.on_status_update)
+        self._fact_worker.error_occurred.connect(self._main_window.on_status_update)
+        self._fact_worker.start()
+
+    @Slot(int)
+    def _on_facts_extracted(self, count: int) -> None:
+        """Report the outcome of a background extraction in the status bar."""
+        if count > 0:
+            self._main_window.on_status_update(tr("memory_extracted_fmt", count=count))
 
     @Slot(str)
     def _on_canon_silent_error(self, message: str) -> None:

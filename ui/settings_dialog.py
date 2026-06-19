@@ -12,7 +12,7 @@ No network calls on the main thread.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -41,6 +41,7 @@ from axiom.config import (
     OPENAI_COMPAT_PROVIDERS,
     build_llm_from_config,
     get_builtin_keys,
+    memory_mode_is_living,
     save_config,
     uses_builtin_keys,
     GLOBAL_DB_FILE,
@@ -104,14 +105,30 @@ class SettingsDialog(QDialog):
         config:  The current AppConfig to display.
         db_path: Optional path to the active universe database.
         parent:  Optional Qt parent widget.
+
+    Signals:
+        extract_now_requested(): The user clicked "Extract memory now" on the
+            Memory tab; the owner wires this to the live session's extractor.
+        view_memory_requested(): The user clicked "Browse memory"; the owner opens
+            the read-only memory browser on the live session (it has the save id /
+            current turn the dialog does not).
     """
 
-    def __init__(self, config: AppConfig, db_path: str | None = None, parent=None) -> None:
+    extract_now_requested = Signal()
+    view_memory_requested = Signal()
+
+    def __init__(self, config: AppConfig, db_path: str | None = None, parent=None,
+                 can_browse_memory: bool = False) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("settings_title"))
         self.setMinimumWidth(460)
         self._config = config
         self._db_path = db_path
+        # Memory is per *save*, not per universe: browsing only makes sense for a
+        # live play session (the tabletop). The settings dialog knows db_path (a
+        # universe) but not the save, so the owner tells us whether a session is
+        # active. Off in the Hub / Creator Studio (no save selected).
+        self._can_browse_memory = can_browse_memory
         self._test_worker: ConnectionTestWorker | None = None
         self._db_worker: DbWorker | None = None
         self._universe_meta: dict = {}
@@ -330,6 +347,56 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._image_widget, tr("tab_image"))
         doc_tab(self._tabs, 4, "settings.tab_image")
 
+        # ---- Memory tab (Phase 2: lite/living mode + fact extraction) ----
+        self._memory_widget = QWidget()
+        memory_form = QFormLayout(self._memory_widget)
+
+        self._memory_mode_combo = doc(QComboBox(), "settings.memory_mode")
+        self._memory_mode_combo.addItem(tr("memory_mode_lite"), "lite")
+        self._memory_mode_combo.addItem(tr("memory_mode_living"), "living")
+
+        self._memory_interval_spin = doc(QSpinBox(), "settings.memory_interval")
+        self._memory_interval_spin.setRange(0, 100)
+        self._memory_interval_spin.setSpecialValueText(tr("memory_interval_off"))
+
+        self._memory_model_edit = doc(QLineEdit(), "settings.memory_model")
+        self._memory_model_edit.setPlaceholderText(tr("memory_fact_model_placeholder"))
+
+        self._memory_reranker_cb = doc(QCheckBox(tr("memory_reranker_label")), "settings.memory_reranker")
+
+        self._memory_beliefs_cb = doc(QCheckBox(tr("memory_beliefs_label")), "settings.memory_beliefs")
+
+        self._memory_mental_models_cb = doc(QCheckBox(tr("memory_mental_models_label")), "settings.memory_mental_models")
+
+        self._memory_prompt_cache_cb = doc(QCheckBox(tr("memory_prompt_cache_label")), "settings.memory_prompt_cache")
+
+        self._memory_extract_btn = doc(QPushButton(tr("extract_now")), "settings.extract_now")
+
+        self._memory_browse_btn = doc(QPushButton(tr("memory_browser_btn")), "settings.memory_browser")
+
+        self._memory_mode_label = QLabel(tr("memory_mode_label"))
+        self._memory_interval_label = QLabel(tr("memory_fact_interval_label"))
+        self._memory_model_label = QLabel(tr("memory_fact_model_label"))
+
+        memory_form.addRow(self._memory_mode_label, self._memory_mode_combo)
+        memory_form.addRow(self._memory_interval_label, self._memory_interval_spin)
+        memory_form.addRow(self._memory_model_label, self._memory_model_edit)
+        memory_form.addRow("", self._memory_reranker_cb)
+        memory_form.addRow("", self._memory_beliefs_cb)
+        memory_form.addRow("", self._memory_mental_models_cb)
+        memory_form.addRow("", self._memory_prompt_cache_cb)
+        memory_form.addRow("", self._memory_extract_btn)
+        memory_form.addRow("", self._memory_browse_btn)
+
+        self._tabs.addTab(self._memory_widget, tr("tab_memory"))
+        doc_tab(self._tabs, self._tabs.indexOf(self._memory_widget), "settings.tab_memory")
+
+        self._memory_mode_combo.currentIndexChanged.connect(self._on_memory_mode_changed)
+        # Mental models build on beliefs → keep their toggle gated on the beliefs one.
+        self._memory_beliefs_cb.toggled.connect(self._refresh_memory_controls)
+        self._memory_extract_btn.clicked.connect(self._on_extract_now)
+        self._memory_browse_btn.clicked.connect(self._on_view_memory)
+
         layout.addWidget(self._tabs)
 
         # ---- General section ----
@@ -451,6 +518,41 @@ class SettingsDialog(QDialog):
         self._sync_cloud_fields()
 
     # ------------------------------------------------------------------
+    # Memory tab helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_memory_controls(self) -> None:
+        """Enable interval/model/extract only when living mode is selected.
+
+        'Extract now' also needs an active session (db_path) to act on.
+        """
+        living = self._memory_mode_combo.currentData() == "living"
+        self._memory_interval_spin.setEnabled(living)
+        self._memory_model_edit.setEnabled(living)
+        self._memory_beliefs_cb.setEnabled(living)
+        # Mental models are distilled from beliefs → only selectable with beliefs on.
+        self._memory_mental_models_cb.setEnabled(living and self._memory_beliefs_cb.isChecked())
+        self._memory_extract_btn.setEnabled(living and bool(self._db_path))
+        # Browsing is read-only (works outside living mode — an old save may hold
+        # memory to inspect) but needs an *active play session*: memory belongs to
+        # a save, not a universe, so it is off in the Hub / Creator Studio.
+        self._memory_browse_btn.setEnabled(self._can_browse_memory)
+
+    @Slot()
+    def _on_memory_mode_changed(self) -> None:
+        self._refresh_memory_controls()
+
+    @Slot()
+    def _on_extract_now(self) -> None:
+        """Ask the owner to distil the live session's recent turns into facts."""
+        self.extract_now_requested.emit()
+
+    @Slot()
+    def _on_view_memory(self) -> None:
+        """Ask the owner to open the read-only memory browser on the session."""
+        self.view_memory_requested.emit()
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -517,6 +619,24 @@ class SettingsDialog(QDialog):
         self._image_timeout_label.setText(tr("image_timeout"))
         self._image_workflow_label.setText(tr("image_workflow"))
 
+        # Memory tab
+        mem_tab_idx = self._tabs.indexOf(self._memory_widget)
+        if mem_tab_idx >= 0:
+            self._tabs.setTabText(mem_tab_idx, tr("tab_memory"))
+        self._memory_mode_label.setText(tr("memory_mode_label"))
+        self._memory_mode_combo.setItemText(0, tr("memory_mode_lite"))
+        self._memory_mode_combo.setItemText(1, tr("memory_mode_living"))
+        self._memory_interval_label.setText(tr("memory_fact_interval_label"))
+        self._memory_interval_spin.setSpecialValueText(tr("memory_interval_off"))
+        self._memory_model_label.setText(tr("memory_fact_model_label"))
+        self._memory_model_edit.setPlaceholderText(tr("memory_fact_model_placeholder"))
+        self._memory_reranker_cb.setText(tr("memory_reranker_label"))
+        self._memory_beliefs_cb.setText(tr("memory_beliefs_label"))
+        self._memory_mental_models_cb.setText(tr("memory_mental_models_label"))
+        self._memory_prompt_cache_cb.setText(tr("memory_prompt_cache_label"))
+        self._memory_extract_btn.setText(tr("extract_now"))
+        self._memory_browse_btn.setText(tr("memory_browser_btn"))
+
         # Sub-widgets
         if hasattr(self._persona_editor, "retranslate_ui"): self._persona_editor.retranslate_ui()
 
@@ -526,9 +646,6 @@ class SettingsDialog(QDialog):
 
     def load_from_config(self, config: AppConfig) -> None:
         """Populate all form fields from an AppConfig."""
-        # Keep a reference so collect_config can preserve fields not exposed in
-        # the UI (e.g. the legacy chronicler_interval).
-        self._loaded_config = config
         self._univ_url.setText(config.universal_base_url)
         self._univ_key.setText(config.universal_api_key)
         self._univ_model.setText(config.universal_model)
@@ -558,6 +675,20 @@ class SettingsDialog(QDialog):
         self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
         self._trim_sentences_cb.setChecked(config.trim_sentences)
         self._basic_prompt.setPlainText(config.basic_prompt)
+
+        # Memory settings (Phase 2)
+        mem_idx = self._memory_mode_combo.findData(
+            "living" if memory_mode_is_living(config) else "lite"
+        )
+        if mem_idx >= 0:
+            self._memory_mode_combo.setCurrentIndex(mem_idx)
+        self._memory_interval_spin.setValue(config.memory_fact_interval)
+        self._memory_model_edit.setText(config.memory_fact_model)
+        self._memory_reranker_cb.setChecked(config.memory_reranker_enabled)
+        self._memory_beliefs_cb.setChecked(config.memory_beliefs_enabled)
+        self._memory_mental_models_cb.setChecked(config.memory_mental_models_enabled)
+        self._memory_prompt_cache_cb.setChecked(config.memory_prompt_cache_enabled)
+        self._refresh_memory_controls()
 
         # Image settings
         self._image_enabled_cb.setChecked(config.image_generation_enabled)
@@ -614,11 +745,6 @@ class SettingsDialog(QDialog):
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
             time_model=self._time_model.text().strip() or "llama3.2:1b",
             timekeeper_enabled=self._timekeeper_cb.isChecked(),
-            # Legacy field, no longer surfaced in the UI — preserve whatever was
-            # loaded so we don't silently reset it on save.
-            chronicler_interval=getattr(
-                self, "_loaded_config", AppConfig()
-            ).chronicler_interval,
             chronicler_minutes_interval=self._chronicler_spin.value(),
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),
@@ -627,6 +753,15 @@ class SettingsDialog(QDialog):
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
+            # Memory settings (Phase 2) — must be read back here or saving the
+            # dialog would silently reset them to their defaults.
+            memory_mode=self._memory_mode_combo.currentData() or "lite",
+            memory_fact_interval=self._memory_interval_spin.value(),
+            memory_fact_model=self._memory_model_edit.text().strip(),
+            memory_reranker_enabled=self._memory_reranker_cb.isChecked(),
+            memory_beliefs_enabled=self._memory_beliefs_cb.isChecked(),
+            memory_mental_models_enabled=self._memory_mental_models_cb.isChecked(),
+            memory_prompt_cache_enabled=self._memory_prompt_cache_cb.isChecked(),
             # Image generation settings
             image_generation_enabled=self._image_enabled_cb.isChecked(),
             image_backend=self._image_backend_combo.currentData(),
@@ -702,9 +837,14 @@ class SettingsDialog(QDialog):
 
     @Slot()
     def _show_help(self) -> None:
-        """TICKET-057 : open the 'explain this page' dialog for Settings."""
-        from ui.help_dialogs import ExplainPageDialog
-        ExplainPageDialog("settings", self).exec()
+        """TICKET-057 : open the 'explain this page' dialog for the active tab.
+
+        Tab-aware (like the Creator Studio): the explanation matches the tab you
+        are looking at, then appends the always-visible General section.
+        """
+        from ui.help_dialogs import ExplainPageDialog, settings_tab_help_html
+        title, html = settings_tab_help_html(self._tabs.currentIndex())
+        ExplainPageDialog("settings", self, html=html, title=title).exec()
 
     @Slot()
     def _on_save(self) -> None:

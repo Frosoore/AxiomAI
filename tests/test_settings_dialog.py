@@ -138,6 +138,114 @@ def test_settings_dialog_cloud_provider_loads_and_collects(qtbot) -> None:
     assert updated.gemini_api_key == "gemini-key"
 
 
+def test_settings_dialog_memory_tab_roundtrip(qtbot) -> None:
+    """The Memory tab loads the Phase 2 fields and collect_config preserves them
+    (regression: a fresh AppConfig in collect_config used to reset them)."""
+    cfg = AppConfig(
+        memory_mode="living",
+        memory_fact_interval=7,
+        memory_fact_model="gpt-oss-20b",
+        memory_reranker_enabled=True,
+    )
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._memory_mode_combo.currentData() == "living"
+    assert dialog._memory_interval_spin.value() == 7
+    assert dialog._memory_model_edit.text() == "gpt-oss-20b"
+    assert dialog._memory_reranker_cb.isChecked() is True
+    # Living mode → interval/model/extract enabled
+    assert dialog._memory_interval_spin.isEnabled()
+
+    # Round-trip: nothing is silently reset on save.
+    updated = dialog.collect_config()
+    assert updated.memory_mode == "living"
+    assert updated.memory_fact_interval == 7
+    assert updated.memory_fact_model == "gpt-oss-20b"
+    assert updated.memory_reranker_enabled is True
+
+
+def test_settings_dialog_memory_lite_disables_controls(qtbot) -> None:
+    """Lite mode (default) greys out the living-only controls; the extract-now
+    button stays disabled without an active session."""
+    dialog = SettingsDialog(AppConfig())  # default = lite, db_path None
+    qtbot.addWidget(dialog)
+
+    assert dialog._memory_mode_combo.currentData() == "lite"
+    assert not dialog._memory_interval_spin.isEnabled()
+    assert not dialog._memory_model_edit.isEnabled()
+    assert not dialog._memory_extract_btn.isEnabled()
+
+    # Switching to living enables interval/model, but extract still needs a save.
+    idx = dialog._memory_mode_combo.findData("living")
+    dialog._memory_mode_combo.setCurrentIndex(idx)
+    assert dialog._memory_interval_spin.isEnabled()
+    assert not dialog._memory_extract_btn.isEnabled()  # db_path is None
+
+
+def test_settings_dialog_extract_now_emits(qtbot, tmp_path) -> None:
+    """With a live session + living mode, the button emits extract_now_requested."""
+    from axiom.schema import create_universe_db
+    db_path = str(tmp_path / "universe.db")
+    create_universe_db(db_path)
+    dialog = SettingsDialog(AppConfig(memory_mode="living"), db_path=db_path)
+    qtbot.addWidget(dialog)
+    assert dialog._memory_extract_btn.isEnabled()
+
+    fired: list[bool] = []
+    dialog.extract_now_requested.connect(lambda: fired.append(True))
+    dialog._memory_extract_btn.click()
+    assert fired == [True]
+
+
+def test_settings_dialog_browse_memory_gated_on_active_session(qtbot, tmp_path) -> None:
+    """Browse memory is enabled only when an actual play session is active.
+
+    Memory is per-save, so a universe db_path alone (Hub / Creator Studio) must
+    NOT enable it — otherwise it would open a stale, unrelated prior game.
+    """
+    from axiom.schema import create_universe_db
+    db_path = str(tmp_path / "universe.db")
+    create_universe_db(db_path)
+
+    # A universe is loaded (db_path) but no active session → still disabled.
+    dialog = SettingsDialog(AppConfig(memory_mode="living"), db_path=db_path)
+    qtbot.addWidget(dialog)
+    assert not dialog._memory_browse_btn.isEnabled()
+
+    # An active session → enabled, and emits on click.
+    dialog2 = SettingsDialog(AppConfig(memory_mode="lite"), db_path=db_path,
+                             can_browse_memory=True)
+    qtbot.addWidget(dialog2)
+    assert dialog2._memory_browse_btn.isEnabled()  # read-only, even in lite mode
+    fired: list[bool] = []
+    dialog2.view_memory_requested.connect(lambda: fired.append(True))
+    dialog2._memory_browse_btn.click()
+    assert fired == [True]
+
+
+def test_settings_tab_help_is_tab_aware(qtbot) -> None:
+    """The 'Information' help composes the active tab's rich intro + its elements
+    + the always-visible General section."""
+    from core.localization import set_language
+    from ui.help_dialogs import settings_tab_help_html
+    from ui.help_system import SETTINGS_TAB_PAGES, SETTINGS_GENERAL_PAGE
+
+    set_language("en")
+    # Memory tab (last in SETTINGS_TAB_PAGES) → its intro + a memory element + General.
+    mem_idx = len(SETTINGS_TAB_PAGES) - 1
+    title, html = settings_tab_help_html(mem_idx)
+    assert title == "Settings — Memory"
+    assert "Living" in html              # rich tab intro
+    assert "cross-encoder" in html       # memory element details block (_d)
+    assert "Settings — General" in html  # General section appended
+
+    # Out-of-range index falls back to the General page and does not double it.
+    gen_title, gen_html = settings_tab_help_html(999)
+    assert gen_title == "Settings — General"
+    assert gen_html.count("Settings — General") == 1
+
+
 class _FakeListingLLM:
     """Backend stub exposing the same surface ConnectionTestWorker probes."""
 

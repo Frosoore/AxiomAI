@@ -36,10 +36,28 @@ class CheckpointManager:
     def rewind(self, save_id: str, target_turn_id: int) -> dict[str, int]:
         """Revert a save to its state at target_turn_id.
 
-        Steps:
-          1. Count how many future events will be deleted (for the summary).
-          2. DELETE all Event_Log rows where turn_id > target_turn_id.
-          3. Rebuild State_Cache from the surviving events.
+        Comprehensive and atomic: in a single transaction it removes everything
+        recorded after the target turn and rebuilds every derived view to its
+        turn-N state:
+
+          1. Count the future events to delete (for the summary).
+          2. DELETE the future ``Event_Log`` rows, plus the ``Snapshots`` and
+             ``Timeline`` rows for later turns.
+          3. Roll back living-mode memory: future ``Facts`` are dropped, beliefs
+             are recomputed from their surviving sources
+             (:func:`axiom.observations.rollback_observations`) and mental models
+             created after the target are dropped / flagged stale
+             (:func:`axiom.mental_models.rollback_mental_models`).
+          4. Restore temporary modifiers (buffs/debuffs) to their turn-N state
+             from the per-turn snapshot
+             (:func:`axiom.modifiers.rollback_modifiers`) — they decay in minutes
+             and are not event-sourced, so they cannot be replayed.
+          5. Un-fire scheduled events that fired after the target turn, so they
+             can trigger again when the clock re-crosses their minute.
+          6. Rebuild ``State_Cache`` from the surviving events.
+
+        Note: the semantic memory store is a separate concern, rolled back by the
+        caller via :meth:`axiom.memory.VectorMemory.rollback`.
 
         Args:
             save_id:        The save to rewind.
@@ -80,7 +98,48 @@ class CheckpointManager:
                 "DELETE FROM Timeline WHERE save_id = ? AND turn_id > ?;",
                 (save_id, target_turn_id)
             )
-            
+
+            # Living-mode structured facts are turn-tagged → drop the future ones
+            # in this same transaction so events and derived facts roll back
+            # atomically. ensure_ first: older save DBs may predate the table.
+            from axiom.schema import ensure_facts_table
+            ensure_facts_table(conn)
+            conn.execute(
+                "DELETE FROM Facts WHERE save_id = ? AND turn_id > ?;",
+                (save_id, target_turn_id)
+            )
+
+            # Living-mode beliefs (Phase 3) derive from several turns, so they
+            # cannot just be deleted by turn_id: drop those created after the
+            # target and recompute the survivors from their sources at turns
+            # <= target — in this same transaction as the facts they build on.
+            from axiom.observations import rollback_observations
+            rollback_observations(conn, save_id, target_turn_id)
+
+            # Mental models (§7.8) are summaries distilled from beliefs: drop those
+            # created after the target and flag the survivors stale so the next
+            # refresh regenerates them from the rewound beliefs (same transaction).
+            from axiom.mental_models import rollback_mental_models
+            rollback_mental_models(conn, save_id, target_turn_id)
+
+            # Temporary modifiers (buffs/debuffs) decay in minutes and aren't
+            # event-sourced, so they can't be replayed: restore them from the
+            # per-turn snapshot captured at the target turn (TICKET-074).
+            from axiom.modifiers import rollback_modifiers
+            rollback_modifiers(conn, save_id, target_turn_id)
+
+            # Scheduled events fired *after* the target turn must be un-fired so
+            # they can trigger again once the in-game clock re-crosses their
+            # minute (TICKET-075). Keyed by the turn they fired on; legacy rows
+            # (fired_turn_id default 0) stay fired. ensure_ first: older save DBs
+            # predate the column.
+            from axiom.schema import ensure_fired_event_turn_column
+            ensure_fired_event_turn_column(conn)
+            conn.execute(
+                "DELETE FROM Fired_Scheduled_Events WHERE save_id = ? AND fired_turn_id > ?;",
+                (save_id, target_turn_id),
+            )
+
             conn.commit()
 
         self._event_sourcer.rebuild_state_cache(save_id, up_to_turn_id=target_turn_id)

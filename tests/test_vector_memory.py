@@ -176,6 +176,59 @@ class TestQuery:
         results = vm.query("save1", "only chunk", k=100)
         assert len(results) == 1
 
+    def test_result_carries_score(self, vm: VectorMemory) -> None:
+        """Each result carries a numeric combined score."""
+        vm.embed_chunk("save1", 1, "the hero slays the beast")
+        results = vm.query("save1", "hero", k=1, current_turn_id=1)
+        assert isinstance(results[0]["score"], float)
+
+    def test_recency_modulation_does_not_crush_old_relevant_chunk(
+        self, vm: VectorMemory
+    ) -> None:
+        """An old but on-topic chunk keeps almost all its score; recency only
+        modulates by ±10% (Hindsight-style multiplicative boost) instead of the
+        old behaviour that multiplied a 200-turn-old memory down to 10%.
+
+        We embed the same text at an old and a recent turn so their semantic
+        relevance to the query is identical: the only difference is recency.
+        The old chunk's score must stay within ~20% of the recent one, never
+        collapse to a fraction of it.
+        """
+        vm.embed_chunk("save1", 1, "the ancient dragon guards the relic")
+        vm.embed_chunk("save1", 300, "the ancient dragon guards the relic")
+
+        results = vm.query("save1", "ancient dragon relic", k=2, current_turn_id=300)
+        scores = {r["turn_id"]: r["score"] for r in results}
+        assert set(scores) == {1, 300}
+        # Recency only modulates by ±10% around a near-identical base, so the old
+        # chunk keeps the large majority of the recent one's score — never the
+        # ~10x collapse of the previous semantic×time_weight scheme.
+        assert scores[1] >= scores[300] * 0.7
+
+    def test_focus_term_boosts_on_scene_chunk(self, vm: VectorMemory) -> None:
+        """A chunk mentioning a focus term (the current location) is lifted above
+        an equally-relevant chunk that does not, without focus changing recency."""
+        vm.embed_chunk("save1", 1, "a meeting happened in the great hall of Eldoria")
+        vm.embed_chunk("save1", 1, "a meeting happened in some other distant place")
+
+        focused = vm.query(
+            "save1", "a meeting happened", k=2, current_turn_id=1, focus_terms=["Eldoria"]
+        )
+        assert "Eldoria" in focused[0]["text"]
+
+    def test_focus_term_requires_all_tokens(self, vm: VectorMemory) -> None:
+        """A multi-word focus term only matches when every token is present."""
+        vm.embed_chunk("save1", 1, "the black market thrives at night")
+        partial = vm.query(
+            "save1", "market", k=1, current_turn_id=1, focus_terms=["Black Keep"]
+        )
+        full = vm.query(
+            "save1", "market", k=1, current_turn_id=1, focus_terms=["black market"]
+        )
+        # "Black Keep" needs both 'black' and 'keep' (only 'black' present → no
+        # boost); "black market" matches fully → boosted above the partial case.
+        assert full[0]["score"] > partial[0]["score"]
+
     def test_query_filters_by_max_turn_id(self, vm: VectorMemory) -> None:
         """query(max_turn_id=N) excludes chunks from turns later than N."""
         # Arrange: create chunks across different turns
@@ -193,6 +246,38 @@ class TestQuery:
         assert 5 in turn_ids
         assert 10 in turn_ids
         assert 15 not in turn_ids
+
+
+# ---------------------------------------------------------------------------
+# Optional cross-encoder reranker wiring
+# ---------------------------------------------------------------------------
+
+class _FakeCE:
+    """Scores any document containing 'relic' as highly relevant, else not."""
+
+    def predict(self, pairs):
+        return [9.0 if "relic" in doc else -9.0 for _q, doc in pairs]
+
+
+class TestRerankerWiring:
+    def test_reranker_dominates_ordering(self, tmp_path: Path) -> None:
+        """When a reranker is injected, its relevance judgement drives the final
+        order — here the 'relic' chunk surfaces first regardless of recency."""
+        from axiom.retrieval.reranker import CrossEncoderReranker
+
+        saved = _EmbeddingSingleton._instance
+        _EmbeddingSingleton._instance = _FakeEmbeddingFn()
+        try:
+            vm = VectorMemory(
+                persist_dir=str(tmp_path / "chroma"),
+                reranker=CrossEncoderReranker(model=_FakeCE()),
+            )
+            vm.embed_chunk("s", 1, "a dusty old relic lies in the vault")
+            vm.embed_chunk("s", 2, "the weather is mild and sunny today")
+            results = vm.query("s", "tell me something", k=2, current_turn_id=2)
+            assert "relic" in results[0]["text"]
+        finally:
+            _EmbeddingSingleton._instance = saved
 
 
 # ---------------------------------------------------------------------------
@@ -325,3 +410,72 @@ class TestEmbeddingSingletonOffline:
 
         assert first is second
         fake.assert_called_once()
+
+
+class TestLoreSync:
+    """TICKET-072: lore is embedded into the per-save store, retrievable on its
+    own, excluded from the narrative query, idempotent and rewind-proof."""
+
+    def test_sync_lore_query_returns_entry_ids(self, vm: VectorMemory) -> None:
+        n = vm.sync_lore("save1", [
+            {"entry_id": "coup", "text": "The Coup of Highport toppled the throne."},
+            {"entry_id": "house", "text": "House Arodan, an old noble family."},
+        ])
+        assert n == 2
+        hits = vm.query("save1", "Highport throne", k=5, chunk_type="lore")
+        assert hits, "lore query should return the embedded entries"
+        assert {h["entry_id"] for h in hits} == {"coup", "house"}
+        assert all(h["chunk_type"] == "lore" for h in hits)
+
+    def test_lore_excluded_from_narrative_query(self, vm: VectorMemory) -> None:
+        vm.embed_chunk("save1", 1, "The hero crossed the bridge.")
+        vm.sync_lore("save1", [{"entry_id": "coup", "text": "The Coup of Highport."}])
+        narrative = vm.query("save1", "hero bridge Highport", k=5, exclude_chunk_type="lore")
+        assert narrative and all(h["chunk_type"] != "lore" for h in narrative)
+        lore = vm.query("save1", "hero bridge Highport", k=5, chunk_type="lore")
+        assert lore and all(h["chunk_type"] == "lore" for h in lore)
+
+    def test_sync_lore_is_idempotent(self, vm: VectorMemory) -> None:
+        entries = [
+            {"entry_id": "coup", "text": "The Coup of Highport."},
+            {"entry_id": "house", "text": "House Arodan."},
+        ]
+        vm.sync_lore("save1", entries)
+        vm.sync_lore("save1", entries)  # re-sync must not duplicate
+        hits = vm.query("save1", "Highport Arodan", k=10, chunk_type="lore")
+        assert sorted(h["entry_id"] for h in hits) == ["coup", "house"]
+
+    def test_lore_survives_rollback(self, vm: VectorMemory) -> None:
+        vm.embed_chunk("save1", 7, "A future narrative chunk.")
+        vm.sync_lore("save1", [{"entry_id": "coup", "text": "The Coup of Highport."}])
+        vm.rollback("save1", target_turn_id=3)  # lore is at turn 0 → kept
+        hits = vm.query("save1", "Highport", k=5, chunk_type="lore")
+        assert [h["entry_id"] for h in hits] == ["coup"]
+
+
+# ---------------------------------------------------------------------------
+# BM25 index cache (TICKET-078)
+# ---------------------------------------------------------------------------
+
+class TestBM25Cache:
+    def test_reuses_index_on_unchanged_corpus(self, vm: VectorMemory) -> None:
+        """A stable corpus (e.g. lore) builds its BM25 index once, then reuses it."""
+        vm.sync_lore("save1", [
+            {"entry_id": "coup", "text": "The Coup of Highport toppled the king."},
+            {"entry_id": "house", "text": "House Arodan rules the north."},
+        ])
+        from axiom.retrieval import lexical
+        with patch.object(lexical, "build_bm25", wraps=lexical.build_bm25) as spy:
+            vm.query("save1", "Highport king", k=5, chunk_type="lore")
+            vm.query("save1", "Arodan north", k=5, chunk_type="lore")
+            assert spy.call_count == 1  # built once, reused on the second query
+
+    def test_rebuilds_when_corpus_changes(self, vm: VectorMemory) -> None:
+        """Embedding a new chunk changes the id-set → the index is rebuilt."""
+        vm.embed_chunk("save1", 1, "The hero crossed the bridge.")
+        from axiom.retrieval import lexical
+        with patch.object(lexical, "build_bm25", wraps=lexical.build_bm25) as spy:
+            vm.query("save1", "hero bridge", k=5, exclude_chunk_type="lore")
+            vm.embed_chunk("save1", 2, "The hero met a stranger.")
+            vm.query("save1", "hero stranger", k=5, exclude_chunk_type="lore")
+            assert spy.call_count == 2  # corpus grew → fresh index each time

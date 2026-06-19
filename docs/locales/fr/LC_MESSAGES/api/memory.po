@@ -1,0 +1,1180 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.6\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-19 23:58+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../api/memory.md:1
+msgid "Memory"
+msgstr ""
+
+#: ../../api/memory.md:3
+msgid ""
+"The narrative memory subsystem. In every mode it provides hybrid search "
+"(`axiom.memory` + `axiom.retrieval`); in *living* mode it additionally "
+"distils the narrative into structured **facts** (`axiom.facts` + "
+"`axiom.factextract`) and, with beliefs enabled, into evolving "
+"**observations** (`axiom.observations` + `axiom.consolidate`) shaped by "
+"per-character **missions** (`axiom.missions`) and, one layer up, curated "
+"**mental models** (`axiom.mental_models` + `axiom.reflect`). See the "
+"[Memory guide](../guides/memory.md) for the concepts."
+msgstr ""
+
+#: ../../api/memory.md:11
+msgid "`axiom.memory`"
+msgstr ""
+
+#: axiom.memory:1 of
+msgid "llm_engine/vector_memory.py"
+msgstr ""
+
+#: axiom.memory:3 of
+msgid "Local vector-database memory for Axiom AI narrative chunks."
+msgstr ""
+
+#: axiom.memory:5 of
+msgid ""
+"Every piece of narrative embedded here carries a `turn_id` metadata tag. "
+"This enables the surgical rollback required by the Checkpoint system: "
+"when the player rewinds to turn N, all chunks with turn_id > N are "
+"permanently deleted so they cannot bleed into the rebuilt timeline."
+msgstr ""
+
+#: axiom.memory:10 of
+msgid ""
+"Backend: ChromaDB (persistent, local) Embedding model: sentence-"
+"transformers all-MiniLM-L6-v2 (fully offline)"
+msgstr ""
+
+#: axiom.memory:14 of
+msgid "Collection layout"
+msgstr ""
+
+#: axiom.memory:15 of
+msgid ""
+"Collection name : \"narrative_memory\" Document        : the text chunk "
+"Metadata fields : save_id (str), turn_id (int), chunk_type (str) ID"
+"              : UUID string, generated per chunk"
+msgstr ""
+
+#: axiom.memory.preload_embedding_runtime:1 of
+msgid "Force torch's native runtime to load on the *calling* (main) thread."
+msgstr ""
+
+#: axiom.memory.preload_embedding_runtime:3 of
+msgid ""
+"The sentence-transformers embedding model is loaded and used on worker "
+"threads (VectorInitWorker / NarrativeWorker). The first encode lazily "
+"pulls in ``torch._dynamo`` → ``triton``, which ``dlopen()``s "
+"``libtriton.so``. Doing that ``dlopen`` from a secondary thread while Qt "
+"is running segfaults (native crash, no Python traceback). Importing it "
+"once here, on the main thread at startup, makes the later cross-thread "
+"use safe."
+msgstr ""
+
+#: axiom.memory.preload_embedding_runtime:10 of
+msgid ""
+"Call this from the GUI/CLI entry point *before* any worker thread touches"
+" VectorMemory. Idempotent, never raises. Returns True if the runtime was "
+"pre-loaded, False if torch is unavailable (e.g. headless test stubs)."
+msgstr ""
+
+#: ../../api/memory.md axiom.consolidate.consolidate
+#: axiom.factextract.extract_facts axiom.facts.count_facts
+#: axiom.facts.insert_facts axiom.facts.rollback_facts
+#: axiom.memory.VectorMemory.query axiom.memory.VectorMemory.rollback
+#: axiom.memory.VectorMemory.update_turn_narrative
+#: axiom.memory.preload_embedding_runtime
+#: axiom.mental_models.count_mental_models
+#: axiom.mental_models.rollback_mental_models
+#: axiom.mental_models.rollback_mental_models_standalone
+#: axiom.mental_models.stale_subjects axiom.mental_models.upsert_mental_model
+#: axiom.missions.get_belief_missions
+#: axiom.missions.get_belief_missions_from_value
+#: axiom.missions.get_universe_mission axiom.missions.missions_to_text
+#: axiom.missions.parse_missions_text axiom.observations.Observation.trend
+#: axiom.observations.compute_trend axiom.observations.count_observations
+#: axiom.observations.insert_observation
+#: axiom.observations.rollback_observations
+#: axiom.observations.rollback_observations_standalone
+#: axiom.reflect.affected_subjects axiom.reflect.reflect
+#: axiom.retrieval.fusion.cap_per_source axiom.retrieval.lexical.is_available
+#: axiom.retrieval.lexical.rank_with_bm25 axiom.retrieval.lexical.tokenize
+#: axiom.retrieval.reranker.CrossEncoderReranker.rerank of
+msgid "Return type"
+msgstr ""
+
+#: axiom.memory.VectorMemory:1 of
+msgid "Local semantic memory store backed by ChromaDB."
+msgstr ""
+
+#: ../../api/memory.md axiom.consolidate.ConsolidationAction
+#: axiom.consolidate.consolidate axiom.factextract.extract_facts
+#: axiom.facts.Fact axiom.facts.count_facts axiom.facts.insert_facts
+#: axiom.facts.rollback_facts axiom.memory.VectorMemory.query
+#: axiom.memory.VectorMemory.rollback
+#: axiom.memory.VectorMemory.update_turn_narrative
+#: axiom.mental_models.MentalModel axiom.mental_models.count_mental_models
+#: axiom.mental_models.rollback_mental_models
+#: axiom.mental_models.rollback_mental_models_standalone
+#: axiom.mental_models.stale_subjects axiom.mental_models.upsert_mental_model
+#: axiom.missions.get_belief_missions
+#: axiom.missions.get_belief_missions_from_value
+#: axiom.missions.get_universe_mission axiom.missions.missions_to_text
+#: axiom.missions.parse_missions_text axiom.observations.Observation.trend
+#: axiom.observations.compute_trend axiom.observations.count_observations
+#: axiom.observations.insert_observation
+#: axiom.observations.rollback_observations
+#: axiom.observations.rollback_observations_standalone axiom.reflect.reflect
+#: axiom.retrieval.fusion.cap_per_source axiom.retrieval.lexical.build_bm25
+#: axiom.retrieval.lexical.rank_with_bm25 axiom.retrieval.lexical.tokenize
+#: axiom.retrieval.reranker.CrossEncoderReranker.rerank of
+msgid "Parameters"
+msgstr ""
+
+#: axiom.memory.VectorMemory:3 of
+msgid ""
+"Filesystem path where ChromaDB will store its data. Created automatically"
+" if it does not exist."
+msgstr ""
+
+#: axiom.memory.VectorMemory.embed_chunk:1 of
+msgid "Embed a text chunk and store it with turn_id metadata."
+msgstr ""
+
+#: axiom.memory.VectorMemory.embed_chunk:3 of
+msgid ""
+"Optional extra metadata merged into the chunk record (e.g. a lore entry's"
+" ``entry_id``). The core keys (save_id, turn_id, chunk_type) always take "
+"precedence."
+msgstr ""
+
+#: axiom.memory.VectorMemory.query:1 of
+msgid "Retrieve the top-k most relevant chunks using hybrid scored search."
+msgstr ""
+
+#: axiom.memory.VectorMemory.query:3 of
+msgid ""
+"Optional \"here-and-now\" terms (current location name, on-scene "
+"character names). A chunk whose text mentions any of them gets a small "
+"additive boost so memories about the current scene surface more readily. "
+"No effect when omitted."
+msgstr ""
+
+#: axiom.memory.VectorMemory.query:7 of
+msgid "Restrict the search to chunks of this type (e.g. \"lore\")."
+msgstr ""
+
+#: axiom.memory.VectorMemory.query:8 of
+msgid ""
+"Exclude chunks of this type (e.g. the narrative query passes \"lore\" so "
+"lore entries never eat its k budget)."
+msgstr ""
+
+#: axiom.memory.VectorMemory.query:11 of
+msgid ""
+"Each returned candidate carries ``entry_id`` (the chunk's source id when "
+"one was stored, e.g. a lore entry's id; otherwise ``None``)."
+msgstr ""
+
+#: axiom.memory.VectorMemory.sync_lore:1 of
+msgid "Re-embed this save's Lore Book entries (idempotent)."
+msgstr ""
+
+#: axiom.memory.VectorMemory.sync_lore:3 of
+msgid ""
+"Deletes any existing lore chunks for the save, then embeds each entry "
+"tagged ``chunk_type=\"lore\"`` and ``turn_id=0`` (timeless → survives any"
+" rewind) with its ``entry_id`` in metadata, so a retrieval hit maps back "
+"to the structured row for link expansion. Call once per session (and "
+"after a hot reload) to keep lore embeddings in sync with the definition. "
+"No-op when the embedding runtime is unavailable."
+msgstr ""
+
+#: axiom.memory.VectorMemory.sync_lore:10 of
+msgid "The save whose lore embeddings are (re)built."
+msgstr ""
+
+#: axiom.memory.VectorMemory.sync_lore:11 of
+msgid "Lore rows, each a dict with ``entry_id`` and ``text``."
+msgstr ""
+
+#: ../../api/memory.md
+msgid "Returns"
+msgstr ""
+
+#: axiom.memory.VectorMemory.sync_lore:13 of
+msgid "The number of entries embedded (0 when embeddings are disabled)."
+msgstr ""
+
+#: axiom.memory.VectorMemory.rollback:1 of
+msgid "Delete all chunks for a save with turn_id strictly greater than target."
+msgstr ""
+
+#: axiom.memory.VectorMemory.update_turn_narrative:1 of
+msgid "Delete existing chunks for this turn and embed the new text."
+msgstr ""
+
+#: ../../api/memory.md:18
+msgid "`axiom.retrieval.fusion`"
+msgstr ""
+
+#: axiom.retrieval.fusion:1 of
+msgid "Rank fusion for hybrid search."
+msgstr ""
+
+#: axiom.retrieval.fusion:3 of
+msgid ""
+"Algorithm adapted from Hindsight (MIT, ``engine/search/fusion.py``), kept"
+" dependency-free and deterministic. We fuse *ranked lists of document "
+"ids* (one per retrieval arm — semantic, lexical, …) into a single ranking"
+" using Reciprocal Rank Fusion (RRF)."
+msgstr ""
+
+#: axiom.retrieval.fusion:8 of
+msgid ""
+"RRF is rank-based, not score-based, on purpose: each arm produces scores "
+"on its own incomparable scale (cosine distance vs BM25), so combining raw"
+" scores would let one arm's scale dominate. RRF only looks at *where* a "
+"document ranks within each arm, which makes the arms commensurable."
+msgstr ""
+
+#: axiom.retrieval.fusion.cap_per_source:1 of
+msgid "Truncate a single arm's ranked ids to its top ``cap``."
+msgstr ""
+
+#: axiom.retrieval.fusion.cap_per_source:3 of
+msgid ""
+"Applied per arm *before* fusion so one over-expanding backend cannot "
+"crowd out the others. ``cap <= 0`` disables the cap. The caller is "
+"responsible for ordering ``ranked_ids`` best-first; this only slices."
+msgstr ""
+
+#: axiom.retrieval.fusion.reciprocal_rank_fusion:1 of
+msgid "Merge several ranked id lists into one via Reciprocal Rank Fusion."
+msgstr ""
+
+#: axiom.retrieval.fusion.reciprocal_rank_fusion:3 of
+msgid ""
+"RRF formula: ``score(d) = sum over arms of 1 / (k + rank(d))`` where "
+"``rank`` is 1-based within each arm. A document absent from an arm "
+"contributes nothing for that arm."
+msgstr ""
+
+#: axiom.retrieval.fusion.reciprocal_rank_fusion:7 of
+msgid "One list of document ids per arm, each ordered best-first."
+msgstr ""
+
+#: axiom.retrieval.fusion.reciprocal_rank_fusion:8 of
+msgid ""
+"RRF damping constant (default 60). Larger ``k`` flattens the contribution"
+" of top ranks, smaller ``k`` sharpens it."
+msgstr ""
+
+#: axiom.retrieval.fusion.reciprocal_rank_fusion:11 of
+msgid ""
+"``(doc_id, rrf_score)`` pairs sorted by score descending. Ties are broken"
+" deterministically by first appearance order across the input lists, so "
+"the result is stable for identical inputs."
+msgstr ""
+
+#: ../../api/memory.md:25
+msgid "`axiom.retrieval.lexical`"
+msgstr ""
+
+#: axiom.retrieval.lexical:1 of
+msgid "Lexical (BM25) retrieval arm."
+msgstr ""
+
+#: axiom.retrieval.lexical:3 of
+msgid ""
+"The semantic arm (sentence-transformer embeddings) is great at meaning "
+"but can miss an *exact* token the player typed — a proper noun "
+"(\"Kael\"), an item name, a coined word — because such tokens carry "
+"little distributed meaning. BM25 is the classic lexical complement: it "
+"rewards rare exact-term overlap. We fuse the two arms with Reciprocal "
+"Rank Fusion (see ``fusion.py``)."
+msgstr ""
+
+#: axiom.retrieval.lexical:9 of
+msgid ""
+"Graceful degradation: if ``rank_bm25`` is unavailable the lexical arm is "
+"simply absent and search falls back to the semantic arm alone (no crash),"
+" mirroring the ``VectorMemory._disabled`` philosophy for the embedding "
+"runtime."
+msgstr ""
+
+#: axiom.retrieval.lexical:13 of
+msgid ""
+"Algorithm reference: Hindsight (MIT) runs BM25 in Postgres "
+"(``tsvector``); that SQL is not portable, so we reimplement the *idea* "
+"with the pure-Python ``rank_bm25`` library over the in-memory corpus of a"
+" save's chunks."
+msgstr ""
+
+#: axiom.retrieval.lexical.is_available:1 of
+msgid "True when the BM25 backend can be used."
+msgstr ""
+
+#: axiom.retrieval.lexical.tokenize:1 of
+msgid "Deterministic, Unicode-aware word tokenizer (lowercased)."
+msgstr ""
+
+#: axiom.retrieval.lexical.tokenize:3 of
+msgid ""
+"Splits on anything that is not a word character, so punctuation and "
+"underscores act as separators. Keeps accented letters and non-Latin "
+"scripts (the game ships 10 languages), so a name like ``\"Kaël\"`` stays "
+"one token."
+msgstr ""
+
+#: axiom.retrieval.lexical.build_bm25:1 of
+msgid "Build a BM25 index over ``corpus_texts`` (or ``None`` if unavailable)."
+msgstr ""
+
+#: axiom.retrieval.lexical.build_bm25:3 of
+msgid ""
+"Split out from :func:`rank_by_bm25` so callers can *cache* the index when"
+" the corpus is unchanged (building it tokenises the whole corpus and "
+"computes IDF — the expensive part), then score many queries against it "
+"cheaply."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_with_bm25:1 of
+msgid "Rank ``corpus_ids`` against a pre-built ``bm25`` index, best first."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_with_bm25:3 of
+msgid ""
+"``corpus_ids`` must be aligned 1:1 with the texts the index was built "
+"from. Returns an empty list when the index is ``None`` or the query has "
+"no usable tokens; drops zero-score docs (no lexical signal). Ties keep "
+"input order."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:1 of
+msgid "Rank ``corpus_ids`` by BM25 relevance to ``query_text``, best first."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:3 of
+msgid ""
+"Convenience wrapper that builds a one-shot index then scores. Hot paths "
+"that reuse a stable corpus should cache :func:`build_bm25` and call "
+":func:`rank_with_bm25` instead."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:7 of
+msgid "The raw query string."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:8 of
+msgid "Stable ids, aligned 1:1 with ``corpus_texts``."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:9 of
+msgid "The chunk texts to score against the query."
+msgstr ""
+
+#: axiom.retrieval.lexical.rank_by_bm25:11 of
+msgid ""
+"``corpus_ids`` reordered by descending BM25 score, dropping documents "
+"whose score is zero (no query-term overlap → no lexical signal). Returns "
+"an empty list when BM25 is unavailable or the query has no usable tokens."
+" Ties keep the input order (deterministic)."
+msgstr ""
+
+#: ../../api/memory.md:32
+msgid "`axiom.retrieval.reranker`"
+msgstr ""
+
+#: axiom.retrieval.reranker:1 of
+msgid "Optional cross-encoder reranking."
+msgstr ""
+
+#: axiom.retrieval.reranker:3 of
+msgid ""
+"The retrieval arms (semantic embeddings + BM25) score a document "
+"*independently* of the query's other terms. A **cross-encoder** instead "
+"reads the (query, document) pair *jointly* and judges their relevance "
+"directly — the most accurate ranking signal available, used as the final "
+"re-sort after fusion."
+msgstr ""
+
+#: axiom.retrieval.reranker:8 of
+msgid "It is **OFF by default** and **degrades to a no-op** when unavailable:"
+msgstr ""
+
+#: axiom.retrieval.reranker:10 of
+msgid ""
+"needs a torch model (~90 MB, ``cross-encoder/ms-marco-MiniLM-L-6-v2``), "
+"the same native runtime that fails on Windows without VC++ (TICKET-070);"
+msgstr ""
+
+#: axiom.retrieval.reranker:12 of
+msgid ""
+"the heavy import / model load is lazy and guarded, so a missing or broken"
+" runtime simply means \"no reranking\", never a crash."
+msgstr ""
+
+#: axiom.retrieval.reranker:15 of
+msgid ""
+"Algorithm reference: Hindsight (MIT, ``engine/search/reranking.py``). "
+"Local sentence-transformers cross-encoders return logits → squashed to "
+"[0, 1] with a sigmoid; already-calibrated [0, 1] scores are passed "
+"through."
+msgstr ""
+
+#: axiom.retrieval.reranker.CrossEncoderReranker:1 of
+msgid "Lazy wrapper around a sentence-transformers ``CrossEncoder``."
+msgstr ""
+
+#: axiom.retrieval.reranker.CrossEncoderReranker:3 of
+msgid "HuggingFace cross-encoder id (default ms-marco MiniLM)."
+msgstr ""
+
+#: axiom.retrieval.reranker.CrossEncoderReranker:4 of
+msgid ""
+"Pre-built model with a ``predict(pairs)`` method. Injecting one bypasses "
+"loading entirely — used by tests to stay deterministic and offline."
+msgstr ""
+
+#: axiom.retrieval.reranker.CrossEncoderReranker.rerank:1 of
+msgid "Score each document's relevance to the query, in [0, 1]."
+msgstr ""
+
+#: axiom.retrieval.reranker.CrossEncoderReranker.rerank:3 of
+msgid ""
+"Returns scores aligned 1:1 with ``documents``, or ``None`` when the "
+"reranker is unavailable / fails (the caller then keeps the fused order)."
+msgstr ""
+
+#: ../../api/memory.md:39
+msgid "`axiom.facts`"
+msgstr ""
+
+#: axiom.facts:1 of
+msgid "Structured-fact storage for \"living\" memory mode."
+msgstr ""
+
+#: axiom.facts:3 of
+msgid ""
+"In living mode the engine distils each turn's narrative into atomic "
+"**facts** (a who/what/when/where/why model adapted from Hindsight) and "
+"stores them here, tagged with the ``turn_id`` that produced them. The "
+"turn tag makes rollback trivial — rewinding to turn N simply drops every "
+"fact from a later turn — and keeps the facts in lockstep with the event "
+"log they were derived from."
+msgstr ""
+
+#: axiom.facts:9 of
+msgid ""
+"This module is the *deterministic* storage layer: no LLM, no network. The"
+" LLM extraction that produces the facts lives in ``axiom.factextract``; "
+"the background job that calls it lives in the app's worker layer. Facts "
+"live in the same SQLite database as ``Event_Log`` / ``State_Cache`` "
+"(keyed by ``save_id`` + ``turn_id``)."
+msgstr ""
+
+#: axiom.facts.Fact:1 of
+msgid "One atomic fact extracted from the narrative."
+msgstr ""
+
+#: axiom.facts.Fact:3 of
+msgid ""
+"``statement`` is the canonical one-sentence form used for "
+"recall/embedding; the who/what/when/where/why fields are the structured "
+"decomposition."
+msgstr ""
+
+#: axiom.facts.insert_facts:1 of
+msgid "Persist a turn's extracted facts. Returns the new ``fact_id`` values."
+msgstr ""
+
+#: axiom.facts.insert_facts:3 of
+msgid ""
+"Empty statements are skipped (an extractor that found nothing is normal "
+"and must not write blank rows). Idempotency is the caller's concern: re-"
+"extracting a turn should first ``rollback_facts`` to that turn."
+msgstr ""
+
+#: axiom.facts.insert_facts:7 of
+msgid ""
+"Side effect: each ``Fact`` that is actually inserted has its ``fact_id`` "
+"and ``turn_id`` set in place, so the caller can use the objects directly "
+"without re-aligning a separate id list (skipped/blank facts keep "
+"``fact_id=None``)."
+msgstr ""
+
+#: axiom.facts.get_facts:1 of
+msgid "Fetch a save's facts, most recent first."
+msgstr ""
+
+#: axiom.facts.get_facts:3 of
+msgid ""
+"Only facts from turns ``<= max_turn_id`` (honours the history window / "
+"rewind horizon). ``None`` = no upper bound."
+msgstr ""
+
+#: axiom.facts.get_facts:5 of
+msgid ""
+"Keep only facts whose ``entities`` list contains this name (case-"
+"insensitive exact match). ``None`` = no filter."
+msgstr ""
+
+#: axiom.facts.get_facts:7 axiom.mental_models.get_mental_models:7
+#: axiom.observations.get_observations:7 of
+msgid "Cap the number of rows returned."
+msgstr ""
+
+#: axiom.facts.count_facts:1 of
+msgid "Number of stored facts for a save (cheap COUNT)."
+msgstr ""
+
+#: axiom.facts.rollback_facts:1 of
+msgid ""
+"Delete a save's facts from turns after ``target_turn_id``. Returns the "
+"count."
+msgstr ""
+
+#: axiom.facts.rollback_facts:3 of
+msgid ""
+"Standalone helper (opens its own connection). The in-session rewind path "
+"deletes facts inside ``CheckpointManager.rewind``'s own transaction "
+"instead, so events and facts roll back atomically."
+msgstr ""
+
+#: ../../api/memory.md:46
+msgid "`axiom.factextract`"
+msgstr ""
+
+#: axiom.factextract:1 of
+msgid "LLM fact extraction for living memory mode."
+msgstr ""
+
+#: axiom.factextract:3 of
+msgid ""
+"Turns a slice of narrative prose into a list of atomic, structured "
+":class:`~axiom.facts.Fact` objects via an "
+":class:`~axiom.backends.base.LLMBackend`. The who/what/when/where/why "
+"schema and the \"atomic, verifiable, no speculation\" discipline are "
+"adapted from Hindsight's ``retain/fact_extraction.py`` prompt, "
+"reimplemented for our backend (causal links deliberately left out — see "
+"Phase 2 DOC). Causal relations / consolidation come later."
+msgstr ""
+
+#: axiom.factextract:10 of
+msgid "Design rules:"
+msgstr ""
+
+#: axiom.factextract:12 axiom.reflect:11 of
+msgid ""
+"**Background only**: callers run this off the turn loop; it must never "
+"block play."
+msgstr ""
+
+#: axiom.factextract:13 of
+msgid ""
+"**Graceful**: any failure (LLM down, bad JSON, cancellation) yields "
+"``[]`` — the game keeps running, the turn simply produced no facts."
+msgstr ""
+
+#: axiom.factextract:15 of
+msgid ""
+"**No persistence here**: returns ``Fact`` objects; the worker stores them"
+" via ``axiom.facts.insert_facts`` (tagged with the turn id)."
+msgstr ""
+
+#: axiom.factextract.extract_facts:1 of
+msgid "Extract structured facts from ``narrative_text`` using ``llm``."
+msgstr ""
+
+#: axiom.consolidate.consolidate:9 axiom.factextract.extract_facts:3 of
+msgid ""
+"Returns ``[]`` for empty input or on any backend/parse failure (never "
+"raises), so a living-mode background job can call it fire-and-forget."
+msgstr ""
+
+#: ../../api/memory.md:53
+msgid "`axiom.observations`"
+msgstr ""
+
+#: axiom.observations:1 of
+msgid "Consolidated-belief storage for \"living\" memory mode (Phase 3)."
+msgstr ""
+
+#: axiom.observations:3 of
+msgid ""
+"Where :mod:`axiom.facts` stores the atomic, immutable facts extracted "
+"each turn, this module stores **observations** — synthetic *beliefs* that"
+" evolve as facts accumulate (a Hindsight-inspired idea: an NPC remembers "
+"a betrayal hundreds of turns later and revises its opinion). A belief "
+"carries:"
+msgstr ""
+
+#: axiom.observations:8 of
+msgid "``statement`` — the canonical belief, one sentence;"
+msgstr ""
+
+#: axiom.observations:9 of
+msgid "``subject``   — the entity it is about / who holds it (\"\" = the world);"
+msgstr ""
+
+#: axiom.observations:10 of
+#, python-brace-format
+msgid "``sources``   — the supporting facts as ``[{\"fact_id\", \"turn_id\"}]``;"
+msgstr ""
+
+#: axiom.observations:11 of
+msgid "``proof_count`` — cached ``len(sources)``;"
+msgstr ""
+
+#: axiom.observations:12 of
+msgid "``history``   — JSON trail of CREATE/UPDATE/DELETE changes."
+msgstr ""
+
+#: axiom.observations:14 of
+msgid ""
+"This is the *deterministic* storage + rollback layer (no LLM, no "
+"network). The LLM consolidation that decides CREATE/UPDATE/DELETE lives "
+"in ``axiom.consolidate``; the background job that calls it lives in the "
+"app layer."
+msgstr ""
+
+#: axiom.observations:18 of
+msgid ""
+"**Rollback (the hard part, solved).** Beliefs derive from several turns, "
+"so a plain ``turn_id`` column is not enough. The ``sources`` turn ids are"
+" the rollback key: rewinding to turn N drops every belief *created* after"
+" N and, for the survivors, keeps only the sources at turns ``<= N``, "
+"recomputing ``proof_count`` and flagging ``stale`` so the next "
+"consolidation pass re-examines them. Beliefs thus roll back atomically "
+"with the facts/events they were built from."
+msgstr ""
+
+#: axiom.observations.compute_trend:1 of
+msgid "Classify a belief's trend from the turn ids of its supporting sources."
+msgstr ""
+
+#: axiom.observations.compute_trend:3 of
+msgid "Returns one of the ``TREND_*`` constants:"
+msgstr ""
+
+#: axiom.observations.compute_trend:5 of
+msgid "``NEW``           — every source falls in the recent window;"
+msgstr ""
+
+#: axiom.observations.compute_trend:6 of
+msgid "``STRENGTHENING`` — denser recent evidence than older (ratio > 1.5);"
+msgstr ""
+
+#: axiom.observations.compute_trend:7 of
+msgid "``WEAKENING``     — sparser recent evidence than older (ratio < 0.5);"
+msgstr ""
+
+#: axiom.observations.compute_trend:8 of
+msgid "``STALE``         — no source in the recent window (may be outdated);"
+msgstr ""
+
+#: axiom.observations.compute_trend:9 of
+msgid ""
+"``STABLE``        — steady, or trend unknown (no sources / no current "
+"turn)."
+msgstr ""
+
+#: axiom.observations.compute_trend:11 of
+msgid ""
+"Deterministic and side-effect free. ``now_turn`` is the current turn (the"
+" rewind horizon during replay), so the trend is always read at the right "
+"\"now\"."
+msgstr ""
+
+#: axiom.observations.Observation:1 of
+msgid "One consolidated belief."
+msgstr ""
+
+#: axiom.observations.Observation:3 of
+#, python-brace-format
+msgid ""
+"``sources`` is a list of ``{\"fact_id\": int, \"turn_id\": int}`` dicts —"
+" the facts backing the belief and the turns they came from (the rollback "
+"key)."
+msgstr ""
+
+#: axiom.observations.Observation.trend:1 of
+msgid "This belief's trend at ``now_turn`` (see :func:`compute_trend`)."
+msgstr ""
+
+#: axiom.observations.insert_observation:1 of
+msgid "Persist a single new belief. Returns its ``observation_id`` (or ``None``)."
+msgstr ""
+
+#: axiom.observations.insert_observation:3 of
+msgid ""
+"Blank statements are skipped (an empty belief is never written). "
+"``proof_count`` is derived from ``sources`` so it can never disagree with"
+" them."
+msgstr ""
+
+#: axiom.observations.get_observations:1 of
+msgid "Fetch a save's beliefs, most recently updated first."
+msgstr ""
+
+#: axiom.observations.get_observations:3 of
+msgid ""
+"Only beliefs created at turns ``<= max_turn_id`` (honours the history "
+"window / rewind horizon). ``None`` = no bound."
+msgstr ""
+
+#: axiom.observations.get_observations:5 of
+msgid ""
+"Keep only beliefs whose ``subject`` matches (case-insensitive). ``None`` "
+"= no filter; ``\"\"`` keeps the world-level beliefs."
+msgstr ""
+
+#: axiom.observations.count_observations:1 of
+msgid "Number of stored beliefs for a save (cheap COUNT)."
+msgstr ""
+
+#: axiom.observations.rollback_observations:1 of
+msgid "Roll a save's beliefs back to their state at ``target_turn_id``."
+msgstr ""
+
+#: axiom.observations.rollback_observations:3 of
+msgid ""
+"Operates on an already-open connection so ``CheckpointManager.rewind`` "
+"can run it inside the same transaction as the Event_Log / Facts deletes "
+"(atomic)."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:6
+#: axiom.observations.rollback_observations:6 of
+msgid "Rule (see module docstring):"
+msgstr ""
+
+#: axiom.observations.rollback_observations:7 of
+msgid "belief ``created_turn_id > target`` → it did not exist yet → DELETE;"
+msgstr ""
+
+#: axiom.observations.rollback_observations:8 of
+msgid ""
+"else keep its sources at turns ``<= target``; if any were dropped (an "
+"UPDATE absorbed a now-rewound fact) recompute ``proof_count``, clamp "
+"``updated_turn_id`` to ``<= target`` and flag ``stale`` for the next "
+"consolidation pass."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:12
+#: axiom.observations.rollback_observations:13 of
+#, python-brace-format
+msgid "Returns ``{\"deleted\": n, \"updated\": m}``."
+msgstr ""
+
+#: axiom.observations.apply_consolidation:1 of
+msgid "Apply consolidator actions (CREATE/UPDATE/DELETE) to the beliefs store."
+msgstr ""
+
+#: axiom.observations.apply_consolidation:3 of
+msgid ""
+"Deterministic: it just executes the decisions the LLM already made (the "
+"LLM call lives in ``axiom.consolidate``). ``fact_turn_map`` maps each "
+"cited ``fact_id`` to its ``turn_id`` so new sources carry the turn (the "
+"rollback key). Unknown belief ids / empty statements are skipped. Returns"
+" counts."
+msgstr ""
+
+#: axiom.observations.apply_consolidation:8 of
+msgid ""
+"The turn this consolidation pass runs at — stamped as the "
+"``updated_turn_id`` (and ``created_turn_id`` for new beliefs)."
+msgstr ""
+
+#: axiom.observations.rollback_observations_standalone:1 of
+msgid "Standalone variant of :func:`rollback_observations` (opens its own conn)."
+msgstr ""
+
+#: axiom.observations.rollback_observations_standalone:3 of
+msgid ""
+"The in-session rewind path uses the connection-based variant so events, "
+"facts and beliefs roll back in one transaction; this helper is for tests "
+"and out-of-band cleanup."
+msgstr ""
+
+#: ../../api/memory.md:60
+msgid "`axiom.consolidate`"
+msgstr ""
+
+#: axiom.consolidate:1 of
+msgid "LLM belief consolidation for living memory mode (Phase 3)."
+msgstr ""
+
+#: axiom.consolidate:3 of
+msgid ""
+"Turns a batch of freshly-extracted :class:`~axiom.facts.Fact` objects, "
+"together with the beliefs already held, into a list of **consolidation "
+"actions** (CREATE / UPDATE / DELETE "
+":class:`~axiom.observations.Observation`). The decision rules — prefer "
+"UPDATE over duplicate CREATE, one facet per belief, be conservative about"
+" DELETE, never do arithmetic, preserve what changed — are adapted from "
+"Hindsight's ``consolidation/prompts.py``, reimplemented on our "
+":class:`~axiom.backends.base.LLMBackend`."
+msgstr ""
+
+#: axiom.consolidate:11 of
+msgid "Design rules (same discipline as ``axiom.factextract``):"
+msgstr ""
+
+#: axiom.consolidate:13 of
+msgid ""
+"**Background only**: callers run this off the turn loop; it must never "
+"block."
+msgstr ""
+
+#: axiom.consolidate:14 of
+msgid ""
+"**Graceful**: any failure (LLM down, bad JSON) yields ``[]`` — no belief "
+"changes this pass, the game keeps running."
+msgstr ""
+
+#: axiom.consolidate:16 of
+msgid ""
+"**No persistence here**: returns action objects; the deterministic "
+"application to the DB lives in "
+"``axiom.observations.apply_consolidation``."
+msgstr ""
+
+#: axiom.consolidate.ConsolidationAction:1 of
+msgid "One belief change proposed by the consolidator LLM."
+msgstr ""
+
+#: axiom.consolidate.consolidate:1 of
+msgid "Ask ``llm`` how the beliefs should change given ``new_facts``."
+msgstr ""
+
+#: axiom.consolidate.consolidate:3 of
+msgid "The universe-wide default mission (what this world remembers)."
+msgstr ""
+
+#: axiom.consolidate.consolidate:4 of
+#, python-brace-format
+msgid ""
+"Per-character memory styles ``{entity_name: mission}`` (B-3) — only those"
+" whose character appears in this batch are shown."
+msgstr ""
+
+#: axiom.consolidate.consolidate:6 of
+msgid ""
+"Cap on existing beliefs shown to the LLM (TICKET-077); scoped to the "
+"batch's characters + most recent. ``<= 0`` disables."
+msgstr ""
+
+#: ../../api/memory.md:67
+msgid "`axiom.missions`"
+msgstr ""
+
+#: axiom.missions:1 of
+msgid "Per-character belief missions (Phase 4, B-3)."
+msgstr ""
+
+#: axiom.missions:3 of
+msgid ""
+"A *belief mission* is a memory style for the consolidator: what a "
+"character tends to remember and dwell on (a rancorous NPC remembers "
+"betrayals, a merchant remembers transactions, a loyal guard remembers "
+"favours). It biases which beliefs :mod:`axiom.consolidate` forms about "
+"each subject, so NPCs \"remember differently\" according to their nature."
+msgstr ""
+
+#: axiom.missions:9 of
+msgid ""
+"Stored in ``Universe_Meta`` (no schema change; it round-trips losslessly "
+"through the Universe-as-Code ``[extra]`` mechanism, is copied into saves,"
+" and is packaged):"
+msgstr ""
+
+#: axiom.missions:13 of
+msgid "``belief_mission``  — the universe-wide default mission (one string);"
+msgstr ""
+
+#: axiom.missions:14 of
+#, python-brace-format
+msgid ""
+"``belief_missions`` — JSON ``{entity_name: mission}`` per-character "
+"overrides."
+msgstr ""
+
+#: axiom.missions:16 of
+msgid ""
+"Keyed by entity *name* because a belief's ``subject`` is a name and "
+"authoring \"Name: mission\" is natural. Reading degrades gracefully "
+"(missing/blank/malformed → sensible empties) so the consolidator always "
+"has something usable."
+msgstr ""
+
+#: axiom.missions.get_universe_mission:1 of
+msgid "The universe-wide default belief mission (\"\" when unset)."
+msgstr ""
+
+#: axiom.missions.get_belief_missions_from_value:1 of
+#, python-brace-format
+msgid "Parse a ``belief_missions`` JSON value into ``{entity_name: mission}``."
+msgstr ""
+
+#: axiom.missions.get_belief_missions_from_value:3 of
+msgid ""
+"Tolerates blank/malformed JSON or non-string values — anything unusable "
+"is dropped rather than raised. Used when the meta value is already in "
+"hand (e.g. the Studio's loaded meta dict)."
+msgstr ""
+
+#: axiom.missions.get_belief_missions:1 of
+#, python-brace-format
+msgid "Per-character missions as ``{entity_name: mission}`` read from the DB."
+msgstr ""
+
+#: axiom.missions.parse_missions_text:1 of
+#, python-brace-format
+msgid "Parse a 'Name: mission' per-line block into ``{name: mission}``."
+msgstr ""
+
+#: axiom.missions.parse_missions_text:3 of
+msgid ""
+"The GUI Metadata field stores missions this way (one entity per line). "
+"Lines without a colon, or with an empty name/mission, are skipped. The "
+"first colon splits — a mission may itself contain colons."
+msgstr ""
+
+#: axiom.missions.missions_to_text:1 of
+msgid "Inverse of :func:`parse_missions_text` for displaying in the GUI field."
+msgstr ""
+
+#: ../../api/memory.md:74
+msgid "`axiom.mental_models`"
+msgstr ""
+
+#: axiom.mental_models:1 of
+msgid "Mental-model storage for \"living\" memory mode (Hindsight §7.8)."
+msgstr ""
+
+#: axiom.mental_models:3 of
+msgid ""
+"A **mental model** is a curated, synthetic profile — one per subject (a "
+"character, or ``\"\"`` for the world) — that sits *above* the beliefs in "
+"the recall hierarchy:"
+msgstr ""
+
+#: axiom.mental_models:6 of
+msgid ""
+"mental model  →  beliefs (observations)  →  facts  →  raw narrative "
+"chunks (most synthetic)                                       (most raw)"
+msgstr ""
+
+#: axiom.mental_models:9 of
+msgid ""
+"Where a belief is one durable statement, a mental model is a short "
+"paragraph that distils *all* of a subject's beliefs into \"who this is "
+"now\": their relationships, goals, grudges and how they have changed. The"
+" narrator reads it first, so a long campaign's accumulated memory lands "
+"as a coherent character note rather than a pile of disjointed facts."
+msgstr ""
+
+#: axiom.mental_models:15 of
+msgid ""
+"Idea adapted from Hindsight (MIT, ``reflect/``): their reflect agent "
+"maintains curated *mental models* above the raw memories. We keep the "
+"**principle of a synthetic top layer** but drop the heavy tool-calling "
+"agent — for a single-player game one regenerated paragraph per subject is"
+" enough."
+msgstr ""
+
+#: axiom.mental_models:20 of
+msgid ""
+"This module is the *deterministic* storage + rollback layer (no LLM, no "
+"network). The LLM that writes the summary lives in :mod:`axiom.reflect`; "
+"the background job that calls it lives in the app's worker layer."
+msgstr ""
+
+#: axiom.mental_models:24 of
+msgid ""
+"**Rollback.** A mental model is fully reconstructible from the beliefs it"
+" was built from (which themselves roll back correctly), so rewinding to "
+"turn N only has to: drop every model *created* after N, and flag the "
+"survivors ``stale`` (clamping ``updated_turn_id``) so the next refresh "
+"regenerates them from the rewound beliefs. There is at most one model per"
+" ``(save_id, subject)`` — refresh is an UPSERT."
+msgstr ""
+
+#: axiom.mental_models.MentalModel:1 of
+msgid "One curated profile for a subject (a character, or \"\" for the world)."
+msgstr ""
+
+#: axiom.mental_models.MentalModel:3 of
+msgid ""
+"``sources`` is a list of the ``observation_id`` values the summary was "
+"built from (kept for traceability / future link expansion; the rollback "
+"key is the turn ids, which the beliefs themselves carry)."
+msgstr ""
+
+#: axiom.mental_models.upsert_mental_model:1 of
+msgid ""
+"Create or refresh the mental model for ``subject``. Returns its "
+"``model_id``."
+msgstr ""
+
+#: axiom.mental_models.upsert_mental_model:3 of
+msgid ""
+"There is at most one model per ``(save_id, subject)``: an existing one is"
+" updated in place (``created_turn_id`` preserved), otherwise a new one is"
+" inserted. Blank summaries are skipped (never overwrite a profile with "
+"nothing)."
+msgstr ""
+
+#: axiom.mental_models.get_mental_models:1 of
+msgid "Fetch a save's mental models, most recently updated first."
+msgstr ""
+
+#: axiom.mental_models.get_mental_models:3 of
+msgid ""
+"Only models created at turns ``<= max_turn_id`` (honours the rewind "
+"horizon). ``None`` = no bound."
+msgstr ""
+
+#: axiom.mental_models.get_mental_models:5 of
+msgid ""
+"Keep only the model for this subject (case-insensitive). ``\"\"`` keeps "
+"the world-level model."
+msgstr ""
+
+#: axiom.mental_models.count_mental_models:1 of
+msgid "Number of stored mental models for a save (cheap COUNT)."
+msgstr ""
+
+#: axiom.mental_models.stale_subjects:1 of
+msgid "Subjects whose model is flagged ``stale`` (oldest update first)."
+msgstr ""
+
+#: axiom.mental_models.stale_subjects:3 of
+msgid ""
+"A rewind flags survivors stale; this lets the refresh job find and "
+"regenerate them even when their beliefs do not change again. Capped so a "
+"long backlog never floods one consolidation pass."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:1 of
+msgid "Roll a save's mental models back to their state at ``target_turn_id``."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:3 of
+msgid ""
+"Operates on an already-open connection so ``CheckpointManager.rewind`` "
+"can run it inside the same transaction as the Event_Log / Facts / "
+"Observations deletes."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:7 of
+msgid "model ``created_turn_id > target`` → did not exist yet → DELETE;"
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models:8 of
+msgid ""
+"else, if it was last refreshed after the target, clamp "
+"``updated_turn_id`` to ``target`` and flag ``stale`` so the next refresh "
+"regenerates it from the rewound beliefs (the old summary stays as a "
+"graceful fallback meanwhile)."
+msgstr ""
+
+#: axiom.mental_models.rollback_mental_models_standalone:1 of
+msgid "Standalone variant of :func:`rollback_mental_models` (opens its own conn)."
+msgstr ""
+
+#: ../../api/memory.md:81
+msgid "`axiom.reflect`"
+msgstr ""
+
+#: axiom.reflect:1 of
+msgid "LLM generation of mental models for living memory mode (Hindsight §7.8)."
+msgstr ""
+
+#: axiom.reflect:3 of
+msgid ""
+"Turns the beliefs held about one subject (a character, or the world) into"
+" a short **mental model**: a 2-4 sentence profile of who that subject is "
+"*now*. The decision discipline — base it only on the beliefs, no "
+"invention, no arithmetic, capture change and relationships — is adapted "
+"from Hindsight's ``reflect/`` prompts, reimplemented on our "
+":class:`~axiom.backends.base.LLMBackend`."
+msgstr ""
+
+#: axiom.reflect:9 of
+msgid ""
+"Design rules (same as :mod:`axiom.factextract` / "
+":mod:`axiom.consolidate`):"
+msgstr ""
+
+#: axiom.reflect:12 of
+msgid ""
+"**Graceful**: any failure (LLM down, empty answer) yields ``\"\"`` — the "
+"profile is simply not refreshed this pass, the game keeps running."
+msgstr ""
+
+#: axiom.reflect:14 of
+msgid ""
+"**No persistence here**: returns the summary string; the deterministic "
+"UPSERT lives in :func:`axiom.mental_models.upsert_mental_model`."
+msgstr ""
+
+#: axiom.reflect.affected_subjects:1 of
+msgid ""
+"Subjects whose beliefs changed in a consolidation batch (order-"
+"preserving)."
+msgstr ""
+
+#: axiom.reflect.affected_subjects:3 of
+msgid ""
+"Reads the ``subject`` of each create/update action (delete actions drop a"
+" belief and don't name a subject worth re-modelling here). De-duplicated "
+"case-insensitively, keeping first-seen spelling. World beliefs "
+"(``subject=\"\"``) are included (the world model)."
+msgstr ""
+
+#: axiom.reflect.reflect:1 of
+msgid "Write a mental-model summary for ``subject`` from its ``beliefs``."
+msgstr ""
+
+#: axiom.reflect.reflect:3 of
+msgid ""
+"Returns ``\"\"`` when there are too few beliefs to be worth modelling, on"
+" empty input, or on any backend failure (never raises) — so a living-mode"
+" background job can call it fire-and-forget."
+msgstr ""
+
+#~ msgid ""
+#~ "The narrative memory subsystem. In every"
+#~ " mode it provides hybrid search "
+#~ "(`axiom.memory` + `axiom.retrieval`); in "
+#~ "*living* mode it additionally distils "
+#~ "the narrative into structured **facts** "
+#~ "(`axiom.facts` + `axiom.factextract`) and, "
+#~ "with beliefs enabled, into evolving "
+#~ "**observations** (`axiom.observations` + "
+#~ "`axiom.consolidate`) shaped by per-character"
+#~ " **missions** (`axiom.missions`). See the "
+#~ "[Memory guide](../guides/memory.md) for the "
+#~ "concepts."
+#~ msgstr ""
+

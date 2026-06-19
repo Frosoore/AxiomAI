@@ -42,14 +42,13 @@ def config_dir(tmp_path: Path):
 class TestAppConfig:
     def test_defaults(self) -> None:
         """A freshly-constructed AppConfig carries the documented default
-        backend, URLs, models and chronicler interval."""
+        backend, URLs and models."""
         cfg = AppConfig()
         assert cfg.llm_backend == "universal"
         assert cfg.universal_base_url == "http://localhost:11434/v1"
         assert cfg.universal_model == "llama3.2"
         assert cfg.gemini_api_key == ""
         assert cfg.gemini_model == "gemini-2.0-flash"
-        assert cfg.chronicler_interval == 50
 
 
 # ---------------------------------------------------------------------------
@@ -70,13 +69,13 @@ class TestLoadConfig:
         data = {
             "llm_backend": "gemini",
             "gemini_api_key": "test-key",
-            "chronicler_interval": 25,
+            "rag_chunk_count": 9,
         }
         config_file.write_text(json.dumps(data))
         cfg = load_config()
         assert cfg.llm_backend == "gemini"
         assert cfg.gemini_api_key == "test-key"
-        assert cfg.chronicler_interval == 25
+        assert cfg.rag_chunk_count == 9
 
     def test_unknown_keys_ignored(self, config_dir) -> None:
         """Unrecognised keys in the settings file are ignored rather than
@@ -113,14 +112,14 @@ class TestSaveConfig:
         original = AppConfig(
             llm_backend="gemini",
             gemini_api_key="my-secret-key",
-            chronicler_interval=10,
+            chronicler_minutes_interval=480,
             basic_prompt="Speak only in English",
         )
         save_config(original)
         loaded = load_config()
         assert loaded.llm_backend == "gemini"
         assert loaded.gemini_api_key == "my-secret-key"
-        assert loaded.chronicler_interval == 10
+        assert loaded.chronicler_minutes_interval == 480
         assert loaded.basic_prompt == "Speak only in English"
 
 

@@ -72,10 +72,6 @@ class AppConfig:
                              False, that extra call is skipped and the time is
                              estimated from the scene pace alone (cheaper, less
                              precise). See Pilier 5 / TICKET-015.
-        chronicler_interval: LEGACY — player turns between Chronicler runs. No
-                             longer used for triggering (the Chronicler is now
-                             driven by in-game minutes); kept for backward
-                             compatibility with older settings files.
         chronicler_minutes_interval: In-game minutes between Chronicler runs. The
                              Chronicler fires once whenever the world clock crosses
                              a multiple of this value, so a single long time-skip
@@ -129,12 +125,44 @@ class AppConfig:
     extraction_model: str = "llama3.1:8b"
     time_model: str = "llama3.2:1b"
     timekeeper_enabled: bool = True
-    chronicler_interval: int = 50
+    # NB: the legacy `chronicler_interval` (in *player turns*) was removed once the
+    # Chronicler became minutes-driven (TICKET-018/076). load_config drops unknown
+    # keys, so old settings files carrying it still load cleanly.
     chronicler_minutes_interval: int = 720
     ui_font_size: int = 14
     enable_audio: bool = True
     doc_tooltips_enabled: bool = True
     rag_chunk_count: int = 5
+    # Memory mode. "lite" (default, safe): hybrid search only, fully offline and
+    # deterministic, no LLM touched by memory. "living": additionally distils each
+    # turn into structured facts via the LLM (background job). Per-save choice.
+    memory_mode: str = "lite"
+    # Living mode: extract facts every N turns (batched to bound LLM cost). 0
+    # disables periodic extraction (manual "extract now" button only). The button
+    # runs extraction on demand and resets the turn counter.
+    memory_fact_interval: int = 5
+    # Living mode: model used for fact extraction. Empty = reuse the configured
+    # game backend/model; set to override with a cheaper/faster model.
+    memory_fact_model: str = ""
+    # Living mode, Phase 3: also consolidate facts into evolving *beliefs*
+    # (observations) so characters remember and revise their opinions over a long
+    # game. Off by default — it is an extra background LLM pass on top of fact
+    # extraction. Only consulted when memory_mode is "living".
+    memory_beliefs_enabled: bool = False
+    # Living mode, §7.8: also distil each subject's beliefs into a curated *mental
+    # model* (a short living profile) that sits above the beliefs in the recall
+    # hierarchy. Off by default — it is yet another background LLM pass, and it
+    # builds on beliefs, so it only does anything when beliefs are also enabled.
+    memory_mental_models_enabled: bool = False
+    # Optional neural reranking of memory search (cross-encoder). OFF by default:
+    # it downloads a ~90 MB torch model and needs a healthy native runtime
+    # (fragile on Windows, TICKET-070). When off, search uses fused
+    # semantic+lexical ranking. Exposed in the Phase 2 memory settings panel.
+    memory_reranker_enabled: bool = False
+    # Opt-in explicit Gemini context caching of a large, stable system prompt
+    # (Phase 4 / B-4). Reduces input-token cost when the prompt is big enough to
+    # qualify; safely no-ops otherwise. Gemini backend only.
+    memory_prompt_cache_enabled: bool = False
     language: str = "en"
     basic_prompt: str = ""
     llm_requests_per_minute: int = 0
@@ -336,6 +364,38 @@ def resolve_time_model(config: AppConfig) -> str:
     return _cloud_main_model(config) or config.time_model
 
 
+def memory_mode_is_living(config: AppConfig) -> bool:
+    """True when living memory (LLM fact extraction) is enabled for this config.
+
+    Defensive: any value other than the explicit "living" opt-in (typos, legacy
+    blanks, unknown strings) resolves to the safe offline "lite" mode, so the LLM
+    is never engaged by accident.
+    """
+    return str(getattr(config, "memory_mode", "lite")).strip().lower() == "living"
+
+
+def memory_beliefs_active(config: AppConfig) -> bool:
+    """True when evolving beliefs (Phase 3 consolidation) should run.
+
+    Requires living memory AND the explicit beliefs opt-in, so the extra
+    consolidation LLM pass never fires in lite mode or without the toggle.
+    """
+    return memory_mode_is_living(config) and bool(
+        getattr(config, "memory_beliefs_enabled", False)
+    )
+
+
+def memory_mental_models_active(config: AppConfig) -> bool:
+    """True when curated mental models (§7.8) should be built and injected.
+
+    Requires evolving beliefs (a model is distilled *from* beliefs) AND the
+    explicit mental-models opt-in, so this extra LLM pass never fires without both.
+    """
+    return memory_beliefs_active(config) and bool(
+        getattr(config, "memory_mental_models_enabled", False)
+    )
+
+
 def build_llm_from_config(config: AppConfig, model_override: str | None = None) -> LLMBackend:
     """Instantiate and return the correct LLMBackend for the given config.
 
@@ -410,6 +470,7 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
             model_name=model_override if model_override else config.gemini_model,
             requests_per_minute=config.llm_requests_per_minute,
             fallback_model=config.gemini_fallback_model,
+            enable_prompt_cache=config.memory_prompt_cache_enabled,
         )
 
     raise ValueError(

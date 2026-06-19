@@ -97,6 +97,7 @@ _RUNTIME_TABLES = (
     "Items_Inventory",
     "Timeline",
     "Snapshots",
+    "Modifier_Snapshots",
     "State_Cache",
     "Event_Log",
     "Saves",

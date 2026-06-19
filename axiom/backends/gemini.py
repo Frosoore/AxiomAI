@@ -18,6 +18,7 @@ Typical usage::
         print(response.narrative_text)
 """
 
+import hashlib
 import re
 import threading
 import time
@@ -148,11 +149,18 @@ class GeminiClient(LLMBackend):
         model_name: str = _DEFAULT_MODEL,
         requests_per_minute: int = 0,
         fallback_model: str = "",
+        enable_prompt_cache: bool = False,
     ) -> None:
         self._api_key = api_key
         self._model_name = model_name
         self._min_interval = 60.0 / requests_per_minute if requests_per_minute > 0 else 0.0
         self._fallback_model = fallback_model.strip()
+        # Optional explicit context caching of a large, stable system prompt
+        # (Phase 4 / B-4). Off by default. Maps (model, system-prompt hash) →
+        # cache name, or None when that prompt is known to be uncacheable (too
+        # small / unsupported) so we never re-attempt a failing create call.
+        self._enable_prompt_cache = enable_prompt_cache
+        self._prompt_cache: dict[str, str | None] = {}
         # Custom transport (IPv4 first + connect timeout): the SDK ships with
         # no timeout at all and overrides client-level httpx timeouts with an
         # explicit None per request — see axiom/backends/transport.py.
@@ -166,6 +174,57 @@ class GeminiClient(LLMBackend):
     # ------------------------------------------------------------------
     # Résilience quota (TICKET-031)
     # ------------------------------------------------------------------
+
+    # Explicit Gemini context caching only pays off (and is only *accepted* by
+    # the API) for a sizeable stable prefix. Below this we never attempt a
+    # create call — small prompts rely on Gemini's automatic implicit caching.
+    _PROMPT_CACHE_MIN_CHARS = 8000
+
+    def _resolve_cached_content(self, model: str, system_instruction: str | None) -> str | None:
+        """Return a cache name for a reused large system prompt, else None.
+
+        Best-effort: any failure (prompt too small, caching unsupported, network)
+        memoises None so we fall back to the inline system_instruction and never
+        retry a failing create. Never raises.
+        """
+        if not self._enable_prompt_cache or not system_instruction:
+            return None
+        if len(system_instruction) < self._PROMPT_CACHE_MIN_CHARS:
+            return None
+        digest = hashlib.sha256(system_instruction.encode("utf-8")).hexdigest()[:16]
+        key = f"{model}:{digest}"
+        if key in self._prompt_cache:
+            return self._prompt_cache[key]
+        try:
+            cached = self._client.caches.create(
+                model=model,
+                config=genai_types.CreateCachedContentConfig(
+                    system_instruction=system_instruction,
+                    ttl="600s",
+                ),
+            )
+            name = getattr(cached, "name", None)
+            self._prompt_cache[key] = name
+            return name
+        except Exception:
+            logger.debug("Gemini prompt cache unavailable for %s.", model, exc_info=True)
+            self._prompt_cache[key] = None
+            return None
+
+    def _make_generate_config(
+        self,
+        model: str,
+        system_instruction: str | None,
+        **kwargs,
+    ) -> "genai_types.GenerateContentConfig":
+        """Build a GenerateContentConfig, using a cached system prompt if one is
+        available (and dropping the inline copy to avoid paying for it twice)."""
+        cache_name = self._resolve_cached_content(model, system_instruction)
+        if cache_name:
+            return genai_types.GenerateContentConfig(cached_content=cache_name, **kwargs)
+        return genai_types.GenerateContentConfig(
+            system_instruction=system_instruction, **kwargs
+        )
 
     def _candidate_models(self) -> list[str]:
         models = [self._model_name]
@@ -333,8 +392,9 @@ class GeminiClient(LLMBackend):
         """
         system_instruction, contents = self._translate_messages(messages)
 
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
+        # Config is built per-model inside the retry lambda so context caching
+        # (Phase 4) can key on the model actually used (fallback included).
+        config_kwargs = dict(
             temperature=temperature,
             top_p=top_p,
             max_output_tokens=max_tokens if max_tokens else 1024,
@@ -346,7 +406,7 @@ class GeminiClient(LLMBackend):
             lambda model: self._client.models.generate_content(
                 model=model,
                 contents=contents,
-                config=config,
+                config=self._make_generate_config(model, system_instruction, **config_kwargs),
             )
         )
 

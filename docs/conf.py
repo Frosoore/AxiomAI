@@ -43,6 +43,7 @@ exclude_patterns = ["_build", "locales", "Thumbs.db", ".DS_Store"]
 autodoc_mock_imports = [
     "chromadb",
     "sentence_transformers",
+    "rank_bm25",
     "google",
     "google.genai",
     "httpx",

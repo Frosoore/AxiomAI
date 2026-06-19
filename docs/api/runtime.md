@@ -17,12 +17,8 @@ The narration pipeline and its helpers. Most applications drive these through
    :members:
 ```
 
-## `axiom.memory`
-
-```{eval-rst}
-.. automodule:: axiom.memory
-   :members:
-```
+The narrative memory subsystem (`axiom.memory`, `axiom.retrieval`, `axiom.facts`,
+`axiom.factextract`) has its own page: [Memory](memory.md).
 
 ## `axiom.time_system`
 

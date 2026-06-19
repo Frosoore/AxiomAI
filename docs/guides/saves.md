@@ -42,6 +42,23 @@ session.rewind(target_turn_id)     # back to that turn
 session.list_checkpoints()         # every recorded turn you can rewind to
 ```
 
+A rewind is **comprehensive**. {py:class}`axiom.checkpoint.CheckpointManager`
+drops the `Event_Log` after turn *N* and rebuilds every derived view to its
+turn-*N* state in a single transaction:
+
+- the materialised stats (`State_Cache`), the `Timeline`, periodic `Snapshots`,
+  and — in living mode — the structured **facts** and **beliefs**;
+- temporary **modifiers** (buffs/debuffs): these decay in in-game *minutes* and
+  are not event-sourced, so the engine snapshots the modifier table each turn and
+  restores the one captured at turn *N*;
+- **scheduled events**: any event that *fired* after turn *N* is un-fired, so it
+  triggers again once the in-game clock next crosses its minute.
+
+The semantic memory store is rolled back alongside via
+{py:meth}`axiom.memory.VectorMemory.rollback`, which removes every narrative
+chunk from a later turn. Nothing from a later turn leaks back: buffs, world
+events and remembered facts all return to exactly how they stood at turn *N*.
+
 In **Hardcore** mode, death deletes the save — that is the point of Hardcore.
 
 ## Inspecting and editing a save

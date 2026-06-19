@@ -873,6 +873,135 @@ class TestCausalTime:
         assert "are ALL present in the scene together" in final_msg["content"]
         assert "DO NOT ignore any members or refer to them as 'you two'" in final_msg["content"]
 
+    def test_focus_terms_include_location_and_on_scene_names(self, db_path, vm) -> None:
+        """TICKET-073: the scene's location AND the names of the characters sharing
+        it are passed as focus_terms to the vector query (the player is excluded)."""
+        es = EventSourcer(db_path)
+        es.append_event("s1", 0, "stat_set", "player1", {"entity_id": "player1", "stat_key": "Location", "value": "Forest"})
+        es.append_event("s1", 0, "stat_set", "npc1", {"entity_id": "npc1", "stat_key": "Location", "value": "Forest"})
+        es.rebuild_state_cache("s1")
+
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, _ = _make_arbitrator(db_path, vm, response)
+
+        captured: dict = {}
+        real_query = arb._vector_memory.query
+
+        def _spy(*args, **kwargs):
+            # Capture the narrative query, not the dedicated lore query (TICKET-072).
+            if kwargs.get("chunk_type") != "lore":
+                captured["focus_terms"] = kwargs.get("focus_terms")
+            return real_query(*args, **kwargs)
+
+        arb._vector_memory.query = _spy
+        arb.process_turn("s1", 1, {"player1": "I look around"}, "sys", [])
+
+        terms = captured["focus_terms"]
+        assert terms is not None
+        assert "Forest" in terms          # the player's current location
+        assert "Goblin" in terms          # npc1, sharing the location
+        assert "Aria" not in terms        # player1's name is excluded
+
+    def test_focus_terms_exclude_characters_elsewhere(self, db_path, vm) -> None:
+        """A character in a *different* location is not added to focus_terms."""
+        es = EventSourcer(db_path)
+        es.append_event("s1", 0, "stat_set", "player1", {"entity_id": "player1", "stat_key": "Location", "value": "Forest"})
+        es.append_event("s1", 0, "stat_set", "npc1", {"entity_id": "npc1", "stat_key": "Location", "value": "Castle"})
+        es.rebuild_state_cache("s1")
+
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, _ = _make_arbitrator(db_path, vm, response)
+
+        captured: dict = {}
+        real_query = arb._vector_memory.query
+
+        def _spy(*args, **kwargs):
+            # Capture the narrative query, not the dedicated lore query (TICKET-072).
+            if kwargs.get("chunk_type") != "lore":
+                captured["focus_terms"] = kwargs.get("focus_terms")
+            return real_query(*args, **kwargs)
+
+        arb._vector_memory.query = _spy
+        arb.process_turn("s1", 1, {"player1": "I look around"}, "sys", [])
+
+        terms = captured["focus_terms"]
+        assert terms == ["Forest"]        # only the location; the NPC is elsewhere
+
+
+class TestScheduledEventFiring:
+    """TICKET-075: when a scheduled event fires, the turn it fired on is recorded
+    in Fired_Scheduled_Events so a later rewind can un-fire it."""
+
+    def test_fired_event_is_tagged_with_current_turn(self, db_path, vm) -> None:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) "
+                "VALUES ('ev1', 0, 'Quake', 'The ground shakes.');"
+            )
+            conn.commit()
+
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, _ = _make_arbitrator(db_path, vm, response)
+        arb.process_turn("s1", 7, {"player1": "I look around"}, "sys", [])
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT fired_turn_id FROM Fired_Scheduled_Events "
+                "WHERE save_id = 's1' AND event_id = 'ev1';"
+            ).fetchone()
+        assert row is not None        # the event fired (trigger_minute 0 <= clock)
+        assert row[0] == 7            # tagged with the turn it fired on
+
+
+class TestLoreSemanticRetrieval:
+    """TICKET-072: lore retrieval is semantic with link expansion, and falls back
+    to deterministic keyword overlap when no embedding runtime is available."""
+
+    def _seed_lore(self, db_path: str) -> None:
+        with sqlite3.connect(db_path) as conn:
+            conn.executemany(
+                "INSERT INTO Lore_Book (entry_id, category, name, keywords, content) "
+                "VALUES (?, ?, ?, ?, ?);",
+                [
+                    ("coup", "history", "The Coup", "rebellion power",
+                     "The Coup of Highport toppled the throne."),
+                    ("house", "history", "House Arodan", "noble family",
+                     "House Arodan, an old noble line."),
+                    ("storm", "nature", "Storms", "rain wind",
+                     "Storms batter the northern sea."),
+                ],
+            )
+            conn.commit()
+
+    def test_expand_lore_adds_same_category_link(self, db_path) -> None:
+        """A semantic seed pulls in a related entry (shared category), but not an
+        unrelated one."""
+        self._seed_lore(db_path)
+        arb = ArbitratorEngine(db_path, [])
+        result = arb._expand_lore(["coup"], k=1)
+        names = [e["name"] for e in result]
+        assert names[0] == "The Coup"      # the seed comes first
+        assert "House Arodan" in names     # linked by shared category 'history'
+        assert "Storms" not in names       # different category, no shared keywords
+
+    def test_semantic_path_used_when_vector_memory_present(self, db_path, vm) -> None:
+        self._seed_lore(db_path)
+        response = LLMResponse(narrative_text="Prose", tool_call=None, finish_reason="stop")
+        arb, _ = _make_arbitrator(db_path, vm, response)
+
+        result = arb._fetch_relevant_lore("s1", "tell me about the Coup of Highport", k=2)
+
+        assert result                      # semantic retrieval returned entries
+        assert "s1" in arb._lore_synced    # lore was embedded once
+        assert vm.query("s1", "Highport", k=5, chunk_type="lore")  # chunks present
+
+    def test_keyword_fallback_when_no_vector_memory(self, db_path) -> None:
+        """With no embedding runtime, retrieval degrades to keyword overlap."""
+        self._seed_lore(db_path)
+        arb = ArbitratorEngine(db_path, [])   # vector memory never configured
+        result = arb._fetch_relevant_lore("s1", "rebellion against the throne", k=5)
+        assert any(e["name"] == "The Coup" for e in result)  # matched on 'rebellion'
+
 
 class TestInventoryQuantityValidation:
     """A malformed `quantity` from LLM JSON must reject the change, never crash.

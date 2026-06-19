@@ -59,6 +59,30 @@ def ctx(tmp_path: Path) -> tuple[str, ModifierProcessor]:
 # add_modifier
 # ---------------------------------------------------------------------------
 
+class TestSnapshotModifiers:
+    """TICKET-074: snapshot_modifiers captures the table per turn, writing a row
+    only when the save has active modifiers (no empty rows)."""
+
+    def _snapshot_turns(self, db_path: str) -> set:
+        with sqlite3.connect(db_path) as conn:
+            return {
+                r[0] for r in conn.execute(
+                    "SELECT turn_id FROM Modifier_Snapshots WHERE save_id='save1';"
+                ).fetchall()
+            }
+
+    def test_noop_when_no_active_modifiers(self, ctx: tuple) -> None:
+        db_path, mp = ctx
+        mp.snapshot_modifiers("save1", 1)
+        assert self._snapshot_turns(db_path) == set()  # nothing written
+
+    def test_writes_state_when_modifiers_present(self, ctx: tuple) -> None:
+        db_path, mp = ctx
+        mp.add_modifier("save1", "player1", "HP", 5.0, minutes=60)
+        mp.snapshot_modifiers("save1", 4)
+        assert self._snapshot_turns(db_path) == {4}
+
+
 class TestAddModifier:
     def test_returns_uuid_string(self, ctx: tuple) -> None:
         """add_modifier returns the new modifier's id as a 36-char UUID string."""
