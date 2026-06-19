@@ -54,8 +54,10 @@ chunk from a later turn.
    score is the base relevance.
 4. **Recency modulation** — turn-age nudges the score by a small factor
    (±10%) so a relevant-but-old memory is ranked down, never crushed.
-5. **Focus boost** — chunks mentioning the current scene (the player's location,
-   on-scene characters) get a flat additive bump via the `focus_terms` argument.
+5. **Focus boost** — chunks that mention the current scene get a flat additive
+   bump via the `focus_terms` argument: the player's current location *and* the
+   names of the characters sharing it, so memories about who and where you are
+   surface more readily.
 6. **Optional reranker** — when
    {py:attr}`axiom.config.AppConfig.memory_reranker_enabled` is set, a
    cross-encoder ({py:class}`axiom.retrieval.reranker.CrossEncoderReranker`)
@@ -65,6 +67,25 @@ chunk from a later turn.
 
 Every step is offline and deterministic; the reranker is the only optional
 dependency and it always has a safe fallback.
+
+## Lore Book retrieval
+
+A universe's **Lore Book** is static, authored world knowledge (factions, places,
+history) — separate from the per-turn narrative. Each turn the engine surfaces the
+entries relevant to the player's input in two steps:
+
+1. **Semantic match** — the Lore Book is embedded into the same per-save store
+   (tagged `chunk_type="lore"`, at turn 0 so it survives any rewind) and matched by
+   *meaning*, so "betrayal" can surface an entry about a "coup" even without the
+   exact word. The embedding is refreshed once per session (and after a hot reload).
+2. **Link expansion** — the semantic hits are then expanded with a few *related*
+   entries (same category, or shared keywords), an idea adapted from Hindsight's
+   link expansion. It is computed at query time over the small lore table (no
+   precomputed graph), giving the narrator associative context, not just direct hits.
+
+When the embedding runtime is unavailable (e.g. Windows without the torch runtime),
+retrieval falls back to a deterministic keyword overlap on the structured table, so
+the lore never disappears.
 
 ## Cognitive layer (living mode)
 

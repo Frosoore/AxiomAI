@@ -62,6 +62,18 @@ _LORE_STOPWORDS: frozenset[str] = frozenset({
     "from", "into", "do", "does", "did", "go", "get", "us",
 })
 
+# How many *linked* lore entries (same category / shared keywords as a semantic
+# seed) are appended after the semantic hits — the Hindsight-inspired link
+# expansion for the Lore Book (TICKET-072). Kept small so the prompt's lore
+# section stays lean: at most k semantic seeds + this many associative entries.
+_LORE_LINK_BUDGET: int = 2
+
+# Upper bound on how many on-scene character names are added to the retrieval
+# focus terms (TICKET-073). The location term is always kept; this only caps the
+# character names so a crowded location can't bloat the focus set (each term is a
+# soft additive boost in VectorMemory.query, so a few names are plenty).
+_FOCUS_SCENE_CHARACTER_CAP: int = 5
+
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -128,6 +140,10 @@ class ArbitratorEngine:
         self._pending_correction: str | None = None
         self._mode: str = "Normal"
         self._hero_entity_id: str | None = None
+        # Saves whose Lore Book has been embedded this session (TICKET-072). Lore
+        # is re-embedded once per session (and after a hot reload, which builds a
+        # fresh engine) so semantic lore retrieval stays in sync with the source.
+        self._lore_synced: set[str] = set()
 
     def configure(self, llm: LLMBackend, vector_memory: VectorMemory, time_llm: LLMBackend | None = None) -> None:
         """Inject runtime dependencies before process_turn."""
@@ -219,44 +235,11 @@ class ArbitratorEngine:
         # Calculate the oldest turn ID still in the history window
         max_turn_id = max(0, turn_id - HISTORY_TURN_CAP)
 
-        # Focus the retrieval on the current scene: the player's location (held as
-        # a "Location" stat, already fetched above) gently boosts memories about
-        # the here-and-now. On-scene character names would need the id→name map
-        # built later in this method — left as a follow-up to avoid reordering.
-        player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
-        focus_terms = [player_loc] if player_loc else None
-
-        rag_results = self._vector_memory.query(
-            save_id,
-            combined_intents_text,
-            k=cfg.rag_chunk_count,
-            current_turn_id=turn_id,
-            max_turn_id=max_turn_id,
-            focus_terms=focus_terms,
-        )
-        rag_chunks = [r["text"] for r in rag_results if r.get("chunk_type") != "lore"]
-        
-        # Step 3 — Relevant Context Filtering (Context Optimization)
-        # Only send stats for entities that are "active" in the current context
-        # to save tokens and reduce LLM confusion.
-        relevant_entity_ids = self._identify_relevant_entities(
-            save_id, combined_intents_text, history, rag_chunks, all_stats
-        )
-        logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
-        
-        # Always include the actors that submitted intents
-        for actor_id in intents.keys():
-            relevant_entity_ids.add(actor_id)
-        if not intents:
-            relevant_entity_ids.add("player")
-        
-        filtered_stats = {
-            eid: stats for eid, stats in all_stats.items() 
-            if eid in relevant_entity_ids
-        }
-
-        # Fetch entity names/types AND the player persona in a single connection
-        # (both feed the prompt below — no need for two round-trips).
+        # Resolve entity names/types and the player persona up front, in a single
+        # connection. id_to_name/id_to_type feed both the focus terms just below
+        # (scene-aware retrieval) and the prompt further down; the persona feeds
+        # the prompt. Read *here* — before the RAG query — so on-scene character
+        # names can bias retrieval (TICKET-073) without adding a round-trip.
         player_persona = ""
         with get_connection(self._db_path) as conn:
             name_rows = conn.execute("SELECT entity_id, name, entity_type FROM Entities").fetchall()
@@ -275,6 +258,60 @@ class ArbitratorEngine:
                     player_persona = row["player_persona"]
             except sqlite3.Error:
                 pass
+
+        # Focus the retrieval on the current scene so memories about the here-and-
+        # now surface more readily (a small additive boost in VectorMemory.query):
+        # the player's location plus the names of the characters sharing it. The
+        # on-scene set is read from the unfiltered all_stats (location match) and
+        # the names from the map just resolved; capped to keep the focus set small.
+        player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
+        focus_terms: list[str] | None = None
+        if player_loc:
+            terms = [player_loc]
+            loc_lower = str(player_loc).lower()
+            for eid, stats in all_stats.items():
+                if len(terms) > _FOCUS_SCENE_CHARACTER_CAP:  # 1 location + N names
+                    break
+                if eid == player_entity_id:
+                    continue
+                if str(stats.get("Location", "")).lower() != loc_lower:
+                    continue
+                name = id_to_name.get(eid)
+                if name and name.lower() != "player":
+                    terms.append(name)
+            focus_terms = terms
+
+        rag_results = self._vector_memory.query(
+            save_id,
+            combined_intents_text,
+            k=cfg.rag_chunk_count,
+            current_turn_id=turn_id,
+            max_turn_id=max_turn_id,
+            focus_terms=focus_terms,
+            exclude_chunk_type="lore",  # lore has its own retrieval (TICKET-072)
+        )
+        rag_chunks = [r["text"] for r in rag_results if r.get("chunk_type") != "lore"]
+        
+        # Step 3 — Relevant Context Filtering (Context Optimization)
+        # Only send stats for entities that are "active" in the current context
+        # to save tokens and reduce LLM confusion.
+        relevant_entity_ids = self._identify_relevant_entities(
+            save_id, combined_intents_text, history, rag_chunks, all_stats
+        )
+        logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
+        
+        # Always include the actors that submitted intents
+        for actor_id in intents.keys():
+            relevant_entity_ids.add(actor_id)
+        if not intents:
+            relevant_entity_ids.add("player")
+        
+        filtered_stats = {
+            eid: stats for eid, stats in all_stats.items()
+            if eid in relevant_entity_ids
+        }
+        # id_to_name / id_to_type / player_persona were resolved before the RAG
+        # query above (so on-scene names could bias retrieval — TICKET-073).
 
         # Step 4 — Build prompt (with pending correction)
         entity_block = format_entity_stats_block(
@@ -591,8 +628,11 @@ class ArbitratorEngine:
             
             mutated_entities = new_mutations
 
-        # Step 9 — Tick modifiers
+        # Step 9 — Tick modifiers, then snapshot the (post-tick) table so a later
+        # rewind to this turn can restore the buffs/debuffs (TICKET-074). The
+        # snapshot is a no-op when the save has no active modifiers.
         self._modifier_processor.tick_modifiers(save_id, elapsed_minutes=elapsed_minutes)
+        self._modifier_processor.snapshot_modifiers(save_id, turn_id)
 
         # Step 10 — Embed narrative chunk
         if narrative_text.strip():
@@ -614,9 +654,10 @@ class ArbitratorEngine:
         # fresh effective stats without any in-memory cache. (TICKET-002)
         self._event_sourcer.update_state_cache(save_id, _pending_events)
 
-        # Phase 12.1: Mark scheduled events as fired
+        # Phase 12.1: Mark scheduled events as fired (tagged with this turn so a
+        # later rewind past it can un-fire them — TICKET-075).
         for ev in triggered_events:
-            self._mark_event_as_fired(save_id, ev["event_id"])
+            self._mark_event_as_fired(save_id, ev["event_id"], turn_id)
 
         return ArbitratorResult(
             narrative_text=narrative_text,
@@ -847,13 +888,20 @@ class ArbitratorEngine:
             logger.error(f"[ARBITRATOR] Error fetching scheduled events: {e}")
         return events
 
-    def _mark_event_as_fired(self, save_id: str, event_id: str) -> None:
-        """Record that a scheduled event has occurred for this save."""
+    def _mark_event_as_fired(self, save_id: str, event_id: str, fired_turn_id: int) -> None:
+        """Record that a scheduled event has occurred for this save.
+
+        Stores the turn it fired on (``fired_turn_id``) so a subsequent rewind to
+        an earlier turn can un-fire it and let it trigger again (TICKET-075).
+        """
         try:
+            from axiom.schema import ensure_fired_event_turn_column
             with get_connection(self._db_path) as conn:
+                ensure_fired_event_turn_column(conn)
                 conn.execute(
-                    "INSERT OR IGNORE INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, ?);",
-                    (save_id, event_id)
+                    "INSERT OR IGNORE INTO Fired_Scheduled_Events "
+                    "(save_id, event_id, fired_turn_id) VALUES (?, ?, ?);",
+                    (save_id, event_id, fired_turn_id)
                 )
                 conn.commit()
         except Exception as e:
@@ -954,49 +1002,144 @@ class ArbitratorEngine:
     def _fetch_relevant_lore(self, save_id: str, user_message: str, k: int = 5) -> list[dict]:
         """Fetch Lore Book entries relevant to the current turn.
 
-        Reads the structured `Lore_Book` table directly and ranks entries by
-        keyword / name overlap with the current input. Returns the top-k
-        matches as `{category, name, content}` dicts (the shape the prompt
-        builder expects), or an empty list when nothing matches.
+        Semantic retrieval (TICKET-072): the Lore Book is embedded into the
+        per-save vector store and matched by *meaning*, so "betrayal" can surface
+        a lore entry about a "coup" even without the exact word. The semantic
+        seeds are then **link-expanded** (Hindsight-inspired) to a few related
+        entries — same category or shared keywords — for associative recall.
 
-        Previously this went through VectorMemory and filtered on a metadata
-        key the query never returned (and lore was never embedded), so it
-        always yielded an empty list while still paying a vector query per turn.
-        Lore_Book is universe-level structured data with an explicit `keywords`
-        column — a direct, deterministic SQL lookup is both correct and cheaper.
+        Falls back to a deterministic keyword overlap on the structured table
+        when the embedding runtime is unavailable (e.g. Windows without torch) or
+        nothing was embedded. Returns `{category, name, content}` dicts (the shape
+        the prompt builder expects), or an empty list.
         """
-        text = (user_message or "").lower()
+        text = (user_message or "").strip()
         if not text:
             return []
-        words = {w for w in re.findall(r"\b\w+\b", text) if w not in _LORE_STOPWORDS}
-        if not words:
-            return []
 
+        vm = self._vector_memory
+        # Embed the lore once per session (cheap: small, universe-level table).
+        # A hot reload builds a fresh engine, so this also resyncs after edits.
+        if vm is not None and save_id not in self._lore_synced:
+            try:
+                self._sync_lore_embeddings(save_id)
+            except Exception as e:
+                logger.error(f"[ARBITRATOR] Lore embedding sync failed: {e}")
+            self._lore_synced.add(save_id)
+
+        # Semantic path + link expansion. Skipped when the embedding runtime is
+        # off (degrades to the keyword overlap below).
+        if vm is not None and not getattr(vm, "_disabled", False):
+            try:
+                hits = vm.query(save_id, text, k=k, chunk_type="lore")
+            except Exception as e:
+                logger.error(f"[ARBITRATOR] Semantic lore query failed: {e}")
+                hits = []
+            seed_ids = [h["entry_id"] for h in hits if h.get("entry_id")]
+            if seed_ids:
+                return self._expand_lore(seed_ids, k)
+
+        return self._fetch_lore_by_keywords(text.lower(), k)
+
+    def _load_lore_rows(self) -> list[dict]:
+        """Read the structured Lore_Book table as a list of row dicts."""
         try:
             with get_connection(self._db_path) as conn:
                 rows = conn.execute(
-                    "SELECT category, name, keywords, content FROM Lore_Book;"
+                    "SELECT entry_id, category, name, keywords, content FROM Lore_Book;"
                 ).fetchall()
         except sqlite3.Error as e:
             logger.error(f"[ARBITRATOR] Error fetching lore book: {e}")
             return []
+        return [
+            {
+                "entry_id": r["entry_id"],
+                "category": r["category"] or "",
+                "name": (r["name"] or "").strip(),
+                "keywords": r["keywords"] or "",
+                "content": r["content"] or "",
+            }
+            for r in rows
+        ]
 
-        scored: list[tuple[int, dict]] = []
+    def _sync_lore_embeddings(self, save_id: str) -> None:
+        """Embed (idempotently) this save's Lore Book into the vector store."""
+        if self._vector_memory is None:
+            return
+        entries = []
+        for r in self._load_lore_rows():
+            text = f"{r['name']}\n{r['content']}".strip()
+            if text:
+                entries.append({"entry_id": r["entry_id"], "text": text})
+        self._vector_memory.sync_lore(save_id, entries)
+
+    @staticmethod
+    def _lore_tokens(keywords: str, name: str) -> set[str]:
+        """Content tokens of a lore entry (keywords + name), minus stopwords."""
+        toks = set(re.findall(r"\b\w+\b", (keywords or "").lower())) | set(
+            re.findall(r"\b\w+\b", (name or "").lower())
+        )
+        return {t for t in toks if t not in _LORE_STOPWORDS}
+
+    def _expand_lore(self, seed_ids: list[str], k: int) -> list[dict]:
+        """Link-expand semantic seeds with a few related lore entries.
+
+        Keeps the semantic seeds (up to `k`) first, then appends up to
+        `_LORE_LINK_BUDGET` entries that link to them by **shared category** or
+        **shared keywords** — the cheap, query-time form of Hindsight's link
+        expansion (no precomputed graph needed for our small lore tables).
+        """
+        rows = self._load_lore_rows()
+        by_id = {r["entry_id"]: r for r in rows}
+        seeds = [by_id[sid] for sid in seed_ids if sid in by_id][:k]
+
+        def _shape(r: dict) -> dict:
+            return {"category": r["category"], "name": r["name"], "content": r["content"]}
+
+        result = [_shape(r) for r in seeds]
+        if not seeds or _LORE_LINK_BUDGET <= 0:
+            return result
+
+        seed_id_set = {r["entry_id"] for r in seeds}
+        seed_cats = {r["category"].lower() for r in seeds if r["category"]}
+        seed_kw: set[str] = set()
+        for r in seeds:
+            seed_kw |= self._lore_tokens(r["keywords"], r["name"])
+
+        linked: list[tuple[int, dict]] = []
         for r in rows:
-            name = (r["name"] or "").strip()
-            keywords = (r["keywords"] or "").lower()
-            # Tokenise both the keywords column and the entry name for matching.
-            tokens = set(re.findall(r"\b\w+\b", keywords)) | set(
-                re.findall(r"\b\w+\b", name.lower())
-            )
+            if r["entry_id"] in seed_id_set:
+                continue
+            score = 0
+            if r["category"] and r["category"].lower() in seed_cats:
+                score += 2  # same category is a strong link
+            score += len(self._lore_tokens(r["keywords"], r["name"]) & seed_kw)
+            if score > 0:
+                linked.append((score, r))
+
+        linked.sort(key=lambda s: s[0], reverse=True)
+        result.extend(_shape(r) for _score, r in linked[:_LORE_LINK_BUDGET])
+        return result
+
+    def _fetch_lore_by_keywords(self, text_lower: str, k: int) -> list[dict]:
+        """Deterministic fallback: rank lore by keyword / name overlap.
+
+        Used when semantic retrieval is unavailable. Matches the input's words
+        against each entry's `keywords` + `name` tokens (the previous behaviour).
+        """
+        words = {w for w in re.findall(r"\b\w+\b", text_lower) if w not in _LORE_STOPWORDS}
+        if not words:
+            return []
+        scored: list[tuple[int, dict]] = []
+        for r in self._load_lore_rows():
+            tokens = self._lore_tokens(r["keywords"], r["name"])
             score = len(words & tokens)
             if score > 0:
                 scored.append((score, {
-                    "category": r["category"] or "",
-                    "name": name,
-                    "content": r["content"] or "",
+                    "category": r["category"],
+                    "name": r["name"],
+                    "content": r["content"],
                 }))
-
         scored.sort(key=lambda s: s[0], reverse=True)
         return [entry for _score, entry in scored[:k]]
 

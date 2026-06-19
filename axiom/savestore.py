@@ -411,6 +411,7 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Event_Log", ("event_id", "save_id", "turn_id", "event_type", "target_entity", "payload")),
     ("State_Cache", ("save_id", "entity_id", "stat_key", "stat_value")),
     ("Snapshots", ("save_id", "turn_id", "state_json")),
+    ("Modifier_Snapshots", ("save_id", "turn_id", "state_json")),
     ("Timeline", ("event_id", "save_id", "turn_id", "in_game_time", "description")),
     ("Fired_Scheduled_Events", ("save_id", "event_id")),
     ("Items_Inventory", ("save_id", "entity_id", "item_id", "quantity")),

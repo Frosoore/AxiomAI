@@ -614,9 +614,6 @@ class SettingsDialog(QDialog):
 
     def load_from_config(self, config: AppConfig) -> None:
         """Populate all form fields from an AppConfig."""
-        # Keep a reference so collect_config can preserve fields not exposed in
-        # the UI (e.g. the legacy chronicler_interval).
-        self._loaded_config = config
         self._univ_url.setText(config.universal_base_url)
         self._univ_key.setText(config.universal_api_key)
         self._univ_model.setText(config.universal_model)
@@ -715,11 +712,6 @@ class SettingsDialog(QDialog):
             extraction_model=self._extraction_model.text().strip() or "llama3.1:8b",
             time_model=self._time_model.text().strip() or "llama3.2:1b",
             timekeeper_enabled=self._timekeeper_cb.isChecked(),
-            # Legacy field, no longer surfaced in the UI — preserve whatever was
-            # loaded so we don't silently reset it on save.
-            chronicler_interval=getattr(
-                self, "_loaded_config", AppConfig()
-            ).chronicler_interval,
             chronicler_minutes_interval=self._chronicler_spin.value(),
             ui_font_size=self._font_size_spin.value(),
             enable_audio=self._audio_cb.isChecked(),

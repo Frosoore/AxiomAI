@@ -178,6 +178,22 @@ CREATE TABLE IF NOT EXISTS Snapshots (
 );
 """
 
+# Per-turn capture of the Active_Modifiers table so rewind can restore temporary
+# buffs/debuffs to their end-of-turn-N state (TICKET-074). Active_Modifiers decays
+# in *minutes* and is hard-deleted on expiry, so it can't be replayed from the
+# turn-keyed Event_Log; a snapshot is the only faithful source. A row is written
+# only on turns where the save has active modifiers (the common case is none → no
+# rows), so absence of a row for a turn means "no modifiers then".
+_DDL_MODIFIER_SNAPSHOTS = """
+CREATE TABLE IF NOT EXISTS Modifier_Snapshots (
+    save_id    TEXT NOT NULL,
+    turn_id    INTEGER NOT NULL,
+    state_json TEXT NOT NULL,
+    PRIMARY KEY (save_id, turn_id),
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE
+);
+"""
+
 _DDL_STAT_DEFINITIONS = """
 CREATE TABLE IF NOT EXISTS Stat_Definitions (
     stat_id     TEXT PRIMARY KEY,
@@ -212,6 +228,7 @@ _DDL_FIRED_SCHEDULED_EVENTS = """
 CREATE TABLE IF NOT EXISTS Fired_Scheduled_Events (
     save_id  TEXT NOT NULL,
     event_id TEXT NOT NULL,
+    fired_turn_id INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (save_id, event_id),
     FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE,
     FOREIGN KEY (event_id) REFERENCES Scheduled_Events(event_id) ON DELETE CASCADE
@@ -291,6 +308,7 @@ _ALL_DDL: list[str] = [
     _DDL_FACTS,
     _DDL_OBSERVATIONS,
     _DDL_SNAPSHOTS,
+    _DDL_MODIFIER_SNAPSHOTS,
     _DDL_TIMELINE,
     _DDL_SCHEDULED_EVENTS,
     _DDL_FIRED_SCHEDULED_EVENTS,
@@ -316,6 +334,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Facts",
     "Observations",
     "Snapshots",
+    "Modifier_Snapshots",
     "Timeline",
     "Scheduled_Events",
     "Fired_Scheduled_Events",
@@ -371,6 +390,38 @@ def ensure_observations_table(conn: "sqlite3.Connection") -> None:
         "CREATE INDEX IF NOT EXISTS idx_observations_save_turn "
         "ON Observations(save_id, updated_turn_id);"
     )
+
+
+def ensure_modifier_snapshots_table(conn: "sqlite3.Connection") -> None:
+    """Create the Modifier_Snapshots table on an open connection if missing.
+
+    Self-migration for save DBs provisioned before the modifier-rewind support
+    existed (TICKET-074), mirroring ensure_facts_table. Idempotent; reuses the
+    caller's transaction so rewind can restore modifiers atomically with the rest.
+    """
+    conn.execute(_DDL_MODIFIER_SNAPSHOTS)
+
+
+def ensure_fired_event_turn_column(conn: "sqlite3.Connection") -> None:
+    """Add ``fired_turn_id`` to Fired_Scheduled_Events on an open connection.
+
+    Records the turn at which a scheduled event fired so rewind can "un-fire"
+    events whose firing turn is now in the future (TICKET-075), mirroring how
+    Event_Log/Facts roll back. Self-migration for save DBs provisioned before
+    this column existed; idempotent and reuses the caller's transaction.
+
+    Legacy rows (fired before the column existed) default to ``0`` and therefore
+    stay fired across any rewind to a non-negative turn — the conservative choice
+    when the real firing turn is unknown.
+    """
+    cols = {row[1] for row in conn.execute(
+        "PRAGMA table_info(Fired_Scheduled_Events);"
+    ).fetchall()}
+    if "fired_turn_id" not in cols:
+        conn.execute(
+            "ALTER TABLE Fired_Scheduled_Events "
+            "ADD COLUMN fired_turn_id INTEGER NOT NULL DEFAULT 0;"
+        )
 
 
 # ---------------------------------------------------------------------------

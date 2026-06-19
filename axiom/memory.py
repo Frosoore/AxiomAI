@@ -207,8 +207,15 @@ class VectorMemory:
         turn_id: int,
         text: str,
         chunk_type: str = "narrative",
+        metadata_extra: dict[str, Any] | None = None,
     ) -> str:
-        """Embed a text chunk and store it with turn_id metadata."""
+        """Embed a text chunk and store it with turn_id metadata.
+
+        Args:
+            metadata_extra: Optional extra metadata merged into the chunk record
+                (e.g. a lore entry's ``entry_id``). The core keys (save_id,
+                turn_id, chunk_type) always take precedence.
+        """
         if not text or not text.strip():
             raise ValueError("Cannot embed empty or whitespace-only text.")
 
@@ -216,13 +223,15 @@ class VectorMemory:
         if self._disabled:
             return ""
         doc_id = str(uuid.uuid4())
+        metadata: dict[str, Any] = dict(metadata_extra or {})
+        metadata.update({
+            "save_id": save_id,
+            "turn_id": turn_id,
+            "chunk_type": chunk_type,
+        })
         self._collection.add(
             documents=[text],
-            metadatas=[{
-                "save_id": save_id,
-                "turn_id": turn_id,
-                "chunk_type": chunk_type,
-            }],
+            metadatas=[metadata],
             ids=[doc_id],
         )
         return doc_id
@@ -235,6 +244,8 @@ class VectorMemory:
         current_turn_id: int | None = None,
         max_turn_id: int | None = None,
         focus_terms: list[str] | None = None,
+        chunk_type: str | None = None,
+        exclude_chunk_type: str | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve the top-k most relevant chunks using hybrid scored search.
 
@@ -243,6 +254,12 @@ class VectorMemory:
                 on-scene character names). A chunk whose text mentions any of
                 them gets a small additive boost so memories about the current
                 scene surface more readily. No effect when omitted.
+            chunk_type: Restrict the search to chunks of this type (e.g. "lore").
+            exclude_chunk_type: Exclude chunks of this type (e.g. the narrative
+                query passes "lore" so lore entries never eat its k budget).
+
+        Each returned candidate carries ``entry_id`` (the chunk's source id when
+        one was stored, e.g. a lore entry's id; otherwise ``None``).
         """
         if not query_text or not query_text.strip():
             raise ValueError("Query text must not be empty.")
@@ -254,15 +271,16 @@ class VectorMemory:
         # ranks mid-pack in one arm can still be rescued by the other.
         fanout = max(k * _CANDIDATE_FANOUT, _CANDIDATE_FLOOR)
 
-        # Build filter condition (shared by both arms).
-        where_cond: dict[str, Any] = {"save_id": save_id}
+        # Build filter condition (shared by both arms). Chroma needs an explicit
+        # $and once there is more than one clause.
+        clauses: list[dict[str, Any]] = [{"save_id": {"$eq": save_id}}]
         if max_turn_id is not None:
-            where_cond = {
-                "$and": [
-                    {"save_id": {"$eq": save_id}},
-                    {"turn_id": {"$lte": max_turn_id}}
-                ]
-            }
+            clauses.append({"turn_id": {"$lte": max_turn_id}})
+        if chunk_type is not None:
+            clauses.append({"chunk_type": {"$eq": chunk_type}})
+        if exclude_chunk_type is not None:
+            clauses.append({"chunk_type": {"$ne": exclude_chunk_type}})
+        where_cond: dict[str, Any] = clauses[0] if len(clauses) == 1 else {"$and": clauses}
 
         # Each save has its OWN collection (persist_dir is per save_id), so
         # count() is exactly this save's chunk count — a cheap metadata read.
@@ -290,6 +308,7 @@ class VectorMemory:
                 "text": doc,
                 "turn_id": int(meta.get("turn_id", 0)),
                 "chunk_type": str(meta.get("chunk_type", "narrative")),
+                "entry_id": meta.get("entry_id"),
                 "distance": float(dist),
                 "semantic_score": max(0.0, 1.0 - (float(dist) / 2.0)),
             }
@@ -319,6 +338,7 @@ class VectorMemory:
                         "text": doc_by_id.get(did, ""),
                         "turn_id": int(meta.get("turn_id", 0)),
                         "chunk_type": str(meta.get("chunk_type", "narrative")),
+                        "entry_id": meta.get("entry_id"),
                         "distance": None,
                         "semantic_score": 0.0,
                     }
@@ -375,6 +395,7 @@ class VectorMemory:
                 "text": rec["text"],
                 "turn_id": rec["turn_id"],
                 "chunk_type": rec["chunk_type"],
+                "entry_id": rec.get("entry_id"),
                 "distance": rec["distance"],
                 "score": score,
             })
@@ -382,6 +403,51 @@ class VectorMemory:
         # Sort by final score descending and take top k
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return candidates[:k]
+
+    def sync_lore(self, save_id: str, entries: list[dict[str, Any]]) -> int:
+        """Re-embed this save's Lore Book entries (idempotent).
+
+        Deletes any existing lore chunks for the save, then embeds each entry
+        tagged ``chunk_type="lore"`` and ``turn_id=0`` (timeless → survives any
+        rewind) with its ``entry_id`` in metadata, so a retrieval hit maps back to
+        the structured row for link expansion. Call once per session (and after a
+        hot reload) to keep lore embeddings in sync with the definition. No-op
+        when the embedding runtime is unavailable.
+
+        Args:
+            save_id: The save whose lore embeddings are (re)built.
+            entries: Lore rows, each a dict with ``entry_id`` and ``text``.
+
+        Returns:
+            The number of entries embedded (0 when embeddings are disabled).
+        """
+        self._ensure_connected()
+        if self._disabled:
+            return 0
+        # Drop existing lore chunks for this save, then rebuild from the current
+        # definition (handles edits / hot reload without leaving stale entries).
+        existing = self._collection.get(
+            where={"$and": [
+                {"save_id": {"$eq": save_id}},
+                {"chunk_type": {"$eq": "lore"}},
+            ]}
+        )
+        stale_ids = existing.get("ids", []) or []
+        if stale_ids:
+            self._collection.delete(ids=stale_ids)
+
+        count = 0
+        for entry in entries:
+            text = (entry.get("text") or "").strip()
+            entry_id = entry.get("entry_id")
+            if not text or not entry_id:
+                continue
+            self.embed_chunk(
+                save_id, 0, text, chunk_type="lore",
+                metadata_extra={"entry_id": str(entry_id)},
+            )
+            count += 1
+        return count
 
     def rollback(self, save_id: str, target_turn_id: int) -> int:
         """Delete all chunks for a save with turn_id strictly greater than target."""

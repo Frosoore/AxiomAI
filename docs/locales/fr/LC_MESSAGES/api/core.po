@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.2\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-12 03:07+0200\n"
+"POT-Creation-Date: 2026-06-19 02:30+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -38,13 +38,13 @@ msgstr "API publique de haut niveau du moteur Axiom (headless, zéro Qt)."
 
 #: axiom.session:5 of
 msgid ""
-"A `Session` composes the engine building blocks (Arbitrator, EventSourcer, "
-"CheckpointManager, VectorMemory) and exposes a synchronous game loop that "
-"any application (GUI, CLI, server) can drive::"
+"A `Session` composes the engine building blocks (Arbitrator, "
+"EventSourcer, CheckpointManager, VectorMemory) and exposes a synchronous "
+"game loop that any application (GUI, CLI, server) can drive::"
 msgstr ""
 "Une `Session` compose les briques du moteur (Arbitrator, EventSourcer, "
-"CheckpointManager, VectorMemory) et expose une boucle de jeu synchrone que "
-"n'importe quelle application (GUI, CLI, serveur) peut piloter ::"
+"CheckpointManager, VectorMemory) et expose une boucle de jeu synchrone "
+"que n'importe quelle application (GUI, CLI, serveur) peut piloter ::"
 
 #: axiom.session:16 of
 msgid ""
@@ -52,9 +52,16 @@ msgid ""
 "synchronous: on the GUI side, the app wraps it in a QThread (see "
 "workers/narrative_worker.py)."
 msgstr ""
-"Le streaming passe par le callback `on_token`. La méthode est synchrone : "
-"côté GUI, l'app l'enveloppe dans un QThread (voir "
+"Le streaming passe par le callback `on_token`. La méthode est synchrone :"
+" côté GUI, l'app l'enveloppe dans un QThread (voir "
 "workers/narrative_worker.py)."
+
+#: axiom.session.IMAGE_GEN_STATUS:1 of
+msgid ""
+"Status string emitted right before contextual image generation starts. "
+"Exposed as a constant so the GUI can react (e.g. show a placeholder) "
+"without matching a hard-coded English message."
+msgstr ""
 
 #: axiom.session.Session:1 of
 msgid "High-level wrapper to play one save of a universe."
@@ -102,12 +109,13 @@ msgstr "Mode de jeu ('Normal', 'Hardcore', 'Companion')."
 
 #: axiom.session.Session:12 of
 msgid ""
-"Optional backend for the hero's decision (Companion mode). If None, lazily "
-"built from the config (local `extraction_model`), like the worker does."
+"Optional backend for the hero's decision (Companion mode). If None, "
+"lazily built from the config (local `extraction_model`), like the worker "
+"does."
 msgstr ""
 "Backend optionnel pour la décision du héros (mode Compagnon). Si None, "
-"construit paresseusement depuis la config (modèle local `extraction_model`),"
-" comme le fait le worker."
+"construit paresseusement depuis la config (modèle local "
+"`extraction_model`), comme le fait le worker."
 
 #: axiom.session.Session.turn_id:1 of
 msgid "Number of the last played turn (0 if the game has not started)."
@@ -158,13 +166,13 @@ msgstr "Régénère une variante du texte narratif du tour `turn_id`."
 
 #: axiom.session.Session.regenerate_variant:3 of
 msgid ""
-"Replays the same player message to produce an alternative text (without re-"
-"evaluating rules or stats); the variant is appended to the turn's multiverse"
-" payload and becomes active. Delegates to `axiom.regenerate`."
+"Replays the same player message to produce an alternative text (without "
+"re-evaluating rules or stats); the variant is appended to the turn's "
+"multiverse payload and becomes active. Delegates to `axiom.regenerate`."
 msgstr ""
 "Rejoue le même message joueur pour produire un texte alternatif (sans "
-"réévaluer règles ni stats) ; la variante est ajoutée au payload multivers du"
-" tour et devient active. Délègue à `axiom.regenerate`."
+"réévaluer règles ni stats) ; la variante est ajoutée au payload multivers"
+" du tour et devient active. Délègue à `axiom.regenerate`."
 
 #: axiom.session.Session.regenerate_variant:8 of
 msgid ""
@@ -178,11 +186,18 @@ msgstr ""
 msgid "Current materialised stats per entity (rebuilds the State_Cache)."
 msgstr "Stats matérialisées courantes par entité (reconstruit le State_Cache)."
 
+#: axiom.session.Session.current_stats:3 of
+msgid ""
+"Public API: rebuilds the cache from the Event_Log first, so external "
+"callers always get a guaranteed-consistent snapshot. In-engine hot paths "
+"use `_read_state_cache()` instead (the cache is already kept fresh)."
+msgstr ""
+
 #: ../../api/core.md
 msgid "Returns"
 msgstr "Renvoie"
 
-#: axiom.session.Session.current_stats:3 of
+#: axiom.session.Session.current_stats:7 of
 msgid "Mapping of entity_id to a dict of stat_key to stat_value strings."
 msgstr "Correspondance entity_id → dict de stat_key vers stat_value (chaînes)."
 
@@ -204,11 +219,11 @@ msgstr ""
 
 #: axiom.universe:5 of
 msgid ""
-"Exposes the metadata (name, system prompt) and the list of saves, with no Qt"
-" dependency whatsoever. Entry point: `Universe.load(path)`."
+"Exposes the metadata (name, system prompt) and the list of saves, with no"
+" Qt dependency whatsoever. Entry point: `Universe.load(path)`."
 msgstr ""
-"Expose les métadonnées (nom, prompt système) et la liste des sauvegardes, "
-"sans la moindre dépendance Qt. Point d'entrée : `Universe.load(path)`."
+"Expose les métadonnées (nom, prompt système) et la liste des sauvegardes,"
+" sans la moindre dépendance Qt. Point d'entrée : `Universe.load(path)`."
 
 #: axiom.universe.Universe:1 of
 msgid "A loaded universe (read-only view of its metadata)."
@@ -236,7 +251,9 @@ msgstr "Une instance `Universe` peuplée depuis `Universe_Meta`."
 
 #: axiom.universe.Universe.list_saves:1 of
 msgid "List this universe's saves (separate save files + embedded legacy ones)."
-msgstr "Liste les sauvegardes de cet univers (fichiers séparés + legacy embarquées)."
+msgstr ""
+"Liste les sauvegardes de cet univers (fichiers séparés + legacy "
+"embarquées)."
 
 #~ msgid "stat_value} dict."
 #~ msgstr ""

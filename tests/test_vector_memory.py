@@ -410,3 +410,44 @@ class TestEmbeddingSingletonOffline:
 
         assert first is second
         fake.assert_called_once()
+
+
+class TestLoreSync:
+    """TICKET-072: lore is embedded into the per-save store, retrievable on its
+    own, excluded from the narrative query, idempotent and rewind-proof."""
+
+    def test_sync_lore_query_returns_entry_ids(self, vm: VectorMemory) -> None:
+        n = vm.sync_lore("save1", [
+            {"entry_id": "coup", "text": "The Coup of Highport toppled the throne."},
+            {"entry_id": "house", "text": "House Arodan, an old noble family."},
+        ])
+        assert n == 2
+        hits = vm.query("save1", "Highport throne", k=5, chunk_type="lore")
+        assert hits, "lore query should return the embedded entries"
+        assert {h["entry_id"] for h in hits} == {"coup", "house"}
+        assert all(h["chunk_type"] == "lore" for h in hits)
+
+    def test_lore_excluded_from_narrative_query(self, vm: VectorMemory) -> None:
+        vm.embed_chunk("save1", 1, "The hero crossed the bridge.")
+        vm.sync_lore("save1", [{"entry_id": "coup", "text": "The Coup of Highport."}])
+        narrative = vm.query("save1", "hero bridge Highport", k=5, exclude_chunk_type="lore")
+        assert narrative and all(h["chunk_type"] != "lore" for h in narrative)
+        lore = vm.query("save1", "hero bridge Highport", k=5, chunk_type="lore")
+        assert lore and all(h["chunk_type"] == "lore" for h in lore)
+
+    def test_sync_lore_is_idempotent(self, vm: VectorMemory) -> None:
+        entries = [
+            {"entry_id": "coup", "text": "The Coup of Highport."},
+            {"entry_id": "house", "text": "House Arodan."},
+        ]
+        vm.sync_lore("save1", entries)
+        vm.sync_lore("save1", entries)  # re-sync must not duplicate
+        hits = vm.query("save1", "Highport Arodan", k=10, chunk_type="lore")
+        assert sorted(h["entry_id"] for h in hits) == ["coup", "house"]
+
+    def test_lore_survives_rollback(self, vm: VectorMemory) -> None:
+        vm.embed_chunk("save1", 7, "A future narrative chunk.")
+        vm.sync_lore("save1", [{"entry_id": "coup", "text": "The Coup of Highport."}])
+        vm.rollback("save1", target_turn_id=3)  # lore is at turn 0 → kept
+        hits = vm.query("save1", "Highport", k=5, chunk_type="lore")
+        assert [h["entry_id"] for h in hits] == ["coup"]

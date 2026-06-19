@@ -13,6 +13,7 @@ import pytest
 from axiom.schema import create_universe_db
 from axiom.events import EventSourcer
 from axiom.checkpoint import CheckpointManager
+from axiom.modifiers import ModifierProcessor
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +126,122 @@ class TestRewind:
 
         assert result["deleted_events"] == 0
         assert len(es.get_events("save1")) == 5
+
+
+class TestRewindRestoresModifiers:
+    """TICKET-074: rewind restores temporary modifiers to their end-of-turn-N
+    state from the per-turn snapshot (they decay in minutes and aren't
+    event-sourced, so they can't be replayed)."""
+
+    def test_restores_decayed_state_at_target_turn(self, ctx: tuple) -> None:
+        db_path, es, cm = ctx
+        _append_hp_events(es, "save1", turns=10)
+        mp = ModifierProcessor(db_path)
+        mid = mp.add_modifier("save1", "player1", "HP", 5.0, minutes=60)
+        mp.snapshot_modifiers("save1", 3)               # turn 3: 60 min remaining
+        mp.tick_modifiers("save1", elapsed_minutes=10)  # decays to 50 min
+        mp.snapshot_modifiers("save1", 5)               # turn 5: 50 min remaining
+
+        cm.rewind("save1", target_turn_id=3)
+
+        mods = mp._fetch_modifiers("save1", "player1")
+        assert len(mods) == 1
+        assert mods[0]["modifier_id"] == mid
+        assert mods[0]["minutes_remaining"] == 60       # restored to turn-3 value
+
+    def test_modifier_absent_at_target_is_cleared(self, ctx: tuple) -> None:
+        """A modifier only present on turns after the target is removed by rewind
+        (no snapshot at the target turn ⇒ no modifiers then)."""
+        db_path, es, cm = ctx
+        _append_hp_events(es, "save1", turns=10)
+        mp = ModifierProcessor(db_path)
+        mp.add_modifier("save1", "player1", "HP", 5.0, minutes=60)
+        mp.snapshot_modifiers("save1", 7)               # only captured from turn 7
+
+        cm.rewind("save1", target_turn_id=4)            # no snapshot at turn 4
+
+        assert mp._fetch_modifiers("save1", "player1") == []
+
+    def test_future_snapshot_rows_are_dropped(self, ctx: tuple) -> None:
+        """Snapshot rows for turns after the target are purged so they can't leak
+        back if the same turns are replayed."""
+        db_path, es, cm = ctx
+        _append_hp_events(es, "save1", turns=10)
+        mp = ModifierProcessor(db_path)
+        mp.add_modifier("save1", "player1", "HP", 5.0, minutes=60)
+        mp.snapshot_modifiers("save1", 3)
+        mp.snapshot_modifiers("save1", 8)
+
+        cm.rewind("save1", target_turn_id=5)
+
+        with sqlite3.connect(db_path) as conn:
+            turns = {r[0] for r in conn.execute(
+                "SELECT turn_id FROM Modifier_Snapshots WHERE save_id='save1';"
+            ).fetchall()}
+        assert turns == {3}   # turn 8 dropped, turn 3 kept
+
+
+class TestRewindUnfiresScheduledEvents:
+    """TICKET-075: a scheduled event fired *after* the target turn is un-fired by
+    rewind so it can trigger again; one fired at/before the target is kept, and a
+    legacy row with no recorded turn is conservatively kept fired."""
+
+    def _add_event(self, db_path: str, event_id: str, minute: int) -> None:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) "
+                "VALUES (?, ?, ?, ?);",
+                (event_id, minute, "Title", "Desc"),
+            )
+            conn.commit()
+
+    def _fire(self, db_path: str, event_id: str, turn: int) -> None:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) "
+                "VALUES (?, ?, ?);",
+                ("save1", event_id, turn),
+            )
+            conn.commit()
+
+    def _fired_ids(self, db_path: str) -> set:
+        with sqlite3.connect(db_path) as conn:
+            return {
+                r[0] for r in conn.execute(
+                    "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = 'save1';"
+                ).fetchall()
+            }
+
+    def test_event_fired_after_target_is_unfired(self, ctx: tuple) -> None:
+        db_path, es, cm = ctx
+        _append_hp_events(es, "save1", turns=10)
+        self._add_event(db_path, "ev_future", 500)
+        self._add_event(db_path, "ev_past", 100)
+        self._fire(db_path, "ev_future", turn=8)  # fired after the target
+        self._fire(db_path, "ev_past", turn=3)    # fired before the target
+
+        cm.rewind("save1", target_turn_id=5)
+
+        fired = self._fired_ids(db_path)
+        assert "ev_future" not in fired  # un-fired → can trigger again
+        assert "ev_past" in fired         # kept
+
+    def test_legacy_row_without_turn_is_kept(self, ctx: tuple) -> None:
+        """A row fired before the column existed (fired_turn_id defaults to 0) is
+        conservatively kept across a rewind to any non-negative turn."""
+        db_path, es, cm = ctx
+        _append_hp_events(es, "save1", turns=10)
+        self._add_event(db_path, "ev_legacy", 100)
+        with sqlite3.connect(db_path) as conn:  # omit fired_turn_id → default 0
+            conn.execute(
+                "INSERT INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, ?);",
+                ("save1", "ev_legacy"),
+            )
+            conn.commit()
+
+        cm.rewind("save1", target_turn_id=5)
+
+        assert "ev_legacy" in self._fired_ids(db_path)
 
 
 # ---------------------------------------------------------------------------

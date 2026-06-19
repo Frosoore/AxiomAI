@@ -1,6 +1,6 @@
 ---
 name: project-hindsight-mining
-description: Chantier "Hindsight Mining" — refonte ambitieuse de la mémoire du moteur (recherche + croyances), deux modes togglables ; doc de handoff prête, no code
+description: Chantier "Hindsight Mining" — refonte ambitieuse de la mémoire du moteur (recherche + croyances), deux modes togglables ; Phases 1→4 IMPLÉMENTÉES et COMMITÉES (2965279) le 2026-06-18 ; restent TICKET-073/072/074-076
 metadata:
   type: project
 ---
@@ -42,10 +42,42 @@ le prompt** : `arbitrator._fetch_relevant_facts` (scène d'abord, puis récents,
 fusionnés en tête de `rag_chunks` (`Known fact:`) **en `living` seul** (`lite` inchangé). Suite **844 ✅**.
 **Décisions user (2026-06-18)** : extraction tous les N tours (N réglable/désactivable) + bouton « à la
 demande » (reset N) ; modèle = backend configuré par défaut, surchargeable ; causal différé.
-**Côté MOTEUR la Phase 2 est COMPLÈTE** (items 1,2,3,5). **Doc Sphinx mise à jour** (guide
-`docs/guides/memory.md` + API `docs/api/memory.md`, build `-W` OK). **Reste item 4 = app-layer** (worker
-QThread + panneau GUI Mémoire + i18n ×10), **documenté** dans `maintenance/hindsight-phase2-faits/ITEM4_HANDOFF.md`.
-**Non commité.**
+**Côté MOTEUR la Phase 2 est COMPLÈTE** (items 1,2,3,5) + couche app item 4 (worker QThread + panneau
+GUI Mémoire + i18n ×10). Doc Sphinx mise à jour (guide `docs/guides/memory.md` + API `docs/api/memory.md`).
+
+**Phase 3 (croyances/observations) COMPLÈTE le 2026-06-18** — moteur : table `Observations`,
+`axiom/observations.py` (stockage + `rollback_observations` turn-keyed atomique branché dans
+`checkpoint.rewind`), `axiom/consolidate.py` (consolidateur LLM CREATE/UPDATE/DELETE, garde-fous fact_ids
+hallucinés), injection hiérarchique `Belief:`→`Known fact:`→chunks dans l'arbitrator, faits+croyances
+ajoutés à l'export `.axiomsave` ; app : `workers/fact_worker.py` chaîne la consolidation post-extraction,
+toggle GUI « Croyances évolutives » (grisé hors Vivant), i18n+doc ×10. `config.memory_beliefs_enabled` +
+helper `memory_beliefs_active`. Suite 872 ✅. Détail `maintenance/hindsight-phase3-croyances/`.
+
+**Phase 4 (périmètre demandé : B-3 + prompt caching) COMPLÈTE le 2026-06-18** — B-3 missions de croyance
+par perso/univers (`axiom/missions.py`, stockage `Universe_Meta` `belief_mission`/`belief_missions` JSON →
+zéro schéma, round-trip `[extra]`, section « Character memory styles » dans `consolidate`, champ GUI Studio
+Metadata) ; prompt caching Gemini (cache explicite guardé/opt-in/fallback gracieux dans `GeminiClient`,
+seuil `_PROMPT_CACHE_MIN_CHARS=8000`, `config.memory_prompt_cache_enabled` — honnête : no-op pour nos
+petits prompts). Suite 884 ✅. Détail `maintenance/hindsight-phase4-raffinements/`.
+
+**TOUT COMMITÉ le 2026-06-18** : commit `2965279` "hindsight inspired modifications", branche
+`hindsight-idead`, poussé sur origin (arbre de travail propre). Restent NON demandés : modèles mentaux
+(§7.8), directives/persona (§7.9), extraction temporelle (§7.5). **Cluster de follow-ups TICKET-073/074/
+075/076 IMPLÉMENTÉ le 2026-06-19** (⚠ NON commité, `maintenance/hindsight-followups-073-076/`) : 073
+noms des persos en scène ajoutés à `focus_terms` (réordonnancement maîtrisé, cap 5) ; 075 rewind
+« dé-tire » `Fired_Scheduled_Events` (colonne `fired_turn_id` + purge) ; 074 rewind restaure
+`Active_Modifiers` (décision user = **Option A snapshot par tour** : table `Modifier_Snapshots` +
+`snapshot_modifiers`/`rollback_modifiers`) ; 076 champ mort `config.chronicler_interval` retiré (load_config
+filtre les clés inconnues → vieux settings OK). Suite **901 verte**.
+
+**TICKET-072 (lore book sémantique + link expansion) IMPLÉMENTÉ le 2026-06-19** (⚠ NON commité,
+`maintenance/ticket-072-lore-semantic/`) — re-mining Hindsight `link_expansion_retrieval`. `VectorMemory` :
+`sync_lore` (embed turn 0 idempotent, survit rewind), `query(chunk_type/exclude_chunk_type)` + `entry_id`,
+`embed_chunk(metadata_extra)`. Arbitrator : `_fetch_relevant_lore` sémantique dédié → `_expand_lore`
+(catégorie/mots-clés partagés, budget 2) → repli mots-clés si embedding indispo ; requête narrative exclut
+le lore. Suite **908 verte**, doc EN+FR (sphinx -W EXIT 0). **→ Tout le chantier Hindsight (recherche +
+faits + croyances + 073/074/075/076 + 072) est désormais clos.** Restent NON demandés : modèles mentaux
+(§7.8), directives/persona (§7.9), extraction temporelle (§7.5).
 
 Respecter [[user-profile-non-coder]] (expliquer les dépendances/archi avant de trancher) et
 [[feedback-execution-style]] (no superpowers, no commit sans feu vert).

@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Axiom Engine 0.1.2\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-12 02:48+0200\n"
+"POT-Creation-Date: 2026-06-19 02:30+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -35,34 +35,34 @@ msgstr ""
 #: axiom.backends.base:3 of
 msgid "Abstract base class and shared data types for all Axiom AI LLM backends."
 msgstr ""
-"Classe de base abstraite et types de données partagés de tous les backends "
-"LLM d'Axiom AI."
+"Classe de base abstraite et types de données partagés de tous les "
+"backends LLM d'Axiom AI."
 
 #: axiom.backends.base:5 of
 msgid ""
-"Both the Arbitrator (narrative agent) and the Chronicler (world simulation "
-"agent) are decoupled from any concrete LLM provider through this interface. "
-"Swapping between a local Ollama model and a remote Gemini model requires "
-"only changing which concrete subclass is instantiated."
+"Both the Arbitrator (narrative agent) and the Chronicler (world "
+"simulation agent) are decoupled from any concrete LLM provider through "
+"this interface. Swapping between a local Ollama model and a remote Gemini"
+" model requires only changing which concrete subclass is instantiated."
 msgstr ""
-"L'Arbitrator (agent narratif) comme le Chronicler (agent de simulation du "
-"monde) sont découplés de tout fournisseur LLM concret via cette interface. "
-"Passer d'un modèle Ollama local à un modèle Gemini distant ne demande que de"
-" changer la sous-classe concrète instanciée."
+"L'Arbitrator (agent narratif) comme le Chronicler (agent de simulation du"
+" monde) sont découplés de tout fournisseur LLM concret via cette "
+"interface. Passer d'un modèle Ollama local à un modèle Gemini distant ne "
+"demande que de changer la sous-classe concrète instanciée."
 
 #: axiom.backends.base:10 of
 msgid ""
 "Tool Call Protocol: the LLM is instructed to wrap any structured state-"
 "change JSON inside a fenced block delimited by ``~~~json`` / ``~~~`` "
 "markers.  This delimiter was chosen deliberately to avoid ambiguity with "
-"standard markdown triple-backtick code fences that may appear legitimately "
-"in narrative prose."
+"standard markdown triple-backtick code fences that may appear "
+"legitimately in narrative prose."
 msgstr ""
-"Protocole de tool call : le LLM reçoit l'instruction d'envelopper tout JSON "
-"structuré de changement d'état dans un bloc délimité par les marqueurs "
-"``~~~json`` / ``~~~``.  Ce délimiteur a été choisi délibérément pour éviter "
-"toute ambiguïté avec les blocs de code markdown à triple backtick qui "
-"peuvent légitimement apparaître dans la prose narrative."
+"Protocole de tool call : le LLM reçoit l'instruction d'envelopper tout "
+"JSON structuré de changement d'état dans un bloc délimité par les "
+"marqueurs ``~~~json`` / ``~~~``.  Ce délimiteur a été choisi délibérément"
+" pour éviter toute ambiguïté avec les blocs de code markdown à triple "
+"backtick qui peuvent légitimement apparaître dans la prose narrative."
 
 #: axiom.backends.base:16 of
 msgid "Example LLM output::"
@@ -104,7 +104,9 @@ msgid "Parameters"
 msgstr "Paramètres"
 
 #: axiom.backends.base.LLMResponse:5 of
-msgid "The prose portion of the response, with the ~~~json … ~~~ block stripped out."
+msgid ""
+"The prose portion of the response, with the ~~~json … ~~~ block stripped "
+"out."
 msgstr "La partie en prose de la réponse, débarrassée du bloc ~~~json … ~~~."
 
 #: axiom.backends.base.LLMResponse:12 of
@@ -112,8 +114,8 @@ msgid ""
 "The parsed JSON object or list from the fenced block, or None if the LLM "
 "produced no tool call."
 msgstr ""
-"L'objet ou la liste JSON parsé depuis le bloc délimité, ou None si le LLM "
-"n'a produit aucun tool call."
+"L'objet ou la liste JSON parsé depuis le bloc délimité, ou None si le LLM"
+" n'a produit aucun tool call."
 
 #: axiom.backends.base.LLMResponse:15 of
 msgid "dict | list | None"
@@ -132,8 +134,8 @@ msgid ""
 "This covers connection refused, DNS failures, timeouts, and HTTP 5xx "
 "responses that indicate the server is down."
 msgstr ""
-"Couvre les connexions refusées, les échecs DNS, les timeouts et les réponses"
-" HTTP 5xx indiquant que le serveur est hors service."
+"Couvre les connexions refusées, les échecs DNS, les timeouts et les "
+"réponses HTTP 5xx indiquant que le serveur est hors service."
 
 #: axiom.backends.base.LLMParseError:1 of
 msgid "Raised when the LLM response cannot be parsed into the expected structure."
@@ -146,8 +148,8 @@ msgid ""
 "This covers malformed JSON inside the ~~~json block, missing required "
 "fields, or an entirely unexpected response format."
 msgstr ""
-"Couvre le JSON malformé dans le bloc ~~~json, les champs requis manquants, "
-"ou un format de réponse totalement inattendu."
+"Couvre le JSON malformé dans le bloc ~~~json, les champs requis "
+"manquants, ou un format de réponse totalement inattendu."
 
 #: axiom.backends.base.GenerationCancelled:1 of
 msgid "Voluntary cancellation of a generation (TICKET-033)."
@@ -156,14 +158,14 @@ msgstr "Annulation volontaire d'une génération (TICKET-033)."
 #: axiom.backends.base.GenerationCancelled:3 of
 msgid ""
 "Raised when `LLMBackend.cancel_event` is set during a wait (429 retry, "
-"pacing) or at a cooperative boundary (between Populate chunks/targets). This"
-" is NOT an error: callers translate it into a \"cancelled\" signal, never "
-"into an error popup."
+"pacing) or at a cooperative boundary (between Populate chunks/targets). "
+"This is NOT an error: callers translate it into a \"cancelled\" signal, "
+"never into an error popup."
 msgstr ""
-"Levée quand `LLMBackend.cancel_event` est armé pendant une attente (retry "
-"429, cadencement) ou à une frontière coopérative (entre chunks/cibles de "
-"Populate). Ce n'est PAS une erreur : les appelants la traduisent en signal «"
-" annulé », jamais en popup d'erreur."
+"Levée quand `LLMBackend.cancel_event` est armé pendant une attente (retry"
+" 429, cadencement) ou à une frontière coopérative (entre chunks/cibles de"
+" Populate). Ce n'est PAS une erreur : les appelants la traduisent en "
+"signal « annulé », jamais en popup d'erreur."
 
 #: axiom.backends.base.LLMBackend:1 of
 msgid "Abstract interface for all Axiom AI LLM provider clients."
@@ -172,24 +174,26 @@ msgstr "Interface abstraite de tous les clients de fournisseurs LLM d'Axiom AI."
 #: axiom.backends.base.LLMBackend:3 of
 msgid ""
 "Concrete subclasses must implement complete(), stream_tokens(), and "
-"is_available(). The parse_tool_call() helper is provided here and is shared "
-"by all subclasses."
+"is_available(). The parse_tool_call() helper is provided here and is "
+"shared by all subclasses."
 msgstr ""
-"Les sous-classes concrètes doivent implémenter complete(), stream_tokens() "
-"et is_available(). Le helper parse_tool_call() est fourni ici et partagé par"
-" toutes les sous-classes."
+"Les sous-classes concrètes doivent implémenter complete(), "
+"stream_tokens() et is_available(). Le helper parse_tool_call() est fourni"
+" ici et partagé par toutes les sous-classes."
 
 #: axiom.backends.base.LLMBackend:7 of
 msgid ""
-"Optional hooks, set by the caller after construction — zero Qt, a backend "
-"that never consults them stays valid:"
+"Optional hooks, set by the caller after construction — zero Qt, a backend"
+" that never consults them stays valid:"
 msgstr ""
 "Hooks optionnels, posés par l'appelant après construction — zéro Qt, un "
 "backend qui ne les consulte jamais reste valide :"
 
 #: axiom.backends.base.LLMBackend:10 of
 msgid "`on_status`: progress callback(str) (e.g. retry countdown);"
-msgstr "`on_status` : callback(str) de progression (ex. compte à rebours de retry) ;"
+msgstr ""
+"`on_status` : callback(str) de progression (ex. compte à rebours de "
+"retry) ;"
 
 #: axiom.backends.base.LLMBackend:11 of
 msgid ""
@@ -217,9 +221,9 @@ msgid ""
 "(assembled from the stream internally); for token-by-token streaming use "
 "stream_tokens()."
 msgstr ""
-"Si True, l'implémentation peut quand même retourner une LLMResponse complète"
-" (assemblée du flux en interne) ; pour du streaming token par token, "
-"utiliser stream_tokens()."
+"Si True, l'implémentation peut quand même retourner une LLMResponse "
+"complète (assemblée du flux en interne) ; pour du streaming token par "
+"token, utiliser stream_tokens()."
 
 #: axiom.backends.base.LLMBackend.complete:7
 #: axiom.backends.base.LLMBackend.stream_tokens:8
@@ -266,7 +270,9 @@ msgstr "Renvoie"
 msgid ""
 "Parsed LLMResponse with narrative_text, optional tool_call, and "
 "finish_reason."
-msgstr "LLMResponse parsée avec narrative_text, tool_call optionnel et finish_reason."
+msgstr ""
+"LLMResponse parsée avec narrative_text, tool_call optionnel et "
+"finish_reason."
 
 #: ../../api/backends.md
 msgid "Raises"
@@ -280,8 +286,10 @@ msgstr "Si le backend est injoignable."
 msgid "If the response structure is unrecognisable."
 msgstr "Si la structure de la réponse est méconnaissable."
 
-#: ../../api/backends.md axiom.backends.universal.UniversalClient.complete
+#: ../../api/backends.md axiom.backends.gemini.GeminiClient.list_models
+#: axiom.backends.universal.UniversalClient.complete
 #: axiom.backends.universal.UniversalClient.is_available
+#: axiom.backends.universal.UniversalClient.list_models
 #: axiom.backends.universal.UniversalClient.stream_tokens of
 msgid "Return type"
 msgstr "Type de retour"
@@ -289,8 +297,8 @@ msgstr "Type de retour"
 #: axiom.backends.base.LLMBackend.stream_tokens:1 of
 msgid "Yield individual tokens as they arrive from the LLM backend."
 msgstr ""
-"Produit (yield) les tokens individuels à mesure qu'ils arrivent du backend "
-"LLM."
+"Produit (yield) les tokens individuels à mesure qu'ils arrivent du "
+"backend LLM."
 
 #: axiom.backends.base.LLMBackend.stream_tokens:3 of
 msgid ""
@@ -322,7 +330,9 @@ msgstr "Effectue un contrôle de santé léger du backend."
 
 #: axiom.backends.base.LLMBackend.is_available:3 of
 msgid "Must never raise; any failure must be caught and returned as False."
-msgstr "Ne doit jamais lever ; tout échec doit être attrapé et retourné comme False."
+msgstr ""
+"Ne doit jamais lever ; tout échec doit être attrapé et retourné comme "
+"False."
 
 #: axiom.backends.base.LLMBackend.is_available:5 of
 msgid "True if the backend is reachable and ready, False otherwise."
@@ -337,8 +347,12 @@ msgid "Resilient parsing:"
 msgstr "Parsing résilient :"
 
 #: axiom.backends.base.LLMBackend.parse_tool_call:5 of
-msgid "Checks for common markdown fences (``~~~json``, triple-backtick json, etc)."
-msgstr "Cherche les blocs markdown courants (``~~~json``, triple backtick json, etc)."
+msgid ""
+"Checks for common markdown fences (``~~~json``, triple-backtick json, "
+"etc)."
+msgstr ""
+"Cherche les blocs markdown courants (``~~~json``, triple backtick json, "
+"etc)."
 
 #: axiom.backends.base.LLMBackend.parse_tool_call:7 of
 msgid "Fallback: heuristic search for JSON objects or arrays."
@@ -358,13 +372,13 @@ msgstr "La chaîne brute complète retournée par le LLM."
 
 #: axiom.backends.base.LLMBackend.parse_tool_call:13 of
 msgid ""
-"A (narrative_text, tool_call) tuple — narrative_text is the response with "
-"the JSON block removed, and tool_call is the parsed dict/list, or None if no"
-" valid JSON was found."
+"A (narrative_text, tool_call) tuple — narrative_text is the response with"
+" the JSON block removed, and tool_call is the parsed dict/list, or None "
+"if no valid JSON was found."
 msgstr ""
 "Un tuple (narrative_text, tool_call) — narrative_text est la réponse "
-"débarrassée du bloc JSON, et tool_call est le dict/la liste parsé, ou None "
-"si aucun JSON valide n'a été trouvé."
+"débarrassée du bloc JSON, et tool_call est le dict/la liste parsé, ou "
+"None si aucun JSON valide n'a été trouvé."
 
 #: ../../api/backends.md:10
 msgid "`axiom.backends.gemini`"
@@ -380,15 +394,15 @@ msgstr "Client backend LLM pour les modèles Google Gemini (distant / repli clou
 
 #: axiom.backends.gemini:5 of
 msgid ""
-"Uses the google-genai SDK (google.genai).  The client translates Axiom AI's "
-"internal list[LLMMessage] format to Gemini's Content objects: the first "
-"system-role message becomes the model's system_instruction, and the "
-"remaining turns become the contents list."
+"Uses the google-genai SDK (google.genai).  The client translates Axiom "
+"AI's internal list[LLMMessage] format to Gemini's Content objects: the "
+"first system-role message becomes the model's system_instruction, and the"
+" remaining turns become the contents list."
 msgstr ""
 "Utilise le SDK google-genai (google.genai).  Le client traduit le format "
-"interne list[LLMMessage] d'Axiom AI en objets Content de Gemini : le premier"
-" message de rôle system devient le system_instruction du modèle, et les "
-"tours restants deviennent la liste contents."
+"interne list[LLMMessage] d'Axiom AI en objets Content de Gemini : le "
+"premier message de rôle system devient le system_instruction du modèle, "
+"et les tours restants deviennent la liste contents."
 
 #: axiom.backends.gemini:10 axiom.backends.ollama:9 of
 msgid "Typical usage::"
@@ -424,15 +438,25 @@ msgstr "Vérifie si l'API Gemini est joignable avec la clé configurée."
 
 #: axiom.backends.gemini.GeminiClient.is_available:3 of
 msgid ""
-"Attempts to list available models.  Returns True on success, False on any "
-"exception.  Never raises."
+"Attempts to list available models.  Returns True on success, False on any"
+" exception.  Never raises."
 msgstr ""
-"Tente de lister les modèles disponibles.  Retourne True en cas de succès, "
-"False sur toute exception.  Ne lève jamais."
+"Tente de lister les modèles disponibles.  Retourne True en cas de succès,"
+" False sur toute exception.  Ne lève jamais."
 
 #: axiom.backends.gemini.GeminiClient.is_available:6 of
 msgid "True if the API responds without error, False otherwise."
 msgstr "True si l'API répond sans erreur, False sinon."
+
+#: axiom.backends.gemini.GeminiClient.list_models:1 of
+msgid "Return the generation-capable model names, without the \"models/\" prefix."
+msgstr ""
+
+#: axiom.backends.gemini.GeminiClient.list_models:3 of
+msgid ""
+"Empty list on any error — best-effort, used by the settings dialog's "
+"model picker (TICKET-062)."
+msgstr ""
 
 #: axiom.backends.gemini.GeminiClient.complete:1 of
 msgid "Send messages to Gemini and return a parsed LLMResponse."
@@ -445,8 +469,8 @@ msgid ""
 "user/assistant → user/model roles."
 msgstr ""
 "Traduit list[LLMMessage] au format Gemini : - Le premier message avec "
-"role=\"system\" devient system_instruction. - Les messages restants mappent "
-"user/assistant → rôles user/model."
+"role=\"system\" devient system_instruction. - Les messages restants "
+"mappent user/assistant → rôles user/model."
 
 #: axiom.backends.gemini.GeminiClient.complete:7
 #: axiom.backends.gemini.GeminiClient.stream_tokens:3
@@ -491,14 +515,15 @@ msgstr "Génère une image depuis un prompt texte et retourne les octets bruts."
 #: axiom.backends.gemini.GeminiClient.generate_image_bytes:3 of
 msgid ""
 "Used by the \"gemini\" image backend (axiom/image_generator.py) with an "
-"image-capable model (e.g. \"gemini-2.5-flash-image\"). Goes through the same"
-" quota-resilience path as text calls (TICKET-031 pacing/429 retry, "
+"image-capable model (e.g. \"gemini-2.5-flash-image\"). Goes through the "
+"same quota-resilience path as text calls (TICKET-031 pacing/429 retry, "
 "TICKET-033 status/cancellation hooks)."
 msgstr ""
-"Utilisé par le backend d'images \"gemini\" (axiom/image_generator.py) avec "
-"un modèle capable de produire des images (ex. \"gemini-2.5-flash-image\"). "
-"Passe par le même chemin de résilience aux quotas que les appels texte "
-"(cadencement/retry 429 TICKET-031, hooks de statut/annulation TICKET-033)."
+"Utilisé par le backend d'images \"gemini\" (axiom/image_generator.py) "
+"avec un modèle capable de produire des images (ex. \"gemini-2.5-flash-"
+"image\"). Passe par le même chemin de résilience aux quotas que les "
+"appels texte (cadencement/retry 429 TICKET-031, hooks de "
+"statut/annulation TICKET-033)."
 
 #: axiom.backends.gemini.GeminiClient.generate_image_bytes:8 of
 msgid "Visual prompt describing the image."
@@ -506,19 +531,19 @@ msgstr "Prompt visuel décrivant l'image."
 
 #: axiom.backends.gemini.GeminiClient.generate_image_bytes:9 of
 msgid ""
-"Optional aspect ratio supported by the API (\"1:1\", \"16:9\", ...). Omitted"
-" if the installed SDK does not expose ImageConfig."
+"Optional aspect ratio supported by the API (\"1:1\", \"16:9\", ...). "
+"Omitted if the installed SDK does not expose ImageConfig."
 msgstr ""
-"Ratio d'aspect optionnel pris en charge par l'API (\"1:1\", \"16:9\", ...). "
-"Omis si le SDK installé n'expose pas ImageConfig."
+"Ratio d'aspect optionnel pris en charge par l'API (\"1:1\", \"16:9\", "
+"...). Omis si le SDK installé n'expose pas ImageConfig."
 
 #: axiom.backends.gemini.GeminiClient.generate_image_bytes:13 of
 msgid ""
-"The image bytes (PNG/JPEG as returned by the API), or None if the response "
-"contains no image part."
+"The image bytes (PNG/JPEG as returned by the API), or None if the "
+"response contains no image part."
 msgstr ""
-"Les octets de l'image (PNG/JPEG tels que retournés par l'API), ou None si la"
-" réponse ne contient aucune partie image."
+"Les octets de l'image (PNG/JPEG tels que retournés par l'API), ou None si"
+" la réponse ne contient aucune partie image."
 
 #: axiom.backends.gemini.GeminiClient.generate_image_bytes:16 of
 msgid "On network failure, API error or exhausted quota."
@@ -555,9 +580,9 @@ msgid ""
 "local/remote backend that implements the OpenAI /v1/chat/completions API "
 "(e.g., LM Studio, KoboldCPP, Ollama, standard OpenAI, etc.)."
 msgstr ""
-"Client universel d'API compatible OpenAI pour Axiom AI. Prend en charge tout"
-" backend local/distant implémentant l'API OpenAI /v1/chat/completions (ex. "
-"LM Studio, KoboldCPP, Ollama, OpenAI standard, etc.)."
+"Client universel d'API compatible OpenAI pour Axiom AI. Prend en charge "
+"tout backend local/distant implémentant l'API OpenAI /v1/chat/completions"
+" (ex. LM Studio, KoboldCPP, Ollama, OpenAI standard, etc.)."
 
 #: axiom.backends.universal.UniversalClient:1 of
 msgid "OpenAI-compatible LLM client using httpx."
@@ -575,6 +600,27 @@ msgstr "Clé API optionnelle pour l'autorisation."
 msgid "The model identifier to request."
 msgstr "L'identifiant du modèle à demander."
 
+#: axiom.backends.universal.UniversalClient:6 of
+msgid ""
+"Optional headers merged into every request. Lets a provider use a non-"
+"Bearer auth scheme (e.g. Anthropic's x-api-key + anthropic-version) — "
+"pass api_key=\"\" then."
+msgstr ""
+
+#: axiom.backends.universal.UniversalClient:9 of
+msgid ""
+"Optional cap on the number of stop sequences sent (OpenAI rejects more "
+"than 4; most providers have no limit)."
+msgstr ""
+
+#: axiom.backends.universal.UniversalClient:11 of
+msgid ""
+"Optional pool of spare Bearer keys. When a request fails with an "
+"auth/quota status (401/402/403/429), the client switches to the next key "
+"— stickily — and retries, until the pool is exhausted (TICKET-062: shared"
+" beta keys). Only meaningful with Bearer auth (`api_key`)."
+msgstr ""
+
 #: axiom.backends.universal.UniversalClient.stream_tokens:1 of
 msgid "Yield individual tokens as they arrive via SSE."
 msgstr "Produit les tokens individuels à mesure qu'ils arrivent via SSE."
@@ -582,6 +628,16 @@ msgstr "Produit les tokens individuels à mesure qu'ils arrivent via SSE."
 #: axiom.backends.universal.UniversalClient.is_available:1 of
 msgid "Check if the backend is reachable."
 msgstr "Vérifie si le backend est joignable."
+
+#: axiom.backends.universal.UniversalClient.list_models:1 of
+msgid "Return the model ids exposed by the server's /models endpoint."
+msgstr ""
+
+#: axiom.backends.universal.UniversalClient.list_models:3 of
+msgid ""
+"Empty list on any error — callers use this as a best-effort check (e.g. "
+"the settings dialog verifying the configured model exists)."
+msgstr ""
 
 #: ../../api/backends.md:24
 msgid "`axiom.backends.ollama`"
@@ -598,12 +654,12 @@ msgstr "Client backend LLM pour les instances Ollama locales."
 #: axiom.backends.ollama:5 of
 msgid ""
 "Ollama exposes an OpenAI-compatible REST API.  This client targets the "
-"/api/chat endpoint for multi-turn conversation and /api/tags for the health "
-"check.  Both streaming and non-streaming modes are supported."
+"/api/chat endpoint for multi-turn conversation and /api/tags for the "
+"health check.  Both streaming and non-streaming modes are supported."
 msgstr ""
-"Ollama expose une API REST compatible OpenAI.  Ce client cible l'endpoint "
-"/api/chat pour la conversation multi-tours et /api/tags pour le contrôle de "
-"santé.  Les modes streaming et non-streaming sont pris en charge."
+"Ollama expose une API REST compatible OpenAI.  Ce client cible l'endpoint"
+" /api/chat pour la conversation multi-tours et /api/tags pour le contrôle"
+" de santé.  Les modes streaming et non-streaming sont pris en charge."
 
 #: axiom.backends.ollama.OllamaClient:1 of
 msgid "LLM backend targeting a locally running Ollama server."
@@ -635,7 +691,9 @@ msgstr "True si le serveur répond HTTP 200, False sinon."
 
 #: axiom.backends.ollama.OllamaClient.complete:1 of
 msgid "Send messages to Ollama's /api/chat and return a parsed LLMResponse."
-msgstr "Envoie les messages au /api/chat d'Ollama et retourne une LLMResponse parsée."
+msgstr ""
+"Envoie les messages au /api/chat d'Ollama et retourne une LLMResponse "
+"parsée."
 
 #: axiom.backends.ollama.OllamaClient.complete:4 of
 msgid "Ignored here; use stream_tokens() for token streaming."
@@ -663,8 +721,8 @@ msgid ""
 "POSTs to /api/chat with stream=true and yields each content token as it "
 "arrives."
 msgstr ""
-"POSTe sur /api/chat avec stream=true et produit chaque token de contenu à "
-"mesure qu'il arrive."
+"POSTe sur /api/chat avec stream=true et produit chaque token de contenu à"
+" mesure qu'il arrive."
 
 #: axiom.backends.ollama.OllamaClient.stream_tokens:15 of
 msgid "On connection failure or HTTP 5xx."

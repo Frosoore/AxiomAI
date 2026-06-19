@@ -1,0 +1,566 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 2026, 17h59 and Frosoore
+# This file is distributed under the same license as the Axiom Engine
+# package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 0.1.6\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-19 03:05+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../guides/memory.md:1
+msgid "Narrative memory"
+msgstr "Mémoire narrative"
+
+#: ../../guides/memory.md:3
+msgid ""
+"Axiom remembers the story so the world stays coherent across hundreds of "
+"turns. Memory has a search layer and a cognitive layer, and a mode toggle"
+" that decides how much of it is used."
+msgstr ""
+"Axiom se souvient de l'histoire pour que le monde reste cohérent sur des "
+"centaines de tours. La mémoire comporte une couche de recherche et une "
+"couche cognitive, ainsi qu'un sélecteur de mode qui décide de la part "
+"utilisée."
+
+#: ../../guides/memory.md:7
+msgid ""
+"A **search layer** (always on, fully offline and deterministic) that "
+"recalls the most relevant past narrative for the current turn."
+msgstr ""
+"Une **couche de recherche** (toujours active, entièrement hors-ligne et "
+"déterministe) qui rappelle le passé narratif le plus pertinent pour le "
+"tour courant."
+
+#: ../../guides/memory.md:9
+msgid ""
+"A **cognitive layer** (opt-in *living* mode) that distils the narrative "
+"into structured **facts** and, optionally, into evolving **beliefs** the "
+"world's characters remember and revise."
+msgstr ""
+"Une **couche cognitive** (mode *vivant*, opt-in) qui distille la "
+"narration en **faits** structurés et, optionnellement, en **croyances** "
+"évolutives que les personnages du monde retiennent et révisent."
+
+#: ../../guides/memory.md:13
+msgid ""
+"The design is adapted from the [Hindsight](https://github.com/vectorize-"
+"io/hindsight) memory system, reimplemented on Axiom's offline stack "
+"(ChromaDB + SQLite + a pluggable `LLMBackend`) while preserving its core "
+"invariant: everything is keyed by `turn_id`, so a rewind rolls the whole "
+"memory back in lockstep with the events."
+msgstr ""
+"La conception est adaptée du système de mémoire "
+"[Hindsight](https://github.com/vectorize-io/hindsight), réimplémenté sur "
+"la pile hors-ligne d'Axiom (ChromaDB + SQLite + un `LLMBackend` "
+"enfichable) tout en préservant son invariant central : tout est clé par "
+"`turn_id`, de sorte qu'un rembobinage fait reculer toute la mémoire en "
+"phase avec les événements."
+
+#: ../../guides/memory.md:19
+msgid "The two modes"
+msgstr "Les deux modes"
+
+#: ../../guides/memory.md:21
+#, python-brace-format
+msgid ""
+"The mode is a per-save preference, read from "
+"{py:attr}`axiom.config.AppConfig.memory_mode`:"
+msgstr ""
+"Le mode est une préférence par partie, lue depuis "
+"{py:attr}`axiom.config.AppConfig.memory_mode` :"
+
+#: ../../guides/memory.md
+msgid "**lite** (default)"
+msgstr "**lite** (défaut)"
+
+#: ../../guides/memory.md
+msgid "**living** (opt-in)"
+msgstr "**living** (opt-in)"
+
+#: ../../guides/memory.md
+msgid "Hybrid search"
+msgstr "Recherche hybride"
+
+#: ../../guides/memory.md
+msgid "yes"
+msgstr "oui"
+
+#: ../../guides/memory.md
+msgid "LLM fact extraction"
+msgstr "Extraction de faits par LLM"
+
+#: ../../guides/memory.md
+msgid "no"
+msgstr "non"
+
+#: ../../guides/memory.md
+msgid "yes (background)"
+msgstr "oui (arrière-plan)"
+
+#: ../../guides/memory.md
+msgid "Evolving beliefs"
+msgstr "Croyances évolutives"
+
+#: ../../guides/memory.md
+#, python-brace-format
+msgid "optional ({py:attr}`~axiom.config.AppConfig.memory_beliefs_enabled`)"
+msgstr "optionnel ({py:attr}`~axiom.config.AppConfig.memory_beliefs_enabled`)"
+
+#: ../../guides/memory.md
+msgid "Network required"
+msgstr "Réseau requis"
+
+#: ../../guides/memory.md
+msgid "yes (LLM)"
+msgstr "oui (LLM)"
+
+#: ../../guides/memory.md
+msgid "Determinism"
+msgstr "Déterminisme"
+
+#: ../../guides/memory.md
+msgid "total"
+msgstr "total"
+
+#: ../../guides/memory.md
+msgid "tested with a mocked LLM"
+msgstr "testé avec un LLM simulé"
+
+#: ../../guides/memory.md
+msgid "Cost"
+msgstr "Coût"
+
+#: ../../guides/memory.md
+msgid "none"
+msgstr "aucun"
+
+#: ../../guides/memory.md
+msgid "bounded (every *N* turns)"
+msgstr "borné (tous les *N* tours)"
+
+#: ../../guides/memory.md:33
+#, python-brace-format
+msgid ""
+"`lite` is the safe default: it never touches an LLM or the network, so "
+"the game loop runs anywhere and the test-suite stays deterministic. Use "
+"{py:func}`axiom.config.memory_mode_is_living` to branch on the mode (any "
+"value other than the explicit `\"living\"` opt-in resolves to `lite`)."
+msgstr ""
+"`lite` est le défaut sûr : il ne touche jamais un LLM ni le réseau, donc "
+"la boucle de jeu tourne partout et la suite de tests reste déterministe. "
+"Utilisez {py:func}`axiom.config.memory_mode_is_living` pour brancher "
+"selon le mode (toute valeur autre que l'opt-in explicite `\"living\"` est"
+" ramenée à `lite`)."
+
+#: ../../guides/memory.md:38
+msgid "Search layer (both modes)"
+msgstr "Couche de recherche (les deux modes)"
+
+#: ../../guides/memory.md:40
+msgid ""
+"Long-term narrative is embedded into a local "
+"[ChromaDB](https://www.trychroma.com/) store, one collection per save, "
+"with the offline `all-MiniLM-L6-v2` model. Each chunk is tagged with the "
+"`turn_id` that produced it, which makes rollback surgical: rewinding to "
+"turn *N* deletes every chunk from a later turn."
+msgstr ""
+"La narration de long terme est vectorisée dans un store "
+"[ChromaDB](https://www.trychroma.com/) local, une collection par partie, "
+"avec le modèle hors-ligne `all-MiniLM-L6-v2`. Chaque fragment est "
+"étiqueté avec le `turn_id` qui l'a produit, ce qui rend le rollback "
+"chirurgical : rembobiner au tour *N* supprime tout fragment d'un tour "
+"ultérieur."
+
+#: ../../guides/memory.md:46
+#, python-brace-format
+msgid "{py:meth}`axiom.memory.VectorMemory.query` runs a **hybrid search**:"
+msgstr ""
+"{py:meth}`axiom.memory.VectorMemory.query` effectue une **recherche "
+"hybride** :"
+
+#: ../../guides/memory.md:48
+msgid ""
+"**Semantic arm** — ChromaDB approximate-nearest-neighbour over the "
+"embeddings (meaning-based recall)."
+msgstr ""
+"**Bras sémantique** — recherche approximative des plus proches voisins de"
+" ChromaDB sur les embeddings (rappel fondé sur le sens)."
+
+#: ../../guides/memory.md:50
+msgid ""
+"**Lexical arm** — BM25 over the save's chunks "
+"([`rank_bm25`](https://pypi.org/project/rank-bm25/)), which rescues an "
+"*exact* token the embeddings miss (a proper noun, an item)."
+msgstr ""
+"**Bras lexical** — BM25 sur les fragments de la partie "
+"([`rank_bm25`](https://pypi.org/project/rank-bm25/)), qui rattrape un "
+"token *exact* que les embeddings manquent (un nom propre, un objet)."
+
+#: ../../guides/memory.md:52
+#, python-brace-format
+msgid ""
+"**Rank fusion** — the two ranked lists are merged with Reciprocal Rank "
+"Fusion ({py:func}`axiom.retrieval.fusion.reciprocal_rank_fusion`); the "
+"normalised RRF score is the base relevance."
+msgstr ""
+"**Fusion de rangs** — les deux listes classées sont fusionnées par "
+"Reciprocal Rank Fusion "
+"({py:func}`axiom.retrieval.fusion.reciprocal_rank_fusion`) ; le score RRF"
+" normalisé est la pertinence de base."
+
+#: ../../guides/memory.md:55
+msgid ""
+"**Recency modulation** — turn-age nudges the score by a small factor "
+"(±10%) so a relevant-but-old memory is ranked down, never crushed."
+msgstr ""
+"**Modulation de récence** — l'âge en tours ajuste le score d'un petit "
+"facteur (±10 %) afin qu'un souvenir pertinent mais ancien soit "
+"rétrogradé, jamais écrasé."
+
+#: ../../guides/memory.md:57
+msgid ""
+"**Focus boost** — chunks that mention the current scene get a flat "
+"additive bump via the `focus_terms` argument: the player's current "
+"location *and* the names of the characters sharing it, so memories about "
+"who and where you are surface more readily."
+msgstr ""
+"**Boost de focus** — les fragments qui mentionnent la scène courante "
+"reçoivent un petit bonus additif via l'argument `focus_terms` : le lieu "
+"courant du joueur *et* les noms des personnages qui le partagent, pour "
+"que les souvenirs sur qui et où vous êtes remontent plus facilement."
+
+#: ../../guides/memory.md:61
+#, python-brace-format
+msgid ""
+"**Optional reranker** — when "
+"{py:attr}`axiom.config.AppConfig.memory_reranker_enabled` is set, a "
+"cross-encoder ({py:class}`axiom.retrieval.reranker.CrossEncoderReranker`)"
+" re-scores the fused candidates jointly against the query for the most "
+"precise ordering. It is **off by default** (it needs a ~90 MB torch "
+"model) and degrades to a no-op when its runtime is unavailable."
+msgstr ""
+"**Reranker optionnel** — quand "
+"{py:attr}`axiom.config.AppConfig.memory_reranker_enabled` est activé, un "
+"cross-encoder ({py:class}`axiom.retrieval.reranker.CrossEncoderReranker`)"
+" re-score conjointement les candidats fusionnés face à la requête pour "
+"l'ordre le plus précis. Il est **désactivé par défaut** (il requiert un "
+"modèle torch d'environ 90 Mo) et se réduit à un no-op quand son runtime "
+"est indisponible."
+
+#: ../../guides/memory.md:68
+msgid ""
+"Every step is offline and deterministic; the reranker is the only "
+"optional dependency and it always has a safe fallback."
+msgstr ""
+"Chaque étape est hors-ligne et déterministe ; le reranker est la seule "
+"dépendance optionnelle et dispose toujours d'un repli sûr."
+
+#: ../../guides/memory.md:71
+msgid "Lore Book retrieval"
+msgstr "Récupération du Lore Book"
+
+#: ../../guides/memory.md:73
+msgid ""
+"A universe's **Lore Book** is static, authored world knowledge (factions,"
+" places, history) — separate from the per-turn narrative. Each turn the "
+"engine surfaces the entries relevant to the player's input in two steps:"
+msgstr ""
+"Le **Lore Book** d'un univers est un savoir du monde statique et rédigé "
+"(factions, lieux, histoire) — distinct de la narration tour par tour. À "
+"chaque tour, le moteur fait remonter les entrées pertinentes pour l'entrée "
+"du joueur, en deux étapes :"
+
+#: ../../guides/memory.md:77
+msgid ""
+"**Semantic match** — the Lore Book is embedded into the same per-save "
+"store (tagged `chunk_type=\"lore\"`, at turn 0 so it survives any rewind)"
+" and matched by *meaning*, so \"betrayal\" can surface an entry about a "
+"\"coup\" even without the exact word. The embedding is refreshed once per"
+" session (and after a hot reload)."
+msgstr ""
+"**Correspondance sémantique** — le Lore Book est vectorisé dans le même "
+"store par partie (étiqueté `chunk_type=\"lore\"`, au tour 0 pour survivre à "
+"tout rewind) et apparié par le *sens*, si bien que « trahison » peut faire "
+"remonter une entrée parlant d'un « coup d'État » même sans le mot exact. "
+"L'embedding est rafraîchi une fois par session (et après un hot reload)."
+
+#: ../../guides/memory.md:81
+msgid ""
+"**Link expansion** — the semantic hits are then expanded with a few "
+"*related* entries (same category, or shared keywords), an idea adapted "
+"from Hindsight's link expansion. It is computed at query time over the "
+"small lore table (no precomputed graph), giving the narrator associative "
+"context, not just direct hits."
+msgstr ""
+"**Link expansion** — les hits sémantiques sont ensuite élargis à quelques "
+"entrées *liées* (même catégorie, ou mots-clés partagés), une idée adaptée "
+"du link expansion de Hindsight. C'est calculé à la volée sur la petite "
+"table de lore (sans graphe pré-calculé), donnant au narrateur un contexte "
+"associatif, pas seulement les hits directs."
+
+#: ../../guides/memory.md:86
+msgid ""
+"When the embedding runtime is unavailable (e.g. Windows without the torch"
+" runtime), retrieval falls back to a deterministic keyword overlap on the"
+" structured table, so the lore never disappears."
+msgstr ""
+"Quand le runtime d'embedding est indisponible (par ex. Windows sans le "
+"runtime torch), la récupération se rabat sur un recouvrement de mots-clés "
+"déterministe sur la table structurée, pour que le lore ne disparaisse "
+"jamais."
+
+#: ../../guides/memory.md:90
+msgid "Cognitive layer (living mode)"
+msgstr "Couche cognitive (mode vivant)"
+
+#: ../../guides/memory.md:92
+msgid ""
+"In `living` mode the engine additionally distils the narrative into "
+"atomic **facts** — a who/what/when/where/why model adapted from the "
+"[Hindsight](https://github.com/vectorize-io/hindsight) memory system."
+msgstr ""
+"En mode `living`, le moteur distille en plus la narration en **faits** "
+"atomiques — un modèle qui/quoi/quand/où/pourquoi adapté du système de "
+"mémoire [Hindsight](https://github.com/vectorize-io/hindsight)."
+
+#: ../../guides/memory.md:96
+#, python-brace-format
+msgid ""
+"A fact ({py:class}`axiom.facts.Fact`) carries a canonical `statement`, a "
+"`fact_type` (`world` / `experience` / `assistant`), the structured "
+"fields, and a list of `entities`. Facts are produced by "
+"{py:func}`axiom.factextract.extract_facts` (an LLM call, run off the turn"
+" loop) and stored with {py:func}`axiom.facts.insert_facts`, tagged with "
+"their `turn_id`."
+msgstr ""
+"Un fait ({py:class}`axiom.facts.Fact`) porte un `statement` canonique, un"
+" `fact_type` (`world` / `experience` / `assistant`), les champs "
+"structurés et une liste d'`entities`. Les faits sont produits par "
+"{py:func}`axiom.factextract.extract_facts` (un appel LLM, exécuté hors de"
+" la boucle de tour) et stockés via {py:func}`axiom.facts.insert_facts`, "
+"étiquetés avec leur `turn_id`."
+
+#: ../../guides/memory.md:109
+#, python-brace-format
+msgid ""
+"Because facts are turn-tagged, rollback stays trivial: a rewind drops "
+"every fact from a later turn, atomically with the events it deletes "
+"(handled inside {py:meth}`axiom.checkpoint.CheckpointManager.rewind`). "
+"Extraction is **fire and forget** — any failure (LLM offline, bad output)"
+" yields no facts and never interrupts play."
+msgstr ""
+"Parce que les faits sont étiquetés par tour, le rollback reste trivial : "
+"un rembobinage supprime tout fait d'un tour ultérieur, de façon atomique "
+"avec les événements qu'il efface (géré dans "
+"{py:meth}`axiom.checkpoint.CheckpointManager.rewind`). L'extraction est "
+"**fire and forget** — tout échec (LLM hors-ligne, sortie invalide) ne "
+"produit aucun fait et n'interrompt jamais le jeu."
+
+#: ../../guides/memory.md:115
+msgid ""
+"At prompt-building time the Arbitrator surfaces the most relevant facts "
+"(those about the on-scene characters, then the most recent) as additional"
+" memory lines, so the narrator can stay consistent with what the world "
+"has learned."
+msgstr ""
+"Au moment de construire le prompt, l'Arbitrator fait remonter les faits "
+"les plus pertinents (ceux concernant les personnages en scène, puis les "
+"plus récents) comme lignes de mémoire supplémentaires, pour que le "
+"narrateur reste cohérent avec ce que le monde a appris."
+
+#: ../../guides/memory.md:119
+msgid "Cost control"
+msgstr "Maîtrise du coût"
+
+#: ../../guides/memory.md:121
+#, python-brace-format
+msgid ""
+"Fact extraction is batched: "
+"{py:attr}`axiom.config.AppConfig.memory_fact_interval` sets how many "
+"turns pass between extractions (`0` disables periodic extraction "
+"entirely). {py:attr}`axiom.config.AppConfig.memory_fact_model` overrides "
+"the model used (empty = reuse the configured game backend), so a cheaper,"
+" faster model can do the extraction."
+msgstr ""
+"L'extraction de faits est groupée : "
+"{py:attr}`axiom.config.AppConfig.memory_fact_interval` fixe le nombre de "
+"tours entre deux extractions (`0` désactive entièrement l'extraction "
+"périodique). {py:attr}`axiom.config.AppConfig.memory_fact_model` "
+"surcharge le modèle utilisé (vide = réutiliser le backend de jeu "
+"configuré), pour qu'un modèle moins cher et plus rapide fasse "
+"l'extraction."
+
+#: ../../guides/memory.md:127
+msgid "Beliefs (living mode, opt-in)"
+msgstr "Croyances (mode vivant, opt-in)"
+
+#: ../../guides/memory.md:129
+#, python-brace-format
+msgid ""
+"Facts are immutable observations of single moments. On top of them, Axiom"
+" can maintain **beliefs** — synthetic, *evolving* opinions a character or"
+" the world holds — when "
+"{py:attr}`axiom.config.AppConfig.memory_beliefs_enabled` is set (use "
+"{py:func}`axiom.config.memory_beliefs_active` to branch; it requires "
+"living mode *and* the opt-in). This is what lets an NPC hold a grudge "
+"hundreds of turns after you wronged them."
+msgstr ""
+"Les faits sont des observations immuables d'instants isolés. Par-dessus, "
+"Axiom peut entretenir des **croyances** — des opinions synthétiques et "
+"*évolutives* qu'un personnage ou le monde entretient — quand "
+"{py:attr}`axiom.config.AppConfig.memory_beliefs_enabled` est activé "
+"(utilisez {py:func}`axiom.config.memory_beliefs_active` pour brancher ; "
+"cela requiert le mode vivant *et* l'opt-in). C'est ce qui permet à un PNJ"
+" de garder rancune des centaines de tours après que vous l'avez lésé."
+
+#: ../../guides/memory.md:136
+#, python-brace-format
+msgid ""
+"A belief ({py:class}`axiom.observations.Observation`) carries a canonical"
+" `statement`, the `subject` it is about, a `proof_count`, and — crucially"
+" — its `sources`: the facts that back it, as `{fact_id, turn_id}` pairs."
+msgstr ""
+"Une croyance ({py:class}`axiom.observations.Observation`) porte un "
+"`statement` canonique, le `subject` dont elle parle, un `proof_count` et "
+"— surtout — ses `sources` : les faits qui l'étayent, sous forme de paires"
+" `{fact_id, turn_id}`."
+
+#: ../../guides/memory.md:140
+#, python-brace-format
+msgid ""
+"After a batch of facts is stored, "
+"{py:func}`axiom.consolidate.consolidate` asks the LLM how the beliefs "
+"should change and returns CREATE / UPDATE / DELETE actions; "
+"{py:func}`axiom.observations.apply_consolidation` applies them "
+"deterministically (a new belief, a reinforced one with merged sources, or"
+" a contradicted one removed). Like extraction, consolidation is "
+"background and fire-and-forget."
+msgstr ""
+"Après le stockage d'un lot de faits, "
+"{py:func}`axiom.consolidate.consolidate` demande au LLM comment les "
+"croyances doivent évoluer et renvoie des actions CREATE / UPDATE / DELETE"
+" ; {py:func}`axiom.observations.apply_consolidation` les applique de "
+"façon déterministe (une nouvelle croyance, une croyance renforcée aux "
+"sources fusionnées, ou une croyance contredite supprimée). Comme "
+"l'extraction, la consolidation est en arrière-plan et fire-and-forget."
+
+#: ../../guides/memory.md:147
+msgid ""
+"At prompt-building time the Arbitrator surfaces memory as a "
+"**hierarchy**, most synthetic first: relevant *beliefs*, then *facts*, "
+"then raw narrative chunks — so the narrator leads with what the world has"
+" concluded, backed by the specifics."
+msgstr ""
+"Au moment de construire le prompt, l'Arbitrator présente la mémoire en "
+"**hiérarchie**, du plus synthétique au plus brut : les *croyances* "
+"pertinentes, puis les *faits*, puis les fragments narratifs bruts — ainsi"
+" le narrateur commence par ce que le monde a conclu, étayé par les "
+"détails."
+
+#: ../../guides/memory.md:151
+msgid "Belief rollback"
+msgstr "Rollback des croyances"
+
+#: ../../guides/memory.md:153
+#, python-brace-format
+msgid ""
+"Beliefs derive from several turns, so they cannot be dropped by a single "
+"`turn_id`. The `sources` turn ids are the rollback key "
+"({py:func}`axiom.observations.rollback_observations`, run inside "
+"{py:meth}`axiom.checkpoint.CheckpointManager.rewind`'s transaction): "
+"rewinding to turn *N* deletes every belief *created* after *N* and, for "
+"the survivors, keeps only the sources at turns `<= N`, recomputing "
+"`proof_count`. Beliefs thus roll back atomically with the facts and "
+"events they were built from."
+msgstr ""
+"Les croyances dérivent de plusieurs tours, donc on ne peut pas les "
+"supprimer par un seul `turn_id`. Les `turn_id` des `sources` sont la clé "
+"de rollback ({py:func}`axiom.observations.rollback_observations`, exécuté"
+" dans la transaction de "
+"{py:meth}`axiom.checkpoint.CheckpointManager.rewind`) : rembobiner au "
+"tour *N* supprime toute croyance *créée* après *N* et, pour les "
+"survivantes, ne garde que les sources aux tours `<= N`, en recalculant "
+"`proof_count`. Les croyances reculent ainsi de façon atomique avec les "
+"faits et événements dont elles sont issues."
+
+#: ../../guides/memory.md:161
+msgid "Per-character memory styles"
+msgstr "Styles de mémoire par personnage"
+
+#: ../../guides/memory.md:163
+#, python-brace-format
+msgid ""
+"Different characters remember differently: a rancorous NPC dwells on "
+"betrayals, a merchant on debts. A **belief mission** biases what the "
+"consolidator records about each subject. Missions live in `Universe_Meta`"
+" (so they round-trip with the Universe-as-Code source and travel with "
+"saves) and are read by {py:mod}`axiom.missions`:"
+msgstr ""
+"Les personnages ne se souviennent pas de la même façon : un PNJ rancunier"
+" rumine les trahisons, un marchand les dettes. Une **mission de "
+"croyance** biaise ce que le consolidateur retient à propos de chaque "
+"sujet. Les missions vivent dans `Universe_Meta` (elles font donc l'aller-"
+"retour avec la source Universe-as-Code et voyagent avec les parties) et "
+"sont lues par {py:mod}`axiom.missions` :"
+
+#: ../../guides/memory.md:169
+msgid "`belief_mission` — the universe-wide default;"
+msgstr "`belief_mission` — le défaut à l'échelle de l'univers ;"
+
+#: ../../guides/memory.md:170
+#, python-brace-format
+msgid ""
+"`belief_missions` — a JSON `{entity_name: mission}` of per-character "
+"overrides, editable in the Creator Studio's *Metadata* tab as `Name: what"
+" they remember` lines."
+msgstr ""
+"`belief_missions` — un JSON `{entity_name: mission}` de surcharges par "
+"personnage, éditable dans l'onglet *Metadata* du Creator Studio sous "
+"forme de lignes `Name: ce dont il se souvient`."
+
+#: ../../guides/memory.md:174
+msgid ""
+"The consolidator includes the styles of the characters in play, so each "
+"forms beliefs in character."
+msgstr ""
+"Le consolidateur inclut les styles des personnages en jeu, pour que "
+"chacun forme ses croyances dans son caractère."
+
+#: ../../guides/memory.md:177
+msgid "Prompt caching"
+msgstr "Cache de prompt"
+
+#: ../../guides/memory.md:179
+#, python-brace-format
+msgid ""
+"For the background living-mode calls on the Gemini backend, optional "
+"explicit context caching "
+"({py:attr}`axiom.config.AppConfig.memory_prompt_cache_enabled`) caches a "
+"large, stable system prompt to cut input-token cost. It is **off by "
+"default**, guarded by a minimum size and a graceful fallback: when the "
+"prompt is too small to qualify (the common case — Gemini's implicit "
+"caching already covers that) or caching is unavailable, it safely does "
+"nothing."
+msgstr ""
+"Pour les appels d'arrière-plan du mode vivant sur le backend Gemini, un "
+"cache de contexte explicite optionnel "
+"({py:attr}`axiom.config.AppConfig.memory_prompt_cache_enabled`) met en "
+"cache un grand prompt système stable pour réduire le coût en tokens "
+"d'entrée. Il est **désactivé par défaut**, gardé par une taille minimale "
+"et un repli gracieux : quand le prompt est trop petit pour être éligible "
+"(le cas courant — le cache implicite de Gemini le couvre déjà) ou que le "
+"cache est indisponible, il ne fait rien sans risque."
+
