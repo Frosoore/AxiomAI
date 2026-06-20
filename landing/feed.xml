@@ -21,12 +21,5 @@
       <pubDate>Sat, 20 Jun 2026 00:00:00 +0000</pubDate>
       <description>We finally have a real place to talk about the project, not just a dry changelog. / Expect deep dives, the thinking behind the big changes, and the messes we walk into. / There's an RSS feed too, so you can follow along without ever opening the site.</description>
     </item>
-    <item>
-      <title>README</title>
-      <link>https://frosoore.github.io/AxiomAI/blog/README.html</link>
-      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/README.html</guid>
-      <pubDate>Sat, 20 Jun 2026 00:00:00 +0000</pubDate>
-      <description>README</description>
-    </item>
   </channel>
 </rss>

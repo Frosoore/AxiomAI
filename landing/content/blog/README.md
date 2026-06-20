@@ -74,3 +74,12 @@ python landing/build_site.py        # regenerate blog/, feed.xml from the .md fi
 python landing/build_site.py --check   # CI guard: nonzero if output is stale
 ```
 Then open `landing/blog/index.html`. Pushing to `main` rebuilds and deploys.
+
+## Not published
+
+This README and any file named with a leading `_` (e.g. `_draft-idea.md`) are
+**ignored** by the build: no article page, no card, no RSS entry. Use the `_`
+prefix to keep a work-in-progress in the folder without publishing it. The whole
+`content/` folder is source only, it is not copied to the live site (so these
+files are not web-indexed), but it stays in the repo.
+

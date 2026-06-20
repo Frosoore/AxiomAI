@@ -60,9 +60,14 @@ jobs:
         run: python landing/build_site.py
 
       # The landing page (landing/) becomes the Pages root, sitting next to
-      # the /en/ and /fr/ documentation builds.
+      # the /en/ and /fr/ documentation builds. The content/ folder holds only
+      # build-time *sources* (TOML data, Markdown article sources, the authoring
+      # README); they're compiled into the pages above, so we keep them out of the
+      # published site (not indexed, no duplicate content). They stay in the repo.
       - name: Add landing page at the site root
-        run: cp -r landing/. site/
+        run: |
+          cp -r landing/. site/
+          rm -rf site/content
 
       - uses: actions/upload-pages-artifact@v3
         with:

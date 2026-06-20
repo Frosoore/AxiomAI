@@ -197,7 +197,10 @@ def _load_posts() -> list[dict]:
     posts: list[dict] = []
     if not BLOG_SRC.is_dir():
         return posts
-    for path in BLOG_SRC.glob("*.md"):
+    for path in sorted(BLOG_SRC.glob("*.md")):
+        # Not articles: the authoring guide and any draft (_-prefixed) / dotfile.
+        if path.name.lower() == "readme.md" or path.name[:1] in ("_", "."):
+            continue
         raw = path.read_text(encoding="utf-8").lstrip()
         if raw.startswith("+++"):
             _, fm, body = raw.split("+++", 2)
@@ -400,6 +403,16 @@ def _build_blog(check: bool) -> list[str]:
             if not check:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
+
+    # Prune stale article pages (renamed/removed posts, or a non-article .md that
+    # once leaked in) so blog/ never keeps orphans. index.html is always kept.
+    if BLOG_OUT.is_dir():
+        keep = {BLOG_OUT / "index.html"} | {BLOG_OUT / f"{p['slug']}.html" for p in posts}
+        for stale in BLOG_OUT.glob("*.html"):
+            if stale not in keep:
+                changed.append(str(stale.relative_to(LANDING)) + " (removed)")
+                if not check:
+                    stale.unlink()
     return changed
 
 
