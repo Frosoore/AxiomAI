@@ -117,7 +117,9 @@ def _render_roadmap(roadmap: dict) -> str:
             f'        <ul class="road-list">\n{body}\n        </ul>\n'
             f"      </div>"
         )
-    return '    <div class="road-tiers reveal">\n' + "\n".join(cols) + "\n    </div>"
+    # No `reveal` class here: the Dev page has no scroll-reveal observer (unlike
+    # index.html), so a revealed element would stay invisible. Keep it always shown.
+    return '    <div class="road-tiers">\n' + "\n".join(cols) + "\n    </div>"
 
 
 def _render_updates_data(updates: dict) -> str:
