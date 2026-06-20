@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>README · Axiom AI blog</title>
+<meta name="description" content="README" />
+<meta name="theme-color" content="#1e1e2e" />
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+<link rel="alternate" type="application/rss+xml" title="Axiom AI blog" href="../feed.xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+        <div class="alpha-banner" role="alert">
+            <div class="wrap alpha-inner">
+                <span class="alpha-tag">EARLY ALPHA</span>
+                <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. Expect rough edges and breaking changes.</p>
+            </div>
+        </div>
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="../index.html#top"><img src="../assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
+                <nav class="nav-links">
+                    <a href="../index.html#how">How it works</a>
+                    <a href="../index.html#features">Features</a>
+                    <a href="../dev-updates.html">Roadmap</a>
+                    <a href="../blog/index.html">Blog</a>
+                    <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+                </nav>
+            </div>
+        </header>
+        <section class="post-section"><div class="wrap">
+        <article class="post">
+            <p class="post-back"><a href="index.html">← All posts</a></p>
+            <h1 class="post-title">README</h1>
+            <p class="post-meta"></p>
+            <div class="post-body">
+<h1>How to write a blog post</h1>
+<p>Each post is one Markdown file in this folder. Write it, run the build (or just
+push, the GitHub Action rebuilds), and you get a styled article page, a card on
+the blog index, and a fresh RSS entry. You never touch HTML or CSS.</p>
+<h2>1. Create the file</h2>
+<p>Name it <code>YYYY-MM-DD-some-slug.md</code> (the date prefix keeps the folder sorted).
+Start with a TOML front matter block between <code>+++</code> lines, then the body:</p>
+<pre><code>+++
+title = &quot;Your title&quot;
+slug = &quot;some-slug&quot;          # the URL becomes blog/some-slug.html
+date = &quot;2026-07-05&quot;         # YYYY-MM-DD, drives ordering + RSS
+author = &quot;Pinpanicaille&quot;    # see &quot;Signature&quot; below
+summary = [
+  &quot;First takeaway, one short sentence.&quot;,
+  &quot;Second takeaway.&quot;,
+  &quot;Third takeaway.&quot;,
+]
++++
+
+## First section
+
+Your text here...
+</code></pre>
+<p>The <code>summary</code> (exactly 3 short points) is the <strong>TL;DR</strong> shown at the top of the
+article, on the index card, and as the RSS description. Always fill it.</p>
+<h2>2. Writing style (important)</h2>
+<ul>
+<li><strong>English only.</strong></li>
+<li><strong>Human, relaxed, a bit punchy.</strong> Korben's tone is the reference: talk to the
+reader, no corporate stiffness, a little personality and humour are welcome.</li>
+<li><strong>Never use em dashes (—) or en dashes (–).</strong> They read as AI. Use commas,
+parentheses, or just two sentences instead.</li>
+<li>Keep paragraphs short. Lead with the point, then explain.</li>
+</ul>
+<h2>3. Signature (byline)</h2>
+<ul>
+<li>Posts written on the user's side are signed <strong><code>Pinpanicaille</code></strong>.</li>
+<li>If <strong>Frosoore</strong> writes a post, he signs <strong><code>Frosoore</code></strong> (his own name).</li>
+</ul>
+<h2>4. Markdown you can use</h2>
+<p>The body is rendered with markdown-it (CommonMark + tables + strikethrough). The
+title comes from the front matter, so <strong>start your sections at <code>##</code></strong>.</p>
+<table>
+<thead>
+<tr>
+<th>You write</th>
+<th>You get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>## Heading</code></td>
+<td>section title</td>
+</tr>
+<tr>
+<td><code>### Subheading</code></td>
+<td>smaller title</td>
+</tr>
+<tr>
+<td><code>**bold**</code></td>
+<td><strong>bold</strong></td>
+</tr>
+<tr>
+<td><code>*italic*</code></td>
+<td><em>italic</em></td>
+</tr>
+<tr>
+<td><code>~~struck~~</code></td>
+<td><s>struck</s></td>
+</tr>
+<tr>
+<td><code>- item</code> / <code>1. item</code></td>
+<td>bulleted / numbered list</td>
+</tr>
+<tr>
+<td><code>`code`</code></td>
+<td>inline code</td>
+</tr>
+<tr>
+<td><code>```lang ... ```</code></td>
+<td>fenced code block</td>
+</tr>
+<tr>
+<td><code>&gt; quote</code></td>
+<td>block quote</td>
+</tr>
+<tr>
+<td><code>[text](url)</code></td>
+<td>link</td>
+</tr>
+<tr>
+<td><code>![alt](path)</code></td>
+<td>image (use <code>../assets/...</code>)</td>
+</tr>
+<tr>
+<td><code>---</code></td>
+<td>horizontal rule</td>
+</tr>
+</tbody>
+</table>
+<p>All of it is pre-styled to the site theme, so it looks the same across every
+article. Just write Markdown.</p>
+<h2>5. Preview / publish</h2>
+<pre><code class="language-bash">python landing/build_site.py        # regenerate blog/, feed.xml from the .md files
+python landing/build_site.py --check   # CI guard: nonzero if output is stale
+</code></pre>
+<p>Then open <code>landing/blog/index.html</code>. Pushing to <code>main</code> rebuilds and deploys.</p>
+
+            </div>
+            <p class="post-foot"><a href="index.html">← Back to the blog</a> · <a href="../index.html#top">Home</a></p>
+        </article>
+        </div></section>
+        <footer>
+            <div class="wrap">
+                <div class="foot-bottom">
+                    <span>AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span>
+                    <span><a href="../feed.xml">RSS feed</a> · <a href="../blog/index.html">Blog</a> · <a href="../dev-updates.html">Dev updates</a></span>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>

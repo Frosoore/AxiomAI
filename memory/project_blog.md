@@ -24,5 +24,22 @@ changelog). But : news détaillées, vie du projet, deep-dives. Généré par
   il compte changer son pseudo GitHub bientôt, surveiller si ça doit être mis à jour).
 - Si **Frosoore** écrit un article, il signe **en son propre nom** (« Frosoore »), pas Pinpanicaille.
 
+**Guide d'écriture complet (réutilisable) dans le repo** : `landing/content/blog/README.md`
+— template de front-matter, règles de style, table du Markdown supporté, étapes de preview/publish.
+C'est LE document à relire avant d'écrire un nouvel article (le présent fichier mémoire n'est qu'un
+pointeur + les règles clés). Template minimal :
+
+```
++++
+title = "..."
+slug = "..."            # URL = blog/<slug>.html
+date = "YYYY-MM-DD"
+author = "Pinpanicaille"
+summary = ["point 1", "point 2", "point 3"]   # TL;DR 3 points
++++
+## Section
+corps en Markdown (commence à ##, le titre vient du front-matter)
+```
+
 Voir aussi [[project-status-doc-convention]] (AXIOM_STATUS.md + dev-updates) : le blog est la
 couche « prose/news », la page Dev reste le changelog terse.

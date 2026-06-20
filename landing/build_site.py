@@ -317,7 +317,7 @@ def _render_blog_index(posts: list[dict]) -> str:
             f'                <p class="post-meta">{meta}</p>\n'
             f'                <h2><a href="{post["slug"]}.html">{html.escape(post["title"])}</a></h2>\n'
             f"{tldr}"
-            f'                <a class="post-readmore" href="{post["slug"]}.html">Read →</a>\n'
+            '                <span class="post-readmore">Read →</span>\n'
             "            </article>"
         )
     listing = "\n".join(cards) if cards else '            <p class="du-empty">No posts yet.</p>'

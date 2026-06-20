@@ -684,13 +684,17 @@ footer { border-top: var(--border); padding: 44px 0 60px; background: var(--crus
 .blog-list-section { padding-top: 8px; }
 .blog-list { display: flex; flex-direction: column; gap: 18px; max-width: 760px; }
 .post-card {
+  position: relative; cursor: pointer;
   border: var(--border); border-radius: var(--radius); padding: 24px 26px;
   background: var(--mantle); transition: border-color .2s ease, transform .2s ease;
 }
 .post-card:hover { border-color: var(--surface1); transform: translateY(-2px); }
 .post-card h2 { font-family: var(--font-narr); font-size: 1.5rem; font-weight: 600; margin: 4px 0 10px; }
 .post-card h2 a { color: var(--text); text-decoration: none; }
-.post-card h2 a:hover { color: var(--blue); }
+.post-card:hover h2 a { color: var(--blue); }
+/* Stretched link: the title's anchor covers the whole card, so a click anywhere
+   on the card opens the post (no nested <a>, stays accessible). */
+.post-card h2 a::after { content: ""; position: absolute; inset: 0; }
 .post-meta { font-family: var(--font-mono); font-size: .76rem; letter-spacing: .03em; color: var(--overlay0); text-transform: uppercase; }
 .card-tldr { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 12px 0 14px; }
 .card-tldr li { display: flex; gap: 10px; color: var(--subtext1); font-size: .95rem; }
