@@ -47,3 +47,72 @@ def test_chat_display_emits_edit_signal_on_link_click(qtbot):
     
     assert len(signals) == 1
     assert signals[0] == ("user_input", 8)
+
+def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, mocker):
+    from ui.tabletop_view import TabletopView
+    from axiom.memory import VectorMemory
+
+    # Mock components to avoid heavy side-effects
+    mocker.patch("ui.tabletop_view.TabletopView.reload_llm")
+    mocker.patch("ui.tabletop_view.load_rules_for_session", return_value=[])
+    
+    view = TabletopView(main_window=mocker.MagicMock())
+    qtbot.addWidget(view)
+
+    # Setup necessary fields
+    view._vector_memory = mocker.MagicMock(spec=VectorMemory)
+    view._vector_memory._disabled = False
+    view._save_id = "test_save"
+    view._db_path = str(tmp_path / "dummy.db")
+    view._db_worker = mocker.MagicMock()
+    view._arbitrator = mocker.MagicMock()
+    
+    # Spy or mock finalization
+    finalize_spy = mocker.spy(view, "_finalize_rewind")
+    
+    # We trigger the slot directly with a summary dict
+    summary = {"rebuilt_to_turn": 5}
+    view._on_rewind_done(summary)
+    
+    # It should have started a VectorWorker
+    assert view._vector_worker is not None
+    
+    # Wait for the worker to finish and trigger finalize
+    qtbot.waitUntil(lambda: finalize_spy.call_count == 1, timeout=2000)
+    
+    # The worker should be cleaned up
+    assert view._vector_worker is None
+
+def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path, mocker):
+    from ui.tabletop_view import TabletopView
+
+    # Mock components to avoid side-effects
+    mocker.patch("ui.tabletop_view.TabletopView.reload_llm")
+    mocker.patch("ui.tabletop_view.load_rules_for_session", return_value=[])
+    mocker.patch("workers.narrative_worker.NarrativeWorker.start")
+    mocker.patch("ui.tabletop_view.Session")
+    
+    view = TabletopView(main_window=mocker.MagicMock())
+    qtbot.addWidget(view)
+    
+    # Initialize state
+    view._turn_id = 0
+    view._chat = mocker.MagicMock()
+    view._db_worker = mocker.MagicMock()
+    view._history = []
+    view._db_path = str(tmp_path / "dummy.db")
+    view._save_id = "test_save"
+    
+    view._on_send_message("My user action")
+    
+    # turn_id must be incremented before appending, so it should be 1
+    assert view._turn_id == 1
+    
+    # append_user_message must have been called with turn_id = 1
+    view._chat.append_user_message.assert_called_once_with("My user action", turn_id=1)
+    
+    # The history entry must have turn_id = 1
+    assert len(view._history) == 1
+    assert view._history[0]["turn_id"] == 1
+    assert view._history[0]["event_type"] == "user_input"
+    assert view._history[0]["payload"] == "My user action"

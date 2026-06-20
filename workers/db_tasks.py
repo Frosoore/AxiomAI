@@ -165,8 +165,18 @@ class RewindTask(BaseDbTask):
         from database.backup_manager import create_auto_backup
         create_auto_backup(self.db_path, f"rewind_to_turn_{self.target_turn_id}")
         
+        # Truncate assets (illustrations) for rolled back turns (TICKET-048)
+        try:
+            from axiom import paths
+            from axiom.savestore import truncate_assets_in
+            assets_dir = paths.get_assets_dir() / self.save_id
+            truncate_assets_in(assets_dir, self.target_turn_id)
+        except Exception:
+            pass
+
         cm = CheckpointManager(self.db_path)
         return cm.rewind(self.save_id, self.target_turn_id)
+
 
 
 class AppendEventTask(BaseDbTask):

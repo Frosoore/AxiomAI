@@ -34,5 +34,7 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-06-20** · `ui` · fix: Player message editor now correctly rolls back VectorMemory semantic database and cleans up illustration assets.
+- **2026-06-20** · `ui` · fix: Aligned memory and database user_input turn IDs to prevent complete history deletion during message rollbacks.
 - **2026-06-16** · `site` · add: Created `AXIOM_STATUS.md` and the monthly **Dev updates** page; added an early-alpha tester banner, a feature-request form and Discord links to the landing site.
 - **2026-06-16** · `docs` · change: Reframed the project status from “beta” to **early alpha** across the website and README.

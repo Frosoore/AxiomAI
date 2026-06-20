@@ -347,6 +347,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._db_worker.save_complete.connect(self._refresh_after_variant_switch)
         self._db_worker.rewind_complete.connect(self._on_rewind_done)
         self._db_worker.event_payload_updated.connect(self._on_event_payload_updated)
+        self._db_worker.error_occurred.connect(self._on_worker_error)
 
         
         self._db_worker.load_session_history(save_id)
@@ -560,16 +561,17 @@ class TabletopView(HardcoreMixin, QWidget):
             return
 
         self._chat.set_send_enabled(False)
-        self._chat.append_user_message(text)
+        
+        # Advance turn count FIRST (aligning memory turn_id with engine/database turn_id)
+        self._turn_id += 1
+        self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
+
+        self._chat.append_user_message(text, turn_id=self._turn_id)
         self._history.append({
             "turn_id": self._turn_id,
             "event_type": "user_input",
             "payload": text
         })
-        
-        # Advance turn count
-        self._turn_id += 1
-        self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
 
         # 1. Build the engine Session for this turn (Pilier 1, Étape 7).
         # Session is the single turn machine: it owns the Arbitrator, rebuilds
@@ -897,7 +899,42 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(dict)
     def _on_rewind_done(self, summary: dict) -> None:
-        """Reload state after a successful rewind."""
+        """Called when the database rewind task completes. Chains the vector rollback."""
+        target_turn_id = summary.get("rebuilt_to_turn")
+        if self._vector_memory is not None and target_turn_id is not None:
+            self._main_window.on_status_update(f"{tr('rewind')} (vector)...")
+            self._vector_worker = VectorWorker(
+                self._vector_memory,
+                self._save_id,
+                target_turn_id
+            )
+            self._vector_worker.rollback_complete.connect(self._on_vector_rollback_done)
+            self._vector_worker.error_occurred.connect(self._on_vector_rollback_error)
+            self._vector_worker.start()
+        else:
+            self._finalize_rewind()
+
+    @Slot(int)
+    def _on_vector_rollback_done(self, count: int) -> None:
+        """Called when the VectorMemory rollback thread completes successfully."""
+        if self._vector_worker is not None:
+            self._vector_worker.rollback_complete.disconnect(self._on_vector_rollback_done)
+            self._vector_worker.error_occurred.disconnect(self._on_vector_rollback_error)
+            self._vector_worker = None
+        self._finalize_rewind()
+
+    @Slot(str)
+    def _on_vector_rollback_error(self, error_msg: str) -> None:
+        """Called if VectorMemory rollback fails."""
+        if self._vector_worker is not None:
+            self._vector_worker.rollback_complete.disconnect(self._on_vector_rollback_done)
+            self._vector_worker.error_occurred.disconnect(self._on_vector_rollback_error)
+            self._vector_worker = None
+        QMessageBox.warning(self, tr("error"), f"Vector memory rollback failed: {error_msg}")
+        self._finalize_rewind()
+
+    def _finalize_rewind(self) -> None:
+        """Reload state and restore UI interaction after database + vector rollback."""
         self._rewind_in_progress = False
         if self._arbitrator is not None:
             self._arbitrator.invalidate_stats_cache()

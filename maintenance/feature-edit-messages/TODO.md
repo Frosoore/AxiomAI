@@ -18,3 +18,10 @@
     - Revert/rollback to `turn_id - 1`
     - After rollback complete, append the new user input at `turn_id` and start response generation (simulating message send)
 - [x] Run test suite and add/run tests specifically for chat editing
+- [x] Fix user message editor by chaining `VectorMemory` rollback after DB rewind in `TabletopView`
+- [x] Fix orphaned illustrations cleanup during DB rewind in `RewindTask` (calls `truncate_assets_in`)
+- [x] Add integration test in `tests/test_edit_messages_ui.py` to assert VectorMemory rollback chaining in `TabletopView`
+- [x] Fix player message turn_id alignment between history memory and SQLite (increments turn_id first in _on_send_message) to prevent destroying previous history during rollback.
+- [x] Add unit test in `tests/test_edit_messages_ui.py` verifying turn_id increment alignment.
+
+
