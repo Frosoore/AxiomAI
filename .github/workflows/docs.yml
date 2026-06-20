@@ -43,7 +43,9 @@ jobs:
       # Heavy runtime deps (chromadb, torch, the Gemini SDK...) are NOT
       # installed: docs/conf.py mocks them for autodoc.
       - name: Install Sphinx toolchain
-        run: pip install sphinx furo myst-parser
+        # markdown-it-py also powers the blog renderer in landing/build_site.py
+        # (it ships with myst-parser, but we pin it explicitly to be safe).
+        run: pip install sphinx furo myst-parser markdown-it-py
 
       - name: Build English site
         run: sphinx-build -b html -W docs site/en

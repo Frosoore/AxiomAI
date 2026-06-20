@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Axiom AI blog</title>
+    <link>https://frosoore.github.io/AxiomAI/blog/index.html</link>
+    <atom:link href="https://frosoore.github.io/AxiomAI/feed.xml" rel="self" type="application/rss+xml" />
+    <description>News, deep dives and the life of the Axiom AI project.</description>
+    <language>en</language>
+    <lastBuildDate>Sat, 20 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>What we took from Hindsight</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/what-we-took-from-hindsight.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/what-we-took-from-hindsight.html</guid>
+      <pubDate>Sat, 20 Jun 2026 00:00:00 +0000</pubDate>
+      <description>Axiom's memory got a serious rework, inspired by an open-source project called Hindsight. / NPCs can now keep facts, form opinions that shift over time, and hold a living profile of who they are. / It's all optional, and the offline mode that never touches an AI still works exactly like before.</description>
+    </item>
+    <item>
+      <title>Axiom has a blog now</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/the-blog-is-live.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/the-blog-is-live.html</guid>
+      <pubDate>Sat, 20 Jun 2026 00:00:00 +0000</pubDate>
+      <description>We finally have a real place to talk about the project, not just a dry changelog. / Expect deep dives, the thinking behind the big changes, and the messes we walk into. / There's an RSS feed too, so you can follow along without ever opening the site.</description>
+    </item>
+  </channel>
+</rss>

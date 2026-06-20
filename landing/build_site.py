@@ -32,12 +32,18 @@ import re
 import subprocess
 import sys
 import tomllib
-from datetime import date
+from datetime import date, datetime, timezone
+from email.utils import format_datetime
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 
 LANDING = Path(__file__).resolve().parent
 REPO = LANDING.parent
 CONTENT = LANDING / "content"
+BLOG_SRC = CONTENT / "blog"
+BLOG_OUT = LANDING / "blog"
+# Public base URL (GitHub Pages). Used for absolute links in the RSS feed.
+SITE_BASE = "https://frosoore.github.io/AxiomAI"
 
 
 # --------------------------------------------------------------------------- IO
@@ -161,6 +167,242 @@ def _render_roadmap_teaser(roadmap: dict, limit: int = 4) -> str:
     )
 
 
+# ------------------------------------------------------------------------ blog
+def _md_renderer():
+    """markdown-it renderer (ships transitively with myst-parser, used by docs)."""
+    try:
+        from markdown_it import MarkdownIt
+    except ImportError as e:  # pragma: no cover
+        raise SystemExit(
+            "ERROR: markdown-it-py is required to build the blog "
+            "(pip install markdown-it-py). It normally comes with myst-parser."
+        ) from e
+    return MarkdownIt("commonmark", {"typographer": False}).enable(["table", "strikethrough"])
+
+
+def _fmt_date(iso: str) -> str:
+    """'2026-06-20' -> 'June 20, 2026' (no leading zero on the day)."""
+    try:
+        d = datetime.strptime(iso, "%Y-%m-%d")
+        return f"{d.strftime('%B')} {d.day}, {d.year}"
+    except ValueError:
+        return iso
+
+
+def _load_posts() -> list[dict]:
+    """Parse landing/content/blog/*.md (TOML front matter + Markdown body).
+
+    Front matter is delimited by ``+++`` lines. Posts are returned newest first.
+    """
+    posts: list[dict] = []
+    if not BLOG_SRC.is_dir():
+        return posts
+    for path in BLOG_SRC.glob("*.md"):
+        raw = path.read_text(encoding="utf-8").lstrip()
+        if raw.startswith("+++"):
+            _, fm, body = raw.split("+++", 2)
+            meta = tomllib.loads(fm)
+        else:
+            meta, body = {}, raw
+        meta.setdefault("slug", path.stem)
+        meta.setdefault("title", path.stem)
+        meta.setdefault("date", "")
+        meta.setdefault("author", "")
+        meta["summary"] = list(meta.get("summary", []))
+        meta["body"] = body.strip()
+        posts.append(meta)
+    posts.sort(key=lambda p: (p.get("date", ""), p.get("slug", "")), reverse=True)
+    return posts
+
+
+_HEAD = (
+    '<!doctype html>\n<html lang="en">\n<head>\n'
+    '<meta charset="UTF-8" />\n'
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0" />\n'
+    "<title>{title}</title>\n"
+    '<meta name="description" content="{desc}" />\n'
+    '<meta name="theme-color" content="#1e1e2e" />\n'
+    '<link rel="icon" href="{p}assets/icon.svg" type="image/svg+xml" />\n'
+    '<link rel="alternate" type="application/rss+xml" title="Axiom AI blog" href="{p}feed.xml" />\n'
+    '<link rel="preconnect" href="https://fonts.googleapis.com" />\n'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n'
+    '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />\n'
+    '<link rel="stylesheet" href="{p}styles.css" />\n'
+    "</head>\n<body>\n"
+)
+
+
+def _shell(prefix: str, title: str, desc: str, body: str) -> str:
+    """Full page (banner + nav + body + footer), matching the rest of the site.
+
+    ``prefix`` is the relative path back to the site root ("" for root pages,
+    "../" for pages under blog/).
+    """
+    p = prefix
+    head = _HEAD.format(title=html.escape(title), desc=html.escape(desc), p=p)
+    nav = f"""        <div class="alpha-banner" role="alert">
+            <div class="wrap alpha-inner">
+                <span class="alpha-tag">EARLY ALPHA</span>
+                <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. Expect rough edges and breaking changes.</p>
+            </div>
+        </div>
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="{p}index.html#top"><img src="{p}assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
+                <nav class="nav-links">
+                    <a href="{p}index.html#how">How it works</a>
+                    <a href="{p}index.html#features">Features</a>
+                    <a href="{p}dev-updates.html">Roadmap</a>
+                    <a href="{p}blog/index.html">Blog</a>
+                    <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+                </nav>
+            </div>
+        </header>
+"""
+    footer = f"""        <footer>
+            <div class="wrap">
+                <div class="foot-bottom">
+                    <span>AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span>
+                    <span><a href="{p}feed.xml">RSS feed</a> · <a href="{p}blog/index.html">Blog</a> · <a href="{p}dev-updates.html">Dev updates</a></span>
+                </div>
+            </div>
+        </footer>
+"""
+    return head + nav + body + footer + "    </body>\n</html>\n"
+
+
+def _tldr(summary: list[str]) -> str:
+    if not summary:
+        return ""
+    lis = "\n".join(f"                <li>{html.escape(s)}</li>" for s in summary)
+    return (
+        '            <div class="tldr"><span class="tldr-label">TL;DR</span>\n'
+        f"            <ul>\n{lis}\n            </ul></div>\n"
+    )
+
+
+def _render_post_page(post: dict, md) -> str:
+    meta = _fmt_date(post["date"])
+    if post.get("author"):
+        meta += f" · {html.escape(post['author'])}"
+    body = (
+        '        <article class="post">\n'
+        '            <p class="post-back"><a href="index.html">← All posts</a></p>\n'
+        f'            <h1 class="post-title">{html.escape(post["title"])}</h1>\n'
+        f'            <p class="post-meta">{meta}</p>\n'
+        f"{_tldr(post['summary'])}"
+        f'            <div class="post-body">\n{md.render(post["body"])}\n            </div>\n'
+        '            <p class="post-foot"><a href="index.html">← Back to the blog</a> · '
+        '<a href="../index.html#top">Home</a></p>\n'
+        "        </article>\n"
+    )
+    desc = post["summary"][0] if post["summary"] else post["title"]
+    return _shell("../", f"{post['title']} · Axiom AI blog", desc,
+                  '        <section class="post-section"><div class="wrap">\n'
+                  + body + "        </div></section>\n")
+
+
+def _render_blog_index(posts: list[dict]) -> str:
+    cards = []
+    for post in posts:
+        meta = _fmt_date(post["date"])
+        if post.get("author"):
+            meta += f" · {html.escape(post['author'])}"
+        bullets = "\n".join(
+            f"                    <li>{html.escape(s)}</li>" for s in post["summary"]
+        )
+        tldr = f'                <ul class="card-tldr">\n{bullets}\n                </ul>\n' if bullets else ""
+        cards.append(
+            '            <article class="post-card">\n'
+            f'                <p class="post-meta">{meta}</p>\n'
+            f'                <h2><a href="{post["slug"]}.html">{html.escape(post["title"])}</a></h2>\n'
+            f"{tldr}"
+            f'                <a class="post-readmore" href="{post["slug"]}.html">Read →</a>\n'
+            "            </article>"
+        )
+    listing = "\n".join(cards) if cards else '            <p class="du-empty">No posts yet.</p>'
+    body = (
+        '        <section class="blog-hero"><div class="wrap">\n'
+        '            <p class="eyebrow">Blog</p>\n'
+        "            <h1>News, deep dives, and the life of the project.</h1>\n"
+        "            <p>The longer story behind what we build. For the terse, "
+        'per-month changelog see <a href="../dev-updates.html">Dev updates</a>. '
+        'Prefer a reader? Subscribe via <a href="../feed.xml">RSS</a>.</p>\n'
+        "        </div></section>\n"
+        '        <section class="blog-list-section"><div class="wrap blog-list">\n'
+        + listing + "\n        </div></section>\n"
+    )
+    return _shell("../", "Blog · Axiom AI",
+                  "News, deep dives and the life of the Axiom AI project.", body)
+
+
+def _rss_date(iso: str) -> str:
+    """RFC-822 date for the RSS feed, at 00:00 UTC. Empty/invalid -> "" (skipped)."""
+    try:
+        dt = datetime.strptime(iso, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return format_datetime(dt)
+    except ValueError:
+        return ""
+
+
+def _render_rss(posts: list[dict]) -> str:
+    # Deterministic: lastBuildDate tracks the newest post, never the wall clock,
+    # so re-running the build with unchanged content leaves the feed byte-identical
+    # (the --check CI guard relies on this).
+    build_date = _rss_date(posts[0]["date"]) if posts else ""
+    items = []
+    for post in posts:
+        link = f"{SITE_BASE}/blog/{post['slug']}.html"
+        pub = _rss_date(post["date"]) or build_date
+        desc = " / ".join(post["summary"]) if post["summary"] else post["title"]
+        items.append(
+            "    <item>\n"
+            f"      <title>{_xml_escape(post['title'])}</title>\n"
+            f"      <link>{_xml_escape(link)}</link>\n"
+            f'      <guid isPermaLink="true">{_xml_escape(link)}</guid>\n'
+            f"      <pubDate>{pub}</pubDate>\n"
+            f"      <description>{_xml_escape(desc)}</description>\n"
+            "    </item>"
+        )
+    body = "\n".join(items)
+    last_build = f"    <lastBuildDate>{build_date}</lastBuildDate>\n" if build_date else ""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n'
+        "  <channel>\n"
+        "    <title>Axiom AI blog</title>\n"
+        f"    <link>{SITE_BASE}/blog/index.html</link>\n"
+        '    <atom:link href="' + SITE_BASE + '/feed.xml" rel="self" type="application/rss+xml" />\n'
+        "    <description>News, deep dives and the life of the Axiom AI project.</description>\n"
+        "    <language>en</language>\n"
+        f"{last_build}"
+        f"{body}\n"
+        "  </channel>\n</rss>\n"
+    )
+
+
+def _build_blog(check: bool) -> list[str]:
+    """Generate blog/index.html, blog/<slug>.html and feed.xml. Returns changed names."""
+    posts = _load_posts()
+    md = _md_renderer()
+    outputs: dict[Path, str] = {
+        BLOG_OUT / "index.html": _render_blog_index(posts),
+        LANDING / "feed.xml": _render_rss(posts),
+    }
+    for post in posts:
+        outputs[BLOG_OUT / f"{post['slug']}.html"] = _render_post_page(post, md)
+
+    changed = []
+    for path, content in outputs.items():
+        old = path.read_text(encoding="utf-8") if path.exists() else None
+        if old != content:
+            changed.append(str(path.relative_to(LANDING)))
+            if not check:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+    return changed
+
+
 # ----------------------------------------------------------------- draft helper
 def _draft_update(since: str | None) -> str:
     """Print a TOML [[update]] block drafted from recent feat:/fix: commits.
@@ -223,6 +465,9 @@ def build(check: bool = False) -> int:
             changed.append(path.name)
             if not check:
                 path.write_text(text, encoding="utf-8")
+
+    # Blog: full generated pages (index + one per article) and the RSS feed.
+    changed += _build_blog(check)
 
     if check:
         if changed:

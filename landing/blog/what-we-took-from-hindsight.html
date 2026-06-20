@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>What we took from Hindsight · Axiom AI blog</title>
+<meta name="description" content="Axiom&#x27;s memory got a serious rework, inspired by an open-source project called Hindsight." />
+<meta name="theme-color" content="#1e1e2e" />
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+<link rel="alternate" type="application/rss+xml" title="Axiom AI blog" href="../feed.xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+        <div class="alpha-banner" role="alert">
+            <div class="wrap alpha-inner">
+                <span class="alpha-tag">EARLY ALPHA</span>
+                <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. Expect rough edges and breaking changes.</p>
+            </div>
+        </div>
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="../index.html#top"><img src="../assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
+                <nav class="nav-links">
+                    <a href="../index.html#how">How it works</a>
+                    <a href="../index.html#features">Features</a>
+                    <a href="../dev-updates.html">Roadmap</a>
+                    <a href="../blog/index.html">Blog</a>
+                    <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+                </nav>
+            </div>
+        </header>
+        <section class="post-section"><div class="wrap">
+        <article class="post">
+            <p class="post-back"><a href="index.html">← All posts</a></p>
+            <h1 class="post-title">What we took from Hindsight</h1>
+            <p class="post-meta">June 20, 2026 · Pinpanicaille</p>
+            <div class="tldr"><span class="tldr-label">TL;DR</span>
+            <ul>
+                <li>Axiom&#x27;s memory got a serious rework, inspired by an open-source project called Hindsight.</li>
+                <li>NPCs can now keep facts, form opinions that shift over time, and hold a living profile of who they are.</li>
+                <li>It&#x27;s all optional, and the offline mode that never touches an AI still works exactly like before.</li>
+            </ul></div>
+            <div class="post-body">
+<p>For a long time, Axiom's memory was honest but kind of dumb. When the game needed to remember something, it grabbed a few past snippets of text that looked similar to the current moment and dropped them into the prompt. That's classic retrieval, it works, and for short sessions you barely notice the limits.</p>
+<p>The problem shows up on long campaigns. You insult a merchant in hour one, do a hundred other things, come back in hour six, and the merchant greets you like a stranger. The raw text was technically &quot;in there&quot; somewhere, but nothing turned it into something the NPC actually carries around. Memory was a pile of quotes, not an understanding.</p>
+<p>So we went looking, and we found Hindsight.</p>
+<h2>What Hindsight is</h2>
+<p>Hindsight is an open-source memory system (MIT licensed). It's built for a totally different world than ours, a server backend with Postgres and an API, so we did not copy their code. What we took was the way they think about memory, and we rebuilt it on our own stack, which is local, file-based and offline-friendly.</p>
+<p>Three ideas stuck with us.</p>
+<h2>1. Search that actually understands</h2>
+<p>The old retrieval matched on meaning only, which sounds great until someone types an exact name or a made-up word that carries no &quot;meaning&quot; for the model. So now we run two searches at once: one by meaning, one by exact words, then we merge the results. You get the best of both, the vibe match and the literal match.</p>
+<p>This part is fully deterministic and runs offline. No AI call involved.</p>
+<h2>2. Facts, then beliefs</h2>
+<p>In the richer mode, the game quietly distills each turn into small <strong>facts</strong>, the who, what, when, where and why of what just happened. Atomic, boring, verifiable. Good memory is built on boring facts.</p>
+<p>On top of those, it forms <strong>beliefs</strong>. A belief is an opinion that evolves: &quot;the merchant resents me&quot; can get stronger as more facts pile up, or fade, or flip when something contradicts it. That's the grudge that finally sticks. The merchant remembers.</p>
+<h2>3. A living profile per character</h2>
+<p>One layer up sits the <strong>mental model</strong>, a short profile of who a character is right now, rewritten as their beliefs change. Instead of feeding the AI a heap of scattered statements, it leads with a clean little character sheet. The narration gets a lot more consistent because the model starts from &quot;here's who this person is&quot; instead of reconstructing it every single turn.</p>
+<h2>Two modes, your call</h2>
+<p>None of this is forced on you. There are two modes.</p>
+<p>Lite mode is the default. It's deterministic, offline, and never sends your memory to an AI. It just got the smarter hybrid search, that's it.</p>
+<p>Living mode is the opt-in. That's where facts, beliefs and profiles come to life, using the model you already configured, as a background job that never blocks your turn. You can turn each layer on or off. And because it all rolls back cleanly, rewinding the story rewinds the memory with it.</p>
+<h2>What we left on the table</h2>
+<p>Hindsight also ships a full agent that reasons about memory with its own tool-calling loop. It's clever, but it's overkill for a single-player game, and it would have cost a fortune in tokens. We kept the idea (a curated top layer) and dropped the machinery.</p>
+<p>If you want the technical version, it's all in the engine docs under the memory guide. Otherwise, just flip on Living mode and go annoy a merchant. They'll remember.</p>
+
+            </div>
+            <p class="post-foot"><a href="index.html">← Back to the blog</a> · <a href="../index.html#top">Home</a></p>
+        </article>
+        </div></section>
+        <footer>
+            <div class="wrap">
+                <div class="foot-bottom">
+                    <span>AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span>
+                    <span><a href="../feed.xml">RSS feed</a> · <a href="../blog/index.html">Blog</a> · <a href="../dev-updates.html">Dev updates</a></span>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>
