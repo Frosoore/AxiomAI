@@ -1,0 +1,60 @@
+# =============================================================================
+#  DEV UPDATES — the dev log shown on the Dev page (dev-updates.html).
+#  Edit this file and push: the page rebuilds automatically.
+#
+#  Add ONE [[update]] block per entry, NEWEST FIRST (top of the file).
+#  Fields:
+#    id      : "YYYY-MM"   unique, used as the dropdown value
+#    label   : "Month YYYY" shown in the dropdown / heading
+#    summary : one or two sentences on the overall direction vs. last entry
+#  Then one or more [[update.section]] blocks:
+#    title : section heading ("Added", "Fixed", "Changed", "Known rough edges"…)
+#    kind  : "added" | "fixed" | "changed" | "known"  (controls the colour)
+#    items : list of short strings. Inline <code>…</code> / <b>…</b> allowed.
+#
+#  Tip: run `python landing/build_site.py --draft-update` to get a pre-filled
+#  block from recent feat:/fix: commits (review before pasting).
+# =============================================================================
+
+[[update]]
+id = "2026-06"
+label = "June 2026"
+summary = "Axiom enters its public early-alpha. The focus this month was getting testers in: a default universe, built-in free keys, a self-diagnostic, Windows fixes, evolving memory, and this very website."
+
+[[update.section]]
+title = "Added"
+kind = "added"
+items = [
+    "Public landing page and this dev-updates page (in <code>landing/</code>, served on GitHub Pages).",
+    "Evolving NPC memory: living-mode facts, beliefs, and curated mental-model profiles.",
+    "Smarter, meaning-based Lore Book retrieval with link expansion.",
+    "Built-in self-diagnostic, reachable from the app (Help → Diagnostic) and standalone (<code>python -m tools.diagnostic --gui</code>).",
+    "Zero-config first launch with temporary built-in keys for testers (valid until June 30).",
+    "A default universe so new testers have something to play immediately.",
+]
+
+[[update.section]]
+title = "Fixed"
+kind = "fixed"
+items = [
+    "Windows: a class of file-lock crashes (connections that weren't being closed) is resolved; the suite is green on Windows.",
+    "First-turn freeze caused by an offline embedding model reaching out to the network on load.",
+]
+
+[[update.section]]
+title = "Changed"
+kind = "changed"
+items = [
+    "Status reframed honestly from “beta” to <b>early alpha</b>.",
+    "Documentation links now point to the docs at <code>/en/</code>; the site root is the landing page.",
+]
+
+[[update.section]]
+title = "Known rough edges"
+kind = "known"
+items = [
+    "The time/turn system is mid-rework (confusion between turn-based logic and in-game time).",
+    "Rewind to any turn works but is not stable.",
+    "AI image generation is unstable.",
+    "The UI around the main chat needs a redesign.",
+]

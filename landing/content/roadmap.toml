@@ -1,0 +1,113 @@
+# =============================================================================
+#  ROADMAP — single source of truth for the Dev page roadmap.
+#  Edit this file and push: the Dev page (dev-updates.html) rebuilds automatically
+#  (GitHub Action), and `python landing/build_site.py` regenerates it locally.
+#
+#  Each item is one [[item]] block. Fields:
+#    status : "next" | "far" | "done"   (which column it lands in)
+#             next = actively working toward · far = bigger bets, further out
+#             done = recently shipped (moved here from next/far when finished)
+#    title  : short title. Inline HTML allowed (e.g. <code>SHN</code>).
+#    desc   : one-sentence explanation. Inline HTML allowed.
+#    date   : OPTIONAL "YYYY-MM" — only shown on "done" items.
+#
+#  To "move" an item along the lifecycle, just change its `status`
+#  (far -> next -> done). Order within a column follows file order.
+# =============================================================================
+
+# ----------------------------------------------------------------- NEXT UP ----
+[[item]]
+status = "next"
+title = "Rework the time system"
+desc = "Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today."
+
+[[item]]
+status = "next"
+title = "Save system &amp; universe-format QC"
+desc = "Harden the save format and the universe file form, with proper quality control."
+
+[[item]]
+status = "next"
+title = "Plugin system"
+desc = "Modify Axiom yourself. Add your own features and rules cleanly."
+
+[[item]]
+status = "next"
+title = "NPC memory + Actor model"
+desc = "Give NPCs their own persistent memory and a proper actor architecture."
+
+[[item]]
+status = "next"
+title = "Test-system rework"
+desc = "Plus a plugin-test feature, so new tests are trivial to add."
+
+[[item]]
+status = "next"
+title = "Rework the main-chat UI"
+desc = "The interface around the main chat feels weird right now. We're redesigning that area specifically."
+
+[[item]]
+status = "next"
+title = "UI / UX redesign"
+desc = "A broader pass over the whole desktop experience."
+
+[[item]]
+status = "next"
+title = "Jailbreak toolkit"
+desc = "A jailbreak library, auto-testing of which ones work, and bring-your-own jailbreaks."
+
+[[item]]
+status = "next"
+title = "Keep the library docs fresh"
+desc = "Regular updates to the Python engine documentation."
+
+# ---------------------------------------------------------------- FAR AWAY ----
+[[item]]
+status = "far"
+title = "Web UI for the engine"
+desc = "Play Axiom from the browser, on top of the headless engine."
+
+[[item]]
+status = "far"
+title = "Free plugin store"
+desc = "Search &amp; install plugins. Curated by us at first, then the community if it grows."
+
+[[item]]
+status = "far"
+title = "Auto plugin creator"
+desc = "Let your AI build a plugin for you from plain instructions."
+
+[[item]]
+status = "far"
+title = "Decentralized multiplayer · <code>SHN</code>"
+desc = "Our own serverless P2P protocol: as long as the source exists, multiplayer always works. (Local shared-instance play already works today.)"
+
+[[item]]
+status = "far"
+title = "Our own database · <code>sQript</code>"
+desc = "Replace SQL with a purpose-built database language &amp; format. Under design."
+
+# ------------------------------------------------------------ RECENTLY DONE ---
+[[item]]
+status = "done"
+date = "2026-06"
+title = "Evolving NPC memory (beliefs &amp; mental models)"
+desc = "Living-memory mode distils play into facts, evolving beliefs, and curated per-character profiles."
+
+[[item]]
+status = "done"
+date = "2026-06"
+title = "Smarter lore retrieval"
+desc = "Semantic (meaning-based) Lore Book search with link expansion, not just keyword matching."
+
+[[item]]
+status = "done"
+date = "2026-06"
+title = "Built-in self-diagnostic"
+desc = "A copy-paste health report from the app (Help → Diagnostic) and the CLI."
+
+[[item]]
+status = "done"
+date = "2026-06"
+title = "Public site &amp; documentation"
+desc = "This landing page plus the English/French engine docs, served on GitHub Pages."

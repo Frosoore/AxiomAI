@@ -288,38 +288,19 @@ result = session.<span class="tok-fn">take_turn</span>(<span class="tok-str">"I 
     <div class="reveal">
       <p class="eyebrow">Where we're going</p>
       <h2 class="section-title">Roadmap: clearly not done yet.</h2>
-      <p class="section-lead">None of this exists today. It's where we want to take Axiom. We keep it deliberately separate from the features above, so there's never any confusion about what you actually get right now.</p>
+      <p class="section-lead">None of this exists today. It's where we want to take Axiom. We keep it deliberately separate from the features above, so there's never any confusion about what you actually get right now. Here's what's next — the full roadmap (plus what recently shipped) lives on the dev page.</p>
     </div>
 
-    <div class="road-tiers reveal">
-      <div class="road-col next">
-        <h3>Next up</h3>
-        <p class="sub">What we're actively working toward.</p>
-        <ul class="road-list">
-          <li><span class="marker">▸</span><div><span class="rl-title">Rework the time system</span><span class="rl-desc">Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Save system &amp; universe-format QC</span><span class="rl-desc">Harden the save format and the universe file form, with proper quality control.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Plugin system</span><span class="rl-desc">Modify Axiom yourself. Add your own features and rules cleanly.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">NPC memory + Actor model</span><span class="rl-desc">Give NPCs their own persistent memory and a proper actor architecture.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Test-system rework</span><span class="rl-desc">Plus a plugin-test feature, so new tests are trivial to add.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Embedding / vector improvements</span><span class="rl-desc">Smarter semantic memory and lore retrieval (synonyms &amp; meaning, not just keywords).</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Rework the main-chat UI</span><span class="rl-desc">The interface around the main chat feels weird right now. We're redesigning that area specifically.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">UI / UX redesign</span><span class="rl-desc">A broader pass over the whole desktop experience.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Jailbreak toolkit</span><span class="rl-desc">A jailbreak library, auto-testing of which ones work, and bring-your-own jailbreaks.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">Keep the library docs fresh</span><span class="rl-desc">Regular updates to the Python engine documentation.</span></div></li>
-        </ul>
-      </div>
-
-      <div class="road-col far">
-        <h3>Far away</h3>
-        <p class="sub">Bigger bets, further out.</p>
-        <ul class="road-list">
-          <li><span class="marker">◇</span><div><span class="rl-title">Web UI for the engine</span><span class="rl-desc">Play Axiom from the browser, on top of the headless engine.</span></div></li>
-          <li><span class="marker">◇</span><div><span class="rl-title">Free plugin store</span><span class="rl-desc">Search &amp; install plugins. Curated by us at first, then the community if it grows.</span></div></li>
-          <li><span class="marker">◇</span><div><span class="rl-title">Auto plugin creator</span><span class="rl-desc">Let your AI build a plugin for you from plain instructions.</span></div></li>
-          <li><span class="marker">◇</span><div><span class="rl-title">Decentralized multiplayer · <code>SHN</code></span><span class="rl-desc">Our own serverless P2P protocol: as long as the source exists, multiplayer always works. (Local shared-instance play already works today.)</span></div></li>
-          <li><span class="marker">◇</span><div><span class="rl-title">Our own database · <code>sQript</code></span><span class="rl-desc">Replace SQL with a purpose-built database language &amp; format. Under design.</span></div></li>
-        </ul>
-      </div>
+    <div class="reveal">
+      <!-- BUILD:roadmap-teaser -->
+      <ul class="road-list road-teaser">
+        <li><span class="marker">▸</span><div><span class="rl-title">Rework the time system</span></div></li>
+        <li><span class="marker">▸</span><div><span class="rl-title">Save system &amp; universe-format QC</span></div></li>
+        <li><span class="marker">▸</span><div><span class="rl-title">Plugin system</span></div></li>
+        <li><span class="marker">▸</span><div><span class="rl-title">NPC memory + Actor model</span></div></li>
+      </ul>
+      <a class="btn btn-primary" href="dev-updates.html">See the full roadmap &amp; dev updates →</a>
+        <!-- /BUILD:roadmap-teaser -->
     </div>
   </div>
 </section>

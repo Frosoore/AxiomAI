@@ -51,6 +51,12 @@ jobs:
       - name: Build French site
         run: sphinx-build -b html -W -D language=fr docs site/fr
 
+      # Regenerate the data-driven parts of the landing site (roadmap + dev log
+      # from landing/content/*.toml, plus the build-stamped version/date) so the
+      # published pages stay in sync with the TOML. Stdlib only (tomllib).
+      - name: Build landing content
+        run: python landing/build_site.py
+
       # The landing page (landing/) becomes the Pages root, sitting next to
       # the /en/ and /fr/ documentation builds.
       - name: Add landing page at the site root

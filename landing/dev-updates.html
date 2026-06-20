@@ -3,10 +3,10 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Dev updates · Axiom AI</title>
+        <title>Roadmap &amp; dev updates · Axiom AI</title>
         <meta
             name="description"
-            content="Monthly reports on the state of the Axiom AI codebase: what was added, fixed and changed compared to the previous month."
+            content="The Axiom AI roadmap (next up, far away, recently done) and the dev log of what changed each month."
         />
         <meta name="theme-color" content="#1e1e2e" />
         <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
@@ -56,23 +56,97 @@
             </div>
         </header>
 
-        <!-- ===================== DEV UPDATES ===================== -->
+        <!-- ===================== DEV HERO ===================== -->
         <section class="du-hero">
             <div class="wrap">
-                <p class="eyebrow">Dev updates</p>
+                <p class="eyebrow">Roadmap &amp; dev updates</p>
                 <h1>
-                    The state of the <span class="mono">codebase</span>, month
-                    by month.
+                    Where Axiom is <span class="mono">going</span>, and what
+                    just changed.
                 </h1>
                 <p>
-                    Once a month we write up where Axiom's code stands compared
-                    to the previous month: what we added, what we fixed, what
-                    changed, and what's still broken. Pick a month to read its
-                    report. For the moment it's kinda a placeholder since it's
-                    the first month we're tracking. However, we'll be updating
-                    it every end of month.
+                    The roadmap below is the live plan — what we're building
+                    next, the bigger bets, and what recently shipped. Under it, a
+                    dev log of what changed each month. It all rebuilds
+                    automatically from <code>landing/content/*.toml</code> on
+                    every push.
                 </p>
 
+                <!-- Auto-stamped at build time (engine version + last commit). -->
+                <div class="du-meta-bar">
+                    <!-- BUILD:meta -->
+                <span class="du-stat">Engine <b>v0.1.6</b></span>
+                <span class="du-stat">Last updated <b>2026-06-16 (77830e4)</b></span>
+        <!-- /BUILD:meta -->
+                </div>
+
+                <p class="du-badges">
+                    <a href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Frosoore/AxiomAI?style=flat&amp;logo=github&amp;color=cba6f7" /></a>
+                    <a href="https://github.com/Frosoore/AxiomAI/releases" target="_blank" rel="noopener"><img alt="Latest release" src="https://img.shields.io/github/v/release/Frosoore/AxiomAI?style=flat&amp;color=89b4fa" /></a>
+                    <a href="https://pypi.org/project/axiomai-engine/" target="_blank" rel="noopener"><img alt="PyPI version" src="https://img.shields.io/pypi/v/axiomai-engine?style=flat&amp;logo=pypi&amp;logoColor=white&amp;label=axiomai-engine&amp;color=a6e3a1" /></a>
+                    <a href="https://github.com/Frosoore/AxiomAI/issues" target="_blank" rel="noopener"><img alt="Open issues" src="https://img.shields.io/github/issues/Frosoore/AxiomAI?style=flat&amp;color=f9e2af" /></a>
+                </p>
+            </div>
+        </section>
+
+        <!-- ===================== ROADMAP (generated) ===================== -->
+        <section class="du-roadmap" id="roadmap">
+            <div class="wrap">
+                <p class="eyebrow">Roadmap</p>
+                <h2 class="section-title">The plan, in three tiers.</h2>
+                <p class="section-lead">
+                    Next up is what we're actively working toward; far away is the
+                    bigger bets; recently done is what was on this list and now
+                    ships. Nothing here is a promise of a date — it's direction.
+                </p>
+                <!-- BUILD:roadmap -->
+    <div class="road-tiers reveal">
+      <div class="road-col next">
+        <h3>Next up</h3>
+        <p class="sub">What we're actively working toward.</p>
+        <ul class="road-list">
+          <li><span class="marker">▸</span><div><span class="rl-title">Rework the time system</span><span class="rl-desc">Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Save system &amp; universe-format QC</span><span class="rl-desc">Harden the save format and the universe file form, with proper quality control.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Plugin system</span><span class="rl-desc">Modify Axiom yourself. Add your own features and rules cleanly.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">NPC memory + Actor model</span><span class="rl-desc">Give NPCs their own persistent memory and a proper actor architecture.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Test-system rework</span><span class="rl-desc">Plus a plugin-test feature, so new tests are trivial to add.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Rework the main-chat UI</span><span class="rl-desc">The interface around the main chat feels weird right now. We're redesigning that area specifically.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">UI / UX redesign</span><span class="rl-desc">A broader pass over the whole desktop experience.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Jailbreak toolkit</span><span class="rl-desc">A jailbreak library, auto-testing of which ones work, and bring-your-own jailbreaks.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Keep the library docs fresh</span><span class="rl-desc">Regular updates to the Python engine documentation.</span></div></li>
+        </ul>
+      </div>
+      <div class="road-col far">
+        <h3>Far away</h3>
+        <p class="sub">Bigger bets, further out.</p>
+        <ul class="road-list">
+          <li><span class="marker">◇</span><div><span class="rl-title">Web UI for the engine</span><span class="rl-desc">Play Axiom from the browser, on top of the headless engine.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Free plugin store</span><span class="rl-desc">Search &amp; install plugins. Curated by us at first, then the community if it grows.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Auto plugin creator</span><span class="rl-desc">Let your AI build a plugin for you from plain instructions.</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Decentralized multiplayer · <code>SHN</code></span><span class="rl-desc">Our own serverless P2P protocol: as long as the source exists, multiplayer always works. (Local shared-instance play already works today.)</span></div></li>
+          <li><span class="marker">◇</span><div><span class="rl-title">Our own database · <code>sQript</code></span><span class="rl-desc">Replace SQL with a purpose-built database language &amp; format. Under design.</span></div></li>
+        </ul>
+      </div>
+      <div class="road-col done">
+        <h3>Recently done</h3>
+        <p class="sub">Shipped — was on the roadmap, now live.</p>
+        <ul class="road-list">
+          <li><span class="marker">✓</span><div><span class="rl-title">Evolving NPC memory (beliefs &amp; mental models)</span><span class="rl-desc">Living-memory mode distils play into facts, evolving beliefs, and curated per-character profiles. <span class="rl-date">(2026-06)</span></span></div></li>
+          <li><span class="marker">✓</span><div><span class="rl-title">Smarter lore retrieval</span><span class="rl-desc">Semantic (meaning-based) Lore Book search with link expansion, not just keyword matching. <span class="rl-date">(2026-06)</span></span></div></li>
+          <li><span class="marker">✓</span><div><span class="rl-title">Built-in self-diagnostic</span><span class="rl-desc">A copy-paste health report from the app (Help → Diagnostic) and the CLI. <span class="rl-date">(2026-06)</span></span></div></li>
+          <li><span class="marker">✓</span><div><span class="rl-title">Public site &amp; documentation</span><span class="rl-desc">This landing page plus the English/French engine docs, served on GitHub Pages. <span class="rl-date">(2026-06)</span></span></div></li>
+        </ul>
+      </div>
+    </div>
+        <!-- /BUILD:roadmap -->
+            </div>
+        </section>
+
+        <!-- ===================== DEV LOG ===================== -->
+        <section class="du-journal">
+            <div class="wrap">
+                <p class="eyebrow">Dev log</p>
+                <h2 class="section-title">What changed, month by month.</h2>
                 <div class="du-picker">
                     <label for="month-select">Month</label>
                     <select
@@ -80,11 +154,6 @@
                         onchange="renderUpdate(this.value)"
                     ></select>
                 </div>
-            </div>
-        </section>
-
-        <section style="padding-top: 8px">
-            <div class="wrap">
                 <div id="du-content"></div>
                 <p style="margin-top: 18px">
                     <a class="du-back" href="index.html#top"
@@ -156,72 +225,61 @@
         </footer>
 
         <!--
-================================================================================
-  HOW TO ADD A MONTHLY DEV UPDATE  (for a human or an LLM)
-================================================================================
-  1. Add ONE object at the TOP of the DEV_UPDATES array below (newest first).
-  2. Fields:
-       id     : "YYYY-MM"           (used in the dropdown value; must be unique)
-       label  : "Month YYYY"        (shown in the dropdown)
-       summary: one or two sentences on the overall direction vs. last month.
-       sections: array of { title, kind, items }
-                 kind ∈ "added" | "fixed" | "changed" | "known"
-                 (controls the colour of the heading)
-                 items: array of short strings. Inline <code>…</code> is allowed.
-  3. Keep it honest: this mirrors AXIOM_STATUS.md in the repo root (the
-     per-commit running log). The monthly entry is a distilled summary of the
-     commits since the previous month.
-  4. Nothing else to touch: the newest entry is selected automatically.
-================================================================================
+  Dev-log content is generated from landing/content/updates.toml by
+  landing/build_site.py (run by the GitHub Pages workflow on every push).
+  Edit the TOML, not the array below — the BUILD:updates-data region is
+  overwritten on each build. The roadmap above comes from roadmap.toml.
 -->
         <script>
+            // BUILD:updates-data
             const DEV_UPDATES = [
-                {
-                    id: "2026-06",
-                    label: "June 2026",
-                    summary:
-                        "Axiom enters its public early-alpha. The focus this month was getting testers in: a default universe, built-in free keys, a self-diagnostic, Windows fixes, and this very website.",
-                    sections: [
-                        {
-                            title: "Added",
-                            kind: "added",
-                            items: [
-                                "Public landing page and this dev-updates page (in <code>landing/</code>, served on GitHub Pages).",
-                                "Built-in self-diagnostic, reachable from the app (Help → Diagnostic) and standalone (<code>python -m tools.diagnostic --gui</code>).",
-                                "Zero-config first launch with temporary built-in keys for testers (valid until June 30).",
-                                "A default universe so new testers have something to play immediately.",
-                            ],
-                        },
-                        {
-                            title: "Fixed",
-                            kind: "fixed",
-                            items: [
-                                "Windows: a class of file-lock crashes (connections that weren't being closed) is resolved; the suite is green on Windows.",
-                                "First-turn freeze caused by an offline embedding model reaching out to the network on load.",
-                            ],
-                        },
-                        {
-                            title: "Changed",
-                            kind: "changed",
-                            items: [
-                                "Status reframed honestly from “beta” to <b>early alpha</b>.",
-                                "Documentation links now point to the docs at <code>/en/</code>; the site root is the landing page.",
-                            ],
-                        },
-                        {
-                            title: "Known rough edges",
-                            kind: "known",
-                            items: [
-                                "The time/turn system is mid-rework (confusion between turn-based logic and in-game time).",
-                                "Rewind to any turn works but is not stable.",
-                                "AI image generation is unstable.",
-                                "The UI around the main chat needs a redesign.",
-                            ],
-                        },
-                    ],
-                },
-                // ↑ Add the next month ABOVE this line (newest first).
-            ];
+            {
+                        "id": "2026-06",
+                        "label": "June 2026",
+                        "summary": "Axiom enters its public early-alpha. The focus this month was getting testers in: a default universe, built-in free keys, a self-diagnostic, Windows fixes, evolving memory, and this very website.",
+                        "sections": [
+                                    {
+                                                "title": "Added",
+                                                "kind": "added",
+                                                "items": [
+                                                            "Public landing page and this dev-updates page (in <code>landing/</code>, served on GitHub Pages).",
+                                                            "Evolving NPC memory: living-mode facts, beliefs, and curated mental-model profiles.",
+                                                            "Smarter, meaning-based Lore Book retrieval with link expansion.",
+                                                            "Built-in self-diagnostic, reachable from the app (Help → Diagnostic) and standalone (<code>python -m tools.diagnostic --gui</code>).",
+                                                            "Zero-config first launch with temporary built-in keys for testers (valid until June 30).",
+                                                            "A default universe so new testers have something to play immediately."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Fixed",
+                                                "kind": "fixed",
+                                                "items": [
+                                                            "Windows: a class of file-lock crashes (connections that weren't being closed) is resolved; the suite is green on Windows.",
+                                                            "First-turn freeze caused by an offline embedding model reaching out to the network on load."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Changed",
+                                                "kind": "changed",
+                                                "items": [
+                                                            "Status reframed honestly from “beta” to <b>early alpha</b>.",
+                                                            "Documentation links now point to the docs at <code>/en/</code>; the site root is the landing page."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Known rough edges",
+                                                "kind": "known",
+                                                "items": [
+                                                            "The time/turn system is mid-rework (confusion between turn-based logic and in-game time).",
+                                                            "Rewind to any turn works but is not stable.",
+                                                            "AI image generation is unstable.",
+                                                            "The UI around the main chat needs a redesign."
+                                                ]
+                                    }
+                        ]
+            }
+];
+        // /BUILD:updates-data
 
             const sel = document.getElementById("month-select");
             const content = document.getElementById("du-content");
