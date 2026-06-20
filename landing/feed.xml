@@ -6,7 +6,14 @@
     <atom:link href="https://frosoore.github.io/AxiomAI/feed.xml" rel="self" type="application/rss+xml" />
     <description>News, deep dives and the life of the Axiom AI project.</description>
     <language>en</language>
-    <lastBuildDate>Sat, 20 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 21 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>Under the hood: how saves and universes work</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/how-saves-and-universes-work.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/how-saves-and-universes-work.html</guid>
+      <pubDate>Sun, 21 Jun 2026 00:00:00 +0000</pubDate>
+      <description>We ran a full quality pass on the save and universe system, so here's a tour of how the thing actually works. / Your universe is plain text you can read and version, the database is just a throwaway cache, and each save is one self-contained, shareable file. / The QC caught a sneaky rewind bug, we fixed it, and we added a test so it can never sneak back.</description>
+    </item>
     <item>
       <title>What we took from Hindsight</title>
       <link>https://frosoore.github.io/AxiomAI/blog/what-we-took-from-hindsight.html</link>

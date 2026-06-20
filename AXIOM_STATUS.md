@@ -34,6 +34,8 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-06-21** · `site` · add: Blog post "Under the hood: how saves and universes work"; moved the save/universe QC item to Done on the roadmap and logged it in the June dev update.
+- **2026-06-21** · `engine` · fix: `fired_turn_id` is preserved when exporting (`extract_save`/`.axiomsave`) and forking a save, so rewind can still un-fire scheduled events; added a guard test against save copy-list vs schema drift.
 - **2026-06-20** · `ui` · fix: Player message editor now correctly rolls back VectorMemory semantic database and cleans up illustration assets.
 - **2026-06-20** · `ui` · fix: Aligned memory and database user_input turn IDs to prevent complete history deletion during message rollbacks.
 - **2026-06-16** · `site` · add: Created `AXIOM_STATUS.md` and the monthly **Dev updates** page; added an early-alpha tester banner, a feature-request form and Discord links to the landing site.

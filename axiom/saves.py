@@ -524,14 +524,19 @@ def fork_save(
               r["minutes_remaining"]) for r in mod_rows],
         )
         # Sans cette copie, les événements planifiés déjà déclenchés se
-        # redéclencheraient dans la save forkée.
+        # redéclencheraient dans la save forkée. `fired_turn_id` (TICKET-075) doit
+        # voyager pour que le rewind « dé-tire » correctement après un fork ;
+        # ensure_ d'abord car une save embarquée ancienne peut précéder la colonne.
+        from axiom.schema import ensure_fired_event_turn_column
+        ensure_fired_event_turn_column(conn)
         fired_rows = conn.execute(
-            "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
+            "SELECT event_id, fired_turn_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
             (save_id,),
         ).fetchall()
         conn.executemany(
-            "INSERT INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, ?);",
-            [(new_id, r["event_id"]) for r in fired_rows],
+            "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) "
+            "VALUES (?, ?, ?);",
+            [(new_id, r["event_id"], r["fired_turn_id"]) for r in fired_rows],
         )
         conn.commit()
 
