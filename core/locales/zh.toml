@@ -794,3 +794,14 @@ trend_new = "新增"
 trend_stable = "稳定"
 doc_settings_memory_browser_t = "浏览记忆"
 doc_settings_memory_browser = "打开只读视图，查看游戏从你的故事中提炼出的内容：演化中的信念（附带其趋势——增强、减弱、过时）以及支撑它们的事实。仅供查看，不会更改任何内容。"
+
+# --- Universe start date & calendar config ---
+calendar_config = "宇宙日历与冒险开始"
+minutes_per_hour = "每小时分钟数:"
+hours_per_day = "每天小时数:"
+start_day = "冒险开始日期 (天):"
+start_hour = "冒险开始时间 (小时):"
+start_minute = "冒险开始时间 (分钟):"
+month_names_label = "月份名称:"
+preview_start = "开始预览:"
+

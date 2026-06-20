@@ -28,6 +28,7 @@ class ScheduledEventsEditorWidget(QWidget):
         self._calendar = CalendarConfig()
         self._time_system = TimeSystem(self._calendar)
         self._setup_ui()
+        self.retranslate_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -38,40 +39,59 @@ class ScheduledEventsEditorWidget(QWidget):
         cal_layout = QHBoxLayout(self._cal_group)
         
         left_form = QFormLayout()
+        self._mph_label = QLabel("Minutes per Hour:")
         self._mph_spin = QSpinBox()
         self._mph_spin.setRange(1, 9999)
         self._mph_spin.setValue(60)
         self._mph_spin.setToolTip("How many minutes are in one game hour")
         
+        self._hpd_label = QLabel("Hours per Day:")
         self._hpd_spin = QSpinBox()
         self._hpd_spin.setRange(1, 999)
         self._hpd_spin.setValue(24)
         self._hpd_spin.setToolTip("How many hours are in one game day")
         
+        self._start_day_label = QLabel("Adventure Start Day:")
         self._start_day_spin = QSpinBox()
         self._start_day_spin.setRange(1, 99999)
         self._start_day_spin.setValue(1)
         self._start_day_spin.setToolTip("The day on which the adventure begins")
 
-        left_form.addRow("Minutes per Hour:", self._mph_spin)
-        left_form.addRow("Hours per Day:", self._hpd_spin)
-        left_form.addRow("Adventure Start Day:", self._start_day_spin)
+        self._start_hour_label = QLabel("Adventure Start Hour:")
+        self._start_hour_spin = QSpinBox()
+        self._start_hour_spin.setRange(0, 23)
+        self._start_hour_spin.setValue(0)
+        self._start_hour_spin.setToolTip("The hour of the day on which the adventure begins")
+
+        self._start_minute_label = QLabel("Adventure Start Minute:")
+        self._start_minute_spin = QSpinBox()
+        self._start_minute_spin.setRange(0, 59)
+        self._start_minute_spin.setValue(0)
+        self._start_minute_spin.setToolTip("The minute of the hour on which the adventure begins")
+
+        left_form.addRow(self._mph_label, self._mph_spin)
+        left_form.addRow(self._hpd_label, self._hpd_spin)
+        left_form.addRow(self._start_day_label, self._start_day_spin)
+        left_form.addRow(self._start_hour_label, self._start_hour_spin)
+        left_form.addRow(self._start_minute_label, self._start_minute_spin)
         cal_layout.addLayout(left_form, 1)
         
         right_form = QFormLayout()
+        self._month_label = QLabel("Month Names:")
         self._month_edit = QLineEdit()
         self._month_edit.setPlaceholderText("Month 1, Month 2, ...")
         self._month_edit.setToolTip("Comma-separated list of month names (e.g., 'Aries, Taurus, ...')")
         
+        self._preview_start_title_label = QLabel("Preview Start:")
         self._preview_label = QLabel()
         self._preview_label.setStyleSheet("color: #89b4fa; font-weight: bold;")
         
-        right_form.addRow("Month Names:", self._month_edit)
-        right_form.addRow("Preview Start:", self._preview_label)
+        right_form.addRow(self._month_label, self._month_edit)
+        right_form.addRow(self._preview_start_title_label, self._preview_label)
         cal_layout.addLayout(right_form, 2)
 
         # Connections
-        for s in (self._mph_spin, self._hpd_spin, self._start_day_spin):
+        for s in (self._mph_spin, self._hpd_spin, self._start_day_spin, self._start_hour_spin, self._start_minute_spin):
             s.valueChanged.connect(self._on_cal_changed)
         self._month_edit.textChanged.connect(self._on_cal_changed)
         
@@ -122,7 +142,14 @@ class ScheduledEventsEditorWidget(QWidget):
     # ------------------------------------------------------------------
 
     def retranslate_ui(self) -> None:
-        self._cal_group.setTitle(tr("calendar_config") if "calendar_config" in tr("ready") else "Universe Calendar & Adventure Start")
+        self._cal_group.setTitle(tr("calendar_config"))
+        self._mph_label.setText(tr("minutes_per_hour"))
+        self._hpd_label.setText(tr("hours_per_day"))
+        self._start_day_label.setText(tr("start_day"))
+        self._start_hour_label.setText(tr("start_hour"))
+        self._start_minute_label.setText(tr("start_minute"))
+        self._month_label.setText(tr("month_names_label"))
+        self._preview_start_title_label.setText(tr("preview_start"))
         self._add_btn.setText(f"{tr('add_event')} +")
         self._status_label.setText(tr("events_info"))
         self._del_btn.setText(tr("delete"))
@@ -140,10 +167,34 @@ class ScheduledEventsEditorWidget(QWidget):
         self._calendar = CalendarConfig.from_json(cal_str)
         self._time_system = TimeSystem(self._calendar)
         
+        # Block signals to prevent valueChanged slot (_on_cal_changed) from overwriting
+        # the calendar configuration properties before they are fully loaded into the UI.
+        self._mph_spin.blockSignals(True)
+        self._hpd_spin.blockSignals(True)
+        self._start_day_spin.blockSignals(True)
+        self._start_hour_spin.blockSignals(True)
+        self._start_minute_spin.blockSignals(True)
+        self._month_edit.blockSignals(True)
+        
         self._mph_spin.setValue(self._calendar.minutes_per_hour)
         self._hpd_spin.setValue(self._calendar.hours_per_day)
+        
+        # Update spinbox ranges before setting start_hour/start_minute
+        self._start_hour_spin.setRange(0, max(0, self._calendar.hours_per_day - 1))
+        self._start_minute_spin.setRange(0, max(0, self._calendar.minutes_per_hour - 1))
+        
         self._start_day_spin.setValue(self._calendar.start_day)
+        self._start_hour_spin.setValue(self._calendar.start_hour)
+        self._start_minute_spin.setValue(self._calendar.start_minute)
+        
         self._month_edit.setText(", ".join(self._calendar.month_names))
+        
+        self._mph_spin.blockSignals(False)
+        self._hpd_spin.blockSignals(False)
+        self._start_day_spin.blockSignals(False)
+        self._start_hour_spin.blockSignals(False)
+        self._start_minute_spin.blockSignals(False)
+        self._month_edit.blockSignals(False)
         
         # Load Events
         self._table.setRowCount(0)
@@ -159,6 +210,8 @@ class ScheduledEventsEditorWidget(QWidget):
         self._calendar.minutes_per_hour = self._mph_spin.value()
         self._calendar.hours_per_day = self._hpd_spin.value()
         self._calendar.start_day = self._start_day_spin.value()
+        self._calendar.start_hour = self._start_hour_spin.value()
+        self._calendar.start_minute = self._start_minute_spin.value()
         
         raw_months = self._month_edit.text().strip()
         if raw_months:
@@ -267,12 +320,18 @@ class ScheduledEventsEditorWidget(QWidget):
         self._calendar.minutes_per_hour = self._mph_spin.value()
         self._calendar.hours_per_day = self._hpd_spin.value()
         self._calendar.start_day = self._start_day_spin.value()
+        self._calendar.start_hour = self._start_hour_spin.value()
+        self._calendar.start_minute = self._start_minute_spin.value()
         
         raw_months = self._month_edit.text().strip()
         if raw_months:
             self._calendar.month_names = [m.strip() for m in raw_months.split(",") if m.strip()]
         
         self._time_system = TimeSystem(self._calendar)
+        
+        # Update start hour/start minute ranges based on hpd/mph values
+        self._start_hour_spin.setRange(0, max(0, self._calendar.hours_per_day - 1))
+        self._start_minute_spin.setRange(0, max(0, self._calendar.minutes_per_hour - 1))
         
         # Update all spinbox ranges
         for r in range(self._table.rowCount()):

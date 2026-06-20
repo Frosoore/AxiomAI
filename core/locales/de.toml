@@ -793,3 +793,14 @@ trend_new = "neu"
 trend_stable = "stabil"
 doc_settings_memory_browser_t = "Gedächtnis durchsuchen"
 doc_settings_memory_browser = "Öffnet eine schreibgeschützte Ansicht dessen, was das Spiel aus deiner Geschichte destilliert hat: die sich entwickelnden Überzeugungen (mit ihrer Tendenz — verstärkt sich, schwächt ab, veraltet) und die zugrunde liegenden Fakten. Nur zur Ansicht; nichts wird verändert."
+
+# --- Universe start date & calendar config ---
+calendar_config = "Universumskalender & Abenteuerstart"
+minutes_per_hour = "Minuten pro Stunde:"
+hours_per_day = "Stunden pro Tag:"
+start_day = "Starttag des Abenteuers:"
+start_hour = "Startstunde des Abenteuers:"
+start_minute = "Startminute des Abenteuers:"
+month_names_label = "Monatsnamen:"
+preview_start = "Start-Vorschau:"
+

@@ -794,3 +794,14 @@ trend_new = "récente"
 trend_stable = "stable"
 doc_settings_memory_browser_t = "Explorer la mémoire"
 doc_settings_memory_browser = "Ouvre une vue en lecture seule de ce que le jeu a distillé de votre histoire : les croyances évolutives (avec leur tendance — se renforce, s'estompe, obsolète) et les faits qui les sous-tendent. Consultation seule ; rien n'est modifié."
+
+# --- Universe start date & calendar config ---
+calendar_config = "Calendrier de l'univers & Départ de l'aventure"
+minutes_per_hour = "Minutes par heure :"
+hours_per_day = "Heures par jour :"
+start_day = "Jour de départ de l'aventure :"
+start_hour = "Heure de départ de l'aventure :"
+start_minute = "Minute de départ de l'aventure :"
+month_names_label = "Noms des mois :"
+preview_start = "Aperçu du départ :"
+

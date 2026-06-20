@@ -28,4 +28,6 @@
 - `workers/vector_worker.py` (Tâche de fond vectorielle)
 - `ui/widgets/chat_display.py` & `ui/tabletop_view.py` (Intégration UI chat)
 - `feature-custom-wallpaper` (Fonctionnalité de fond d'écran personnalisé, toutes langues, tests OK)
+- `feature-edit-start-date` (Adventure start date/time customization in Creator Studio, 10 languages localized, tests OK, pending commit)
+
 

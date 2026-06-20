@@ -795,3 +795,14 @@ trend_new = "새로움"
 trend_stable = "안정"
 doc_settings_memory_browser_t = "기억 살펴보기"
 doc_settings_memory_browser = "게임이 이야기에서 추출한 내용을 읽기 전용으로 봅니다: 진화하는 신념(추세 포함 — 강화됨, 약화됨, 오래됨)과 그 근거가 되는 사실들입니다. 열람 전용이며 아무것도 변경되지 않습니다."
+
+# --- Universe start date & calendar config ---
+calendar_config = "우주 달력 및 모험 시작"
+minutes_per_hour = "시간당 분 수:"
+hours_per_day = "하루당 시간 수:"
+start_day = "모험 시작일 (일):"
+start_hour = "모험 시작 시간 (시):"
+start_minute = "모험 시작 시간 (분):"
+month_names_label = "월 이름:"
+preview_start = "시작 미리보기:"
+

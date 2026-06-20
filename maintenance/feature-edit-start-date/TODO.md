@@ -1,0 +1,21 @@
+# TODO - Adventure Start Date Customization
+
+- [x] Add `start_hour` and `start_minute` input fields to `ScheduledEventsEditorWidget` in `ui/widgets/scheduled_events_editor.py`.
+  - [x] Initialize `_start_hour_spin` and `_start_minute_spin` spinboxes.
+  - [x] Put them in `left_form` alongside the start day control.
+  - [x] Connect their `valueChanged` signals to `self._on_cal_changed`.
+  - [x] Use `QLabel` widgets for form row labels to allow dynamic localization.
+- [x] Update `set_events_and_calendar` to populate these spinboxes from the loaded calendar config.
+- [x] Update `collect_data` to serialize the spinboxes' values back into the calendar config.
+- [x] Update `_on_cal_changed` to properly read their values and update bounds/previews.
+- [x] Add localization keys in `core/locales/*.toml` for all 10 languages:
+  - [x] `calendar_config`
+  - [x] `minutes_per_hour`
+  - [x] `hours_per_day`
+  - [x] `start_day`
+  - [x] `start_hour`
+  - [x] `start_minute`
+  - [x] `month_names_label`
+  - [x] `preview_start`
+- [x] Localize all calendar config labels in `retranslate_ui`.
+- [x] Run the i18n checker tool (`python tools/i18n_check.py`) and existing tests.

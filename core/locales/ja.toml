@@ -794,3 +794,14 @@ trend_new = "新規"
 trend_stable = "安定"
 doc_settings_memory_browser_t = "記憶を見る"
 doc_settings_memory_browser = "ゲームが物語から抽出した内容を読み取り専用で表示します。進化する信念（傾向付き — 強まる・弱まる・古い）と、その根拠となる事実です。閲覧のみで、何も変更されません。"
+
+# --- Universe start date & calendar config ---
+calendar_config = "宇宙のカレンダーと冒険の開始"
+minutes_per_hour = "1時間あたりの分数:"
+hours_per_day = "1日あたりの時間数:"
+start_day = "冒険開始日 (日):"
+start_hour = "冒険開始時間 (時):"
+start_minute = "冒険開始時間 (分):"
+month_names_label = "月名:"
+preview_start = "開始プレビュー:"
+

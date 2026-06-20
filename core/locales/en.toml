@@ -796,3 +796,14 @@ trend_new = "new"
 trend_stable = "stable"
 doc_settings_memory_browser_t = "Browse memory"
 doc_settings_memory_browser = "Open a read-only view of what the game has distilled from your story: the evolving beliefs (with their trend — strengthening, fading, stale) and the facts behind them. Inspection only; nothing is changed."
+
+# --- Universe start date & calendar config ---
+calendar_config = "Universe Calendar & Adventure Start"
+minutes_per_hour = "Minutes per Hour:"
+hours_per_day = "Hours per Day:"
+start_day = "Adventure Start Day:"
+start_hour = "Adventure Start Hour:"
+start_minute = "Adventure Start Minute:"
+month_names_label = "Month Names:"
+preview_start = "Preview Start:"
+
