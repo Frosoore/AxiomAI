@@ -244,7 +244,7 @@ Distributed under the GNU Affero General Public License v3.0 (or later). See `LI
 
 **Attribution required:** as an additional term under AGPLv3 section 7(b), any redistribution
 (original or modified, source or binary) must preserve the `NOTICE` file and credit the original
-project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by 17h59 and Frosoore."*
+project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore."*
 
 ## Acknowledgments
 

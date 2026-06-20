@@ -1,7 +1,7 @@
 # Myria — default universe
 
 The universe bundled with Axiom AI, in [Universe-as-Code](../../docs/guides/universe-format.md)
-format. Based on the original fiction *Myria* by 17h59 (source wiki: post-divine steampunk
+format. Based on the original fiction *Myria* by Pinpanicaille (source wiki: post-divine steampunk
 fantasy, year 5281).
 
 ```console

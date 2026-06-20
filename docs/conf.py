@@ -18,8 +18,8 @@ from axiom import __version__  # noqa: E402
 # -- Project information -----------------------------------------------------
 
 project = "Axiom Engine"
-author = "17h59 and Frosoore"
-copyright = "2026, 17h59 and Frosoore"  # noqa: A001
+author = "Pinpanicaille and Frosoore"
+copyright = "2026, Pinpanicaille and Frosoore"  # noqa: A001
 version = __version__
 release = __version__
 

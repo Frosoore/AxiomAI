@@ -405,13 +405,24 @@ def _is_doc_tooltip_target(obj) -> bool:
 
 
 def retranslate_tooltips() -> None:
-    """Re-apply every registered tooltip in the current language."""
+    """Re-apply every registered tooltip in the current language.
+
+    Widgets whose underlying C++ object has been deleted (a dialog closed, a
+    view torn down) can linger in the registry while their Python wrapper is
+    still alive: a plain WeakKeyDictionary does not catch that. We skip and
+    prune them with ``shiboken6.isValid`` so a language change never raises.
+    """
+    from shiboken6 import isValid
+
     for widget, ref in list(_live_widgets.items()):
+        if not isValid(widget):
+            _live_widgets.pop(widget, None)
+            continue
         widget.setToolTip(tooltip_html(ref))
     alive: list[tuple[weakref.ref, int, str]] = []
     for tabs_ref, index, ref in _live_tabs:
         tabs = tabs_ref()
-        if tabs is None:
+        if tabs is None or not isValid(tabs):
             continue
         tabs.setTabToolTip(index, tooltip_html(ref))
         alive.append((tabs_ref, index, ref))

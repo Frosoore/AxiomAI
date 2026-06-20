@@ -132,6 +132,7 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `QA-test-connexion-gemini` | ✅ (validé GUI) | QA « Test Connection » Gemini → fix `IPv4FirstTransport` (IPv6 cassée vers Google) |
 | `QA-ambiance-images-2026-06-13` | ✅ | QA ambiance sonore + images |
 | `qa-fs-univers-saves-2026-06-21` | ✅ | QA e2e fichiers/univers/saves : fix `fired_turn_id` perdu (extract/fork) + test de garde anti-dérive schéma↔copie ; findings TICKET-087→090 |
+| `fix-help-tooltips-deleted-widget` | ✅ | Fix CI 3.12 : `retranslate_tooltips` robuste aux widgets C++ détruits (`shiboken6.isValid` + purge) |
 
 ### audits/
 | Sous-dossier | Statut | Description |

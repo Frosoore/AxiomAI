@@ -265,7 +265,7 @@ def _shell(prefix: str, title: str, desc: str, body: str) -> str:
     footer = f"""        <footer>
             <div class="wrap">
                 <div class="foot-bottom">
-                    <span>AGPL-3.0-or-later · built by 17h59 &amp; Frosoore</span>
+                    <span>AGPL-3.0-or-later · built by Pinpanicaille &amp; Frosoore</span>
                     <span><a href="{p}feed.xml">RSS feed</a> · <a href="{p}blog/index.html">Blog</a> · <a href="{p}dev-updates.html">Dev updates</a></span>
                 </div>
             </div>

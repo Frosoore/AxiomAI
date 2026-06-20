@@ -14,7 +14,7 @@ version modifiée en service réseau oblige à publier les sources — protectio
 celui de la GPL v3, vérifié dans le texte) autorise un terme additionnel exigeant la
 préservation des attributions d'auteurs. C'est le rôle du fichier **`NOTICE`** : toute
 redistribution (source ou binaire, modifiée ou non) doit le conserver et créditer
-« Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by 17h59 and Frosoore ». Le NOTICE
+« Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore ». Le NOTICE
 voyage partout : repo, wheel PyPI (`license-files`), export `export_engine.py`.
 
 **Liens PyPI.** `[project.urls]` dans `pyproject.toml` (Homepage / Repository / Issues →
@@ -22,5 +22,5 @@ github.com/Frosoore/AxiomAI) = encadré « Project links » de la page PyPI ; + 
 dans le README généré de la lib.
 
 **Validité.** Le terme additionnel d'attribution nécessite l'accord des deux titulaires du
-copyright (17h59 **et** Frosoore). La 0.1.0 déjà sur PyPI n'a ni le NOTICE ni les liens →
+copyright (Pinpanicaille **et** Frosoore). La 0.1.0 déjà sur PyPI n'a ni le NOTICE ni les liens →
 republier.
