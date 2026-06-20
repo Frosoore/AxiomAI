@@ -575,8 +575,13 @@ basic_prompt_label = "사용자 지정 지침"
 basic_prompt_placeholder = "AI 서술자를 위한 사용자 지정 지침 (예: '영어로만 대화', '쉬운 문장 사용', 또는 사용자 지정 행동 지침/탈옥 지침 등...)"
 doc_settings_basic_prompt_t = "사용자 지정 지침"
 doc_settings_basic_prompt = "서술자의 시스템 프롬프트에 추가되는 사용자 정의 지침입니다. 어조, 언어 또는 특정 행동 지침을 설정할 수 있습니다."
+negative_prompt_label = "부정 지침 (Negative Prompt)"
+negative_prompt_placeholder = "AI가 하지 말아야 할 행동에 대한 지침 (예: '미래 기술에 대해 언급하지 말 것', '플레이어 대신 말하지 말 것'...)"
+doc_settings_negative_prompt_t = "부정 지침"
+doc_settings_negative_prompt = "시스템 프롬프트에 추가되는 사용자 정의 부정 지침입니다. 특정 행동이나 서술에서 피해야 할 사항을 지정할 수 있습니다."
 doc_settings_wallpaper_t = "사용자 지정 배경화면"
 doc_settings_wallpaper = "창 배경으로 사용할 로컬 이미지 파일(.png, .jpg, .jpeg, .bmp)의 경로입니다. 비어 있거나 파일이 존재하지 않는 경우 기본 어두운 배경으로 복원됩니다."
+
 
 
 # Diagnostic dialog (TICKET-062 item 4)

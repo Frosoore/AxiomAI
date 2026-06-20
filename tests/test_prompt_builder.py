@@ -58,6 +58,15 @@ class TestBuildNarrativePrompt:
         assert "CUSTOM_INSTRUCTION" in result_with[0]["content"]
         assert "SYS_PROMPT\n\nCUSTOM_INSTRUCTION" in result_with[0]["content"]
 
+    def test_negative_prompt_injection(self) -> None:
+        """The narrative prompt appends negative_prompt instructions to the system message if provided."""
+        result_without = build_narrative_prompt("SYS_PROMPT", "stats", [], [], {"player": "Hello"})
+        result_with = build_narrative_prompt("SYS_PROMPT", "stats", [], [], {"player": "Hello"}, negative_prompt="NEGATIVE_INSTRUCTION")
+        assert "NEGATIVE_INSTRUCTION" not in result_without[0]["content"]
+        assert "SYS_PROMPT" in result_with[0]["content"]
+        assert "NEGATIVE_INSTRUCTION" in result_with[0]["content"]
+        assert "SYS_PROMPT\n\nNegative instructions (DO NOT do the following):\nNEGATIVE_INSTRUCTION" in result_with[0]["content"]
+
 
     def test_system_contains_universe_prompt(self) -> None:
         """The universe's system prompt is embedded in the system message."""

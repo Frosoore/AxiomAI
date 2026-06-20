@@ -348,6 +348,20 @@ def test_settings_dialog_basic_prompt(qtbot) -> None:
     assert updated.basic_prompt == "Use French words occasionally."
 
 
+def test_settings_dialog_negative_prompt(qtbot) -> None:
+    """The negative_prompt UI field loads and collects values correctly."""
+    cfg = AppConfig(negative_prompt="Do not use French words.")
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._negative_prompt.toPlainText() == "Do not use French words."
+
+    dialog._negative_prompt.setPlainText("Do not use English words.")
+
+    updated = dialog.collect_config()
+    assert updated.negative_prompt == "Do not use English words."
+
+
 def test_settings_dialog_custom_wallpaper(qtbot, tmp_path) -> None:
     """The custom_wallpaper UI field loads and collects values correctly."""
     wallpaper_file = tmp_path / "my_wallpaper.png"

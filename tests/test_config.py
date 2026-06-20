@@ -115,6 +115,7 @@ class TestSaveConfig:
             gemini_api_key="my-secret-key",
             chronicler_minutes_interval=480,
             basic_prompt="Speak only in English",
+            negative_prompt="Do not mention magic",
             custom_wallpaper="my_wallpaper.png",
         )
         save_config(original)
@@ -123,6 +124,7 @@ class TestSaveConfig:
         assert loaded.gemini_api_key == "my-secret-key"
         assert loaded.chronicler_minutes_interval == 480
         assert loaded.basic_prompt == "Speak only in English"
+        assert loaded.negative_prompt == "Do not mention magic"
         assert loaded.custom_wallpaper == "my_wallpaper.png"
 
 

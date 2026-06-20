@@ -89,6 +89,7 @@ class AppConfig:
                              Google quotas are per-model, so a different model
                              usually still has budget. Empty = no fallback.
         basic_prompt:        Custom user-provided system instructions.
+        negative_prompt:     Custom user-provided negative system instructions (things to avoid).
         image_generation_enabled: Whether narrative image generation is enabled.
         image_backend:       Image generation backend ("mock", "stable_diffusion", or "comfyui").
         image_api_url:       API base URL for the local image generator.
@@ -165,6 +166,7 @@ class AppConfig:
     memory_prompt_cache_enabled: bool = False
     language: str = "en"
     basic_prompt: str = ""
+    negative_prompt: str = ""
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
     trim_sentences: bool = True

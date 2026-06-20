@@ -444,12 +444,18 @@ class SettingsDialog(QDialog):
         self._basic_prompt.setMaximumHeight(80)
         self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
 
+        self._negative_prompt = doc(QTextEdit(), "settings.negative_prompt")
+        self._negative_prompt.setAcceptRichText(False)
+        self._negative_prompt.setMaximumHeight(80)
+        self._negative_prompt.setPlaceholderText(tr("negative_prompt_placeholder"))
+
         self._lang_label = QLabel(tr("language"))
         self._chronicler_label = QLabel(tr("chronicler_minutes_label"))
         self._font_size_label = QLabel(tr("ui_font_size"))
         self._rag_chunks_label = QLabel(tr("rag_chunks"))
         self._wallpaper_label = QLabel(tr("custom_wallpaper"))
         self._basic_prompt_label = QLabel(tr("basic_prompt_label"))
+        self._negative_prompt_label = QLabel(tr("negative_prompt_label"))
 
         general_form.addRow(self._lang_label, self._lang_combo)
         general_form.addRow(self._chronicler_label, self._chronicler_spin)
@@ -461,6 +467,7 @@ class SettingsDialog(QDialog):
         general_form.addRow("", self._trim_sentences_cb)
         general_form.addRow(self._wallpaper_label, self._wallpaper_layout)
         general_form.addRow(self._basic_prompt_label, self._basic_prompt)
+        general_form.addRow(self._negative_prompt_label, self._negative_prompt)
         
         layout.addWidget(self._general_group)
 
@@ -629,6 +636,8 @@ class SettingsDialog(QDialog):
         self._wallpaper_btn.setText(tr("browse"))
         self._basic_prompt_label.setText(tr("basic_prompt_label"))
         self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
+        self._negative_prompt_label.setText(tr("negative_prompt_label"))
+        self._negative_prompt.setPlaceholderText(tr("negative_prompt_placeholder"))
 
         
         # Image Generation tab
@@ -703,6 +712,7 @@ class SettingsDialog(QDialog):
         self._trim_sentences_cb.setChecked(config.trim_sentences)
         self._wallpaper_edit.setText(config.custom_wallpaper)
         self._basic_prompt.setPlainText(config.basic_prompt)
+        self._negative_prompt.setPlainText(getattr(config, "negative_prompt", ""))
 
         # Memory settings (Phase 2)
         mem_idx = self._memory_mode_combo.findData(
@@ -782,6 +792,7 @@ class SettingsDialog(QDialog):
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
+            negative_prompt=self._negative_prompt.toPlainText().strip(),
             # Memory settings (Phase 2) — must be read back here or saving the
             # dialog would silently reset them to their defaults.
             memory_mode=self._memory_mode_combo.currentData() or "lite",

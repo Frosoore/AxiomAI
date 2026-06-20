@@ -670,6 +670,7 @@ def build_narrative_prompt(
     hero_entity_id: str | None = None,
     local_character_names: list[str] | None = None,
     basic_prompt: str | None = None,
+    negative_prompt: str | None = None,
 ) -> list[LLMMessage]:
     """Assemble the full message list for a narrative gameplay turn.
 
@@ -717,6 +718,18 @@ def build_narrative_prompt(
     basic_prompt = basic_prompt.strip()
     if basic_prompt:
         universe_system_prompt = f"{universe_system_prompt}\n\n{basic_prompt}"
+
+    if negative_prompt is None:
+        try:
+            from axiom.config import load_config
+            cfg = load_config()
+            negative_prompt = getattr(cfg, "negative_prompt", "")
+        except Exception:
+            negative_prompt = ""
+
+    negative_prompt = negative_prompt.strip()
+    if negative_prompt:
+        universe_system_prompt = f"{universe_system_prompt}\n\nNegative instructions (DO NOT do the following):\n{negative_prompt}"
 
     # 1. Primary system prompt
     parts = [universe_system_prompt]
