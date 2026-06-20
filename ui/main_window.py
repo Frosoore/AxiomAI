@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self._setup_volume_slider()
         self._check_first_launch()
         self.show_hub()  # Populate library grid on launch
+        self.apply_wallpaper_styling()
 
         # TICKET-057 : honour the "doc tooltips on hover" settings toggle.
         from PySide6.QtWidgets import QApplication
@@ -173,6 +174,12 @@ class MainWindow(QMainWindow):
         self._tabletop_view = TabletopView(main_window=self)
         self._loading_view = LoadingView(self)
         self._setup_view = SetupView(main_window=self)
+
+        self._hub_view.setObjectName("HubView")
+        self._creator_view.setObjectName("CreatorStudioView")
+        self._tabletop_view.setObjectName("TabletopView")
+        self._loading_view.setObjectName("LoadingView")
+        self._setup_view.setObjectName("SetupView")
 
         self._stack.addWidget(self._hub_view)       # index 0
         self._stack.addWidget(self._creator_view)   # index 1
@@ -384,6 +391,7 @@ class MainWindow(QMainWindow):
             
             self._tabletop_view.reload_llm()
             self._tabletop_view.reload_ui_settings()
+            self.apply_wallpaper_styling()
             
             # Re-evaluate audio state
             cfg = load_config()
@@ -452,3 +460,116 @@ class MainWindow(QMainWindow):
         from axiom.paths import SETTINGS_FILE
         if not SETTINGS_FILE.exists():
             self._show_quick_tour()
+
+    def apply_wallpaper_styling(self) -> None:
+        """Apply custom wallpaper image background if configured, or revert to standard Catppuccin."""
+        from axiom.config import load_config
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        from pathlib import Path
+        
+        # Local import to avoid circular dependency
+        from main import _DARK_QSS
+        
+        cfg = load_config()
+        wallpaper_path = getattr(cfg, "custom_wallpaper", "")
+        app = QApplication.instance()
+        
+        # Clear any widget-level stylesheets to allow QApplication's styling to cascade
+        self.setStyleSheet("")
+        self._stack.setStyleSheet("")
+        self._hub_view.setStyleSheet("")
+        self._creator_view.setStyleSheet("")
+        self._tabletop_view.setStyleSheet("")
+        self._loading_view.setStyleSheet("")
+        self._setup_view.setStyleSheet("")
+        
+        if wallpaper_path and Path(wallpaper_path).exists():
+            posix_path = Path(wallpaper_path).as_posix()
+            wallpaper_qss = f"""
+                QMainWindow {{
+                    background-image: url("{posix_path}");
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    background-attachment: fixed;
+                }}
+                /* Make main stacked widgets and intermediate views transparent so wallpaper is visible */
+                QWidget#HubView, QWidget#CreatorStudioView, QWidget#TabletopView, QWidget#LoadingView, QWidget#SetupView,
+                .QWidget, QStackedWidget, QScrollArea, QScrollArea > QWidget, QScrollArea::viewport, QSplitter, QSplitter::handle {{
+                    background-color: transparent !important;
+                    background: transparent !important;
+                }}
+                /* Make containers semi-transparent to show wallpaper */
+                QFrame, QGroupBox {{
+                    background-color: rgba(24, 24, 37, 0.35) !important;
+                }}
+                QTabWidget::pane {{
+                    background-color: rgba(30, 30, 46, 0.35) !important;
+                }}
+                QListWidget, QListView, QTreeView, QTreeWidget {{
+                    background-color: rgba(24, 24, 37, 0.35) !important;
+                }}
+                QLineEdit, QTextEdit, QPlainTextEdit, QTextBrowser {{
+                    background-color: rgba(24, 24, 37, 0.4) !important;
+                }}
+                QMenuBar {{
+                    background-color: rgba(17, 17, 27, 0.4) !important;
+                }}
+                QStatusBar {{
+                    background-color: rgba(24, 24, 37, 0.4) !important;
+                }}
+                /* Style buttons and selection components with a solid premium deep blue theme */
+                QPushButton {{
+                    background-color: #172554 !important;
+                    color: #ffffff !important;
+                    border: 1px solid #89b4fa !important;
+                }}
+                QPushButton:hover {{
+                    background-color: #1e3a8a !important;
+                }}
+                QPushButton:pressed {{
+                    background-color: #0f172a !important;
+                }}
+                QComboBox {{
+                    background-color: #172554 !important;
+                    color: #ffffff !important;
+                    border: 1px solid #89b4fa !important;
+                }}
+                QComboBox:hover, QComboBox::drop-down:hover {{
+                    background-color: #1e3a8a !important;
+                }}
+                QSpinBox, QDoubleSpinBox {{
+                    background-color: #172554 !important;
+                    color: #ffffff !important;
+                    border: 1px solid #89b4fa !important;
+                }}
+                QSlider::handle:horizontal, QSlider::handle:vertical {{
+                    background-color: #89b4fa !important;
+                    border: 1px solid #172554 !important;
+                }}
+                QTabBar::tab:selected {{
+                    background-color: #172554 !important;
+                    color: #ffffff !important;
+                    border-bottom: 2px solid #89b4fa !important;
+                }}
+            """
+            app.setStyleSheet(_DARK_QSS + wallpaper_qss)
+            
+            # Apply deep blue theme inline to buttons with specific custom colors
+            self._cancel_gen_btn.setStyleSheet("color: #FF4B4B; background-color: #172554; border: 1px solid #89b4fa;")
+            if hasattr(self, "_setup_view"):
+                self._setup_view._del_save_btn.setStyleSheet("color: #FF4B4B; background-color: #172554; border: 1px solid #89b4fa;")
+            
+            if hasattr(self, "_hub_view"):
+                for card in self._hub_view._active_cards.values():
+                    card._delete_btn.setStyleSheet("color: #e74c3c; background-color: #172554; border: 1px solid #89b4fa;")
+        else:
+            app.setStyleSheet(_DARK_QSS)
+            self._cancel_gen_btn.setStyleSheet("color: #FF4B4B;")
+            if hasattr(self, "_setup_view"):
+                self._setup_view._del_save_btn.setStyleSheet("color: #FF4B4B;")
+                
+            if hasattr(self, "_hub_view"):
+                for card in self._hub_view._active_cards.values():
+                    card._delete_btn.setStyleSheet("color: #e74c3c;")
+

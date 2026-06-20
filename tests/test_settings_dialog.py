@@ -347,3 +347,68 @@ def test_settings_dialog_basic_prompt(qtbot) -> None:
     updated = dialog.collect_config()
     assert updated.basic_prompt == "Use French words occasionally."
 
+
+def test_settings_dialog_custom_wallpaper(qtbot, tmp_path) -> None:
+    """The custom_wallpaper UI field loads and collects values correctly."""
+    wallpaper_file = tmp_path / "my_wallpaper.png"
+    wallpaper_file.touch()
+    
+    cfg = AppConfig(custom_wallpaper=str(wallpaper_file))
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._wallpaper_edit.text() == str(wallpaper_file)
+
+    # Change wallpaper path
+    another_file = tmp_path / "another_wallpaper.jpg"
+    another_file.touch()
+    dialog._wallpaper_edit.setText(str(another_file))
+
+    updated = dialog.collect_config()
+    assert updated.custom_wallpaper == str(another_file)
+
+
+def test_main_window_wallpaper_styling(qtbot, tmp_path) -> None:
+    """MainWindow correctly updates the QApplication stylesheet based on custom_wallpaper."""
+    from ui.main_window import MainWindow
+    from PySide6.QtWidgets import QApplication
+    from axiom.config import save_config, AppConfig
+    
+    app = QApplication.instance()
+    
+    # 1. Start with no wallpaper
+    cfg = AppConfig(custom_wallpaper="")
+    save_config(cfg)
+    
+    window = MainWindow()
+    qtbot.addWidget(window)
+    
+    # Apply styling
+    window.apply_wallpaper_styling()
+    
+    # The stylesheet should be the default one
+    from main import _DARK_QSS
+    assert app.styleSheet() == _DARK_QSS
+    
+    # 2. Set active wallpaper
+    wallpaper_file = tmp_path / "test_wp.png"
+    wallpaper_file.touch()
+    
+    cfg = AppConfig(custom_wallpaper=str(wallpaper_file))
+    save_config(cfg)
+    
+    window.apply_wallpaper_styling()
+    
+    # The stylesheet should contain the wallpaper path and custom styles
+    assert wallpaper_file.as_posix() in app.styleSheet()
+    assert "background-image" in app.styleSheet()
+    assert "#172554" in app.styleSheet()
+    
+    # 3. Revert
+    cfg = AppConfig(custom_wallpaper="")
+    save_config(cfg)
+    window.apply_wallpaper_styling()
+    assert app.styleSheet() == _DARK_QSS
+
+
+

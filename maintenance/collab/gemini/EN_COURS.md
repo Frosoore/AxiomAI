@@ -5,13 +5,14 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `main`
-**Chantier :** feature-basic-prompt (zone de texte dans les paramètres pour instructions personnalisées) — terminé, en attente de commit utilisateur
+**Chantier :** `feature-custom-wallpaper` (fonctionnalité de fond d'écran personnalisé) — terminé, en attente de commit utilisateur
 
 ## Fichiers / modules que je touche en ce moment
 
 | Fichier / module        | Type de modif        | Depuis (date) | Note pour Claude |
 |-------------------------|----------------------|---------------|------------------|
 | _(rien)_                |                      |               |                  |
+
 
 
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
@@ -26,3 +27,5 @@
 - `workers/db_tasks.py` & `workers/db_worker.py` (Tâches de fond)
 - `workers/vector_worker.py` (Tâche de fond vectorielle)
 - `ui/widgets/chat_display.py` & `ui/tabletop_view.py` (Intégration UI chat)
+- `feature-custom-wallpaper` (Fonctionnalité de fond d'écran personnalisé, toutes langues, tests OK)
+

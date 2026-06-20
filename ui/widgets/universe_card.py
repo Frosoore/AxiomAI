@@ -108,7 +108,14 @@ class UniverseCard(QFrame):
         mgmt_layout = QHBoxLayout()
         self._edit_btn = doc(QPushButton(tr("edit")), "hub.card_edit")
         self._delete_btn = doc(QPushButton(tr("delete")), "hub.card_delete")
-        self._delete_btn.setStyleSheet("color: #e74c3c;")
+        from axiom.config import load_config
+        from pathlib import Path
+        cfg = load_config()
+        wallpaper_path = getattr(cfg, "custom_wallpaper", "")
+        if wallpaper_path and Path(wallpaper_path).exists():
+            self._delete_btn.setStyleSheet("color: #e74c3c; background-color: #172554; border: 1px solid #89b4fa;")
+        else:
+            self._delete_btn.setStyleSheet("color: #e74c3c;")
         mgmt_layout.addWidget(self._edit_btn)
         mgmt_layout.addWidget(self._delete_btn)
         layout.addLayout(mgmt_layout)

@@ -168,6 +168,8 @@ class AppConfig:
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
     trim_sentences: bool = True
+    custom_wallpaper: str = ""
+
 
 
     # Image generation settings

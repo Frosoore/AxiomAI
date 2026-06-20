@@ -151,6 +151,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "timekeeper",
         "doc_tooltips",
         "trim_sentences",
+        "wallpaper",
         "basic_prompt",
         "tab_memory",
         "memory_mode",
@@ -238,7 +239,7 @@ SETTINGS_TAB_PAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
 SETTINGS_GENERAL_PAGE: tuple[str, tuple[str, ...]] = (
     "settings_general", (
         "language", "chronicler", "font_size", "rag_chunks", "audio",
-        "timekeeper", "doc_tooltips", "trim_sentences", "basic_prompt",
+        "timekeeper", "doc_tooltips", "trim_sentences", "wallpaper", "basic_prompt",
     ),
 )
 

@@ -49,6 +49,7 @@ class TestAppConfig:
         assert cfg.universal_model == "llama3.2"
         assert cfg.gemini_api_key == ""
         assert cfg.gemini_model == "gemini-2.0-flash"
+        assert cfg.custom_wallpaper == ""
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +115,7 @@ class TestSaveConfig:
             gemini_api_key="my-secret-key",
             chronicler_minutes_interval=480,
             basic_prompt="Speak only in English",
+            custom_wallpaper="my_wallpaper.png",
         )
         save_config(original)
         loaded = load_config()
@@ -121,6 +123,7 @@ class TestSaveConfig:
         assert loaded.gemini_api_key == "my-secret-key"
         assert loaded.chronicler_minutes_interval == 480
         assert loaded.basic_prompt == "Speak only in English"
+        assert loaded.custom_wallpaper == "my_wallpaper.png"
 
 
     def test_creates_directory(self, tmp_path: Path) -> None:

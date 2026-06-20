@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -429,6 +430,15 @@ class SettingsDialog(QDialog):
         # Trim Sentences toggle
         self._trim_sentences_cb = doc(QCheckBox(tr("trim_sentences")), "settings.trim_sentences")
 
+        self._wallpaper_edit = doc(QLineEdit(), "settings.wallpaper")
+        self._wallpaper_edit.setPlaceholderText(tr("wallpaper_placeholder"))
+        self._wallpaper_btn = doc(QPushButton(tr("browse")), "settings.wallpaper")
+        self._wallpaper_btn.clicked.connect(self._on_browse_wallpaper)
+
+        self._wallpaper_layout = QHBoxLayout()
+        self._wallpaper_layout.addWidget(self._wallpaper_edit)
+        self._wallpaper_layout.addWidget(self._wallpaper_btn)
+
         self._basic_prompt = doc(QTextEdit(), "settings.basic_prompt")
         self._basic_prompt.setAcceptRichText(False)
         self._basic_prompt.setMaximumHeight(80)
@@ -438,6 +448,7 @@ class SettingsDialog(QDialog):
         self._chronicler_label = QLabel(tr("chronicler_minutes_label"))
         self._font_size_label = QLabel(tr("ui_font_size"))
         self._rag_chunks_label = QLabel(tr("rag_chunks"))
+        self._wallpaper_label = QLabel(tr("custom_wallpaper"))
         self._basic_prompt_label = QLabel(tr("basic_prompt_label"))
 
         general_form.addRow(self._lang_label, self._lang_combo)
@@ -448,6 +459,7 @@ class SettingsDialog(QDialog):
         general_form.addRow("", self._timekeeper_cb)
         general_form.addRow("", self._doc_tooltips_cb)
         general_form.addRow("", self._trim_sentences_cb)
+        general_form.addRow(self._wallpaper_label, self._wallpaper_layout)
         general_form.addRow(self._basic_prompt_label, self._basic_prompt)
         
         layout.addWidget(self._general_group)
@@ -552,6 +564,18 @@ class SettingsDialog(QDialog):
         """Ask the owner to open the read-only memory browser on the session."""
         self.view_memory_requested.emit()
 
+    @Slot()
+    def _on_browse_wallpaper(self) -> None:
+        """Open file dialog to select a wallpaper image."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("select_wallpaper_title"),
+            self._wallpaper_edit.text().strip(),
+            "Images (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if file_path:
+            self._wallpaper_edit.setText(file_path)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -600,6 +624,9 @@ class SettingsDialog(QDialog):
         self._timekeeper_cb.setText(tr("timekeeper_enabled"))
         self._doc_tooltips_cb.setText(tr("show_doc_tooltips"))
         self._trim_sentences_cb.setText(tr("trim_sentences"))
+        self._wallpaper_label.setText(tr("custom_wallpaper"))
+        self._wallpaper_edit.setPlaceholderText(tr("wallpaper_placeholder"))
+        self._wallpaper_btn.setText(tr("browse"))
         self._basic_prompt_label.setText(tr("basic_prompt_label"))
         self._basic_prompt.setPlaceholderText(tr("basic_prompt_placeholder"))
 
@@ -674,6 +701,7 @@ class SettingsDialog(QDialog):
         self._timekeeper_cb.setChecked(config.timekeeper_enabled)
         self._doc_tooltips_cb.setChecked(config.doc_tooltips_enabled)
         self._trim_sentences_cb.setChecked(config.trim_sentences)
+        self._wallpaper_edit.setText(config.custom_wallpaper)
         self._basic_prompt.setPlainText(config.basic_prompt)
 
         # Memory settings (Phase 2)
@@ -750,6 +778,7 @@ class SettingsDialog(QDialog):
             enable_audio=self._audio_cb.isChecked(),
             doc_tooltips_enabled=self._doc_tooltips_cb.isChecked(),
             trim_sentences=self._trim_sentences_cb.isChecked(),
+            custom_wallpaper=self._wallpaper_edit.text().strip(),
             rag_chunk_count=self._rag_chunk_spin.value(),
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
