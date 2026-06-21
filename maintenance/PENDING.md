@@ -19,22 +19,16 @@
 | TICKET-067| Suite de tests : **segfault** quand `test_ambiance_manager.py` (Qt multimédia) précède `test_arbitrator.py` (import torch→triton) — `pytest tests/` plante, chaque moitié passe seule | ouvert — fiabilité de la suite, environnement (Python 3.14/Fedora) |
 | TICKET-069| **Validation Windows sur machine réelle** : 🔄 **gros lot fait les 2026-06-14** (crash WinError 32 résolu, classe connexion-non-fermée corrigée moteur+app, suite 753✅, **`run.bat`/startup_check OK + `main.py` atteint la boucle d'événements sans crash**, **audio requalifié quasi nul** : Ogg/FLAC/AAC supportés sur Win11 + aucun asset audio embarqué — cf. `TICKET-062-windows-support/CHANGELOG.md`). Reste : **un vrai tour de jeu GUI** + génération d'images locale | ouvert — bien allégé |
 | TICKET-070| **torch ne charge pas sous Windows** (`OSError WinError 126`) : **VC++ Redistributable x64 manquant**. App dégradée gracieusement (no-op + warning) ; **diagnostic FAIL actionnable** (`_check_embedding_runtime`) **+ alerte GUI au lancement** avec lien de téléchargement (`ui/runtime_check.py`, i18n ×10, marqueur « ne plus afficher »). `requirements.txt` impossible (composant système, pas un paquet pip). Reste action utilisateur → **installer vc_redist.x64.exe** | ouvert — environnement (code côté app = FAIT) |
-| TICKET-072| **Lore Book : recherche sémantique + link expansion** | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/ticket-072-lore-semantic/` |
-| TICKET-073| **Focus boost RAG : noms des persos en scène** ajoutés au `focus_terms` de `memory.query` | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/hindsight-followups-073-076/` |
-| TICKET-074| **Rewind restaure les `Active_Modifiers`** (buffs/débuffs) | ✅ implémenté (⚠ non commité, 2026-06-19, Option A snapshot par tour) — `maintenance/hindsight-followups-073-076/` |
-| TICKET-075| **Rewind « dé-tire » les `Fired_Scheduled_Events`** | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/hindsight-followups-073-076/` |
-| TICKET-076| **Résidu legacy `config.chronicler_interval` retiré** | ✅ implémenté (⚠ non commité, 2026-06-19) — `maintenance/hindsight-followups-073-076/` |
-| TICKET-077| **Consolidation : prompt non borné** (toutes les croyances envoyées au LLM à chaque passe) | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
-| TICKET-078| **BM25 reconstruit depuis tout le corpus à chaque `query()`** (O(N)/requête, plusieurs/tour) | ✅ corrigé (cache d'index, ⚠ non commité, 2026-06-19) — QA Hindsight |
-| TICKET-079| **Lectures N+1 plein-table** dans `_fetch_relevant_facts/_beliefs` + `limit` Python au lieu de SQL | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
-| TICKET-080| **Couplage fragile `zip(facts, new_ids)`** dans `fact_worker` (repose sur insert_facts ne sautant jamais) | ✅ corrigé (⚠ non commité, 2026-06-19) — QA Hindsight |
-| TICKET-081| **Feature : `Trend` déterministe sur les croyances** (moteur + injection prompt + **vue GUI** « Explorer la mémoire ») — idée Hindsight | ✅ implémenté, GUI+doc inclus (⚠ non commité, 2026-06-19) — `maintenance/qa-hindsight-2026-06-19/` |
-| TICKET-082| **Features Hindsight non portées** : ~~modèles mentaux (§7.8)~~ **✅ portés (2026-06-20, ⚠ non commité, `maintenance/hindsight-mental-models/`)** ; restent directives/persona (§7.9) + extraction temporelle (§7.5) | partiel — 7.8 fait ; 7.9/7.5 fermés (redondants / peu pertinents) |
 | TICKET-083| **Croyances : fuite temporelle au rewind** (`created_turn_id = min(tours des sources)` → une croyance survit à un rembobinage avant qu'elle ait été consolidée) | ouvert — QA Hindsight 2 (2026-06-19), sévérité basse-moyenne |
 | TICKET-084| **Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`** (croyances + faits + chunks narratifs cumulés) | ouvert — QA Hindsight 2 (2026-06-19), coût tokens |
 | TICKET-085| **Cache BM25 : `collection.get()` plein corpus tourne encore au cache-hit** (seul le build d'index est caché) | ouvert — QA Hindsight 2 (2026-06-19), micro-opt mineure |
+| TICKET-086| **`fired_turn_id` perdu** à l'extraction/export (`savestore._RUNTIME_COPY`) et au fork (`saves.fork_save`) → rewind ne « dé-tire » plus les events | ✅ corrigé + test de garde (⚠ non commité, 2026-06-21) — `maintenance/qa/qa-fs-univers-saves-2026-06-21/` |
+| TICKET-087| **Cache compilé `universes/Myria/.axiom-cache/` commité bien que gitignoré** + schéma périmé (pré-`fired_turn_id`), jamais reconstruit (hash source inchangé) | ouvert — QA fs 2026-06-21, hygiène repo (sans impact utilisateur : installateur exclut le cache) |
+| TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 |
+| TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models (mémoire living d'une save embarquée peut fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
+| TICKET-090| **`paths` : pas de `get_universes_dir()`**, `UNIVERSES_DIR` figé à l'import (insensible à `AXIOM_DATA_DIR`/`configure`) alors que saves/vector le sont → isolation asymétrique | ouvert — QA fs 2026-06-21, archi/cohérence |
 
-Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
+Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
 relancer le job `deploy`). TICKET-054 (i18n) **validé GUI le 2026-06-13**.
 
@@ -298,216 +292,6 @@ tourner en premier par un testeur pour remonter un rapport.
 
 ---
 
-## TICKET-072 — Lore Book : recherche sémantique (vectorielle) plutôt que mots-clés SQL
-
-**Contexte.** L'audit moteur du 2026-06-14 (étape `maintenance/audit-moteur-2026-06-14/`) a
-réparé une feature morte (**B1**) : `_fetch_relevant_lore` ne renvoyait jamais rien (filtre sur une
-clé `metadata.type` que `VectorMemory.query()` ne produit pas, et le lore n'était de toute façon
-jamais vectorisé). Le fix retenu, **pragmatique et correct**, lit directement la table `Lore_Book`
-et classe les entrées par **recouvrement de mots-clés / nom** avec l'input du tour (`axiom/
-arbitrator.py::_fetch_relevant_lore`, `keywords` + filtre stopwords).
-
-**Limite actée (retour utilisateur).** Ce match par mots-clés **ne gère ni les synonymes ni la
-proximité de sens** — il faut que le mot exact (ou un mot du nom) apparaisse. Pour la **narration**,
-une recherche **sémantique** (« le héros parle de trahison » doit ramener la lore sur les complots
-même sans le mot « trahison ») est nettement supérieure. « Pour le moment ça passe », mais c'est la
-bonne cible.
-
-**Ce qui serait à faire.**
-- **Vectoriser les entrées `Lore_Book`** dans le store du save avec `chunk_type="lore"` et des
-  métadonnées exploitables (`category`, `name`), p. ex. à la création de la save / au 1ᵉʳ tour, de
-  façon idempotente (et resync au refresh de définition / hot reload).
-- **Récupérer par similarité** : soit une requête vectorielle dédiée filtrée `chunk_type="lore"`,
-  soit fusionner avec la requête narrative existante en **exposant `chunk_type` dans le retour de
-  `VectorMemory.query()`** (aujourd'hui il renvoie `text/turn_id/chunk_type/distance/score` mais les
-  consommateurs filtrent un `metadata.type` inexistant — corriger cette incohérence au passage).
-- **Garder un repli mots-clés** (l'implémentation SQL actuelle) quand l'embedding est indisponible
-  (cf. dégradation gracieuse `VectorMemory._disabled` sous Windows sans VC++, TICKET-070) — le lore
-  ne doit jamais disparaître faute de torch.
-
-**Points d'attention.**
-- **Duplication par save** : la lore est universe-level mais le store vectoriel est par save_id →
-  ré-embarquer la lore pour chaque save. Acceptable (petits volumes) mais à acter.
-- **Coût** : une requête vectorielle de plus par tour (ou fusionnée avec l'existante). L'audit avait
-  justement *supprimé* la requête lore gaspillée ; n'en ré-introduire une que si elle sert vraiment.
-- Tests existants de garde : `tests/test_arbitrator.py::TestLoreBookRetrieval` (à faire évoluer vers
-  l'assertion sémantique le jour J).
-
-**Priorité :** moyenne — amélioration de qualité narrative, pas un bug (la feature marche). Lié à
-[[B1]] de l'audit moteur et à la couche `axiom/memory.py`.
-
----
-
-## TICKET-074 — Rewind n'annule pas les `Active_Modifiers`
-
-**Découvert le 2026-06-18** en investiguant le rapport temps causal ↔ tours (avant Phase 3 Hindsight).
-
-`checkpoint.rewind` supprime tout ce qui a `turn_id > N` : `Event_Log`, `Snapshots`, `Timeline`,
-`Facts`, puis reconstruit le `State_Cache`. Mais la table **`Active_Modifiers`** (buffs/débuffs
-temporaires) **n'a pas de colonne `turn_id`** — elle est clé par `modifier_id` et décomptée en
-`minutes_remaining` (`axiom/modifiers.py::tick_modifiers`). Le rewind **ne la touche pas** : après un
-rembobinage, un modificateur posé *après* le tour N reste présent (ou un modificateur qui aurait dû
-être encore actif au tour N a déjà été décompté/supprimé). L'overlay de stats est recalculé via
-`rebuild_state_cache`, mais l'**état du buffer de modifiers lui-même** n'est pas rétabli au tour N.
-
-**Pistes.** Soit ajouter une colonne `turn_id` (ou `applied_turn_id`) aux `Active_Modifiers` et les
-purger/rejouer au rewind comme le reste ; soit reconstruire la table à partir des events modifiers du
-`Event_Log` survivants (si les poses de modifiers sont event-sourcées). À croiser avec
-`rebuild_state_cache`.
-
-**Priorité :** moyenne — incohérence de rewind dans un cas de bord (buffs temporaires + rembobinage).
-Indépendant des Phases Hindsight (qui restent strictement turn-keyed).
-
----
-
-## TICKET-075 — Rewind ne « dé-tire » pas les `Fired_Scheduled_Events`
-
-**Découvert le 2026-06-18** (même investigation que TICKET-074).
-
-Les événements programmés se déclenchent à une minute-cible absolue ; une fois tirés, ils sont
-marqués dans **`Fired_Scheduled_Events`**, clé `(save_id, event_id)` — **sans `turn_id`**.
-`checkpoint.rewind` ne purge pas cette table. Conséquence : un événement programmé tiré à la minute
-500, si on rembobine à un tour antérieur (horloge ramenée sous 500), **reste marqué tiré** et ne se
-redéclenchera pas, alors que côté monde le temps n'a « pas encore » atteint sa minute.
-
-**Pistes.** Enregistrer le `turn_id` (ou la `in_game_time`) de déclenchement dans
-`Fired_Scheduled_Events` et purger au rewind les lignes dont le déclenchement est postérieur au tour
-cible. Vérifier le sens voulu : un saut temporel re-traversé doit-il refaire l'événement ?
-
-**Priorité :** moyenne — incohérence de rewind sur les événements programmés.
-
----
-
-## TICKET-076 — Résidu legacy `config.chronicler_interval` (tours) vs `chronicler_minutes_interval` (minutes)
-
-**Découvert le 2026-06-18** (même investigation). `AppConfig` porte **deux** champs Chronicler :
-- `chronicler_interval` (en **tours**) — **LEGACY**, plus utilisé pour le déclenchement depuis
-  TICKET-018 ; conservé pour rétro-compat des vieux settings, et `collect_config` le préserve tel quel.
-- `chronicler_minutes_interval` (en **minutes**) — le vrai déclencheur (`ChroniclerEngine.should_trigger`
-  franchit un palier de minutes de jeu).
-
-Le champ mort entretient l'impression qu'il existe « deux systèmes de temps » (tours vs minutes) alors
-qu'il n'y en a qu'un (Timeline = un pont `turn_id ↔ in_game_time`). À **retirer** (ou commenter
-clairement comme purement historique) après un grep confirmant qu'aucun chemin de déclenchement ne le
-lit plus. Attention à la migration des settings existants (ne pas casser le chargement).
-
-**Priorité :** basse — nettoyage/clarté, pas un bug fonctionnel.
-
----
-
-## TICKET-077 — Consolidation des croyances : prompt LLM non borné
-
-**Découvert le 2026-06-19** (QA du chantier Hindsight).
-
-`workers/fact_worker.py::_run_consolidation` charge **toutes** les croyances de la save
-(`get_observations(..., max_turn_id=turn_id)` sans `limit`) et `axiom/consolidate.py::_build_messages`
-les liste **toutes** (`_obs_line` par croyance). Sur une longue campagne le prompt de consolidation
-enfle en O(total croyances) à **chaque passe** → coût LLM croissant **et** qualité dégradée (le modèle
-est noyé sous des croyances hors-sujet). Hindsight scope la consolidation par sujet/tags.
-
-**Correctif appliqué.** Scoper `existing` aux croyances pertinentes pour le batch : sujets cités par
-les nouveaux faits (entities/who/subject) + complément des plus récemment mises à jour, le tout plafonné
-(`consolidate(..., max_existing=N)`). Le filtre se fait côté faits (déjà en mémoire), pas de scan SQL
-supplémentaire.
-
-**Priorité :** haute — c'est le poste de coût le plus lourd du mode « living » en usage réel.
-
----
-
-## TICKET-078 — BM25 reconstruit depuis tout le corpus à chaque requête
-
-**Découvert le 2026-06-19** (QA Hindsight).
-
-`axiom/memory.py::query` (bras lexical) appelle `collection.get(tous les docs)` puis tokenise tout le
-corpus et reconstruit un `BM25Okapi` à **chaque** appel — plusieurs fois par tour. O(N) par requête où
-N = nb de chunks de la save. Hindsight s'appuie sur un index `tsvector` Postgres persistant.
-
-**Correctif appliqué.** Cache d'index BM25 par save, invalidé sur changement du nombre de chunks
-(`count()` — proxy bon marché et suffisant : nos chunks sont append-only par tour, rollback supprime →
-count change). Tokenisation + construction réutilisées tant que le corpus est stable. Dégradation
-inchangée si `rank_bm25` absent.
-
-**Priorité :** moyenne-haute — dominant en mémoire/CPU sur longues parties.
-
----
-
-## TICKET-079 — Lectures N+1 plein-table dans le fetch faits/croyances (living)
-
-**Découvert le 2026-06-19** (QA Hindsight).
-
-`arbitrator._fetch_relevant_facts/_fetch_relevant_beliefs` appellent `get_facts`/`get_observations`
-**une fois par perso en scène**, et chaque appel fait `SELECT * FROM …` **sans `LIMIT` SQL** (le `limit`
-est appliqué en Python *après* avoir tout chargé/désérialisé). M persos ⇒ M+1 scans complets par tour.
-
-**Correctif appliqué.** (1) Pousser `LIMIT` en SQL quand il n'y a pas de filtre entité/sujet. (2) Dans
-l'arbitrator, charger les faits/croyances **une seule fois** (borné `max_turn_id`) puis prioriser
-on-scene vs récents en mémoire, au lieu d'une requête par nom.
-
-**Priorité :** moyenne.
-
----
-
-## TICKET-080 — Couplage fragile `zip(facts, new_ids)` dans fact_worker
-
-**Découvert le 2026-06-19** (QA Hindsight).
-
-`fact_worker._run_consolidation` aligne `facts` et `new_ids` par `zip`, en s'appuyant sur le fait que
-`insert_facts` ne saute **jamais** une ligne (vrai aujourd'hui car `extract_facts` a déjà retiré les
-statements vides). Si `insert_facts` venait à filtrer (déjà le cas pour un statement vide), les ids se
-désaligneraient → croyances reliées aux mauvais faits.
-
-**Correctif appliqué.** `insert_facts` renseigne `fact.fact_id`/`fact.turn_id` sur les objets `Fact`
-qu'il insère réellement et renvoie la liste alignée ; le worker n'a plus à reconstruire l'alignement.
-
-**Priorité :** basse — robustesse (pas de bug observable aujourd'hui).
-
----
-
-## TICKET-081 — Feature : `Trend` déterministe sur les croyances ✅
-
-**Découvert le 2026-06-19** (mining Hindsight `reflect/observations.py`), **implémenté le 2026-06-19**
-(⚠ non commité, `maintenance/qa-hindsight-2026-06-19/`).
-
-Hindsight calcule pour chaque observation un **trend** (`STABLE`/`STRENGTHENING`/`WEAKENING`/`NEW`/
-`STALE`) **déterministiquement** depuis la distribution temporelle de ses preuves. Notre modèle stocke
-déjà `sources=[{fact_id, turn_id}]` → calculé **sans LLM, zéro coût**, sur l'axe `turn_id` (correct au
-rewind).
-
-**Livré.** `axiom/observations.py::compute_trend(source_turns, now_turn)` + constantes `TREND_*` +
-`Observation.trend(now_turn)` (fenêtres 15/45 tours, ratio de densité récent/ancien à la Hindsight).
-L'arbitrator (`_fetch_relevant_beliefs`) annote les croyances **à signal directionnel** seulement
-(`strengthening`/`weakening`/`stale` → « … (stale) ») ; `new`/`stable` restent nus pour garder le prompt
-léger. Aucun changement de schéma (calcul à la volée). +7 tests.
-
-**Vue GUI livrée (2026-06-19)** : `ui/memory_browser.py::MemoryBrowserDialog` (lecture seule, onglets
-Croyances [avec tendance colorée] + Faits, bornés au tour courant), bouton « Explorer la mémoire… » dans
-l'onglet Mémoire des réglages (signal `view_memory_requested` → `tabletop_view.open_memory_browser`),
-i18n 24 clés ×10, tests `tests/test_memory_browser.py`. **Doc Sphinx** EN+FR mise à jour (section *Belief
-trends* dans `docs/guides/memory.md` + `.po` FR), hors notes d'API (auto). **Plus rien d'ouvert sur 081.**
-
----
-
-## TICKET-082 — Features Hindsight délibérément non portées
-
-**Recensé le 2026-06-19.** Reportées (gros périmètre, pas demandées) :
-- ~~**Modèles mentaux (§7.8)**~~ **✅ PORTÉ le 2026-06-20** (⚠ non commité,
-  `maintenance/hindsight-mental-models/`) : fiche synthétique vivante par sujet au-dessus des
-  croyances (`axiom/mental_models.py` + `axiom/reflect.py`), refresh LLM mode Vivant, rollback
-  turn-keyed, injection `Profile:` en tête, toggle GUI + onglet browser + i18n ×10 + doc EN/FR.
-  **L'agent tool-calling complet de Hindsight n'a PAS été porté** (trop lourd pour un jeu solo) —
-  on a gardé le principe (une couche synthétique régénérée), pas la boucle d'outils.
-- **Directives/persona (§7.9)** — règles impératives au LLM. **Décision (2026-06-19) : non porté**,
-  redondant avec le Basic Prompt, les personas joueur/globales et les missions de croyance (B-3).
-- **Extraction temporelle (§7.5)** — `search/temporal_extraction.py`. **Décision : non porté**,
-  peu pertinent (Axiom raisonne en temps de jeu / `turn_id`, pas en dates calendaires).
-- **`recall_boost` niveaux par bras / weighted-RRF** — tuning de déploiement multi-bras ; on a porté la
-  version simplifiée (boost additif de focus). Probablement superflu à notre échelle.
-- **`tags` filtering / scopes** — rejoint TICKET-077 (scoper la consolidation).
-
-**Priorité :** basse — backlog d'idées.
-
----
-
 ## TICKET-083 — Croyances : fuite temporelle au rewind (`created_turn_id`)
 
 **Découvert le 2026-06-19** (2ᵉ passe QA du chantier Hindsight).
@@ -563,3 +347,98 @@ l'index (clé identique), invalidés par la même empreinte — au prix d'un peu
 sur le corpus lore figé ; négligeable sur petits volumes. À ne faire que si un profilage le justifie.
 
 **Priorité :** très basse — micro-optimisation. Le fix TICKET-078 (le vrai poste de coût) tient.
+
+---
+
+## TICKET-086 — `fired_turn_id` perdu à l'extraction/export et au fork ✅
+
+**Découvert le 2026-06-21** (QA système fichiers/univers/saves), **corrigé le même jour**
+(⚠ non commité, `maintenance/qa/qa-fs-univers-saves-2026-06-21/`).
+
+TICKET-075 a ajouté la colonne `fired_turn_id` à `Fired_Scheduled_Events` (pour que le rewind
+« dé-tire » les events tirés après le tour cible : `DELETE … WHERE fired_turn_id > target`). Mais deux
+chemins de copie codaient la liste de colonnes **en dur** sans la suivre → `fired_turn_id` retombait à
+`0` (défaut), donc le rewind ne dé-tirait plus rien (`0 > target` toujours faux) :
+- `axiom/savestore.py::_RUNTIME_COPY` — utilisé par `extract_save` (donc `pack_save`/`.axiomsave`
+  d'une save **embarquée legacy**). Repro confirmée : seed `fired_turn_id=7` → extrait à `0`.
+- `axiom/saves.py::fork_save` — `SELECT event_id` / `INSERT (save_id, event_id)` sans la colonne ;
+  utilisé par `duplicate_save` d'une save embarquée.
+
+**Correctif.** Les deux chemins propagent `fired_turn_id` ; `fork_save` appelle d'abord
+`ensure_fired_event_turn_column` (robuste sur vieille base). **Test de garde anti-dérive** ajouté
+(`tests/test_savestore.py::TestCopyListSchemaCoherence`) : `_DEFINITION_COPY`/`_RUNTIME_COPY` doivent
+matcher exactement le schéma vivant + régression `fired_turn_id` sur `extract_save`. 160 tests verts.
+
+**Priorité :** moyenne — perte de donnée silencieuse cassant TICKET-075 sur les chemins export/fork.
+
+---
+
+## TICKET-087 — Cache compilé Myria commité (gitignoré mais tracké) + schéma périmé
+
+**Découvert le 2026-06-21** (QA fs). `universes/Myria/.axiom-cache/universe.db` (+ `cache_hash.txt`)
+sont **suivis par git** alors qu'ils matchent une règle `.gitignore` (un fichier déjà tracké ignore
+le gitignore). Le cache commité date du 2026-06-15, **avant** l'ajout de `fired_turn_id` → schéma
+périmé. Comme `cache_hash.txt` matche la source, `compile_universe` (sans `force`) **ne le reconstruit
+jamais**.
+
+**Impact.** Nul pour l'utilisateur final : `core/bundled_universes.py` exclut `.axiom-cache` à la
+copie (`ignore_patterns`) → recompile propre dans la bibliothèque. N'affecte que le dev qui lance
+depuis le repo (cache stale) et l'hygiène du dépôt (binaire 221 Ko commité contre l'intention).
+
+**Piste.** `git rm --cached universes/Myria/.axiom-cache/universe.db universes/Myria/.axiom-cache/cache_hash.txt`
+(désuivre, l'utilisateur gère git) — le cache se régénère à la première compilation. Vérifier qu'aucun
+autre univers bundlé n'a un cache tracké.
+
+**Priorité :** basse — hygiène repo.
+
+---
+
+## TICKET-088 — `fork_save` ne copie pas la mémoire living ni les snapshots
+
+**Découvert le 2026-06-21** (QA fs, même classe que TICKET-086). `axiom/saves.py::fork_save` copie
+Saves/Event_Log/Active_Modifiers/Fired_Scheduled_Events/Items_Inventory/Timeline, et reconstruit le
+State_Cache. Il **ne copie pas** : `Facts`, `Observations`, `Mental_Models` (mémoire mode living),
+ni `Snapshots`/`Modifier_Snapshots` (snapshots de rewind). Forker une save **embarquée** (via
+`duplicate_save` legacy) perd donc les faits/croyances/modèles mentaux accumulés et empêche un rewind
+correct dans la copie.
+
+**Portée.** `fork_save` ne sert qu'aux saves embarquées legacy (les saves séparées sont copiées
+fichier→fichier et gardent tout). Impact réel : legacy + living + duplication.
+
+**Piste.** Étendre `fork_save` aux tables manquantes (en gérant leur création paresseuse : `Facts`/
+`Observations`/`Mental_Models` peuvent être absentes d'une vieille base), ou documenter la limite.
+
+**Priorité :** basse-moyenne.
+
+---
+
+## TICKET-089 — `package._RUNTIME_TABLES` omet les tables living
+
+**Découvert le 2026-06-21** (QA fs). `axiom/package.py::_runtime_free_cache_copy` purge les tables
+runtime du cache embarqué dans un `.axiom` (« définition seule ») via `_RUNTIME_TABLES`. Cette liste
+n'inclut **pas** `Facts`/`Observations`/`Mental_Models`. Si une save embarquée legacy a joué en mode
+living, sa mémoire (potentiellement du contenu de partie) pourrait voyager dans une archive censée ne
+porter que la définition.
+
+**Piste.** Ajouter les trois tables à `_RUNTIME_TABLES` (purge conditionnelle : déjà gardée par
+`SELECT 1 FROM sqlite_master`).
+
+**Priorité :** basse — fuite de données de partie dans un export de définition (cas legacy + living).
+
+---
+
+## TICKET-090 — `paths` : `UNIVERSES_DIR` figé, pas de `get_universes_dir()`
+
+**Découvert le 2026-06-21** (QA fs). `axiom/paths.py` expose des getters override-aware pour les
+saves/vector/assets (`get_saves_dir`/`get_vector_dir`/`get_assets_dir`, sensibles à `AXIOM_DATA_DIR`
+et `configure(data_dir=)`), mais **pas pour les univers** : seul le constant `UNIVERSES_DIR` existe,
+gelé à l'import sur `~/AxiomAI/universes`. Conséquence : un embarqueur/test qui isole via
+`AXIOM_DATA_DIR` déplace saves+vector mais **pas** la bibliothèque d'univers (asymétrie). La fixture
+de test `isolated_axiom_data_dir` n'isole d'ailleurs pas les univers — les tests qui écrivent dans la
+bibliothèque doivent passer un `library_dir` explicite (ce qu'ils font aujourd'hui).
+
+**Piste.** Ajouter `get_universes_dir()` (= `_data_root()/universes`) et l'utiliser dans
+`compile_cmd`/`play`/`bundled_universes`/`hub_view` ; garder `UNIVERSES_DIR` en alias de compat.
+Décider si les univers DOIVENT suivre `data_dir` (cohérence) ou rester volontairement machine-globaux.
+
+**Priorité :** basse — cohérence/archi, pas de bug pour l'app (qui n'override jamais `data_dir`).

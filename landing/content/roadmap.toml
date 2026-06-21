@@ -23,11 +23,6 @@ desc = "Fix the confusion between the turn-based system and in-game time. This i
 
 [[item]]
 status = "next"
-title = "Save system &amp; universe-format QC"
-desc = "Harden the save format and the universe file form, with proper quality control."
-
-[[item]]
-status = "next"
 title = "Plugin system"
 desc = "Modify Axiom yourself. Add your own features and rules cleanly."
 
@@ -88,6 +83,12 @@ title = "Our own database · <code>sQript</code>"
 desc = "Replace SQL with a purpose-built database language &amp; format. Under design."
 
 # ------------------------------------------------------------ RECENTLY DONE ---
+[[item]]
+status = "done"
+date = "2026-06"
+title = "Save &amp; universe system QC"
+desc = "End-to-end quality pass on Universe-as-Code, separate saves and packaging; fixed a rewind bug and locked the save format against schema drift."
+
 [[item]]
 status = "done"
 date = "2026-06"

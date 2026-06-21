@@ -90,5 +90,5 @@ api/index
 
 Axiom Engine is free software, licensed under the
 [GNU AGPL v3 or later](https://www.gnu.org/licenses/agpl-3.0.html); see the
-`NOTICE` file for the attribution requirement ("Based on Axiom AI by 17h59 and
+`NOTICE` file for the attribution requirement ("Based on Axiom AI by Pinpanicaille and
 Frosoore").

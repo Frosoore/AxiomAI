@@ -12,10 +12,10 @@
 ## 2026-06-11 — État final : AGPL + NOTICE + liens PyPI
 
 - `LICENSE` : texte **AGPL v3 d'origine restauré** (`git restore`, 661 lignes, inchangé vs HEAD).
-- `NOTICE` : reformulé pour l'AGPL — copyright « The Axiom AI authors: 17h59 and Frosoore »,
+- `NOTICE` : reformulé pour l'AGPL — copyright « The Axiom AI authors: Pinpanicaille and Frosoore »,
   URL du projet, terme additionnel **AGPLv3 §7(b)** (clause vérifiée présente à la ligne 357
   du LICENSE) : toute redistribution doit préserver le NOTICE et l'attribution
-  « Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by 17h59 and Frosoore ».
+  « Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore ».
 - `pyproject.toml` : `license = "AGPL-3.0-or-later"` (revenu), `license-files =
   ["LICENSE", "NOTICE"]` (nouveau), **`[project.urls]`** Homepage/Repository/Issues →
   `github.com/Frosoore/AxiomAI` (encadré « Project links » de la page PyPI — demande

@@ -31,6 +31,8 @@ items = [
     "Built-in self-diagnostic, reachable from the app (Help → Diagnostic) and standalone (<code>python -m tools.diagnostic --gui</code>).",
     "Zero-config first launch with temporary built-in keys for testers (valid until June 30).",
     "A default universe so new testers have something to play immediately.",
+    "Player-facing touches: a custom wallpaper, in-place editing of any chat message, your own basic and negative prompts, and an editable adventure start time.",
+    "A quality-control pass hardened the save and universe file system, plus a guard test that locks the save format against future schema drift.",
 ]
 
 [[update.section]]
@@ -39,6 +41,7 @@ kind = "fixed"
 items = [
     "Windows: a class of file-lock crashes (connections that weren't being closed) is resolved; the suite is green on Windows.",
     "First-turn freeze caused by an offline embedding model reaching out to the network on load.",
+    "Saving, exporting or duplicating a game no longer drops the data the rewind needs to re-trigger scheduled world events (caught during the save-system QC).",
 ]
 
 [[update.section]]

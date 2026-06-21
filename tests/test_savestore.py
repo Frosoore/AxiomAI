@@ -605,3 +605,73 @@ class TestAssetsLifecycle:
         removed = truncate_save_assets(info["save_id"], 2)
         assert removed == 2
         assert sorted(f.name for f in d.glob("*.png")) == ["turn_1.png", "turn_2.png"]
+
+
+class TestCopyListSchemaCoherence:
+    """Garde anti-dérive : les listes de colonnes copiées par `savestore` doivent
+    rester alignées sur le schéma vivant (`create_universe_db`). Un ajout de
+    colonne au schéma sans mise à jour de ces listes = perte de donnée silencieuse
+    à l'extraction/export/duplication (cf. QA 2026-06-21 : `fired_turn_id`)."""
+
+    def _schema_columns(self, tmp_path: Path) -> dict[str, set[str]]:
+        from axiom.schema import create_universe_db
+
+        db = tmp_path / "schema_probe.db"
+        create_universe_db(str(db))
+        out: dict[str, set[str]] = {}
+        with closing(sqlite3.connect(str(db))) as conn:
+            tables = [
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table';"
+                ).fetchall()
+            ]
+            for t in tables:
+                out[t] = {r[1] for r in conn.execute(f"PRAGMA table_info({t});")}
+        return out
+
+    def test_definition_copy_matches_schema(self, tmp_path: Path):
+        from axiom.savestore import _DEFINITION_COPY
+
+        schema = self._schema_columns(tmp_path)
+        for table, cols in _DEFINITION_COPY:
+            assert table in schema, f"{table} absente du schéma"
+            assert set(cols) == schema[table], (
+                f"{table} : liste de copie {sorted(cols)} != schéma {sorted(schema[table])}"
+            )
+
+    def test_runtime_copy_matches_schema(self, tmp_path: Path):
+        from axiom.savestore import _RUNTIME_COPY
+
+        schema = self._schema_columns(tmp_path)
+        for table, cols in _RUNTIME_COPY:
+            assert table in schema, f"{table} absente du schéma"
+            assert set(cols) == schema[table], (
+                f"{table} : liste de copie {sorted(cols)} != schéma {sorted(schema[table])}"
+            )
+
+    def test_extract_save_preserve_fired_turn_id(self, universe_db: Path):
+        """Régression : `fired_turn_id` doit survivre à l'extraction d'une save
+        embarquée legacy (sinon le rewind ne « dé-tire » plus les events)."""
+        from axiom.savestore import extract_save
+
+        with closing(sqlite3.connect(str(universe_db))) as conn:
+            conn.execute(
+                "INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) "
+                "VALUES ('evt1', 100, 'T', 'D');"
+            )
+            conn.execute(
+                "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) "
+                "VALUES ('legacy_fire', 'L', 'Normal', '2026-01-01');"
+            )
+            conn.execute(
+                "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) "
+                "VALUES ('legacy_fire', 'evt1', 7);"
+            )
+            conn.commit()
+
+        extracted = extract_save(universe_db, "legacy_fire")
+        with closing(sqlite3.connect(str(extracted))) as conn:
+            rows = conn.execute(
+                "SELECT fired_turn_id FROM Fired_Scheduled_Events WHERE event_id = 'evt1';"
+            ).fetchall()
+        assert rows == [(7,)], f"fired_turn_id perdu à l'extraction: {rows}"

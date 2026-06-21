@@ -2,7 +2,7 @@
 
 - [x] (annulé) Passage GPL v3 — fait puis reverté sur décision utilisateur (malentendu AGPL clarifié)
 - [x] `LICENSE` : texte AGPL v3 d'origine restauré (`git restore`)
-- [x] `NOTICE` : copyright (17h59 & Frosoore) + terme additionnel **AGPLv3 §7(b)** imposant la citation de l'origine
+- [x] `NOTICE` : copyright (Pinpanicaille & Frosoore) + terme additionnel **AGPLv3 §7(b)** imposant la citation de l'origine
 - [x] `pyproject.toml` : `license = "AGPL-3.0-or-later"`, `license-files = ["LICENSE", "NOTICE"]`
 - [x] `pyproject.toml` : `[project.urls]` Homepage/Repository/Issues → github.com/Frosoore/AxiomAI
 - [x] `README.md` : section License (AGPL + mention attribution)

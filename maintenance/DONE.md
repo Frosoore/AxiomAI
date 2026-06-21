@@ -13,6 +13,47 @@ Récapitulatifs des tickets traités. Les tickets restent numérotés dans
 
 ---
 
+## Lot Hindsight 072→082 — clos 2026-06-19/20 (commités)
+
+Cluster issu du chantier Hindsight (mémoire moteur). Tous **commités** (072→076 :
+`18d52fb`/`2965279` ; 077→081 : `c97633e` ; 082-7.8 : `ba71d81`). Détails par dossier dans
+`maintenance/hindsight-*/`, `ticket-072-lore-semantic/`, `qa-hindsight-2026-06-19/`.
+
+- **TICKET-072 — Lore Book sémantique + link expansion.** `VectorMemory.sync_lore` (embed turn 0,
+  idempotent) + `query(chunk_type/exclude_chunk_type, entry_id)` ; arbitrator `_fetch_relevant_lore`
+  sémantique → `_expand_lore` (catégorie/mots-clés partagés, budget 2) → repli mots-clés si embedding
+  indispo ; le lore survit au rewind. Suite 908 verte, doc Sphinx EN+FR.
+- **TICKET-073 — Focus boost RAG.** `focus_terms` de `memory.query` enrichis des noms des persos en
+  scène (lecture id→nom avant la requête, cap 5).
+- **TICKET-074 — Rewind restaure les `Active_Modifiers`.** Table `Modifier_Snapshots` +
+  `snapshot_modifiers`/`rollback_modifiers` (option A : snapshot par tour) → buffs/débuffs rétablis à
+  l'état du tour cible.
+- **TICKET-075 — Rewind « dé-tire » les `Fired_Scheduled_Events`.** Colonne `fired_turn_id` + purge
+  des lignes tirées après le tour cible.
+- **TICKET-076 — Résidu legacy retiré.** Champ mort `config.chronicler_interval` supprimé
+  (`load_config` filtre les clés inconnues → vieux settings OK).
+- **TICKET-077 — Consolidation bornée.** `consolidate(..., max_existing=N)` : on ne passe plus toutes
+  les croyances au LLM, seulement celles pertinentes pour le batch (sujets des nouveaux faits +
+  récentes). Poste de coût n°1 du mode living maîtrisé.
+- **TICKET-078 — Cache d'index BM25 par save.** Invalidé sur changement du `count()` de chunks ;
+  tokenisation + IDF réutilisées tant que le corpus est stable. Dégradation inchangée sans `rank_bm25`.
+- **TICKET-079 — Lectures faits/croyances optimisées.** `LIMIT` poussé en SQL (sans filtre entité) +
+  chargement unique borné `max_turn_id`, priorisation on-scene/récents en mémoire (fin du M+1 scan/tour).
+- **TICKET-080 — Alignement fait↔id robuste.** `insert_facts` renseigne `fact_id`/`turn_id` sur les
+  `Fact` réellement insérés et renvoie la liste alignée (fin du `zip(facts, new_ids)` fragile).
+- **TICKET-081 — `Trend` déterministe sur les croyances.** `observations.compute_trend` (fenêtres
+  15/45 tours, ratio de densité ; zéro LLM, axe `turn_id` → correct au rewind), injection prompt sur
+  signal directionnel seulement, **vue GUI** « Explorer la mémoire » (`ui/memory_browser.py`), doc
+  Sphinx EN+FR. +7 tests.
+- **TICKET-082 — Features Hindsight non portées.** **§7.8 modèles mentaux : PORTÉ** (2026-06-20,
+  `hindsight-mental-models/` — `axiom/mental_models.py` + `axiom/reflect.py`, refresh LLM mode Vivant,
+  rollback turn-keyed, injection `Profile:`, toggle GUI + onglet browser + i18n ×10 + doc) **sans**
+  l'agent tool-calling complet. **§7.9 directives/persona** et **§7.5 extraction temporelle** :
+  **fermés wontfix** (redondants avec Basic Prompt/personas/missions B-3 ; Axiom raisonne en `turn_id`,
+  pas en dates calendaires). Restes QA Hindsight 2 toujours ouverts → TICKET-083/084/085 (PENDING).
+
+---
+
 ## TICKET-071 — Fin de la classe « connexion sqlite non fermée » (workers)
 
 **Statut :** clos le 2026-06-14 (branche `dev-win-compat`).

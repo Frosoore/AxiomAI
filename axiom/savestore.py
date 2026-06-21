@@ -413,7 +413,7 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Snapshots", ("save_id", "turn_id", "state_json")),
     ("Modifier_Snapshots", ("save_id", "turn_id", "state_json")),
     ("Timeline", ("event_id", "save_id", "turn_id", "in_game_time", "description")),
-    ("Fired_Scheduled_Events", ("save_id", "event_id")),
+    ("Fired_Scheduled_Events", ("save_id", "event_id", "fired_turn_id")),
     ("Items_Inventory", ("save_id", "entity_id", "item_id", "quantity")),
     ("Active_Modifiers", ("modifier_id", "save_id", "entity_id", "stat_key", "delta", "minutes_remaining")),
     # Living-mode memory (Phase 2 facts, Phase 3 beliefs) travels with the save.
