@@ -301,6 +301,20 @@ class Session:
                 from axiom import logger
                 logger.warning(f"Contextual image generation failed: {img_err}")
 
+        # Update last_updated in Saves table to current UTC time
+        try:
+            from datetime import datetime, timezone
+            from axiom.schema import get_connection
+            now_utc = datetime.now(timezone.utc).isoformat()
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
+                    (now_utc, self._save_id)
+                )
+                conn.commit()
+        except Exception as db_err:
+            logger.warning(f"Failed to update last_updated for save {self._save_id}: {db_err}")
+
         _emit(on_status, "Ready.")
         return result
 
@@ -361,6 +375,21 @@ class Session:
         # rejoue jusqu'au même numéro de tour (TICKET-048).
         from axiom.savestore import truncate_assets_in
         truncate_assets_in(self._data_root / "assets" / self._save_id, self._turn_id)
+
+        # Update last_updated in Saves table to current UTC time
+        try:
+            from datetime import datetime, timezone
+            from axiom.schema import get_connection
+            now_utc = datetime.now(timezone.utc).isoformat()
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
+                    (now_utc, self._save_id)
+                )
+                conn.commit()
+        except Exception as db_err:
+            logger.warning(f"Failed to update last_updated on rewind for save {self._save_id}: {db_err}")
+
         return summary
 
     def list_checkpoints(self) -> list[int]:

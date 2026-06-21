@@ -805,3 +805,11 @@ start_minute = "Minuto de início da aventura:"
 month_names_label = "Nomes dos meses:"
 preview_start = "Visualização de início:"
 
+# --- Saves sorting ---
+sort_by = "Ordenar por:"
+sort_last_updated = "Última atualização"
+sort_creation_date = "Data de criação"
+doc_setup_sort_saves_t = "Ordenar salvamentos"
+doc_setup_sort_saves = "Altera a ordem de classificação da lista de jogos salvos. Você pode ordenar os salvamentos pela data da última atualização ou pela data de criação inicial."
+
+

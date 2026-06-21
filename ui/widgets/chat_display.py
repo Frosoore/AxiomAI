@@ -82,6 +82,44 @@ class ChatDisplayWidget(QWidget):
     # the UI filter must know both or the raw JSON leaks into the chat.
     _JSON_FENCES = (("~~~json", "~~~"), ("```json", "```"))
 
+    def strip_json_from_text(self, text: str) -> str:
+        if not text:
+            return ""
+        result = []
+        idx = 0
+        n = len(text)
+        while idx < n:
+            matched_opener = None
+            matched_closer = None
+            for open_fence, close_fence in self._JSON_FENCES:
+                if text.startswith(open_fence, idx):
+                    matched_opener = open_fence
+                    matched_closer = close_fence
+                    break
+            if matched_opener is None:
+                if idx == 0 and text.startswith("{"):
+                    matched_opener = "{"
+                    matched_closer = None
+                elif text.startswith("\n{", idx):
+                    matched_opener = "\n{"
+                    matched_closer = None
+            if matched_opener is not None:
+                idx += len(matched_opener)
+                if matched_closer is not None:
+                    close_pos = text.find(matched_closer, idx)
+                    if close_pos != -1:
+                        idx = close_pos + len(matched_closer)
+                        if idx < n and text[idx] == "\n":
+                            idx += 1
+                    else:
+                        break
+                else:
+                    break
+            else:
+                result.append(text[idx])
+                idx += 1
+        return "".join(result).rstrip()
+
     _IMG_REGEX = re.compile(
         r'!\[.*?\]\((https?://[^\)]+)\)'              # ![alt](url)
         r'|\[.*?\]\((https?://[^\)]+\.(?:png|jpg|jpeg|gif|webp))\)' # [alt](url to image)
@@ -528,7 +566,8 @@ class ChatDisplayWidget(QWidget):
                         text_to_print = str(payload)
 
                     self.append_assistant_separator()
-                    self._insert_instant_parsed_text(text_to_print)
+                    clean_text = self.strip_json_from_text(text_to_print)
+                    self._insert_instant_parsed_text(clean_text)
 
                     # If assets_dir is provided, check if a generated image exists for this turn_id
                     if assets_dir:

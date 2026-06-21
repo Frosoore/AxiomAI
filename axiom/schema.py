@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS Saves (
     player_name    TEXT NOT NULL,
     difficulty     TEXT NOT NULL CHECK(difficulty IN ('Normal', 'Hardcore', 'Companion')),
     last_updated   TEXT NOT NULL,
-    player_persona TEXT NOT NULL DEFAULT ''
+    player_persona TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -576,10 +577,10 @@ def migrate_entities_origin_column(db_path: str) -> bool:
 
 
 def migrate_saves_table(db_path: str) -> None:
-    """Add the player_persona column to an existing Saves table if absent.
+    """Add the player_persona and created_at columns to an existing Saves table if absent.
 
     Idempotent — safe to call on databases provisioned before Phase 5.
-    Silently succeeds if the column already exists.
+    Silently succeeds if the columns already exist.
 
     Args:
         db_path: Path to an existing universe .db file.
@@ -592,6 +593,18 @@ def migrate_saves_table(db_path: str) -> None:
         try:
             conn.execute(
                 "ALTER TABLE Saves ADD COLUMN player_persona TEXT NOT NULL DEFAULT '';"
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+        try:
+            conn.execute(
+                "ALTER TABLE Saves ADD COLUMN created_at TEXT NOT NULL DEFAULT '';"
+            )
+            conn.execute(
+                "UPDATE Saves SET created_at = last_updated WHERE created_at = '';"
             )
             conn.commit()
         except sqlite3.OperationalError as exc:

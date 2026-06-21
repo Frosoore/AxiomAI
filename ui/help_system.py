@@ -44,6 +44,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     "setup": (
         "tab_saves",
         "saves_list",
+        "sort_saves",
         "import_save",
         "export_save",
         "duplicate_save",

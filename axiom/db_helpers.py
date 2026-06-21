@@ -157,9 +157,9 @@ def create_new_save(
     now = datetime.now(timezone.utc).isoformat()
     with get_connection(db_path) as conn:
         conn.execute(
-            "INSERT INTO Saves (save_id, player_name, difficulty, last_updated, player_persona) "
-            "VALUES (?, ?, ?, ?, ?);",
-            (save_id, player_name, difficulty, now, player_persona),
+            "INSERT INTO Saves (save_id, player_name, difficulty, last_updated, player_persona, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?);",
+            (save_id, player_name, difficulty, now, player_persona, now),
         )
         conn.commit()
     return save_id
@@ -196,7 +196,7 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_indexes(db_path)
         with get_connection(db_path) as conn:
             rows = conn.execute(
-                "SELECT save_id, player_name, difficulty, last_updated, player_persona "
+                "SELECT save_id, player_name, difficulty, last_updated, player_persona, created_at "
                 "FROM Saves ORDER BY last_updated DESC;"
             ).fetchall()
         return [
@@ -206,6 +206,7 @@ def load_saves(db_path: str) -> list[dict]:
                 "difficulty": r["difficulty"],
                 "last_updated": r["last_updated"],
                 "player_persona": r["player_persona"],
+                "created_at": r["created_at"],
             }
             for r in rows
         ]

@@ -805,3 +805,11 @@ start_minute = "冒险开始时间 (分钟):"
 month_names_label = "月份名称:"
 preview_start = "开始预览:"
 
+# --- Saves sorting ---
+sort_by = "排序方式:"
+sort_last_updated = "最后更新时间"
+sort_creation_date = "创建时间"
+doc_setup_sort_saves_t = "排序存档"
+doc_setup_sort_saves = "更改存档列表的排序方式。您可以按最后更新时间或初始创建日期进行排序。"
+
+

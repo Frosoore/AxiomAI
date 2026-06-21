@@ -29,5 +29,7 @@
 - `ui/widgets/chat_display.py` & `ui/tabletop_view.py` (Intégration UI chat)
 - `feature-custom-wallpaper` (Fonctionnalité de fond d'écran personnalisé, toutes langues, tests OK)
 - `feature-edit-start-date` (Adventure start date/time customization in Creator Studio, 10 languages localized, tests OK, pending commit)
+- `feature-sort-saves` (Saves sorting by last updated / creation date in launch lobby view, 10 languages localized, tests OK, pending commit)
+
 
 

@@ -804,3 +804,11 @@ start_minute = "Startminute des Abenteuers:"
 month_names_label = "Monatsnamen:"
 preview_start = "Start-Vorschau:"
 
+# --- Saves sorting ---
+sort_by = "Sortieren nach:"
+sort_last_updated = "Zuletzt aktualisiert"
+sort_creation_date = "Erstellungsdatum"
+doc_setup_sort_saves_t = "Spielstände sortieren"
+doc_setup_sort_saves = "Ändert die Sortierreihenfolge der Spielstände. Sie können die Spielstände nach der letzten Aktualisierung oder nach dem ursprünglichen Erstellungsdatum sortieren."
+
+

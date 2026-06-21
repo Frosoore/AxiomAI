@@ -116,3 +116,39 @@ def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path,
     assert view._history[0]["turn_id"] == 1
     assert view._history[0]["event_type"] == "user_input"
     assert view._history[0]["payload"] == "My user action"
+
+
+def test_chat_display_strips_json_on_rebuild(qtbot):
+    widget = ChatDisplayWidget()
+    qtbot.addWidget(widget)
+
+    raw_text = (
+        "Hello player!\n"
+        "~~~\n"
+        "You feel a cold breeze.\n"
+        "~~~\n"
+        "~~~json\n"
+        "{\n"
+        '  "state_changes": [],\n'
+        '  "inventory_changes": [],\n'
+        '  "narrative_events": ["'
+    )
+
+    history = [
+        {
+            "event_type": "narrative_text",
+            "payload": raw_text,
+            "turn_id": 1
+        }
+    ]
+
+    widget.rebuild_from_history(history)
+    html = widget._narrative_display.toHtml()
+
+    assert "Hello player!" in html
+    assert "You feel a cold breeze." in html
+    assert "state_changes" not in html
+    assert "inventory_changes" not in html
+    assert "narrative_events" not in html
+    assert "~~~json" not in html
+

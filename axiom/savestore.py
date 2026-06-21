@@ -701,10 +701,12 @@ def duplicate_save(
         # Si le fichier portait d'autres saves (forks CLI dans le même fichier),
         # la copie ne garde que la partie dupliquée.
         conn.execute("DELETE FROM Saves WHERE save_id != ?;", (new_id,))
+        from datetime import timezone
+        now_str = datetime.now(timezone.utc).isoformat()
         conn.execute(
-            "UPDATE Saves SET player_name = COALESCE(?, player_name), last_updated = ? "
+            "UPDATE Saves SET player_name = COALESCE(?, player_name), last_updated = ?, created_at = ? "
             "WHERE save_id = ?;",
-            (player_name, datetime.now().isoformat(), new_id),
+            (player_name, now_str, now_str, new_id),
         )
         conn.commit()
     finally:

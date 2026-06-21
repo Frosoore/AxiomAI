@@ -806,3 +806,11 @@ start_minute = "모험 시작 시간 (분):"
 month_names_label = "월 이름:"
 preview_start = "시작 미리보기:"
 
+# --- Saves sorting ---
+sort_by = "정렬 기준:"
+sort_last_updated = "최근 업데이트"
+sort_creation_date = "생성일"
+doc_setup_sort_saves_t = "저장 파일 정렬"
+doc_setup_sort_saves = "저장 파일 목록의 정렬 순서를 변경합니다. 최근 업데이트 시간 또는 최초 생성일을 기준으로 정렬할 수 있습니다."
+
+

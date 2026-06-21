@@ -179,6 +179,19 @@ class SetupView(QWidget):
         from ui.help_system import doc
 
         layout = QVBoxLayout(self._saves_tab)
+
+        # Sort saves layout
+        sort_layout = QHBoxLayout()
+        self._sort_label = QLabel(tr("sort_by"))
+        self._sort_combo = doc(QComboBox(), "setup.sort_saves")
+        self._sort_combo.addItem(tr("sort_last_updated"), "last_updated")
+        self._sort_combo.addItem(tr("sort_creation_date"), "created_at")
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        sort_layout.addWidget(self._sort_label)
+        sort_layout.addWidget(self._sort_combo)
+        sort_layout.addStretch()
+        layout.addLayout(sort_layout)
+
         self._saves_list = doc(QListWidget(), "setup.saves_list")
         self._saves_list.setStyleSheet("font-size: 14px;")
         self._saves_list.setSelectionMode(QListWidget.ExtendedSelection)
@@ -448,6 +461,12 @@ class SetupView(QWidget):
             if data:
                 self._difficulty_combo.setItemText(i, tr(data.lower()))
 
+        # Translate sorting controls
+        self._sort_label.setText(tr("sort_by"))
+        self._sort_combo.setItemText(0, tr("sort_last_updated"))
+        self._sort_combo.setItemText(1, tr("sort_creation_date"))
+        self._display_saves()
+
     def load_universe(self, db_path: str) -> None:
         self._db_path = db_path
         self._save_id = None
@@ -490,18 +509,70 @@ class SetupView(QWidget):
 
     @Slot(list)
     def _on_saves_loaded(self, saves: list[dict]) -> None:
-        self._saves_list.clear()
-        for s in saves:
-            label = f"{s['player_name']} ({s['difficulty']}) - {s['last_updated'][:10]}"
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, s)
-            self._saves_list.addItem(item)
+        self._loaded_saves = saves
+        self._display_saves()
         
         # If saves exist, default to the Saves tab
         if saves:
             self._tabs.setCurrentIndex(0)
         else:
             self._tabs.setCurrentIndex(1)
+
+    @Slot(int)
+    def _on_sort_changed(self, index: int) -> None:
+        self._display_saves()
+
+    def _format_datetime(self, dt_str: str) -> str:
+        if not dt_str:
+            return ""
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(dt_str)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone()  # Convert UTC to local system time
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            if len(dt_str) >= 16:
+                return dt_str[:16].replace("T", " ")
+            return dt_str[:10]
+
+    def _display_saves(self) -> None:
+        if not hasattr(self, "_loaded_saves"):
+            return
+            
+        self._saves_list.blockSignals(True)
+        # Store selected save_ids to restore selection
+        selected_ids = {item.data(Qt.UserRole).get("save_id") for item in self._saves_list.selectedItems()}
+        
+        self._saves_list.clear()
+        
+        sort_key = self._sort_combo.currentData() or "last_updated"
+        
+        if sort_key == "created_at":
+            sorted_saves = sorted(
+                self._loaded_saves,
+                key=lambda s: s.get("created_at") or s.get("last_updated") or "",
+                reverse=True
+            )
+        else:
+            sorted_saves = sorted(
+                self._loaded_saves,
+                key=lambda s: s.get("last_updated") or "",
+                reverse=True
+            )
+            
+        for s in sorted_saves:
+            last_up = self._format_datetime(s.get("last_updated") or "")
+            created = self._format_datetime(s.get("created_at") or "")
+            label = f"{s['player_name']} ({s['difficulty']}) - {tr('sort_last_updated')}: {last_up} | {tr('sort_creation_date')}: {created}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, s)
+            self._saves_list.addItem(item)
+            if s.get("save_id") in selected_ids:
+                item.setSelected(True)
+                
+        self._saves_list.blockSignals(False)
+        self._update_save_buttons()
 
     @Slot(dict)
     def _on_universe_loaded(self, data: dict) -> None:

@@ -805,3 +805,11 @@ start_minute = "Minute de départ de l'aventure :"
 month_names_label = "Noms des mois :"
 preview_start = "Aperçu du départ :"
 
+# --- Saves sorting ---
+sort_by = "Trier par :"
+sort_last_updated = "Dernière mise à jour"
+sort_creation_date = "Date de création"
+doc_setup_sort_saves_t = "Trier les parties"
+doc_setup_sort_saves = "Modifie l'ordre de tri de la liste des sauvegardes. Vous pouvez trier les parties par date de dernière mise à jour ou par date de création initiale."
+
+

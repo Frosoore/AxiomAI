@@ -807,3 +807,11 @@ start_minute = "Adventure Start Minute:"
 month_names_label = "Month Names:"
 preview_start = "Preview Start:"
 
+# --- Saves sorting ---
+sort_by = "Sort by:"
+sort_last_updated = "Last Updated"
+sort_creation_date = "Creation Date"
+doc_setup_sort_saves_t = "Sort saves"
+doc_setup_sort_saves = "Change the sorting order of the saves list. You can sort saves by their last updated time or by their initial creation date."
+
+

@@ -805,3 +805,11 @@ start_minute = "Minuto de inicio de la aventura:"
 month_names_label = "Nombres de los meses:"
 preview_start = "Vista previa de inicio:"
 
+# --- Saves sorting ---
+sort_by = "Ordenar por:"
+sort_last_updated = "Última actualización"
+sort_creation_date = "Fecha de creación"
+doc_setup_sort_saves_t = "Ordenar partidas"
+doc_setup_sort_saves = "Cambia el orden de clasificación de la lista de partidas guardadas. Puede ordenar las partidas por su última actualización o por su fecha de creación inicial."
+
+

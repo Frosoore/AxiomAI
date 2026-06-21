@@ -805,3 +805,11 @@ start_minute = "Minuto di inizio dell'avventura:"
 month_names_label = "Nomi dei mesi:"
 preview_start = "Anteprima di inizio:"
 
+# --- Saves sorting ---
+sort_by = "Ordina per:"
+sort_last_updated = "Ultimo aggiornamento"
+sort_creation_date = "Data di creazione"
+doc_setup_sort_saves_t = "Ordina i salvataggi"
+doc_setup_sort_saves = "Modifica l'ordine di ordinamento dell'elenco dei salvataggi. È possibile ordinare i salvataggi in base all'ultimo aggiornamento o alla data di creazione iniziale."
+
+
