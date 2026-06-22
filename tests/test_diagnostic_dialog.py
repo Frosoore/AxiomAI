@@ -88,6 +88,14 @@ def dialog(monkeypatch):
     from ui.diagnostic_dialog import DiagnosticDialog
     dlg = DiagnosticDialog()
     yield dlg
+    # Deterministic teardown. A test may switch the dialog's language combo (in-memory
+    # set_language). If we only deleteLater() the dialog, the combo's currentIndexChanged
+    # → _on_language_changed stays connected until the deferred delete is processed by a
+    # *later* test's event loop, which can re-fire set_language() and leak that language
+    # into e.g. test_saves_sorting (flaky English-label assertions). So mute the combo
+    # and reject() now: finished → reload_translations() drops any override immediately.
+    dlg._lang_combo.blockSignals(True)
+    dlg.reject()
     dlg.deleteLater()
 
 

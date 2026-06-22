@@ -27,6 +27,7 @@
 | TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 |
 | TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models (mémoire living d'une save embarquée peut fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
 | TICKET-090| **`paths` : pas de `get_universes_dir()`**, `UNIVERSES_DIR` figé à l'import (insensible à `AXIOM_DATA_DIR`/`configure`) alors que saves/vector le sont → isolation asymétrique | ouvert — QA fs 2026-06-21, archi/cohérence |
+| TICKET-091| **Flake i18n inter-tests : `test_saves_sorting` casse si une langue fuite** (le `dialog` de `test_diagnostic_dialog` reste `deleteLater()`-é avec son combo de langue connecté → `set_language("ja")` peut se rejouer dans la boucle d'évènements d'un test ultérieur ; `test_saves_sorting` asserte des libellés en dur en anglais) | ✅ corrigé (⚠ non commité, 2026-06-22) — `maintenance/qa/qa-fs-univers-saves-2026-06-21/` |
 
 Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis

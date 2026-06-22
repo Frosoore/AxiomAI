@@ -3,6 +3,13 @@ from PySide6.QtCore import Qt
 from ui.setup_view import SetupView
 
 def test_saves_sorting_by_last_updated_and_creation_date(qtbot):
+    # Pin the UI language: this test asserts hardcoded English labels built via
+    # tr() ("Last Updated", "Creation Date"). Without pinning, a language left in
+    # memory by an earlier test (e.g. the diagnostic dialog's combo) would flip
+    # those strings and fail. conftest's reset_i18n_cache restores state after.
+    from core.localization import set_language
+    set_language("en")
+
     # Instantiate SetupView
     view = SetupView(main_window=None)
     qtbot.addWidget(view)

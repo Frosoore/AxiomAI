@@ -803,10 +803,17 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             new_ddl = _DDL_SAVES.replace("CREATE TABLE IF NOT EXISTS Saves", "CREATE TABLE Saves_Temp")
             conn.execute(new_ddl)
             
-            # 2. Copy data
+            # 2. Copy data. `created_at` is only present once migrate_saves_table
+            # has run (it always does before us in db_helpers), but guard anyway so
+            # a standalone call on a pre-created_at DB doesn't crash — and so the
+            # column survives the rebuild instead of being silently reset to ''.
+            saves_cols = {r[1] for r in conn.execute("PRAGMA table_info(Saves);")}
+            copy_cols = "save_id, player_name, difficulty, last_updated, player_persona"
+            if "created_at" in saves_cols:
+                copy_cols += ", created_at"
             conn.execute(
-                "INSERT INTO Saves_Temp (save_id, player_name, difficulty, last_updated, player_persona) "
-                "SELECT save_id, player_name, difficulty, last_updated, player_persona FROM Saves;"
+                f"INSERT INTO Saves_Temp ({copy_cols}) "
+                f"SELECT {copy_cols} FROM Saves;"
             )
             
             # 3. Drop original table (FKs in child tables now point to a dangling 'Saves')

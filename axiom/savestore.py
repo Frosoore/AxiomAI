@@ -407,7 +407,7 @@ def refresh_save_definition(save_db: str | Path) -> bool:
 
 # Tables runtime copiées lors de l'extraction d'une save embarquée (legacy).
 _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
-    ("Saves", ("save_id", "player_name", "difficulty", "last_updated", "player_persona")),
+    ("Saves", ("save_id", "player_name", "difficulty", "last_updated", "player_persona", "created_at")),
     ("Event_Log", ("event_id", "save_id", "turn_id", "event_type", "target_entity", "payload")),
     ("State_Cache", ("save_id", "entity_id", "stat_key", "stat_value")),
     ("Snapshots", ("save_id", "turn_id", "state_json")),

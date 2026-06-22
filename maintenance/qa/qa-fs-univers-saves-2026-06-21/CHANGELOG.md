@@ -24,6 +24,40 @@ plus les events (`DELETE … WHERE fired_turn_id > target` ne matche jamais `0`)
   (`create_universe_db`) — attrape tout futur ajout de colonne non répercuté.
 - régression dédiée : `fired_turn_id` survit à `extract_save`.
 
+## QC CI rouge (2026-06-22) — `created_at` perdu (même classe que TICKET-086)
+La feature « Last Updated and Creation Date » (commit `93acf65`) a ajouté la colonne `created_at`
+à la table `Saves` (`schema.py`), mais sans répercuter sur les chemins de copie → CI 3.11/3.12 rouge
+sur `TestCopyListSchemaCoherence::test_runtime_copy_matches_schema` (le garde anti-dérive a fait son
+job). Deux corrections :
+- `axiom/savestore.py` : `_RUNTIME_COPY` table `Saves` → ajout de `created_at` (impacte `extract_save`,
+  donc l'export `.axiomsave` d'une save embarquée legacy, qui sinon perdait silencieusement la date
+  de création).
+- `axiom/schema.py::migrate_saves_difficulty_constraint` : le rebuild `Saves_Temp` recopiait 5 colonnes
+  et **écrasait `created_at` à `''`** juste après que `migrate_saves_table` l'ait backfillé
+  (`created_at = last_updated`). Copie étendue à `created_at`, avec garde `PRAGMA table_info` au cas où
+  la migration serait appelée seule sur un DB pré-`created_at`. Round-trip vérifié (valeur préservée).
+- Suite complète verte : `953 passed`.
+
+## QC flake i18n inter-tests (2026-06-22) — TICKET-091
+Pendant la QC, `tests/test_saves_sorting.py::test_saves_sorting_by_last_updated_and_creation_date` a
+flanché une fois en suite complète (vert en isolation). **Cause racine** (≠ ordre des tests :
+`pytest-randomly` n'est même pas installé) : fuite de langue inter-tests.
+- `tests/test_diagnostic_dialog.py::test_language_combo_switches_and_reruns` bascule le combo de langue
+  du `DiagnosticDialog` sur `"ja"` (→ `set_language("ja")` en mémoire) **sans fermer le dialog** ; la
+  fixture `dialog` faisait seulement `deleteLater()`. Le dialog survit donc, **son combo toujours
+  connecté à `_on_language_changed`**, jusqu'à ce que la suppression différée soit traitée par la
+  boucle d'évènements d'un test ultérieur → un signal parasite rejoue `set_language(...)`.
+- `test_saves_sorting` asserte des libellés **en dur en anglais** (« Last Updated », « Creation Date »)
+  construits via `tr()`. Sous `"ja"` (`tr('sort_last_updated')` = « 最終更新日時 ») → échec.
+Corrections (deux niveaux) :
+- **Racine** — `tests/test_diagnostic_dialog.py` fixture `dialog` : teardown déterministe
+  (`_lang_combo.blockSignals(True)` + `reject()` → `finished`→`reload_translations()` immédiat) avant
+  `deleteLater()`. Plus aucun signal de langue parasite ne survit au test.
+- **Robustesse** — `tests/test_saves_sorting.py` : `set_language("en")` en tête de test (la fixture
+  autouse `reset_i18n_cache` restaure après). Vérifié : le test passe **même en forçant `"ja"` avant**.
+- Suite complète verte : `953 passed`. (NB : `test_vector_threading` peut segfault-flake sur cette
+  machine Python 3.14/Fedora — classe TICKET-067, sans rapport, vert en isolation et hors CI 3.11/3.12.)
+
 ## Findings reportés (non corrigés ici → PENDING)
 - **TICKET-087** : `universes/Myria/.axiom-cache/universe.db` **commité bien que gitignoré**, schéma
   périmé (pré-`fired_turn_id`) ; `compile_universe` ne le reconstruit pas (hash source inchangé).
