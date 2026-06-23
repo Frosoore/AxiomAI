@@ -38,445 +38,32 @@ avec priorité claire et descriptions techniques exploitables directement.
 - Les blocs **🎯 Quick win** sont des changements <1 jour à fort ROI.
 - Les blocs **🏗 Chantier** sont des refontes >1 semaine.
 
-### État de la codebase à date
+### État de la codebase & journal d'avancement
 
-```
-Source (Python)       : 23 903 lignes
-Tests                 :  4 584 lignes
-Langues localisation  : 10 (en, fr, es, de, it, pt, ru, zh, ja, ko)
-Tables SQLite         : 19
-Workers QThread       : 11
-Onglets Creator Studio:  9
-Backends LLM          :  3 (universal OpenAI-compat, gemini, ollama-legacy)
-```
+> **Ré-édition du 2026-06-23.** Ce document a été élagué : les sections déjà
+> livrées (Phase A complète, Pilier 1, Pilier 5, Pilier 2 + portage moteur) sont
+> remplacées par une ligne de log « ✅ FAIT ». Le détail de chaque étape livrée
+> vit dans `maintenance/README.md` (index) et `maintenance/DONE.md`. De nouvelles
+> sections, issues de l'**audit intégral de `axiom/arbitrator.py`** et de l'**audit
+> concurrentiel** du 2026-06-23, ont été ajoutées en **PARTIE VIII**.
+
+**Livré depuis la v1.0 du document (résumé) :**
+
+- ✅ **Phase A — Stabilisation** (§1 bugs bloquants, §2 bugs logiques, §3 optimisations, §4 code mort) — *terminé* (A1→A5).
+- ✅ **Pilier 1 — Moteur headless `axiom/`** (§5) + **publié sur PyPI** (`pip install axiomai-engine`).
+- ✅ **Pilier 5 — Temps causal** (§6) — Timekeeper + Chronicler en minutes in-game.
+- ✅ **Pilier 2 — Universe-as-Code** (§7) + portage moteur complet (B3/B4), CLI `axiom`, saves séparées `.axiomsave`.
+- ✅ **Hors roadmap initiale** : chantier mémoire « Hindsight » (faits / croyances / mental-models, togglables), providers cloud (Gemini / Claude / OpenAI / Fireworks / …), génération d'images (SD / ComfyUI / Gemini), i18n 10 langues, doc Sphinx + doc intégrée, préparation bêta (univers Myria, clés intégrées, diagnostic).
+
+**Restant à faire (cœur de ce document) :** Pilier 6 (plugins, §8), Pilier 4 (NPC memory + Actor Model, §9), Pilier 7 (harnais de test univers, §10), toute la Phase D visuelle (§11→16), réduction des dépendances (§17→19), hygiène/QA (§20→22), **et la PARTIE VIII** (fiabilité Arbitrator + gouvernance des coûts + veille concurrentielle).
 
 ---
 
-# PARTIE I — STABILISATION (Phase A)
-
-Avant d'ajouter de la complexité, on assainit. Cette phase ne change AUCUNE
-fonctionnalité visible — elle élimine les bugs et nettoie. **Durée estimée :
-1 semaine.**
-
-## 1. Bugs bloquants à corriger en priorité
-
-### 1.1 ⚠ `ChroniclerEngine` instancié avec un seul argument
-
-**Fichier :** `ui/tabletop_view.py:612`
-**Symptôme :** Crash garanti dès qu'on franchit le seuil `chronicler_interval`
-(50 turns par défaut).
-
-```python
-# Actuel (cassé)
-self._chronicler = ChroniclerEngine(self._db_path)
-```
-
-Mais la signature exige `llm, event_sourcer, db_path, trigger_interval`
-(`core/chronicler.py:73-79`).
-
-**Fix :**
-```python
-from database.event_sourcing import EventSourcer
-cfg = load_config()
-self._chronicler = ChroniclerEngine(
-    llm=self._llm,
-    event_sourcer=EventSourcer(self._db_path),
-    db_path=self._db_path,
-    trigger_interval=cfg.chronicler_interval,
-)
-```
-
-**Tests à ajouter :** un test d'intégration qui force `_last_chronicle_turn = 0`
-puis envoie 50 turns et vérifie qu'aucune exception ne remonte.
-
-### 1.2 ⚠ Méthode `rewind_to_checkpoint` inexistante
-
-**Fichier :** `ui/tabletop_view.py:728`
-**Symptôme :** AttributeError au moindre clic sur "Rewind" / Ctrl+Z.
-
-```python
-# Actuel (cassé)
-self._db_worker.rewind_to_checkpoint(self._save_id, target_id)
-```
-
-La méthode réelle dans `workers/db_worker.py:131` s'appelle `execute_rewind`.
-
-**Fix :** renommer l'appel en `execute_rewind`, OU exposer un alias
-`rewind_to_checkpoint` dans `DbWorker` qui délègue vers `execute_rewind`.
-
-**Recommandation :** renommer l'appel côté UI. Le nom `execute_rewind` est plus
-explicite et matche le pattern des autres méthodes (`execute_*`).
-
-### 1.3 ⚠ Suppression aveugle d'un widget au statusbar
-
-**Fichier :** `ui/main_window.py:320`
-**Symptôme :** quand l'utilisateur ferme Settings, un widget aléatoire du
-statusbar est supprimé. Bug subtil parfois invisible, parfois cassant le slider
-volume.
-
-```python
-# Actuel
-self._status_bar.removeWidget(self._status_bar.findChild(QWidget))  # Hacky, but works
-```
-
-**Fix :** mémoriser explicitement les références aux widgets ajoutés au statusbar
-dans `_setup_volume_slider`, et supprimer seulement ceux qu'on a ajoutés.
-
-```python
-# Cible
-def _setup_volume_slider(self) -> None:
-    if hasattr(self, "_volume_container"):
-        self._status_bar.removeWidget(self._volume_container)
-        self._volume_container.deleteLater()
-    # ... rest
-```
-
-(Une partie du fix est déjà là mais `_show_settings` court-circuite la logique.)
-
-### 1.4 ⚠ `tick_modifiers` ticke 1 minute fixe
-
-**Fichier :** `core/arbitrator.py:412`
-**Symptôme :** les modifiers (buffs/debuffs) n'expirent jamais correctement,
-quel que soit le temps in-game réellement écoulé.
-
-```python
-# Actuel
-self._modifier_processor.tick_modifiers(save_id)  # default = 1 minute
-```
-
-Mais le temps in-game avance souvent de 15+ minutes par tour, parfois beaucoup
-plus si l'action est un voyage.
-
-**Fix lié au Pilier 5** (temps causal) : passer le `elapsed_minutes` réel du
-tour. Cf. section 6.
-
-### 1.5 ⚠ `TimekeeperWorker` importé jamais instancié
-
-**Fichier :** `ui/tabletop_view.py:45` (import) + `:524` (hardcode).
-
-```python
-# Import présent mais inutilisé
-from workers.timekeeper_worker import TimekeeperWorker
-
-# Plus loin, dans _on_send_message :
-self._current_time += 15  # hardcoded
-```
-
-Le `TimekeeperWorker` est conçu pour analyser le narratif via LLM et estimer
-le temps écoulé. C'est du code complet, fonctionnel, mais branché à rien.
-
-**Fix lié au Pilier 5.**
-
-### 1.6 ⚠ Race condition sur les Entity_Stats en `save_full_universe`
-
-**Fichier :** `workers/db_worker.py:315-323`
-
-```python
-conn.execute("DELETE FROM Entity_Stats;")
-conn.execute("DELETE FROM Entities;")
-for e in entities:
-    conn.execute("INSERT INTO Entities ...")
-    for sk, sv in e.get("stats", {}).items():
-        conn.execute("INSERT INTO Entity_Stats ...")
-```
-
-Avec FK + ON DELETE CASCADE, `DELETE FROM Entities` cascade déjà sur
-`Entity_Stats`. Le `DELETE FROM Entity_Stats` séparé en premier est inutile et
-potentiellement bug-prone si les FKs sont temporairement off.
-
-**Fix :** supprimer la ligne `DELETE FROM Entity_Stats`. Laisser la cascade
-faire son job.
-
-**Risque associé connexe :** un renommage d'entity_id côté Creator Studio
-**perd silencieusement** tous les events de `Event_Log` qui référencent l'ancien
-ID (puisque `Event_Log.target_entity` n'a pas de FK). À documenter dans le
-schéma : `entity_id` est immuable une fois créé. Idéalement, ajouter une UI
-"Rename" qui appelle un UPDATE explicite sur Event_Log.
-
-### 1.7 ⚠ `get_translations_dict()` n'existe pas
-
-**Fichier :** `debug/test_translations.py:14` importe `get_translations_dict`
-depuis `core.localization` — mais cette fonction n'existe pas dans le fichier
-réel (vérifié, le fichier finit à `tr()`).
-
-**Fix :** ajouter dans `core/localization.py` :
-
-```python
-def get_translations_dict() -> dict:
-    """Expose the internal translations dictionary (debug/testing only)."""
-    return _TRANSLATIONS
-```
-
-### 1.8 ⚠ `CreatePlayerEntityTask` dupliquée
-
-**Fichier :** `workers/db_tasks.py:751-833`
-
-La classe est définie deux fois consécutivement. La seconde écrase la première,
-mais c'est du bruit visuel et un piège pour un mainteneur.
-
-**Fix :** supprimer la seconde définition (lignes 793-833).
-
-### 1.9 ⚠ `MapEditor` affiche "m" mais stocke "km"
-
-**Fichier :** `ui/widgets/map_editor.py:98, 118`
-
-```python
-self.text_item = QGraphicsTextItem(f"{distance}m")
-self.text_item.setPlainText(f"{distance}m")
-```
-
-Le schéma stocke `distance_km` (et le Phase 18 du Changelog l'explicite).
-L'affichage est faux d'un facteur 1000.
-
-**Fix :** remplacer `f"{distance}m"` par `f"{distance} km"`.
-
-### 1.10 ⚠ Tests dans `debug/` jamais exécutés par pytest
-
-`debug/test_db_logic.py`, `debug/test_audio_logic.py`, `debug/test_llm_logic.py`,
-`debug/test_populate_async.py` sont des `unittest.TestCase` qui :
-
-1. Ne sont pas dans `tests/` donc pytest ne les ramasse pas
-2. Utilisent `unittest.main()` au lieu de fixtures pytest
-3. Polluent `debug/` qui contient aussi de vrais scripts utilitaires
-
-**Fix :** soit les déplacer vers `tests/` et les convertir, soit les supprimer
-s'ils dupliquent des tests existants. Audit nécessaire un par un.
-
-## 2. Bugs logiques (pas crash mais comportement incorrect)
-
-### 2.1 Déduplication O(N²) dans le RulesEngine chaining
-
-**Fichier :** `core/arbitrator.py:357-368`
-
-```python
-for action in triggered_actions:
-    action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
-    if any(f"{entity_id}_{a.get('type')}_{a.get('stat')}_{a.get('value')}" == action_id
-           for a in triggered_rules):
-         continue
-```
-
-Recompose la signature à chaque comparaison. Sur des chaînes de rules avec 5
-itérations × 20 entités × 5 actions, ça scale mal.
-
-**Fix :** maintenir un `set[str]` de signatures vues, lookup en O(1).
-
-```python
-_seen_signatures: set[str] = set()
-for action in triggered_actions:
-    action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
-    if action_id in _seen_signatures:
-        continue
-    _seen_signatures.add(action_id)
-    # ... process action
-```
-
-### 2.2 Disconnect-then-reconnect du signal `rewind_complete`
-
-**Fichier :** `ui/tabletop_view.py:729, 734`
-
-À chaque rewind, le slot `_on_rewind_done` est connecté **puis déconnecté**
-dans son propre exécution. Pattern fragile si l'utilisateur lance plusieurs
-rewinds rapprochés.
-
-**Fix :** connecter le signal une fois pour toutes au setup, et utiliser un
-flag d'état `_rewind_in_progress` pour ignorer les exécutions redondantes.
-
-### 2.3 Compatibilité `Signal(dict)` mais slot `@Slot()` sans param
-
-**Fichier :** `workers/db_worker.py:46`, branché à `ui/tabletop_view.py:729`.
-
-```python
-rewind_complete = Signal(dict)
-# ...
-self._db_worker.rewind_complete.connect(self._on_rewind_done)
-# où _on_rewind_done est @Slot() sans dict
-```
-
-Marche par tolérance Qt (les args supplémentaires sont droppés), mais c'est sale.
-
-**Fix :** typer le slot proprement : `@Slot(dict) def _on_rewind_done(self, summary: dict)`.
-
-## 3. Optimisations chirurgicales (perf immediate)
-
-### 3.1 🎯 N+1 connexions SQLite dans `_fetch_effective_stats`
-
-**Fichier :** `core/arbitrator.py:519-532` + `database/event_sourcing.py:259` +
-`database/modifier_processor.py:203`.
-
-Aujourd'hui, pour 20 entités, on ouvre 40+ connexions par tour :
-- 1 pour lister les entity_ids
-- 1 par entité pour `get_current_stats` (ouverture conn + SELECT)
-- 1 par entité pour `apply_modifiers._fetch_modifiers` (ouverture conn + SELECT)
-
-**Fix :** une seule connexion partagée + deux requêtes globales.
-
-```python
-def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
-    with get_connection(self._db_path) as conn:
-        # 1 requête pour TOUTES les stats
-        rows = conn.execute("""
-            SELECT entity_id, stat_key, stat_value
-            FROM State_Cache
-            WHERE save_id = ?;
-        """, (save_id,)).fetchall()
-
-        base: dict[str, dict[str, str]] = {}
-        for r in rows:
-            base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
-
-        # 1 requête pour TOUS les modifiers actifs
-        mod_rows = conn.execute("""
-            SELECT entity_id, stat_key, delta
-            FROM Active_Modifiers
-            WHERE entity_id IN (SELECT DISTINCT entity_id FROM State_Cache WHERE save_id = ?);
-        """, (save_id,)).fetchall()
-
-    # Overlay en mémoire (pas de DB)
-    effective = {eid: dict(stats) for eid, stats in base.items()}
-    for r in mod_rows:
-        if r["entity_id"] in effective:
-            current_raw = effective[r["entity_id"]].get(r["stat_key"], "0")
-            try:
-                current = float(current_raw)
-                effective[r["entity_id"]][r["stat_key"]] = fmt_num(current + r["delta"])
-            except ValueError:
-                pass  # non-numeric stat
-    return effective
-```
-
-**Gain estimé :** 40 ouvertures de connexion → 1. Sur SQLite WAL, chaque
-ouverture coûte ~100 µs + le PRAGMA setup. Économie réelle ~4 ms par tour,
-peut-être 10× plus sur disk lent. Plus crucial : moins de contention WAL.
-
-### 3.2 🎯 Batch des `append_event` dans une transaction unique par tour
-
-**Fichier :** `database/event_sourcing.py:67-78`
-
-Chaque `append_event` ouvre conn + INSERT + commit. Un tour Arbitrator émet
-typiquement 5-10 events (user_input, state_changes ×N, rule_triggers ×M,
-narrative_text, hero_intent). Donc 5-10 fsync WAL par tour.
-
-**Fix :** ajouter une API `append_events_batch` qui prend une liste et fait
-une seule transaction. Mettre à jour `Arbitrator.process_turn` pour collecter
-tous les events en mémoire puis appeler le batch à la fin (sauf le user_input
-initial qui peut rester séparé pour logging immédiat).
-
-```python
-def append_events_batch(self, events: list[tuple]) -> list[int]:
-    """events: list of (save_id, turn_id, event_type, target, payload) tuples."""
-    rows = [(s, t, e, tg, json.dumps(p)) for s, t, e, tg, p in events]
-    with get_connection(self._db_path) as conn:
-        cursor = conn.executemany(
-            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
-            "VALUES (?, ?, ?, ?, ?);",
-            rows,
-        )
-        conn.commit()
-    # Note: lastrowid après executemany n'est pas portable. Si on a besoin des
-    # event_ids retour, faire un SELECT MAX(event_id) avant + after, ou append
-    # un par un dans une transaction commune.
-```
-
-### 3.3 🎯 `WorldState` cache mémoire invalidé par dernier event_id
-
-Aujourd'hui chaque refresh de la sidebar Tabletop fait un SELECT complet sur
-`State_Cache`. Sur un univers avec 50 entités et 200 stats, c'est ~250 lignes
-relues à chaque turn.
-
-**Fix :** maintenir un cache mémoire dans `Arbitrator` (ou dans une classe
-`WorldState`) qui :
-- Est seedé au début de session par un SELECT initial
-- Est mis à jour incrémentalement à chaque event appliqué
-- Est invalidé proprement sur rewind
-
-Pour la concurrence : tag le cache avec `last_event_id` ; si à la lecture
-suivante le `MAX(event_id)` SQL est plus grand, on refait un load complet.
-
-**Gain :** lecture stats côté UI passe de "I/O SQLite" à "dict lookup". Sidebar
-plus réactive, surtout avec stats fréquemment refreshées (toutes les 1-2 sec
-en cours de turn).
-
-### 3.4 🎯 `print()` → `logger`
-
-**17 occurrences identifiées** dans :
-- `core/arbitrator.py:195, 609, 622`
-- `core/chronicler.py:238`
-- `workers/db_helpers.py:326, 378`
-- `workers/db_tasks.py:43, 261, 684`
-- `workers/timekeeper_worker.py:84`
-- `database/schema.py:481, 484, 536, 539`
-
-Solution déjà disponible : `from core.logger import logger`.
-
-**Fix mécanique :**
-- `print(f"[X] ...")` → `logger.debug(f"...")` ou `logger.error(...)` selon la
-  nature (erreur dans except → error, info de debug → debug).
-- Le file handler du logger (`~/.cache/AxiomAI/axiom_ai.log`) capte tout en
-  DEBUG, la console reste en INFO.
-
-### 3.5 🎯 Cache du `pip install` dans `run.sh`
-
-**Fichier :** `run.sh:88-89`
-
-Actuellement, `pip install -r requirements.txt` tourne **à chaque lancement**.
-Sur un système où torch+chromadb+sentence-transformers sont déjà installés,
-le `pip install` prend quand même 3-5 secondes pour vérifier.
-
-**Fix :** marker file basé sur le hash de `requirements.txt`.
-
-```bash
-REQ_HASH=$(sha256sum requirements.txt | cut -d' ' -f1)
-MARKER="$VENV_DIR/.deps_hash"
-
-if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$REQ_HASH" ]; then
-    echo "Installing/updating dependencies..."
-    python3 -m pip install --upgrade pip
-    python3 -m pip install -r requirements.txt
-    echo "$REQ_HASH" > "$MARKER"
-else
-    echo "Dependencies up to date (skip)."
-fi
-```
-
-**Gain :** ~3 secondes au lancement quand rien n'a changé. Pour l'utilisateur
-qui lance l'app 10× par jour : ~30 sec/jour récupérées.
-
-### 3.6 🎯 Pré-chargement de `sentence_transformers` au démarrage
-
-**Fichier :** `debug/startup_check.py:64`
-
-```python
-core_modules = [
-    # ...
-    ('sentence_transformers', 'sentence-transformers'),
-    # ...
-]
-```
-
-Ce check importe sentence_transformers (qui charge torch en chaîne, ~500 MB
-en mémoire) **avant que la fenêtre n'apparaisse**. C'est probablement la
-principale cause perçue de "lenteur au démarrage".
-
-**Fix :** retirer `sentence_transformers` (et `chromadb`) de la liste de
-modules verifiés au startup_check. Le check actuel se contente d'un
-`__import__`, ce qui suffit à charger torch. Le check est plus utile sous
-forme d'un "Settings → Diagnostics" lancé à la demande.
-
-Alternative : retarder le check par un `QTimer.singleShot(2000, run_checks)`
-après que la fenêtre soit visible.
-
-## 4. Nettoyage code mort
-
-| Fichier | Action |
-|---|---|
-| `workers/db_tasks.py:793-833` | Supprimer définition dupliquée de `CreatePlayerEntityTask` |
-| `ui/tabletop_view.py:45` | Retirer import `TimekeeperWorker` (réintégré au Pilier 5) |
-| `debug/test_db_logic.py` | Évaluer : merge dans `tests/test_schema.py` ou supprimer |
-| `debug/test_audio_logic.py` | Évaluer : merge dans `tests/test_ambiance_manager.py` |
-| `debug/test_llm_logic.py` | Évaluer : doublon avec `tests/test_llm_base.py` ? |
-| `debug/test_populate_async.py` | Idem |
-| Commentaires `# Hacky, but works` | Identifier et corriger ou retirer |
+# PARTIE I — STABILISATION (Phase A) — ✅ FAIT
+
+> Livré (A1→A5). Couvrait : §1 bugs bloquants, §2 bugs logiques, §3 optimisations
+> chirurgicales, §4 nettoyage du code mort. Détail : `maintenance/README.md` /
+> `maintenance/DONE.md`.
 
 ---
 
@@ -485,718 +72,21 @@ après que la fenêtre soit visible.
 Une fois la base saine, on attaque les changements structurels. **Durée
 estimée : 6 à 8 semaines.**
 
-## 5. Pilier 1 — Extraction `axiom-engine` headless 🏗
+## 5. Pilier 1 — Extraction `axiom-engine` headless — ✅ FAIT
 
-### 5.1 Constat
+> Moteur extrait dans `axiom/` (zéro Qt), API publique `Session` / `Universe`,
+> CLI `axiom`, **publié sur PyPI** (`axiomai-engine`). Détail : `maintenance/README.md`.
 
-Aujourd'hui, le moteur (Arbitrator, Chronicler, EventSourcing, RulesEngine,
-ModifierProcessor, VectorMemory, prompt building) est mélangé avec PySide6 :
-- Les workers vivent dans `workers/` et importent Qt
-- Le tabletop_view orchestre la logique de turn directement
+## 6. Pilier 5 — Le Temps comme substrat causal — ✅ FAIT
 
-> **Révision (TICKET-004) :** la ligne initiale « `core/paths.py` utilise des
-> paths Qt-friendly » était **fausse**. `core/paths.py` (comme `core/logger.py`)
-> est du pur stdlib (`os`/`sys`/`pathlib`), sans aucune dépendance Qt, et était
-> déjà importable headless. La vraie limite n'est pas Qt mais que les chemins
-> sont **codés en dur à l'import** (`~/.config/AxiomAI`, `~/.cache/AxiomAI`,
-> `~/AxiomAI`), donc non injectables par un embedder. Voir §5.3 Étape 3.
+> Timekeeper (estimation de durée par action, désactivable), horloge in-game en
+> minutes, Chronicler paginé en minutes, une ligne Timeline par tour. Détail : DONE.md.
 
-Conséquences :
-- Impossible de jouer en CLI / scripted
-- Impossible de tester l'engine sans `QApplication()` (cf. `tests/conftest.py`)
-- Impossible d'embarquer Axiom dans un autre projet
-- Difficulté à reasonner clairement sur la frontière "engine vs UI"
+## 7. Pilier 2 — Universe-as-Code — ✅ FAIT
 
-### 5.2 Cible
-
-Séparer le repo en **deux packages distincts** :
-
-```
-axiom-engine/                 ← pip-installable, ZERO Qt dependency
-  axiom/
-    __init__.py
-    universe.py               ← Universe class (load .axiom, list saves)
-    session.py                ← Session class (turn loop, state holder)
-    arbitrator.py             ← (depuis core/arbitrator.py)
-    chronicler.py             ← (depuis core/chronicler.py)
-    rules.py                  ← (depuis core/rules_engine.py)
-    events.py                 ← (depuis database/event_sourcing.py)
-    checkpoint.py             ← (depuis database/checkpoint.py)
-    modifiers.py              ← (depuis database/modifier_processor.py)
-    schema.py                 ← (depuis database/schema.py)
-    memory.py                 ← VectorMemory abstracted (Protocol)
-    time_system.py            ← (depuis core/time_system.py)
-    config.py                 ← config (split EngineConfig/AppConfig abandonné, cf. §5.3 Étape 3)
-    backends/
-      __init__.py             ← @register_backend
-      base.py                 ← LLMBackend Protocol
-      universal.py
-      gemini.py
-    prompts/                  ← (depuis llm_engine/prompt_builder.py, split)
-      narrative.py
-      chronicler.py
-      mini_dico.py
-      populate.py
-    cli/
-      __init__.py
-      play.py                 ← `axiom play universe.axiom`
-      compile.py              ← `axiom compile src_dir → .axiom`
-      test_runner.py          ← `axiom test scenarios/*.yaml`
-  pyproject.toml
-  README.md
-
-axiom-app/                    ← Le projet actuel, réduit à l'UI
-  ui/
-  workers/
-  assets/
-  main.py
-  pyproject.toml              ← dépend de axiom-engine
-```
-
-### 5.3 Plan de migration
-
-**Étape 1.** Ajouter un package `axiom/` au sein du repo actuel. Y copier
-(d'abord) puis déplacer (après tests verts) les modules engine.
-
-**Étape 2.** Remplacer tous les imports dans `ui/` et `workers/` :
-- `from core.arbitrator import ...` → `from axiom.arbitrator import ...`
-- `from database.schema import ...` → `from axiom.schema import ...`
-- etc.
-
-**Étape 3.** *(Révisée — TICKET-004. La prémisse d'origine, reproduite plus bas,
-était erronée ; vérifiée par grep le 2026-05-23.)*
-
-Constat corrigé :
-- `axiom/paths.py` et `axiom/logger.py` sont du **pur stdlib** (`os`/`sys`/
-  `pathlib`/`logging`), **zéro Qt**, déjà importables headless. Il n'y a aucune
-  « fuite Qt » à éliminer ici.
-- `axiom/config.py` est lui aussi **100 % Python sans Qt** (son docstring le dit
-  explicitement : « pure Python with no UI dependencies »).
-- La seule vraie limite à l'embarquabilité : les chemins sont **codés en dur à
-  l'import** (`axiom/paths.py` → `~/.config/AxiomAI`, `~/.cache/AxiomAI`,
-  `~/AxiomAI`), donc non injectables par un embedder.
-
-Pourquoi le split `EngineConfig` / `AppConfig` est abandonné :
-- `AppConfig` mélange champs moteur (backends, params LLM) et champs UI
-  (`ui_font_size`, `enable_audio`, `language`) mais reste 100 % Python — le
-  split n'apporte aucun découplage Qt.
-- Le scinder **change le schéma de `settings.json`** (donc migration des configs
-  utilisateurs existantes).
-- Il casse des points d'usage déjà en place :
-  - l'app importe `axiom.config.GLOBAL_DB_FILE` comme **constante**
-    (`ui/hub_view.py`, `ui/setup_view.py`, `ui/settings_dialog.py`) ;
-  - `tests/test_config.py` patche `axiom.config._CONFIG_FILE` /
-    `axiom.config._CONFIG_DIR`.
-- Coût/risque élevés pour un gain nul à ce stade.
-
-**Décision (validée utilisateur) :**
-- L'Étape 3 **ne bloque pas** l'Étape 4.
-- L'injection des chemins est portée par l'API `Session(..., data_dir=...)`
-  (Étape 4), qui en est le point naturel ; pas besoin d'« abstraire » paths.py.
-- Le split de config est **reporté/abandonné** sauf besoin avéré.
-
-<details>
-<summary>Prémisse d'origine (conservée pour historique — incorrecte)</summary>
-
-> Identifier les fuites Qt dans le code engine :
-> - `core/paths.py` doit devenir abstrait. L'engine reçoit un `data_dir: Path`
->   en paramètre, l'app le résout via Qt.
-> - `core/config.py` : split en deux. `EngineConfig` (backends, LLM params) reste
->   dans `axiom/`. `AppConfig` (font_size, enable_audio, language) reste côté
->   app.
-
-</details>
-
-**Étape 4.** Définir l'API publique de `axiom-engine` :
-
-```python
-# axiom/session.py
-class Session:
-    """High-level wrapper that an app uses to run a game."""
-
-    def __init__(self, universe_path: str, save_id: str, llm: LLMBackend,
-                 vector_memory: VectorMemory, data_dir: Path):
-        self.universe = Universe.load(universe_path)
-        self.save_id = save_id
-        self._arbitrator = ArbitratorEngine(...)
-        self._chronicler = ChroniclerEngine(...)
-        # ...
-
-    def take_turn(self, player_input: str, *,
-                  player_id: str = "player",
-                  on_token: Callable[[str], None] | None = None,
-                  ) -> ArbitratorResult:
-        """Execute one turn. Synchronous. Stream tokens via callback."""
-        # ...
-
-    def rewind(self, target_turn: int) -> RewindSummary:
-        # ...
-
-    def list_checkpoints(self) -> list[int]:
-        # ...
-
-    def current_stats(self) -> dict[str, dict[str, str]]:
-        # ...
-
-    @property
-    def turn_id(self) -> int:
-        # ...
-```
-
-L'app construit une `Session` au démarrage de tabletop, et appelle
-`session.take_turn()` depuis un QThread worker (le worker actuel `NarrativeWorker`
-devient un simple wrapper de threading + signal/slot autour de la `Session`).
-
-> **Statut réel de l'Étape 4 (vérifié par lecture du code, 2026-05-23) :** l'API
-> `Session`/`Universe` **existe et tourne headless** (`axiom/session.py`,
-> `axiom/universe.py`), elle est testée à vide (`tests/test_session.py`, faux LLM).
-> MAIS elle n'est **adoptée nulle part** (l'app passe par `NarrativeWorker` →
-> `ArbitratorEngine.process_turn` en direct) et il lui **manque des fonctions**
-> que le jeu réel possède. Le « simple wrapper » décrit ci-dessus est donc encore
-> à faire — et ce n'est pas « simple ». La suite (Étapes 5→8) le détaille.
-
-### 5.3-bis Plan révisé : finir le Pilier 1 sans dette (TICKET-005)
-
-*(Ajouté le 2026-05-23. Vérifié par lecture intégrale de `axiom/session.py`,
-`axiom/arbitrator.py`, `axiom/memory.py`, `axiom/config.py`, `axiom/paths.py`,
-`axiom/logger.py`, `workers/narrative_worker.py`, `ui/tabletop_view.py`,
-`tests/test_session.py`.)*
-
-**Constat — deux problèmes distincts étaient fusionnés dans « rendre le moteur autonome » :**
-
-- **Problème P — rangement des fichiers.** Les chemins sont **gelés à l'import**
-  (`axiom/paths.py` calcule `CONFIG_DIR`/`CACHE_DIR`/`DATA_DIR` une fois ;
-  `axiom/config.py:23-25` et `axiom/logger.py:12-14` les capturent par valeur, le
-  logger crée même son singleton à l'import, `logger.py:53`). `Session(data_dir=)`
-  ne redirige aujourd'hui **que** la VectorMemory par défaut (`session.py:71-73`),
-  et l'app lit `VECTOR_DIR` en direct (`ui/tabletop_view.py:290-291`,
-  `ui/tabletop_hardcore.py:94-96`, `workers/db_tasks.py:225-226`) — `data_dir`
-  n'est donc **jamais exercé**.
-
-- **Problème U — deux « machines à jouer un tour » en parallèle.**
-  1. Celle de l'app : `tabletop_view._on_send_message` + `NarrativeWorker.run()`
-     (décision du héros Companion via `_get_hero_decision`, historique pris dans
-     la liste UI `self._history`, signaux Qt, déclenchement Chronicler côté UI).
-  2. Celle du moteur : `Session.take_turn()`, **non branchée** et **plus pauvre**.
-     Écarts vérifiés : (a) **pas de décision héros Companion** — `take_turn`
-     reçoit `hero_action`/`hero_entity_id` déjà calculés (`session.py:100-101`)
-     mais ne les décide pas, alors que le worker le fait (`narrative_worker.py:97-111,
-     175`) ; (b) **source d'historique différente** — le worker mappe la liste UI,
-     `Session._load_history()` reconstruit depuis l'`Event_Log`.
-     *(Le streaming n'est PAS un écart : les deux passent un callback `on_token`/
-     `stream_token_callback`.)*
-
-  Tant que ces deux machines coexistent, tout correctif/feature doit être fait
-  deux fois et elles divergent → **dette architecturale**. Cible : une seule
-  machine (`Session`), dont le worker GUI n'est qu'une coquille de threading.
-
-**Étape 5 — Injection des chemins (Problème P).** *Risque bas.*
-Rendre la racine de données injectable proprement : `data_dir` doit couvrir au
-minimum la VectorMemory **et** les logs. Point délicat : les chemins étant gelés
-à l'import, prévoir une résolution paresseuse ou un point de configuration appelé
-**très tôt** (avant la capture par `config`/`logger`). Brancher l'app et `Session`
-dessus. **Test** prouvant que `Session(data_dir=tmp)` fait bien atterrir les
-données (vector + logs couverts) sous `tmp`.
-
-> **Décision actée (validée utilisateur, 2026-05-23) — hybride sur `settings.json` + `global.db`.**
-> Ces deux fichiers sont **transversaux** (préférences d'app + clé API ;
-> personas réutilisables), pas liés à une partie.
-> - **Par défaut**, ils restent **machine-globaux** (`~/.config/AxiomAI`) : la GUI
->   ne change pas, la clé API est saisie une fois et partagée par tous les univers.
-> - **Surcharge explicite** disponible pour les cas qui veulent l'isolement total
->   (tests, embedders, install portable) : ils peuvent pointer aussi la config sous
->   leur propre racine.
->
-> Implication API : ne PAS faire emporter la config par `data_dir` d'office.
-> Prévoir un chemin de config résolu **séparément** (p. ex. param `config_dir`
-> optionnel distinct de `data_dir`, défaut = machine-global). À noter pour les
-> embedders : **sandboxer ≠ éphémère** — la persistance (clés API conservées d'une
-> session à l'autre) dépend uniquement de pointer vers le **même** dossier au
-> lancement suivant, pas du fait d'isoler ou non. Le seul cas non-persistant est un
-> dossier temporaire neuf à chaque démarrage (= tests).
-
-**Étape 6 — Parité de `Session` (pré-requis du Problème U).** *Risque moyen, pas de bascule.*
-Faire absorber par `Session` ce qui manque vs le worker : décision du héros
-(Companion), source d'historique unifiée (choisir Event_Log vs liste UI et
-documenter), hooks de progression headless (remplacent les signaux Qt). Tests de
-parité contre le comportement actuel du worker (cf. `tests/test_arbitrator.py`).
-
-**Étape 7 — Adoption par le worker (Problème U).** *Risque réel, isolé, run-testé.*
-`NarrativeWorker` devient une coquille de threading autour de `Session`. L'app
-construit la `Session` au load de tabletop. Validation en **run réel** (pas
-seulement imports/tests) : zéro perte de fonctionnalité ni de perf, Companion
-intact, historique cohérent.
-
-**Étape 8 — CLI sur `Session`** (`axiom play universe.axiom`). *Preuve d'embarquabilité.*
-Livre l'argument n°1 du pilier (§5.4) et valide que le moteur tourne réellement
-sans Qt via la même API que la GUI.
-
-> TICKET-005 est **absorbé** par ce plan : trou « logs » → Étape 5 ; trou
-> « `Session` débranchée + appauvrie » → Étapes 6-7 ; trou « pas de test
-> `data_dir` » → Étape 5. Chaque étape suit la méthodo habituelle (dossier
-> `maintenance/<etape>/` avec TODO + CHANGELOG, refs vérifiées par grep avant
-> de coder, pas de hors-scope).
-
-### 5.4 Ce que ça débloque
-
-1. **Mode CLI** : `axiom play universes/my_world.axiom`. Text adventure dans
-   le terminal. Utile pour :
-   - Joueurs minimalistes / SSH
-   - Tests intégration
-   - Démos sans GUI
-   - Modders qui veulent itérer sans relancer Qt
-
-2. **Tests 10× plus rapides** : pas de `QApplication`, les tests engine se
-   lancent en parallèle.
-
-3. **Frontend alternatif** : quelqu'un peut bâtir une UI web qui parle à un
-   serveur HTTP wrappant l'engine. Local-first préservé (serveur localhost).
-
-4. **Modding programmatique** : `import axiom` dans un Jupyter notebook pour
-   explorer un univers, générer du contenu par script.
-
-5. **Distribution** : `pip install axiom-engine` rend l'engine accessible à
-   d'autres projets (mods, outils communautaires).
-
-### 5.5 Coût estimé
-
-~2 semaines de refactoring + adaptation des tests. Risque bas si on procède
-par étapes (copy avant move, tests à chaque étape).
-
----
-
-## 6. Pilier 5 — Le Temps comme substrat causal 🏗
-
-### 6.1 Constat
-
-Le code actuel contient **tous les ingrédients d'un système temporel cohérent**,
-mais ils sont déconnectés :
-
-- `core/time_system.py` : `TimeSystem` + `CalendarConfig` (calendrier custom)
-- `workers/timekeeper_worker.py` : analyse LLM du temps écoulé — **mort**
-- `database/schema.py` : table `Timeline` (turn_id, in_game_time, description)
-- `database/schema.py` : table `Scheduled_Events` (trigger_minute)
-- `core/chronicler.py:89-105` : `should_trigger(current_time, last_chronicle_time)`
-  basé sur des minutes — mais appelé via `turn_id` dans `tabletop_view.py:609`
-- `core/arbitrator.py:412` : `tick_modifiers(save_id)` qui ticke 1 minute par défaut
-- `ui/tabletop_view.py:524` : `self._current_time += 15` hardcoded
-
-C'est un **système temporel à moitié réalisé**. Le Pilier 5 le finit.
-
-### 6.2 Cible
-
-Le **LLM** est responsable de déclarer le temps écoulé pendant son tour, via
-une extension du schéma tool_call.
-
-```json
-{
-  "state_changes": [...],
-  "inventory_changes": [...],
-  "elapsed_minutes": 45,
-  "scene_pace": "deliberate",
-  "game_state_tag": "exploration"
-}
-```
-
-`scene_pace` est purement descriptif (combat | conversation | travel |
-deliberate | montage), utilisable par d'autres systèmes (audio, image gen)
-sans impact direct sur le temps.
-
-### 6.3 Plan d'implémentation
-
-**Étape 1.** Étendre `NARRATIVE_TOOL_CALL_SCHEMA` dans `prompt_builder.py` pour
-inclure `elapsed_minutes` (integer, default 1) et `scene_pace`.
-
-**Étape 2.** Côté Arbitrator (`core/arbitrator.py`), parser ces champs et les
-retourner dans `ArbitratorResult` (nouveau champ `elapsed_minutes: int`).
-
-**Étape 3.** Côté `NarrativeWorker` / `tabletop_view._on_turn_complete` :
-remplacer `self._current_time += 15` par
-`self._current_time += result.elapsed_minutes`.
-
-**Étape 4.** `tick_modifiers(save_id, elapsed_minutes=result.elapsed_minutes)`
-au lieu de tick fixe.
-
-**Étape 5.** Chronicler trigger basé sur le temps :
-```python
-# Avant (turns)
-if (self._turn_id - self._main_window._last_chronicle_turn) >= cfg.chronicler_interval:
-
-# Après (minutes)
-if self._chronicler.should_trigger(self._current_time, self._last_chronicle_time):
-    self._last_chronicle_time = self._current_time
-    # ...
-```
-
-(Le `should_trigger` existe déjà, il suffit de l'utiliser.)
-
-**Étape 6.** `Scheduled_Events` se déclenchent quand `current_time >= trigger_minute`.
-Déjà géré dans `arbitrator._fetch_triggered_events`.
-
-**Étape 7.** Réactiver `TimekeeperWorker` comme **fallback** quand le LLM ne
-renvoie pas `elapsed_minutes` :
-- L'Arbitrator détecte `elapsed_minutes is None` dans le tool_call
-- Lance `TimekeeperWorker` qui re-prompte le LLM sur le narrative_text seul
-  pour extraire le temps écoulé
-- Si toujours rien : default à `scene_pace_defaults[pace]` (combat = 2 min,
-  travel = 60 min, etc.)
-
-### 6.4 Edge cases
-
-- **Voyage explicite** : si le LLM applique `state_change` sur `Location` du
-  player, et qu'il existe une `Location_Connections.distance_km` entre source
-  et destination, on peut **valider** que `elapsed_minutes` est cohérent avec
-  la distance (avec une fenêtre large). Si l'écart est de 100×, queue une
-  correction.
-- **Time skip narratif** : si `elapsed_minutes > 480` (8h), trigger le
-  Chronicler **avant** de retourner le résultat, pour que le monde évolue
-  pendant le voyage.
-- **Conversion calendar** : tout passage par `TimeSystem.get_time_string()`
-  utilise le calendar custom de l'univers. Les `Scheduled_Events` qui
-  réfèrent à des dates absolues du calendar doivent rester corrects après
-  changement de calendar params.
-
-### 6.5 Ce que ça débloque
-
-- **Vraie cohérence narrative** : un voyage prend une journée, pas 15 min
-- **Buffs/debuffs justes** : "Empoisonné 30 min" expire après 30 min, pas après
-  30 turns
-- **Chronicler activé sur les bons rythmes** : un long voyage déclenche
-  plusieurs World Turns successifs, simulant l'évolution du monde
-- **Scheduled events fiables** : "Le festival commence Jour 7, 10h00" se
-  déclenche pile au bon moment
-- **Topbar affichage cohérent** : "Day 3, Aries 7, 14:32 (Afternoon)" devient
-  une info crédible
-
-### 6.6 Coût
-
-3 à 5 jours. C'est principalement de la rigueur et du câblage. Le code dormant
-existe déjà.
-
----
-
-## 7. Pilier 2 — Universe-as-Code 🏗
-
-### 7.1 Constat
-
-Un univers Axiom AI est aujourd'hui un blob binaire `.db` (SQLite). Ce format :
-- Est **opaque** : impossible à inspecter sans l'app
-- N'est **pas diffable** : git voit "fichier binaire modifié"
-- N'est **pas mergeable** : pas de collaboration entre créateurs
-- N'est **pas éditable hors-app** : tout passe par le Creator Studio
-- N'est **pas reviewable** : pas de PR possible
-
-Or, **un univers est essentiellement une définition de contenu** (entités,
-règles, lore, locations) — donc fondamentalement du texte structuré. La forme
-SQLite ne devrait être qu'**un cache compilé** pour la performance runtime.
-
-### 7.2 Cible
-
-Définition d'univers en **arborescence de fichiers texte versionnable**.
-
-```
-my_universe/                          ← directory, git-friendly
-  universe.toml                       ← metadata: name, lore, system_prompt, calendar
-  README.md                           ← description for humans / GitHub
-  CHANGELOG.md                        ← versioning by the author
-  LICENSE
-  cover.png                           ← optional thumbnail
-
-  stats/
-    definitions.toml                  ← Stat_Definitions
-
-  entities/
-    player_hero.toml
-    bob_blacksmith.toml
-    iron_brotherhood.toml             ← entity_type = faction
-    _index.toml                       ← optional manifest
-
-  rules/
-    death.toml
-    combat_critical.toml
-    poisoning.toml
-
-  locations/
-    map.toml                          ← hierarchy + connections
-
-  lore/
-    history.md                        ← Markdown for rich content
-    factions/red_guard.md
-    magic_system.md
-    glossary.md
-
-  events/
-    festival_of_lights.toml
-    war_declaration.toml
-
-  setup/
-    questions.toml                    ← Story_Setup (initialization questions)
-
-  items/
-    sword_excalibur.toml
-    potion_healing.toml
-
-  assets/                             ← optional, bundled with .axiom
-    portraits/
-      bob.png
-    audio/
-      tavern/
-        celtic_jig.mp3
-
-  plugins.toml                        ← required & optional plugin dependencies
-  .axiom-cache/                       ← gitignored, compiled .db
-    universe.db
-    cache_hash.txt
-```
-
-### 7.3 Format des fichiers
-
-#### `universe.toml`
-```toml
-[meta]
-name = "Drakthar"
-version = "1.2.0"
-author = "Garen"
-license = "CC-BY-SA-4.0"
-engine_version = ">=0.5.0,<2.0.0"
-
-[narrative]
-system_prompt = """
-You are the narrator of Drakthar, a dark fantasy world.
-The tone is grim, the magic dangerous, the gods absent.
-"""
-global_lore_file = "lore/history.md"     # multi-line content in dedicated file
-first_message_file = "lore/intro.md"
-world_tension_level = 0.4
-
-[llm_defaults]
-temperature = 0.7
-top_p = 1.0
-verbosity = "balanced"
-
-[calendar]
-minutes_per_hour = 60
-hours_per_day = 24
-month_names = ["Forge", "Smelt", "Anvil", "Ember", "Cinder", "Ash",
-               "Frost", "Bone", "Hollow", "Veil", "Dusk", "Pyre"]
-days_per_month = [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
-start_day = 1
-start_hour = 8
-start_minute = 0
-
-[companion]
-enabled = false
-hero_id = ""
-```
-
-#### `entities/bob_blacksmith.toml`
-```toml
-entity_id = "bob_blacksmith"
-entity_type = "npc"
-name = "Bob the Blacksmith"
-description = "A gruff but kind dwarven smith with a reputation for honest work."
-
-[stats]
-Health = 80
-Strength = 14
-Reputation_Brotherhood = 25
-Location = "drakthar_capital_smithy"
-Status = "Working"
-```
-
-#### `rules/death.toml`
-```toml
-rule_id = "death_below_zero"
-priority = 0
-target_entity = "*"
-
-[conditions]
-operator = "AND"
-[[conditions.clauses]]
-stat = "Health"
-comparator = "<="
-value = 0
-
-[[actions]]
-type = "stat_set"
-stat = "Status"
-value = "Dead"
-
-[[actions]]
-type = "trigger_event"
-event = "player_death"
-```
-
-#### `locations/map.toml`
-```toml
-[[locations]]
-location_id = "drakthar"
-name = "Drakthar"
-scale = "country"
-description = "A grim kingdom of forges and feuds."
-x = 500
-y = 500
-
-[[locations]]
-location_id = "drakthar_capital"
-name = "Drakthar City"
-parent_id = "drakthar"
-scale = "city"
-description = "The capital. A maze of soot and stone."
-x = 300
-y = 400
-
-[[locations]]
-location_id = "drakthar_capital_smithy"
-name = "The Iron Smithy"
-parent_id = "drakthar_capital"
-scale = "building"
-description = "Bob's workshop. Hot, loud, and welcoming."
-
-[[connections]]
-source_id = "drakthar"
-target_id = "northern_wastes"
-distance_km = 240
-```
-
-### 7.4 Pipeline de compilation
-
-```
-Source (arborescence)  →  Compiler  →  .axiom-cache/universe.db
-                                ↓
-                          Hash check  →  skip if unchanged
-```
-
-Implémentation : `axiom/compile.py` (côté engine, accessible en CLI).
-
-```python
-def compile_universe(src_dir: Path, output_db: Path, force: bool = False) -> None:
-    """Compile a source directory into a runtime SQLite database."""
-    src_hash = _hash_directory(src_dir)
-    cache_hash_file = src_dir / ".axiom-cache" / "cache_hash.txt"
-
-    if not force and cache_hash_file.exists():
-        if cache_hash_file.read_text().strip() == src_hash:
-            return  # cache is up to date
-
-    # Parse all .toml + .md files
-    universe_meta = _parse_universe_toml(src_dir / "universe.toml")
-    entities = _parse_entity_dir(src_dir / "entities")
-    rules = _parse_rule_dir(src_dir / "rules")
-    locations, connections = _parse_locations(src_dir / "locations" / "map.toml")
-    lore_book = _parse_lore_book(src_dir / "lore")
-    # ...
-
-    # Build the DB
-    create_universe_db(str(output_db))
-    _populate_db(output_db, universe_meta, entities, rules, locations,
-                 connections, lore_book, ...)
-
-    # Write cache hash
-    cache_hash_file.parent.mkdir(exist_ok=True)
-    cache_hash_file.write_text(src_hash)
-```
-
-### 7.5 Format `.axiom` rebooté
-
-Un `.axiom` devient un **zip de l'arborescence + cache compilé** :
-
-```
-my_universe.axiom (zip)
-├── universe.toml
-├── entities/
-├── rules/
-├── locations/
-├── lore/
-├── assets/
-└── .axiom-cache/
-    └── universe.db        ← prebuilt for instant load
-```
-
-À l'import :
-1. Décompresse dans `~/AxiomAI/universes/<name>/`
-2. Vérifie le hash : si correspond au cache embarqué, utilise le `.db` directement
-3. Sinon, recompile
-
-### 7.6 Saves restent binaires (séparés)
-
-L'arborescence est la **définition immuable**. Les saves (état runtime,
-Event_Log, State_Cache, Vector Memory) restent dans des DBs séparées :
-
-```
-~/AxiomAI/
-├── universes/
-│   └── drakthar/                ← source (mutable)
-│       ├── universe.toml
-│       └── ...
-└── saves/
-    └── drakthar/
-        ├── save_<uuid>.db       ← state only (Event_Log, Saves, State_Cache)
-        └── vector/<save_id>/    ← ChromaDB persist
-```
-
-Avantage : on peut **mettre à jour la définition d'univers** sans casser les
-saves existants (tant que les entity_ids et rule_ids restent compatibles). Le
-patch d'un univers par son auteur ne brique pas les parties en cours.
-
-### 7.7 Mode dev avec hot reload
-
-```bash
-axiom dev universes/drakthar/
-```
-
-Watch le filesystem. À chaque modification :
-1. Recompile (incrémental — uniquement les sous-arbres modifiés)
-2. Notifie l'app qui re-charge le contexte (entités, rules, lore)
-3. La partie en cours continue avec les nouvelles règles
-
-C'est le **vrai mode "moddeur"** : éditer Bob.toml dans VS Code et voir
-l'effet instantané dans le jeu.
-
-### 7.8 Plugins déclarés par l'univers
-
-```toml
-# my_universe/plugins.toml
-[required]
-weather_system = ">=1.0.0"
-combat_grid = ">=0.3.0"
-
-[optional]
-tts_piper = ">=0.1.0"
-comfyui_scenes = ">=0.2.0"
-```
-
-Au chargement, l'app vérifie. Manquants → propose d'installer. Cf. Pilier 6.
-
-### 7.9 AI-assisted authoring
-
-Avec une arborescence texte, un LLM agentique (Claude Code, Cursor, etc.) peut
-**éditer un univers** :
-
-> "Add three rival merchants in the capital who compete for Bob's apprenticeship."
-
-→ Le LLM crée `entities/merchant_alice.toml`, `entities/merchant_zog.toml`,
-`entities/merchant_petra.toml`, écrit du lore dans
-`lore/merchants/apprenticeship_rivalry.md`, ajoute une rule
-`rules/apprentice_choice.toml`. Visible en diff git, approuvable par l'humain.
-
-### 7.10 Migration des univers existants
-
-Outil : `axiom decompile <universe.db> <output_dir>`.
-
-Lit le .db, écrit l'arborescence équivalente. Préserve les UUIDs et les
-relations. Une migration en une commande.
-
-### 7.11 Coût
-
-3 à 4 semaines :
-- 1 semaine pour le compiler (toml/md parsing → DB)
-- 1 semaine pour le decompiler (DB → toml/md)
-- 1 semaine pour adapter Creator Studio (lire/écrire l'arborescence)
-- 1 semaine pour mode dev / hot reload / packaging .axiom v2
-
-Risque : casse les .axiom v1. À mitiger par compat backward (importer
-v1 → décompile → recompile en v2).
+> Univers = arborescence texte TOML/MD versionnable ; `.db` = cache compilé ; saves
+> séparées (`.axiomsave`). compile / decompile / pack / import / dev + portage moteur
+> complet (B3/B4). Détail : `maintenance/README.md`.
 
 ---
 
@@ -2860,30 +1750,47 @@ Format : Markdown, peut générer un site statique via mkdocs ou similaire.
 
 ## Ordre conseillé et estimations
 
-### Phase A — Stabilisation (1 semaine)
+> **MAJ 2026-06-23.** Phase A ✅ FAIT. Phase B : Piliers 1/5/2 ✅ FAITS, reste
+> Pilier 6 (plugins). Phase C : tout reste à faire. Nouvelle **Phase F** ajoutée
+> (PARTIE VIII : fiabilité Arbitrator + coûts + veille).
+
+### Phase A — Stabilisation (1 semaine) — ✅ FAIT
 - Section 1 : Bugs bloquants
 - Section 2 : Bugs logiques
 - Section 3 : Quick wins perf (3.1, 3.4, 3.5, 3.6)
 - Section 4 : Nettoyage code mort
 
-**Livrable :** une codebase saine, sans crash latents, perf de base correcte.
+**Livrable :** une codebase saine, sans crash latents, perf de base correcte. ✅
 
-### Phase B — Architecture (8 semaines)
-- Pilier 1 — Extraction engine (2 sem)
-- Pilier 5 — Temps causal (1 sem)
-- Pilier 2 — Universe-as-Code (4 sem)
-- Pilier 6 — Plugins (3 sem, peut overlapper avec Pilier 2)
+### Phase B — Architecture (8 semaines) — 🔄 Piliers 1/5/2 ✅, reste Pilier 6
+- Pilier 1 — Extraction engine (2 sem) — ✅ FAIT (+ PyPI)
+- Pilier 5 — Temps causal (1 sem) — ✅ FAIT
+- Pilier 2 — Universe-as-Code (4 sem) — ✅ FAIT (+ portage moteur complet)
+- Pilier 6 — Plugins (3 sem, peut overlapper avec Pilier 2) — ⏳ à faire
 
 **Livrable :** une architecture qui permet tout le reste, des univers
 partageables sur GitHub, un écosystème de plugins amorçable.
 
-### Phase C — Profondeur (6 semaines)
-- Pilier 4 — NPC memory + Actor model (3 sem)
-- Pilier 7 — Test harness (2 sem)
+### Phase C — Profondeur (6 semaines) — ⏳ à faire
+- Pilier 4 — NPC memory + Actor model (3 sem) — *mémoire perspectiviste partiellement couverte par le chantier Hindsight ; l'Actor Model autonome reste à faire*
+- Pilier 7 — Test harness (2 sem) — *instrument de mesure de la Phase F (§23)*
 - Section 17 — Découplage embedding/vector (1 sem)
 
 **Livrable :** Axiom AI fait des choses qu'aucun autre AI RPG ne fait. Tests
 de qualité automatisés.
+
+### Phase F — Fiabilité & coûts (PARTIE VIII, ~3 semaines) — ⏳ à faire *(NOUVEAU)*
+- Pilier 8 — Fiabilité de l'Arbitrator (§23) : durcissement déterministe gratuit
+  (sortie structurée, bornes/légalité, fix plot-armor), détecteur de divergence,
+  option « résoudre puis raconter » (2 sem).
+- Section 24 — Gouvernance des coûts : flags + presets de budget + estimateur (3 j).
+- Section 25 — Veille concurrentielle : briefs d'agents + consolidation `PENDING.md`
+  (transverse, en continu).
+
+**Livrable :** le « pare-feu déterministe » tient sa promesse (cohérence
+prose↔état), et l'utilisateur maîtrise sa facture LLM. Idéalement à séquencer
+**avec/avant** Pilier 7 (qui mesure §23) et **avant** Pilier 4 (qui multiplie les
+appels LLM, donc dépend de §24).
 
 ### Phase D — Visuel (8 semaines)
 - Pilier 3 — NarrativeView (6 sem)
@@ -2904,33 +1811,238 @@ forte, narrative-first.
 
 **Livrable :** prêt pour une release publique grand public.
 
-### Total estimé : 25 semaines
+### Estimé initial : 25 semaines — Phases A + B (hors Pilier 6) livrées
 
-≈ 6 mois full-time solo. Confortable à 2.
+≈ 6 mois full-time solo à l'origine. **Restant estimé (2026-06-23)** : Pilier 6
+(~3 sem) + Phase C (~6 sem) + **Phase F (~3 sem)** + Phase D (~8 sem) + Phase E
+(~2 sem) ≈ **22 semaines**, hors veille concurrentielle (continu).
 
-## Découpe alternative — Sprint court
+## Séquencement conseillé du restant
 
-Si tu veux livrer du visible vite avant de t'engager sur 6 mois :
+L'ordre n'est plus « du début », puisque A et l'essentiel de B sont faits. Priorité
+suggérée, des fondations vers le visible :
 
-**Sprint 1 — 1 semaine "Fix & shine"**
-- Phase A complète
-- Section 12 (tokens) MVP
-- Section 17 décrit (pas encore implémenté)
+1. **Phase F — Fiabilité & coûts** *(en premier)* : §23 corrige le cœur de l'argument
+   produit (déterminisme réel), §24 borne les coûts **avant** d'ajouter des appels LLM
+   (Pilier 4). Le socle gratuit de §23.2 est rentable immédiatement.
+2. **Pilier 7 (Phase C)** : juste après / en parallèle de §23, car il **mesure** la
+   divergence prose↔état et donne une CI pour les univers communautaires.
+3. **Pilier 6 (plugins)** : débloque l'extensibilité (backends, kinds) et l'écosystème.
+4. **Pilier 4 (Actor Model)** : la profondeur différenciante (émergence NPC), une fois
+   les coûts gouvernés (§24).
+5. **Phase D (visuel)** puis **Phase E (polish)** : identité visuelle et release.
 
-**Sprint 2 — 2 semaines "Beauté immédiate"**
-- Pilier 3 POC (drop caps + typo + reading mode minimum)
-- Section 13 (Hub refonte)
+La **veille concurrentielle (§25)** tourne en continu et alimente `PENDING.md` au fil
+de l'eau, indépendamment de l'ordre ci-dessus.
 
-**Sprint 3 — 2 semaines "Cohérence"**
-- Pilier 5 (temps)
-- Section 14 (Creator Studio refonte)
+---
 
-À ce stade, **5 semaines passées**, l'app est déjà transformée visuellement
-et techniquement saine, sans avoir encore engagé les chantiers vraiment
-lourds (Engine extraction, Universe-as-Code, Plugins, NPC actors).
+# PARTIE VIII — FIABILITÉ & COÛTS (audit du 2026-06-23)
 
-Tu peux alors décider si tu continues vers Phase B/C complète, ou si tu fais
-release en l'état.
+> Issue de deux audits menés le 2026-06-23 : (1) lecture intégrale de
+> `axiom/arbitrator.py` (1466 lignes), (2) veille concurrentielle (IVIE/PAYADOR,
+> RPGBench, TALES, Generative Agents, Hindsight, Ian Bicking « Intra »…). Cette
+> partie ajoute trois chantiers : durcir l'Arbitrator (§23), rendre les coûts
+> gouvernables (§24), industrialiser la veille (§25).
+
+## 23. Pilier 8 — Fiabilité de l'Arbitrator (cohérence prose↔état) 🏗
+
+### 23.1 Constat (vérifié dans le code)
+
+Pipeline réel d'un tour (`ArbitratorEngine.process_turn`) : le LLM produit **en un
+seul jet** la prose (`narrative_text`) **et** un `tool_call` JSON
+(`state_changes`, `inventory_changes`, `game_state_tag`, `scene_pace`). La prose est
+**streamée au joueur, embeddée en mémoire et loggée comme event canonique** ; seuls
+les `state_changes`/`inventory_changes` passent par la validation. Un changement
+rejeté ne corrige **rien sur le tour courant** : il pose un `[NARRATOR HINT: …]`
+injecté au **tour suivant**, puis effacé.
+
+Conséquences (toutes confirmées dans le code) :
+
+- **❶ La prose n'est jamais validée contre l'état.** Aucun check
+  `narrative_text` ↔ `state_changes`. La narration est committée **avant** et
+  **indépendamment** de toute validation. Le README (« *every narrative turn is
+  validated … before being committed* ») est donc trompeur : seuls les deltas
+  structurés sont validés, et a posteriori.
+- **❷ Le firewall est en aval de la déclaration volontaire du LLM.**
+  `state_changes = tool_call.get("state_changes", [])`. Si le LLM raconte « tu
+  encaisses 10 dégâts » sans émettre de `state_change`, rien ne bouge → **drift
+  silencieux**.
+- **❸ Aucun décodage contraint.** Le `tool_call` est extrait par **regex** d'un bloc
+  ```` ```json ```` dans le flux brut. JSON malformé/absent → zéro changement,
+  silencieusement. Fragile surtout sur petits modèles locaux.
+- **❹ Validation étroite.** `_validate_change` ne vérifie que : entité existe, stat ∈
+  `Stat_Definitions`, **non-négativité** d'une ressource numérique. Pas de **bornes
+  hautes** (`Health = 9999` accepté), pas de **légalité spatiale**
+  (`_get_travel_distance` annote la timeline mais ne **rejette** jamais un téléport),
+  et **toute valeur non-numérique passe** (« *always valid for the cache* »).
+- **❺ Bug probable — « plot armor » Companion inopérant.** Quand le héros passerait
+  sous 0, `_validate_change` retourne `(True, "")` → le delta négatif est **appliqué
+  tel quel**. Le commentaire promet un clamp à 0 que le code n'implémente pas. *À
+  corriger / vérifier (test associé).*
+
+Ce qui, à l'inverse, est solidement déterministe et **ne doit pas être touché** :
+`RulesEngine` (cascades de règles créateur, chaînage borné), event-sourcing +
+reconstruction (batch transactionnel, `update_state_cache`), snapshots,
+non-négativité des ressources, inventaire.
+
+### 23.2 Cible — durcissement classé par coût
+
+Principe directeur (cf. §24) : **le durcissement déterministe gratuit est ON et
+NON-togglable** (c'est le socle de l'argument « moteur déterministe ») ; seuls les
+mécanismes à appel LLM supplémentaire sont OFF par défaut et togglables.
+
+| Mesure | Corrige | Coût | Défaut |
+|---|---|---|---|
+| **Sortie structurée** (`response_schema` Gemini ; *grammars* llama.cpp/Outlines en local) — remplace le parsing regex | ❸ | **gratuit** (gain net : zéro JSON cassé) | **ON, non-togglable** |
+| **Bornes min/max + valeurs énumérées** déclarées dans `Stat_Definitions` ; rejet ou clamp | ❹ | gratuit | **ON, non-togglable** |
+| **Légalité spatiale** : `Location` ∈ lieux connus, adjacence optionnelle via `Location_Connections` | ❹ | gratuit | **ON, non-togglable** |
+| **Validation des valeurs non-numériques** (énums, lieux) au lieu de tout accepter | ❹ | gratuit | **ON, non-togglable** |
+| **Fix plot-armor** (clamp à 0 en mode Companion) | ❺ | gratuit (bug) | **ON, non-togglable** |
+| **Détecteur de divergence prose↔état** (scan heuristique du texte, zéro appel LLM) | ❶❷ | très bas | **ON, togglable** |
+| **« Résoudre puis raconter »** (2 phases LLM) | ❶❷ | **élevé** (+1 appel/tour) | **OFF, togglable** |
+| **Auditeur LLM** (passe de vérification dédiée) | ❶❷ | élevé (+1 appel/tour) | **OFF, togglable** |
+
+### 23.3 « Résoudre puis raconter » (option *Fidélité*)
+
+Aujourd'hui le LLM raconte **et** déclare en même temps ; on valide après. C'est la
+cause-racine de la divergence ❶/❷. Le correctif structurel sépare les deux (comme
+IVIE/PAYADOR) :
+
+1. **Phase intention** : le LLM propose l'action + les `state_changes` voulus (pas de
+   prose finale).
+2. **Résolution déterministe** : on valide/applique (§23.2), on calcule le résultat
+   réel (succès/échec/clamp).
+3. **Phase narration** : le LLM rédige la prose **conditionnée sur le résultat
+   validé** — il ne peut plus « mentir » sur ce qui s'est passé.
+
+Coût : +1 appel LLM/tour (même ordre que le Timekeeper, déjà désactivable). → flag
+`resolve_then_narrate_enabled`, OFF par défaut, inclus dans le preset *Fidélité*.
+
+### 23.4 Détecteur de divergence (option *Équilibrée*, bon marché)
+
+Sans 2ᵉ appel : après parsing, scanner `narrative_text` pour des **affirmations
+chiffrées / d'inventaire** (« +N or », « tu perds X PV », « tu trouves <item> ») qui
+**n'ont pas** de `state_change`/`inventory_change` correspondant. En cas d'écart :
+soit re-prompt léger, soit marquer le tour `unreliable` (exploitable par le harnais
+de test §10 et l'UI). Heuristique imparfaite mais zéro token. → flag
+`divergence_detector_enabled`, ON par défaut, togglable.
+
+### 23.5 Plan d'implémentation (ordre conseillé)
+
+1. Sortie structurée + suppression du parsing regex (socle de tout le reste).
+2. Bornes/énums/légalité dans `Stat_Definitions` + validation des valeurs.
+3. Fix plot-armor + test de non-régression.
+4. Détecteur de divergence (heuristique).
+5. « Résoudre puis raconter » derrière son flag.
+6. Brancher le tout sur le harnais de test (§10) pour **mesurer** le taux de
+   divergence et sa dégradation sur parties longues (cf. TALES).
+
+### 23.6 Liens
+
+§10 (Pilier 7) **mesure** ce que §23 corrige ; §24 régit les flags introduits ici.
+Inspirations : IVIE/PAYADOR (séparation créa/validation), TALES (dégradation du
+grounding), RPGBench (vérification structurelle).
+
+## 24. Gouvernance des coûts — tout togglable + presets de budget 🏗
+
+### 24.1 Constat
+
+Le moteur a déjà des flags de coût **ad hoc** (`timekeeper_enabled`,
+`memory_mode_is_living`, `memory_beliefs_active`, `memory_mental_models_active`,
+`memory_prompt_cache_enabled`). Avec §23 et les chantiers futurs (Pilier 4 acteurs
+autonomes = appels LLM par NPC), le nombre d'appels LLM optionnels par tour va
+exploser. Sans cadre, l'utilisateur (souvent néophyte) ne peut ni comprendre ni
+maîtriser sa facture.
+
+### 24.2 Cible — chaque appel LLM/outil optionnel = un flag + un coût documenté
+
+Tout mécanisme qui ajoute un appel LLM, un embedding, ou un outil coûteux **doit** :
+exposer un flag de config, déclarer son coût (ordre de grandeur en tokens/tour),
+et **dégrader proprement** quand il est OFF (jamais de crash, juste « plus grossier »).
+
+### 24.3 Presets de budget (au-dessus des flags)
+
+Ne **pas** exposer 15 interrupteurs à un néophyte. Trois presets qui regroupent les
+flags, sur **un seul axe que l'utilisateur comprend (le budget)** :
+
+- **Économe** : tout appel LLM secondaire OFF (Timekeeper off → temps par pace, pas
+  de résolution 2 phases, pas d'auditeur, mémoire « lite », pas d'acteurs NPC).
+  Reste : le socle déterministe gratuit (§23.2).
+- **Équilibré** *(défaut)* : détecteur de divergence ON, Timekeeper ON, mémoire
+  vivante ON ; pas de 2ᵉ appel narratif coûteux.
+- **Fidélité** : « résoudre puis raconter » + auditeur + acteurs NPC + mémoire
+  complète.
+
+Plus un **mode avancé** qui déverrouille les flags individuels pour les power-users.
+
+### 24.4 Invariant — le socle déterministe gratuit reste NON-togglable
+
+Les durcissements gratuits de §23.2 (sortie structurée, bornes, légalité, fix
+plot-armor) ne sont **pas** derrière un flag : ce sont des corrections de
+sécurité/correction, pas des options de confort. Les rendre optionnels reviendrait à
+proposer « désactiver le pare-feu déterministe », ce qui viderait l'argument produit.
+
+### 24.5 Surface UI
+
+Settings → **Budget** : sélecteur de preset + (mode avancé) liste des flags avec, en
+regard, le coût estimé. Idéalement un **estimateur « coût par tour »** recalculé
+selon les flags actifs et le provider/modèle choisi.
+
+### 24.6 Registre des coûts (à maintenir)
+
+Une table unique `appel | quand | tokens approx | flag | preset minimal` —
+documentée et testée — pour que l'estimateur et la doc restent synchronisés avec le
+code.
+
+## 25. Veille & « vol » concurrentiel (chantier transverse) 🏗
+
+### 25.1 Constat
+
+Aucun pilier d'Axiom n'est unique pris isolément (chaque brique a de l'art
+antérieur : neuro-symbolique IF, generative agents, event sourcing, mémoire d'agent,
+discrete-event sim). **Le moat = l'intégration complète, local-first, packagée.** Il
+faut donc étudier méthodiquement les voisins pour leur prendre leurs meilleures idées
+et repérer leurs manques.
+
+### 25.2 Carte des cibles par domaine
+
+- **A — Moteurs déterministes / neuro-symboliques** : IVIE/PAYADOR
+  (arxiv 2606.13348), G-KMS (doi 10.3390/systems14020175), RPGBench
+  (arxiv 2502.00595), DM Quarkus/LangChain4j, VirtualGameMaster.
+- **B — Produits grand public** : Friends & Fables, Hidden Door (story-thread
+  templates = garde-fou narratif), Questsmith (mémoire), NovelAI, AI Dungeon,
+  SillyTavern/RisuAI.
+- **C — Mémoire d'agent** : Hindsight (arxiv 2512.12818 ; déjà cloné — viser
+  *reflect* + citations), Mem0, Zep, Memvid.
+- **D — Agents génératifs / simulation de monde** : Generative Agents/Smallville
+  (arxiv 2304.03442), Affordable Generative Agents, Character-LLM, RELATE-Sim.
+- **E — Branches / timeline / event-sourcing** : WHAT-IF (arxiv 2412.10582),
+  Narrative Studio (arxiv 2504.02426), Elsewise (arxiv 2601.15295).
+- **F — State-tracking / grounding / world models** : TALES (arxiv 2504.14128),
+  State Tracking (arxiv 2511.10457), R-WoM (arxiv 2510.11892),
+  awesome-LLM-game-agent-papers (survey).
+- **G — Temps in-game / discrete-event sim** : Ian Bicking « Intra » (design
+  quasi-identique au Timekeeper, conçu indépendamment — à lire).
+- **H — Génération contrainte** (techniques pour §23.2) : Outlines, llama.cpp
+  grammars, Gemini `response_schema`.
+
+### 25.3 Méthode
+
+Un agent par cible. Brief type : « Étudie [cible]. Sors : (1) ce qu'ils font mieux
+qu'Axiom sur [domaine], (2) la technique précise réutilisable, (3) ce qui leur manque
+qu'Axiom a déjà. » Consolider les trouvailles en tickets `PENDING.md`.
+
+### 25.4 Branchements vers les piliers existants
+
+- **Domaine D → Pilier 4 (§9)** : l'Actor Model autonome = exactement Generative
+  Agents (émergence sociale inter-NPC, que les *produits* commerciaux n'ont pas).
+- **Domaine F → Pilier 7 (§10) + §23** : RPGBench/TALES = la métrique de grounding à
+  adopter ; le harnais de test devient l'instrument de mesure de §23.
+- **Domaine C → mémoire** : ajouter à la mémoire Hindsight déjà en place la
+  **traçabilité/citations** (provenance des faits/croyances).
+- **Domaine B (Hidden Door) → §23** : « story-thread templates » = garde-fou de
+  cohérence *narrative*, complément de ce que l'Arbitrator (état) ne couvre pas.
 
 ---
 

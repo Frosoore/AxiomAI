@@ -6,7 +6,14 @@
     <atom:link href="https://frosoore.github.io/AxiomAI/feed.xml" rel="self" type="application/rss+xml" />
     <description>News, deep dives and the life of the Axiom AI project.</description>
     <language>en</language>
-    <lastBuildDate>Sun, 21 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 23 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>We asked an AI to tear Axiom apart</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/we-asked-an-ai-to-tear-axiom-apart.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/we-asked-an-ai-to-tear-axiom-apart.html</guid>
+      <pubDate>Tue, 23 Jun 2026 00:00:00 +0000</pubDate>
+      <description>A stranger gave me a tip: feed your project to a capable AI and tell it to attack your assumptions, not flatter them. So we did. / The uncomfortable finding: our 'deterministic firewall' guards the game-state numbers, not the story text, so the prose can still fib for a turn. / Nothing here is fatal. Two fixes plus our existing test-harness and actor-model plans just moved to the top of the roadmap.</description>
+    </item>
     <item>
       <title>Under the hood: how saves and universes work</title>
       <link>https://frosoore.github.io/AxiomAI/blog/how-saves-and-universes-work.html</link>

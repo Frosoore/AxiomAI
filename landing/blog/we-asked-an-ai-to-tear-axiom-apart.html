@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>We asked an AI to tear Axiom apart · Axiom AI blog</title>
+<meta name="description" content="A stranger gave me a tip: feed your project to a capable AI and tell it to attack your assumptions, not flatter them. So we did." />
+<meta name="theme-color" content="#1e1e2e" />
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+<link rel="alternate" type="application/rss+xml" title="Axiom AI blog" href="../feed.xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+        <div class="alpha-banner" role="alert">
+            <div class="wrap alpha-inner">
+                <span class="alpha-tag">EARLY ALPHA</span>
+                <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. Expect rough edges and breaking changes.</p>
+            </div>
+        </div>
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="../index.html#top"><img src="../assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
+                <nav class="nav-links">
+                    <a href="../index.html#how">How it works</a>
+                    <a href="../index.html#features">Features</a>
+                    <a href="../dev-updates.html">Roadmap</a>
+                    <a href="../blog/index.html">Blog</a>
+                    <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+                </nav>
+            </div>
+        </header>
+        <section class="post-section"><div class="wrap">
+        <article class="post">
+            <p class="post-back"><a href="index.html">← All posts</a></p>
+            <h1 class="post-title">We asked an AI to tear Axiom apart</h1>
+            <p class="post-meta">June 23, 2026 · Pinpanicaille</p>
+            <div class="tldr"><span class="tldr-label">TL;DR</span>
+            <ul>
+                <li>A stranger gave me a tip: feed your project to a capable AI and tell it to attack your assumptions, not flatter them. So we did.</li>
+                <li>The uncomfortable finding: our &#x27;deterministic firewall&#x27; guards the game-state numbers, not the story text, so the prose can still fib for a turn.</li>
+                <li>Nothing here is fatal. Two fixes plus our existing test-harness and actor-model plans just moved to the top of the roadmap.</li>
+            </ul></div>
+            <div class="post-body">
+<p>A while back, someone outside the project gave me a piece of advice that stuck. Roughly: take your whole project, hand it to a capable AI, and tell it to question your assumptions, and its own, without being dismissive. Don't ask it to agree with you. Ask whether your thing is actually unique, because maybe there's an Axiom out there already, under some other name, in a research paper somewhere. Not to kill your motivation, but to learn from what those others got wrong.</p>
+<p>That's good advice, so we ran the experiment on Axiom itself. This post is what came out of it.</p>
+<h2>The procedure</h2>
+<p>No hand-waving, no &quot;summarize the README and tell me it's cool&quot;. We did two things for real.</p>
+<p>First, a line-by-line read of the engine's most important file, the Arbitrator. That's the part we keep bragging about, the deterministic layer that's supposed to keep the AI honest. All 1466 lines of it, no skimming.</p>
+<p>Second, a sweep of the field. Academic work (neuro-symbolic interactive fiction, benchmarks that grade LLMs as game engines, the &quot;generative agents&quot; line of research, the recent wave of agent-memory papers) and the consumer products (AI Dungeon, NovelAI, Friends and Fables, Hidden Door, and the rest). The goal was blunt: is any single thing Axiom does actually new, and where are we weaker than we tell ourselves.</p>
+<h2>Is Axiom even unique?</h2>
+<p>Honest answer: no single piece is brand new. A deterministic layer validating an LLM's moves? People do that. Off-screen world simulation with autonomous characters? There's a whole research lineage. Event sourcing with rewind, evolving memory, an in-game clock that moves while you're away? All of it exists somewhere, sometimes in a paper written independently that describes almost exactly our time system.</p>
+<p>What's rare is the combination, finished and integrated, running fully local, shipped as both an app and a Python library. Most of the prior art is a demo or a paper that was never maintained, missing saves, missing local support, missing the boring glue that makes a thing usable. So the moat isn't a clever idea. It's that the whole thing actually works together, on your machine. That's a more honest pitch, and frankly a better one.</p>
+<h2>The uncomfortable bit</h2>
+<p>Here's the part that stung.</p>
+<p>We say &quot;every narrative turn is validated against a deterministic state machine before being committed.&quot; Reading the actual code, that's only half true.</p>
+<p>The AI produces two things at once: the story text, and a structured list of state changes (you lost 10 HP, you gained 3 gold, you moved here). The Arbitrator checks the structured list. It rejects illegal moves, like spending gold you don't have. That part is real and it works.</p>
+<p>But the story text itself is never checked against the numbers. It gets shown to you immediately, and saved, before any validation. So the AI can write &quot;you cleave the dragon clean in half&quot; while the change that actually kills the dragon gets rejected or never declared at all. You read the win. The database disagrees. And the only correction is a quiet hint slipped into the next turn, asking the AI to walk it back. The lie already happened.</p>
+<p>A couple of smaller things fell out of the same read. The firewall blocks negative resources, but it happily accepts absurd values (set your HP to 9999, sure) and illegal teleports. And we found a likely bug where Companion mode's &quot;plot armor&quot; doesn't actually protect the hero the way the comment claims.</p>
+<p>None of this is a disaster. The deterministic rules engine, the event sourcing, the rewind, all of that is solid. But the headline claim was oversold, and the fix matters.</p>
+<h2>So what now</h2>
+<p>The audit turned straight into roadmap items, and you can see them on the Dev page.</p>
+<p>The cheap fixes are going in by default, because they cost nothing extra: make the AI return structured output instead of us parsing text with a regex, add real value bounds and legal-move checks, fix that plot-armor bug. That's just the firewall finally doing what we said it did.</p>
+<p>The expensive fix (a second AI pass that resolves your action first, then writes the prose around the real outcome, so the story can't lie) is optional. Which leads to the other new item: cost controls. As we add more of these AI passes, we don't want to quietly grow your bill. So everything optional becomes a toggle, grouped under three simple budget presets (Thrifty, Balanced, Faithful), with the free deterministic safety net always on. You pick how much you want to spend per turn. We don't pick for you.</p>
+<p>One nice surprise: two things we'd already planned, a test harness for community universes and a proper NPC actor model, turn out to be exactly where the serious research is heading. So those got validated, not invalidated. We just bumped them up.</p>
+<h2>The honesty corner</h2>
+<p>We also rewrote our internal upgrade plan: cut the parts that are already done down to a one-line &quot;shipped&quot; note, and added everything the audit surfaced. It's early alpha, and this is the kind of thing we'll keep doing in the open: point a cold, slightly mean AI at our own work, write down what it finds, and fix it.</p>
+<p>If your &quot;unbreakable&quot; feature has never been read by something that wanted to break it, you don't actually know it holds. Now we know a bit more about where ours doesn't. That's a good day.</p>
+<p>Signed, Pinpanicaille.</p>
+
+            </div>
+            <p class="post-foot"><a href="index.html">← Back to the blog</a> · <a href="../index.html#top">Home</a></p>
+        </article>
+        </div></section>
+        <footer>
+            <div class="wrap">
+                <div class="foot-bottom">
+                    <span>AGPL-3.0-or-later · built by Pinpanicaille &amp; Frosoore</span>
+                    <span><a href="../feed.xml">RSS feed</a> · <a href="../blog/index.html">Blog</a> · <a href="../dev-updates.html">Dev updates</a></span>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>

@@ -77,7 +77,7 @@
                 <div class="du-meta-bar">
                     <!-- BUILD:meta -->
                 <span class="du-stat">Engine <b>v0.2.0</b></span>
-                <span class="du-stat">Last updated <b>2026-06-21 (c5afb31)</b></span>
+                <span class="du-stat">Last updated <b>2026-06-22 (1f48c82)</b></span>
         <!-- /BUILD:meta -->
                 </div>
 
@@ -135,9 +135,11 @@
         <h3>Next up</h3>
         <p class="sub">What we're actively working toward.</p>
         <ul class="road-list">
+          <li><span class="marker">▸</span><div><span class="rl-title">Arbitrator reliability (story matches state)</span><span class="rl-desc">Right now the deterministic firewall validates the game-state changes, not the prose around them, so the story can drift from the numbers. We're closing that gap: structured AI output, value bounds and legal moves, plus an optional resolve-then-narrate pass.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">Cost controls &amp; budget presets</span><span class="rl-desc">Make every extra AI call toggleable, grouped under simple Thrifty / Balanced / Faithful presets, so you decide how much you spend per turn.</span></div></li>
           <li><span class="marker">▸</span><div><span class="rl-title">Rework the time system</span><span class="rl-desc">Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today.</span></div></li>
           <li><span class="marker">▸</span><div><span class="rl-title">Plugin system</span><span class="rl-desc">Modify Axiom yourself. Add your own features and rules cleanly.</span></div></li>
-          <li><span class="marker">▸</span><div><span class="rl-title">NPC memory + Actor model</span><span class="rl-desc">Give NPCs their own persistent memory and a proper actor architecture.</span></div></li>
+          <li><span class="marker">▸</span><div><span class="rl-title">NPC actor model</span><span class="rl-desc">Per-NPC memory already shipped (beliefs &amp; profiles); next we give NPCs a proper actor architecture so they act on their own, off-screen.</span></div></li>
           <li><span class="marker">▸</span><div><span class="rl-title">Test-system rework</span><span class="rl-desc">Plus a plugin-test feature, so new tests are trivial to add.</span></div></li>
           <li><span class="marker">▸</span><div><span class="rl-title">Rework the main-chat UI</span><span class="rl-desc">The interface around the main chat feels weird right now. We're redesigning that area specifically.</span></div></li>
           <li><span class="marker">▸</span><div><span class="rl-title">UI / UX redesign</span><span class="rl-desc">A broader pass over the whole desktop experience.</span></div></li>

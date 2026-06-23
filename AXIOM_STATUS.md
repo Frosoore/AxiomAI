@@ -34,6 +34,7 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-06-23** · `site` · add: Blog post "We asked an AI to tear Axiom apart" (Arbitrator + competitive audit write-up); refreshed the Dev-page roadmap (new Arbitrator-reliability and cost-controls items, NPC item narrowed to the actor model since memory shipped).
 - **2026-06-21** · `chore` · change: Renamed the author pseudonym `17h59` to `Pinpanicaille` across the tree (NOTICE, README, docs, landing site, Myria credit).
 - **2026-06-21** · `ui` · fix: `retranslate_tooltips` no longer crashes on language change when a documented widget's C++ object was already deleted (CI 3.12 flake); guard + prune via `shiboken6.isValid`.
 - **2026-06-21** · `site` · add: Blog post "Under the hood: how saves and universes work"; moved the save/universe QC item to Done on the roadmap and logged it in the June dev update.

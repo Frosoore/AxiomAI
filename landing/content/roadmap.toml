@@ -18,6 +18,16 @@
 # ----------------------------------------------------------------- NEXT UP ----
 [[item]]
 status = "next"
+title = "Arbitrator reliability (story matches state)"
+desc = "Right now the deterministic firewall validates the game-state changes, not the prose around them, so the story can drift from the numbers. We're closing that gap: structured AI output, value bounds and legal moves, plus an optional resolve-then-narrate pass."
+
+[[item]]
+status = "next"
+title = "Cost controls &amp; budget presets"
+desc = "Make every extra AI call toggleable, grouped under simple Thrifty / Balanced / Faithful presets, so you decide how much you spend per turn."
+
+[[item]]
+status = "next"
 title = "Rework the time system"
 desc = "Fix the confusion between the turn-based system and in-game time. This is the source of the “causal time” rough edges today."
 
@@ -28,8 +38,8 @@ desc = "Modify Axiom yourself. Add your own features and rules cleanly."
 
 [[item]]
 status = "next"
-title = "NPC memory + Actor model"
-desc = "Give NPCs their own persistent memory and a proper actor architecture."
+title = "NPC actor model"
+desc = "Per-NPC memory already shipped (beliefs &amp; profiles); next we give NPCs a proper actor architecture so they act on their own, off-screen."
 
 [[item]]
 status = "next"
