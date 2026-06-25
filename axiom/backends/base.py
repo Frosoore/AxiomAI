@@ -14,6 +14,14 @@ markers.  This delimiter was chosen deliberately to avoid ambiguity with
 standard markdown triple-backtick code fences that may appear legitimately
 in narrative prose.
 
+Structured output (§23.2): for *pure-JSON* calls (Timekeeper, populate,
+consolidate, fact extraction) the caller may pass ``response_format="json"``
+and an optional ``response_schema`` (a JSON Schema dict) so the provider
+guarantees valid, well-shaped JSON instead of relying on the regex parser.
+The main narrative turn cannot use this — it interleaves streamed prose with
+the JSON fence — so ``parse_tool_call`` below stays the robust fallback for
+every backend and provider that cannot enforce a schema.
+
 Example LLM output::
 
     The dragon breathes fire.  The knight loses his shield.
@@ -175,6 +183,7 @@ class LLMBackend(ABC):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> LLMResponse:
         """Send a list of messages and return a fully assembled LLMResponse.
 
@@ -188,6 +197,13 @@ class LLMBackend(ABC):
             response_format: Optional format constraint (e.g. "json").
             stop_sequences:  Optional list of strings that trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            response_schema: Optional JSON Schema (a plain dict) constraining the
+                             output to a guaranteed structure (§23.2 — structured
+                             output replaces fragile regex parsing on pure-JSON
+                             calls). Only meaningful together with
+                             response_format="json"; backends that cannot honor a
+                             schema degrade gracefully to plain JSON mode, and the
+                             shared parse_tool_call() remains the final fallback.
 
         Returns:
             Parsed LLMResponse with narrative_text, optional tool_call, and
@@ -207,6 +223,7 @@ class LLMBackend(ABC):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> Iterator[str]:
         """Yield individual tokens as they arrive from the LLM backend.
 
@@ -221,6 +238,10 @@ class LLMBackend(ABC):
             response_format: Optional format constraint (e.g. "json").
             stop_sequences:  Optional list of strings that trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            response_schema: Optional JSON Schema (dict) constraining the output;
+                             see complete(). Note the narrative turn streams prose
+                             plus an inline JSON fence, so it does NOT use a schema
+                             — structured output applies to pure-JSON calls.
 
         Yields:
             Individual token strings in the order they are produced.

@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================
-# Axiom AI — Ubuntu/Linux launch script
+# Axiom AI — Linux / macOS launch script
 # Usage: bash run.sh
 #        chmod +x run.sh && ./run.sh
+# Works on both Ubuntu/Linux and macOS (both POSIX/bash).
 # ============================================================
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# ── Portability helpers (Linux vs macOS) ─────────────────────
+OS="$(uname -s)"   # "Linux" or "Darwin" (macOS)
+
+# macOS ships `shasum -a 256` instead of GNU `sha256sum`.
+hash_file() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
 
 # ── Prerequisites check ──────────────────────────────────────
 echo "--- Axiom AI System Check ---"
@@ -15,21 +28,29 @@ echo "--- Axiom AI System Check ---"
 if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 not found."
     echo "Please install Python 3.11+ and venv:"
-    echo "  sudo apt update && sudo apt install python3 python3-pip python3-venv"
+    if [ "$OS" = "Darwin" ]; then
+        echo "  macOS: brew install python@3.12   (or download from python.org)"
+    else
+        echo "  sudo apt update && sudo apt install python3 python3-pip python3-venv"
+    fi
     exit 1
 fi
 
-# Check for venv module specifically (common pitfall on Ubuntu)
+# Check for venv module specifically (common pitfall on Ubuntu; bundled on macOS).
 if ! python3 -m venv --help &>/dev/null; then
-    echo "ERROR: python3-venv is missing."
-    echo "Please install it with:"
-    echo "  sudo apt update && sudo apt install python3-venv"
+    echo "ERROR: the python3 venv module is missing."
+    if [ "$OS" = "Darwin" ]; then
+        echo "  macOS: reinstall Python from python.org or 'brew install python@3.12'."
+    else
+        echo "  sudo apt update && sudo apt install python3-venv"
+    fi
     exit 1
 fi
 
-# Check for common Qt/PySide6 system dependencies on Linux.
+# Check for common Qt/PySide6 system dependencies on Linux only.
 # libxcb-cursor0 and libqt6svg6 are frequent missing libraries for PySide6 on Ubuntu.
-if command -v ldconfig &>/dev/null; then
+# (macOS PySide6 wheels are self-contained, so this block is skipped there.)
+if [ "$OS" = "Linux" ] && command -v ldconfig &>/dev/null; then
     if ! ldconfig -p | grep -q "libxcb-cursor.so.0"; then
         echo "Warning: libxcb-cursor0 might be missing (required for PySide6 GUI)."
     fi
@@ -76,7 +97,7 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # ── Dependency Installation ──────────────────────────────────
-REQ_HASH=$(sha256sum requirements.txt | cut -d' ' -f1)
+REQ_HASH=$(hash_file requirements.txt)
 MARKER="$VENV_DIR/.deps_hash"
 
 if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$REQ_HASH" ]; then

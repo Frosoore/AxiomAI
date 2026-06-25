@@ -699,6 +699,45 @@ class TestCompanionMode:
         assert len(result.applied_changes) == 1
         assert len(result.rejected_changes) == 0
 
+    def test_plot_armor_clamps_hero_to_zero(self, db_path, vm) -> None:
+        """Plot armor must keep the Hero alive: a would-be-negative change is
+        applied with an absolute floor of 0, not the raw negative delta.
+
+        Regression guard for the audit bug where Companion mode returned the
+        change as valid but applied the raw delta, dropping the hero below 0
+        (HP 10, delta -20 ended at -10 instead of the documented 0).
+        """
+        from axiom.events import EventSourcer
+        es = EventSourcer(db_path)
+        es.append_event("s1", 0, "entity_create", "hero1",
+                        {"entity_id": "hero1", "entity_type": "npc", "name": "Legendary Hero"})
+        es.append_event("s1", 0, "stat_change", "hero1",
+                        {"entity_id": "hero1", "stat_key": "HP", "delta": 10})
+        es.rebuild_state_cache("s1")
+
+        response = LLMResponse(
+            narrative_text="The hero is hit hard.",
+            tool_call={"state_changes": [
+                {"entity_id": "hero1", "stat_key": "HP", "delta": -20}
+            ]},
+            finish_reason="stop",
+        )
+        arb, _ = _make_arbitrator(db_path, vm, response)
+        arb.process_turn(
+            "s1", 1, {"player": "watch"}, "sys", [],
+            mode="Companion",
+            hero_entity_id="hero1",
+        )
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT stat_value FROM State_Cache "
+                "WHERE save_id = ? AND entity_id = ? AND stat_key = ?;",
+                ("s1", "hero1", "HP"),
+            ).fetchone()
+        assert row is not None, "Hero HP missing from State_Cache"
+        assert float(row[0]) == 0.0, f"Plot armor should floor HP at 0, got {row[0]}"
+
     def test_hero_action_included_in_prompt_and_logged(self, db_path, vm) -> None:
         """A Companion hero_action is injected into the prompt as [HERO INTENT]
         and logged as a hero_intent event."""
@@ -731,6 +770,113 @@ class TestCompanionMode:
 
 
 # ---------------------------------------------------------------------------
+# process_turn — deterministic bounds / enums / spatial legality (§23.2, Pilier 8)
+# ---------------------------------------------------------------------------
+
+class TestDeterministicBounds:
+    """Lot 1 item 2: _validate_change enforces declared min/max, enumerated
+    `allowed` values, and spatial legality — all free, deterministic, ON.
+
+    A stat with no declared parameters keeps the old behaviour (retro-compat).
+    """
+
+    @staticmethod
+    def _add_stat(db_path, stat_id, name, value_type, params):
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Stat_Definitions (stat_id, name, value_type, parameters) "
+                "VALUES (?,?,?,?);",
+                (stat_id, name, value_type, json.dumps(params)),
+            )
+            conn.commit()
+
+    @staticmethod
+    def _seed(db_path, stat_key, value):
+        es = EventSourcer(db_path)
+        es.append_event("s1", 0, "stat_set", "player1",
+                        {"entity_id": "player1", "stat_key": stat_key, "value": value})
+        es.rebuild_state_cache("s1")
+
+    def _run(self, db_path, vm, change):
+        response = LLMResponse("ok", {"state_changes": [change]}, "stop")
+        arb, _ = _make_arbitrator(db_path, vm, response)
+        return arb.process_turn("s1", 1, {"player1": "act"}, "sys", [])
+
+    @staticmethod
+    def _cache(db_path, entity, stat):
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT stat_value FROM State_Cache "
+                "WHERE save_id='s1' AND entity_id=? AND stat_key=?;",
+                (entity, stat),
+            ).fetchone()
+        return row[0] if row else None
+
+    def test_assignment_above_max_is_clamped(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Mana", "numeric", {"max": 100})
+        self._seed(db_path, "Mana", "90")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Mana", "value": 150})
+        assert len(result.rejected_changes) == 0
+        assert self._cache(db_path, "player1", "Mana") == "100"
+
+    def test_delta_above_max_is_clamped(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Mana", "numeric", {"max": 100})
+        self._seed(db_path, "Mana", "90")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Mana", "delta": 50})
+        assert len(result.rejected_changes) == 0
+        assert self._cache(db_path, "player1", "Mana") == "100"
+
+    def test_below_declared_min_is_rejected(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Standing", "numeric", {"min": 10})
+        self._seed(db_path, "Standing", "15")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Standing", "delta": -10})
+        assert len(result.rejected_changes) == 1
+        assert self._cache(db_path, "player1", "Standing") == "15"  # unchanged
+
+    def test_invalid_enum_value_is_rejected(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Allegiance", "categorical",
+                       {"allowed": ["Empire", "Rebels"]})
+        self._seed(db_path, "Allegiance", "Empire")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Allegiance", "value": "Pirates"})
+        assert len(result.rejected_changes) == 1
+        assert self._cache(db_path, "player1", "Allegiance") == "Empire"
+
+    def test_valid_enum_value_is_applied(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Allegiance", "categorical",
+                       {"allowed": ["Empire", "Rebels"]})
+        self._seed(db_path, "Allegiance", "Empire")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Allegiance", "value": "Rebels"})
+        assert len(result.rejected_changes) == 0
+        assert self._cache(db_path, "player1", "Allegiance") == "Rebels"
+
+    def test_unknown_location_is_rejected(self, db_path, vm) -> None:
+        self._add_stat(db_path, "10", "Location", "categorical", {})
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO Locations (location_id, name, scale) "
+                "VALUES ('town_a','Town A','city');")
+            conn.commit()
+        self._seed(db_path, "Location", "town_a")
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "Location", "value": "atlantis"})
+        assert len(result.rejected_changes) == 1
+        assert self._cache(db_path, "player1", "Location") == "town_a"
+
+    def test_unbounded_stat_accepts_large_value(self, db_path, vm) -> None:
+        # HP has no declared max in the fixture → the old "anything non-negative
+        # goes" behaviour is preserved (no spurious clamp/rejection).
+        result = self._run(db_path, vm,
+                           {"entity_id": "player1", "stat_key": "HP", "value": 9999})
+        assert len(result.rejected_changes) == 0
+        assert self._cache(db_path, "player1", "HP") == "9999"
+
+
+# ---------------------------------------------------------------------------
 # process_turn — Causal time (Pilier 5)
 # ---------------------------------------------------------------------------
 
@@ -759,6 +905,33 @@ class TestCausalTime:
         assert rows[0][0] == 45
         assert "45" in rows[0][1]
         assert result.in_game_time == rows[0][0]
+
+    def test_timekeeper_call_requests_structured_json(self, db_path, vm) -> None:
+        """The Timekeeper is a pure-JSON call → it asks for structured output
+        (response_format='json' + the elapsed-minutes schema), so backends that
+        can enforce it stop relying on the regex scrape (§23.2)."""
+        from axiom.config import AppConfig
+        from axiom.arbitrator import _TIMEKEEPER_SCHEMA
+
+        class _RecordingLLM(_StubLLM):
+            def __init__(self, response):
+                super().__init__(response)
+                self.last_kwargs: dict = {}
+
+            def complete(self, messages, stream=False, **kwargs):
+                self.last_kwargs = kwargs
+                return super().complete(messages, stream)
+
+        narrative_llm = _StubLLM(LLMResponse("You wait.", None, "stop"))
+        time_llm = _RecordingLLM(LLMResponse("", {"elapsed_minutes": 30}, "stop"))
+        arb = ArbitratorEngine(db_path, [])
+        arb.configure(narrative_llm, vm, time_llm=time_llm)
+
+        with patch("axiom.config.load_config", return_value=AppConfig(timekeeper_enabled=True)):
+            arb.process_turn("s1", 1, {"player1": "I wait."}, "sys", [])
+
+        assert time_llm.last_kwargs.get("response_format") == "json"
+        assert time_llm.last_kwargs.get("response_schema") == _TIMEKEEPER_SCHEMA
 
     def test_timekeeper_disabled_uses_scene_pace_and_skips_second_call(self, db_path, vm) -> None:
         """With the Timekeeper disabled, no second LLM call is made and the

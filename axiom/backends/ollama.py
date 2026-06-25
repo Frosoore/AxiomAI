@@ -82,6 +82,7 @@ class OllamaClient(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> LLMResponse:
         """Send messages to Ollama's /api/chat and return a parsed LLMResponse.
 
@@ -93,6 +94,8 @@ class OllamaClient(LLMBackend):
             response_format: If "json", forces Ollama to return a JSON object.
             stop_sequences:  Custom strings to trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            response_schema: Optional JSON Schema — passed as Ollama's `format`
+                             for structured output (§23.2).
 
         Returns:
             LLMResponse with narrative_text, optional tool_call, finish_reason.
@@ -123,7 +126,9 @@ class OllamaClient(LLMBackend):
         }
         
         if response_format == "json":
-            payload["format"] = "json"
+            # Ollama honours a JSON Schema object in `format` for structured
+            # output (§23.2); a bare "json" still just guarantees valid JSON.
+            payload["format"] = response_schema if response_schema else "json"
 
         try:
             response = httpx.post(
@@ -180,6 +185,7 @@ class OllamaClient(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> Iterator[str]:
         """Yield tokens from Ollama's streaming NDJSON response.
 
@@ -222,7 +228,9 @@ class OllamaClient(LLMBackend):
         }
         
         if response_format == "json":
-            payload["format"] = "json"
+            # Ollama honours a JSON Schema object in `format` for structured
+            # output (§23.2); a bare "json" still just guarantees valid JSON.
+            payload["format"] = response_schema if response_schema else "json"
 
         try:
             self.last_finish_reason = "stop"

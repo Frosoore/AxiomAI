@@ -118,6 +118,25 @@ class TestComplete:
         assert sent_payload["options"]["temperature"] == 0.8
         assert sent_payload["options"]["top_p"] == 0.9
 
+    def test_json_format_without_schema(self) -> None:
+        """response_format='json' alone sets Ollama's `format` to "json"."""
+        mock_resp = _make_chat_response("{}")
+        with patch("httpx.post", return_value=mock_resp) as mock_post:
+            client = OllamaClient("llama3.2")
+            client.complete([{"role": "user", "content": "hi"}], response_format="json")
+        assert mock_post.call_args.kwargs["json"]["format"] == "json"
+
+    def test_json_schema_passed_as_format(self) -> None:
+        """A response_schema is forwarded as Ollama's `format` for structured
+        output (§23.2)."""
+        schema = {"type": "object", "properties": {"elapsed_minutes": {"type": "integer"}}}
+        mock_resp = _make_chat_response('{"elapsed_minutes": 5}')
+        with patch("httpx.post", return_value=mock_resp) as mock_post:
+            client = OllamaClient("llama3.2")
+            client.complete([{"role": "user", "content": "hi"}],
+                            response_format="json", response_schema=schema)
+        assert mock_post.call_args.kwargs["json"]["format"] == schema
+
     def test_extracts_tool_call(self) -> None:
         """complete parses a fenced JSON tool-call out of the model content."""
         content = (

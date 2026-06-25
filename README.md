@@ -79,7 +79,7 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
 
 2. **Launch the application:**
 
-   **Linux:**
+   **Linux / macOS:**
    ```bash
    bash run.sh
    ```

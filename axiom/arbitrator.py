@@ -75,6 +75,33 @@ _LORE_LINK_BUDGET: int = 2
 _FOCUS_SCENE_CHARACTER_CAP: int = 5
 
 
+# JSON Schema for the Timekeeper's pure-JSON reply (§23.2 — structured output).
+# The Timekeeper is a dedicated second LLM call that only estimates how many
+# in-game minutes a turn consumed; constraining it to this shape removes the
+# regex-scrape fallback on backends that can enforce a schema (Gemini, Ollama).
+_TIMEKEEPER_SCHEMA: dict = {
+    "type": "object",
+    "properties": {"elapsed_minutes": {"type": "integer", "minimum": 0}},
+    "required": ["elapsed_minutes"],
+}
+
+
+def _as_number(raw: Any) -> float | None:
+    """Coerce a declared bound (``min``/``max``) to a float, or None.
+
+    Bounds come from the ``parameters`` JSON of a stat definition and are usually
+    already numeric, but tolerate strings ("100") and ignore anything that is not
+    a finite number so a malformed declaration disables the bound rather than
+    crashing the turn.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
@@ -462,7 +489,10 @@ class ArbitratorEngine:
             prompt = build_timekeeper_prompt(combined_intents_text, narrative_text)
             try:
                 time_llm = getattr(self, "_time_llm", self._llm)
-                tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
+                tk_resp = time_llm.complete(
+                    prompt, max_tokens=150, temperature=0.1,
+                    response_format="json", response_schema=_TIMEKEEPER_SCHEMA,
+                )
                 tk_data = getattr(tk_resp, "tool_call", {}) or {}
                 if not tk_data:
                     tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
@@ -503,9 +533,11 @@ class ArbitratorEngine:
         rejected_changes: list[dict[str, Any]] = []
         rejection_messages: list[str] = []
 
-        # Load the set of defined stat names ONCE per turn (lowercased) instead
-        # of re-querying Stat_Definitions for every single change (was an N+1).
-        defined_stats = self._load_defined_stats() if state_changes else set()
+        # Load the universe's stat definitions (with their declared min/max/enum
+        # bounds) and known locations ONCE per turn instead of re-querying for
+        # every single change (was an N+1). Both feed _validate_change.
+        stat_defs = self._load_stat_defs() if state_changes else {}
+        known_locations = self._load_known_locations() if state_changes else set()
 
         for change in state_changes:
             entity_id: str = change.get("entity_id", "")
@@ -513,11 +545,18 @@ class ArbitratorEngine:
             delta: float | None = change.get("delta")
             value: Any = change.get("value")
 
-            valid, reason = self._validate_change(
-                entity_id, stat_key, delta, value, all_stats, defined_stats
+            valid, reason, clamp_value = self._validate_change(
+                entity_id, stat_key, delta, value, all_stats, stat_defs, known_locations
             )
 
             if valid:
+                # Deterministic clamp signal: apply this absolute value instead of the
+                # raw change. Used for the Companion plot-armor floor (hero can't drop
+                # below its floor) and the declared-`max` cap (stat can't exceed its
+                # design ceiling). Whole numbers are stored as ints for clean display.
+                if clamp_value is not None:
+                    delta = None
+                    value = int(clamp_value) if float(clamp_value) == int(clamp_value) else clamp_value
                 payload: dict[str, Any] = {"entity_id": entity_id, "stat_key": stat_key}
                 if delta is not None:
                     payload["delta"] = delta
@@ -1243,18 +1282,52 @@ class ArbitratorEngine:
             )
         return 0
 
-    def _load_defined_stats(self) -> set[str]:
-        """Return the set of defined stat names (lowercased) for this universe.
+    def _load_stat_defs(self) -> dict[str, dict[str, Any]]:
+        """Return the universe's stat definitions keyed by lowercased name.
 
-        Read once per turn and passed to `_validate_change` so the stat-restriction
-        rule no longer issues one query per proposed change (former N+1).
+        Each value is ``{"value_type": str, "params": dict}`` where ``params``
+        carries the declared bounds (``min``/``max`` for numeric stats,
+        ``allowed`` = list of permitted values for enumerated ones). Read once
+        per turn and passed to `_validate_change`, so both the stat-restriction
+        rule (former N+1) and the new bound checks add no per-change query.
         """
+        defs: dict[str, dict[str, Any]] = {}
         try:
             with get_connection(self._db_path) as conn:
-                rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            return {str(r[0]).lower() for r in rows}
+                rows = conn.execute(
+                    "SELECT name, value_type, parameters FROM Stat_Definitions;"
+                ).fetchall()
         except sqlite3.Error:
-            return set()
+            return defs
+        for name, value_type, raw_params in rows:
+            try:
+                params = json.loads(raw_params) if raw_params else {}
+            except (TypeError, ValueError):
+                params = {}
+            if not isinstance(params, dict):
+                params = {}
+            defs[str(name).lower()] = {"value_type": value_type, "params": params}
+        return defs
+
+    def _load_known_locations(self) -> set[str]:
+        """Return known location identifiers and names (lowercased).
+
+        Used to reject teleports to places that do not exist. Empty when the
+        universe declares no locations, in which case the legality check is a
+        no-op (retro-compatible with location-less universes).
+        """
+        known: set[str] = set()
+        try:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute("SELECT location_id, name FROM Locations;").fetchall()
+        except sqlite3.Error:
+            return known
+        for loc_id, name in rows:
+            if loc_id:
+                known.add(str(loc_id).lower())
+            if name:
+                known.add(str(name).lower())
+        return known
 
     def _validate_change(
         self,
@@ -1263,15 +1336,22 @@ class ArbitratorEngine:
         delta: float | None,
         value: Any,
         all_effective_stats: dict[str, dict[str, str]],
-        defined_stats: set[str],
-    ) -> tuple[bool, str]:
+        stat_defs: dict[str, dict[str, Any]],
+        known_locations: set[str] | None = None,
+    ) -> tuple[bool, str, Any]:
         """Validate a single proposed state change.
 
-        Rules:
+        Rules (all deterministic, free, ON and non-togglable — §23.2):
         - Unknown entity_id → rejected (if the entity set is non-empty).
         - Stat key not in Stat_Definitions → rejected (except special 'Description').
-        - Delta change on a non-negative resource that would go below 0 → rejected.
-        - Absolute assignment on a non-negative resource that would go below 0 → rejected.
+        - Illegal teleport: assigning ``Location`` to a place not in the universe
+          → rejected (skipped when the universe declares no locations).
+        - Enumerated stat: assigning a value outside its declared ``allowed`` list
+          → rejected.
+        - Delta/assignment driving a numeric resource below its floor (declared
+          ``min``, else 0) → rejected (Companion hero clamped instead — plot armor).
+        - Assignment driving a numeric stat above its declared ``max`` → clamped
+          down to ``max`` (graceful cap, applied not rejected).
 
         Args:
             entity_id:           The entity to modify.
@@ -1280,24 +1360,53 @@ class ArbitratorEngine:
             value:               Absolute assignment value, or None if using delta.
             all_effective_stats: Full map of entity_id -> stats for all active
                                  entities in this save.
-            defined_stats:       Lowercased set of stat names defined in this
-                                 universe (loaded once per turn).
+            stat_defs:           Universe stat definitions keyed by lowercased
+                                 name (``{"value_type", "params"}``), loaded once
+                                 per turn (see ``_load_stat_defs``).
+            known_locations:     Lowercased set of valid location ids/names; empty
+                                 or None disables the spatial-legality check.
 
         Returns:
-            (True, "") if valid, or (False, reason_string) if invalid.
+            A 3-tuple ``(valid, reason, clamp_value)``. ``clamp_value`` is normally
+            ``None``; otherwise it carries an absolute value the caller must apply
+            instead of the raw change — used for the Companion plot-armor floor
+            (hero kept alive at its floor) and for the declared-``max`` cap.
         """
         if not entity_id:
-            return False, "Missing entity_id in state change."
+            return False, "Missing entity_id in state change.", None
 
         if all_effective_stats and entity_id not in all_effective_stats:
             # Non-empty entity set means we know all valid entities
-            return False, f"Unknown entity: {entity_id}"
+            return False, f"Unknown entity: {entity_id}", None
+
+        stat_lower = stat_key.lower()
 
         # Stat Restriction Rule: Only allow stats defined in Stat_Definitions (case-insensitive)
         # Plus the special 'Description' stat which is allowed for all entities.
-        if stat_key.lower() != "description":
-            if stat_key.lower() not in defined_stats:
-                return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
+        if stat_lower != "description":
+            if stat_lower not in stat_defs:
+                return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden.", None
+
+        params = stat_defs.get(stat_lower, {}).get("params", {})
+
+        # Spatial legality: a Location assignment must point to a place that exists
+        # in this universe. Skipped when no locations are declared, so location-less
+        # universes are unaffected. Delta changes on Location make no sense → only
+        # check absolute assignments.
+        if stat_lower == "location" and value is not None and known_locations:
+            if str(value).lower() not in known_locations:
+                return False, f"Unknown location '{value}'. The player cannot teleport there.", None
+
+        # Enumerated stats: an absolute assignment must be one of the declared
+        # allowed values (case-insensitive). Numeric/unbounded stats skip this.
+        allowed = params.get("allowed")
+        if isinstance(allowed, list) and allowed and value is not None and delta is None:
+            permitted = {str(a).lower() for a in allowed}
+            if str(value).lower() not in permitted:
+                return False, (
+                    f"'{value}' is not a valid value for {stat_key} "
+                    f"(allowed: {', '.join(str(a) for a in allowed)})."
+                ), None
 
         # Resource sufficiency rules (prevent stats like HP, Gold, etc. from going below zero)
         entity_stats = all_effective_stats.get(entity_id, {})
@@ -1311,30 +1420,47 @@ class ArbitratorEngine:
         # Calculate proposed new value
         if delta is not None:
             if current_val is None:
-                return False, f"Cannot apply numeric delta to non-numeric stat {entity_id}.{stat_key}."
+                return False, f"Cannot apply numeric delta to non-numeric stat {entity_id}.{stat_key}.", None
             result_val = current_val + float(delta)
         elif value is not None:
             try:
                 result_val = float(value)
             except (ValueError, TypeError):
-                result_val = None  # Assigning a non-numeric string is always valid for the cache
+                result_val = None  # Non-numeric assignment (enum/location) validated above
         else:
-            return False, f"State change for {entity_id}.{stat_key} has neither delta nor value."
+            return False, f"State change for {entity_id}.{stat_key} has neither delta nor value.", None
 
-        # Enforce non-negativity if it's a numeric resource
+        # Numeric bound enforcement (only meaningful for numeric stats)
         if current_val is not None and result_val is not None:
-            if current_val >= 0 and result_val < 0:
-                # COMPANION MODE: Hero has Plot Armor (cannot drop below 0 for critical resources)
+            # Lower bound: declared `min` if any, else the implicit floor of 0
+            # (resource non-negativity). Whichever is higher wins.
+            declared_min = _as_number(params.get("min"))
+            floor = declared_min if declared_min is not None else 0.0
+            if current_val >= floor and result_val < floor:
+                # COMPANION MODE: Hero has Plot Armor — accept the change (do NOT
+                # reject it) but signal the caller to clamp to the floor instead of
+                # the raw value, so the hero is kept alive at its floor rather than
+                # plunging below it.
                 if self._mode == "Companion" and entity_id == self._hero_entity_id:
-                    # Allow it but set to 0 instead of rejecting, or just ignore the reduction
-                    # Here we silently cap at 0 to ensure the turn proceeds but the hero survives.
-                    return True, ""
-                
+                    return True, "", floor
+
+                if declared_min is not None:
+                    return False, (
+                        f"{entity_id}.{stat_key} cannot go below {declared_min:.0f} "
+                        f"(current: {current_val:.0f})"
+                    ), None
                 return False, (
                     f"{entity_id} does not have enough {stat_key} (current: {current_val:.0f})"
-                )
+                ), None
 
-        return True, ""
+            # Upper bound: a declared `max` is a hard cap. Rather than reject (which
+            # would discard the whole change), clamp down to the ceiling so the
+            # action still lands but cannot inflate the stat past its design limit.
+            declared_max = _as_number(params.get("max"))
+            if declared_max is not None and result_val > declared_max:
+                return True, "", declared_max
+
+        return True, "", None
 
     def _queue_correction(self, reason: str) -> None:
         """Format and store a correction message for the next turn's prompt.

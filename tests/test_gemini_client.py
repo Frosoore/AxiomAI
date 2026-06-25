@@ -213,6 +213,29 @@ class TestComplete:
         call_kwargs = mock_inner.models.generate_content.call_args.kwargs
         assert call_kwargs["config"].stop_sequences == ["x", "y"]
 
+    def test_json_format_sets_mime_and_schema(self, mock_client_cls) -> None:
+        """response_format='json' + a schema forces Gemini's structured output
+        (§23.2): the config carries application/json + the JSON schema. Gemini
+        used to ignore the flag entirely, leaving pure-JSON calls on regex."""
+        client, mock_inner = _make_gemini_client(mock_client_cls)
+        mock_inner.models.generate_content.return_value = _make_response('{"elapsed_minutes": 5}')
+        schema = {"type": "object", "properties": {"elapsed_minutes": {"type": "integer"}}}
+        client.complete([{"role": "user", "content": "how long?"}],
+                        response_format="json", response_schema=schema)
+        cfg = mock_inner.models.generate_content.call_args.kwargs["config"]
+        assert cfg.response_mime_type == "application/json"
+        assert cfg.response_json_schema == schema
+
+    def test_no_json_format_leaves_mime_unset(self, mock_client_cls) -> None:
+        """The narrative turn (no response_format) must NOT switch to JSON mode —
+        it streams prose plus an inline fence."""
+        client, mock_inner = _make_gemini_client(mock_client_cls)
+        mock_inner.models.generate_content.return_value = _make_response("The castle falls.")
+        client.complete([{"role": "user", "content": "attack"}])
+        cfg = mock_inner.models.generate_content.call_args.kwargs["config"]
+        assert cfg.response_mime_type is None
+        assert cfg.response_json_schema is None
+
     def test_raises_connection_error_on_sdk_exception(self, mock_client_cls) -> None:
         """complete wraps an SDK exception as LLMConnectionError."""
         client, mock_inner = _make_gemini_client(mock_client_cls)

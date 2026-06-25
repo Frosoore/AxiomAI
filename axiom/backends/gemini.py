@@ -211,6 +211,30 @@ class GeminiClient(LLMBackend):
             self._prompt_cache[key] = None
             return None
 
+    @staticmethod
+    def _json_output_kwargs(
+        response_format: str | None, response_schema: dict | None
+    ) -> dict:
+        """Extra GenerateContentConfig kwargs for structured JSON output (§23.2).
+
+        Returns ``{}`` unless ``response_format == "json"``. Gemini ignored this
+        flag entirely before — so the Timekeeper and every populate/consolidate/
+        fact-extraction call fell back to regex parsing. We now force
+        ``application/json`` (valid JSON guaranteed) and, when a schema is given
+        AND the installed SDK supports it, ``response_json_schema`` (well-shaped
+        JSON guaranteed). Anything the SDK lacks is silently skipped so an older
+        google-genai degrades to plain JSON mode rather than crashing.
+        """
+        if response_format != "json":
+            return {}
+        fields = genai_types.GenerateContentConfig.model_fields
+        kwargs: dict = {}
+        if "response_mime_type" in fields:
+            kwargs["response_mime_type"] = "application/json"
+        if response_schema and "response_json_schema" in fields:
+            kwargs["response_json_schema"] = response_schema
+        return kwargs
+
     def _make_generate_config(
         self,
         model: str,
@@ -367,6 +391,7 @@ class GeminiClient(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> LLMResponse:
         """Send messages to Gemini and return a parsed LLMResponse.
 
@@ -379,9 +404,10 @@ class GeminiClient(LLMBackend):
             stream:      Ignored; use stream_tokens() for token streaming.
             temperature: Sampling temperature (0.0 to 1.0).
             top_p:       Nucleus sampling parameter (0.0 to 1.0).
-            response_format: Currently unused for Gemini.
+            response_format: "json" forces Gemini's JSON output mode (§23.2).
             stop_sequences:  Custom strings to trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            response_schema: Optional JSON Schema constraining the JSON output.
 
         Returns:
             LLMResponse with narrative_text, optional tool_call, finish_reason.
@@ -399,6 +425,7 @@ class GeminiClient(LLMBackend):
             top_p=top_p,
             max_output_tokens=max_tokens if max_tokens else 1024,
             stop_sequences=_clamp_stop_sequences(stop_sequences),
+            **self._json_output_kwargs(response_format, response_schema),
         )
 
         # TICKET-031 : pacing + retry 429 (délai suggéré par l'API) + fallback.
@@ -492,6 +519,7 @@ class GeminiClient(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        response_schema: dict | None = None,
     ) -> Iterator[str]:
         """Yield tokens from a streaming Gemini response.
 
@@ -499,9 +527,11 @@ class GeminiClient(LLMBackend):
             messages:    Conversation turns (system, user, assistant).
             temperature: Sampling temperature (0.0 to 1.0).
             top_p:       Nucleus sampling parameter (0.0 to 1.0).
-            response_format: Currently unused for Gemini.
+            response_format: "json" forces Gemini's JSON output mode (rare on a
+                             stream — the narrative turn streams mixed prose).
             stop_sequences:  Custom strings to trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            response_schema: Optional JSON Schema constraining the JSON output.
 
         Yields:
             Individual token strings in arrival order.
@@ -517,6 +547,7 @@ class GeminiClient(LLMBackend):
             top_p=top_p,
             max_output_tokens=max_tokens if max_tokens else 1024,
             stop_sequences=_clamp_stop_sequences(stop_sequences),
+            **self._json_output_kwargs(response_format, response_schema),
         )
 
         # TICKET-031 : le 429 d'un stream surgit à l'établissement (première

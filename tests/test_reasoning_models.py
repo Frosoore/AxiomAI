@@ -76,6 +76,28 @@ class TestReasoningDetection:
 # Token floor in the payload
 # ---------------------------------------------------------------------------
 
+class TestJsonResponseFormat:
+    def test_json_object_set_when_requested(self) -> None:
+        llm = _client("gpt-4.1-mini")
+        payload = llm._get_payload([], stream=False, response_format="json")
+        assert payload["response_format"] == {"type": "json_object"}
+
+    def test_schema_does_not_break_payload(self) -> None:
+        """A response_schema is accepted but, for cross-provider safety, the wire
+        format stays `json_object` (the stricter json_schema type is not uniformly
+        supported); valid JSON is still guaranteed (§23.2)."""
+        schema = {"type": "object", "properties": {"x": {"type": "integer"}}}
+        llm = _client("gpt-4.1-mini")
+        payload = llm._get_payload([], stream=False, response_format="json",
+                                   response_schema=schema)
+        assert payload["response_format"] == {"type": "json_object"}
+
+    def test_no_json_format_omits_response_format(self) -> None:
+        llm = _client("gpt-4.1-mini")
+        payload = llm._get_payload([], stream=False)
+        assert "response_format" not in payload
+
+
 class TestTokenFloor:
     def test_floor_applied_to_reasoning_model(self) -> None:
         llm = _client("accounts/fireworks/models/gpt-oss-120b")
