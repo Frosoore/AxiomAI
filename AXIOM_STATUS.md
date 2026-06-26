@@ -34,6 +34,7 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-06-26** · `engine` · `ui` · `cli` · `docs` · `tests` · `fix`/`add`: Rewrote `axiom/logger.py` with debug mode + session log lifecycle; added `--debug` flag to CLI and `main.py`; screen-aware sizing + `setMinimumSize(1024, 700)` on MainWindow; wrapped tabs in QScrollArea for settings, setup, and creator_studio views; changed tabletop_view splitter from hardcoded sizes to proportional stretch; added entity name cache on Session; blocked wheel events on spinbox/combobox unless explicitly clicked (forwards to parent scroll area instead of swallowing); fixed `isinstance(cfg, AppConfig)` guard in save-sorting; removed unnecessary test files; documented `--debug` in `docs/guides/cli.md`; added 13 logger tests (973 total pass).
 - **2026-06-23** · `site` · add: Blog post "We asked an AI to tear Axiom apart" (Arbitrator + competitive audit write-up); refreshed the Dev-page roadmap (new Arbitrator-reliability and cost-controls items, NPC item narrowed to the actor model since memory shipped).
 - **2026-06-21** · `chore` · change: Renamed the author pseudonym `17h59` to `Pinpanicaille` across the tree (NOTICE, README, docs, landing site, Myria credit).
 - **2026-06-21** · `ui` · fix: `retranslate_tooltips` no longer crashes on language change when a documented widget's C++ object was already deleted (CI 3.12 flake); guard + prune via `shiboken6.isValid`.

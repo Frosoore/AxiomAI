@@ -4,6 +4,9 @@ Installing `axiomai-engine` provides the `axiom` command (also reachable as
 `python -m axiom.cli`). Run `axiom --help` or `axiom <command> --help` for the
 authoritative usage; this page is the annotated tour.
 
+The global flag `--debug` enables verbose console output (DEBUG level instead of
+INFO) and full log verbosity — useful when troubleshooting.
+
 Wherever a command takes a *universe* argument, it accepts a `.db` file, a
 source folder (compiled on the fly when needed) or a `.axiom` archive.
 

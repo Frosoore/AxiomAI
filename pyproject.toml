@@ -60,3 +60,13 @@ packages = { find = { include = ["axiom*"] } }
 
 [tool.setuptools.dynamic]
 version = { attr = "axiom.__version__" }
+
+[tool.pyright]
+# Duck-typing patterns (e.g. llm.on_status = ...) are intentional.
+reportAttributeAccessIssue = false
+# Parsing X.Y.Z version strings via tuple(int(p) for p in ...) yields tuple[int, ...] — Pyright's strict sizing is too narrow for this pattern.
+reportArgumentType = false
+# argparse attributes are typed Any by default; .split() etc. are correctly inferred at runtime.
+reportUnknownMemberType = false
+# dict[Unknown, Unknown] can't be resolved to TypedDict subtypes in generic contexts.
+reportReturnType = false

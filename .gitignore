@@ -35,6 +35,7 @@ debug_*.db*
 .directory
 
 .claude/
+mise.toml
 
 # Documentation (Sphinx) — build output + compiled gettext catalogs
 docs/_build/

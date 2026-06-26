@@ -53,7 +53,16 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(tr("app_title"))
-        self.resize(1400, 850) # Increased default width for better box display
+        self.setMinimumSize(1024, 700)
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geom = screen.availableGeometry()
+            w = min(1400, geom.width() - 40)
+            h = min(850, geom.height() - 60)
+        else:
+            w, h = 1400, 850
+        self.resize(w, h)
 
         # Session state - populated when transitioning to Tabletop
         self._active_db_path: str | None = None
