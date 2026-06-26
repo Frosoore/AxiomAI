@@ -242,7 +242,9 @@ class TabletopView(HardcoreMixin, QWidget):
         self._splitter.addWidget(self._sidebar)
         self._splitter.addWidget(self._chat)
         self._splitter.addWidget(self._mini_dico)
-        self._splitter.setSizes([220, 660, 260])
+        self._splitter.setStretchFactor(0, 2)
+        self._splitter.setStretchFactor(1, 6)
+        self._splitter.setStretchFactor(2, 2)
         layout.addWidget(self._splitter, 1)
 
         # --- Connections ---

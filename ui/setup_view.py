@@ -166,7 +166,10 @@ class SetupView(QWidget):
         self._tabs.addTab(self._setup_tab, tr("tab_setup"))
         doc_tab(self._tabs, 2, "setup.tab_story")
 
-        layout.addWidget(self._tabs)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self._tabs)
+        layout.addWidget(scroll)
 
         # Bottom Launch Button
         self._launch_btn = doc(QPushButton(tr("launch_session")), "setup.launch")

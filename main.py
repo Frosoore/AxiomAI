@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 
 from ui.main_window import MainWindow
-from axiom.logger import logger
+from axiom.logger import logger, enable_debug_mode, is_debug
 
 _DARK_QSS: str = """
 /* ── Global Catppuccin Mocha ───────────────────────────────── */
@@ -303,8 +303,67 @@ def _install_exception_hook() -> None:
     sys.excepthook = _hook
 
 
+def _make_application_class():
+    """Return a QApplication subclass that blocks wheel events on spinboxes
+    and comboboxes unless the user has explicitly clicked into them.
+
+    Without this, hovering a QSpinBox/QDoubleSpinBox/QComboBox and scrolling
+    changes its value instead of scrolling the parent scroll area. The widget
+    only accepts wheel input after the user clicks into it.
+
+    Overrides notify() — the earliest interception point in Qt's event
+    dispatch. This runs before any widget-level event() or eventFilter().
+    """
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QComboBox
+    from PySide6.QtGui import QWheelEvent
+
+    _WHEEL_BLOCKED = (QAbstractSpinBox, QComboBox)
+    _clicked: set[int] = set()
+
+    class _App(QApplication):
+        def notify(self, receiver, event):
+            t = event.type()
+            if t == QEvent.Type.MouseButtonPress:
+                w = receiver
+                while w is not None:
+                    if isinstance(w, _WHEEL_BLOCKED):
+                        _clicked.add(id(w))
+                        break
+                    w = w.parent()
+            elif t == QEvent.Type.Wheel:
+                w = receiver
+                while w is not None:
+                    if isinstance(w, _WHEEL_BLOCKED):
+                        if id(w) not in _clicked:
+                            # Forward event to nearest scroll‑area viewport
+                            # instead of swallowing — parent pane still scrolls.
+                            parent = w.parent()
+                            while parent is not None:
+                                if isinstance(parent, QAbstractScrollArea):
+                                    vp = parent.viewport()
+                                    clone = QWheelEvent(event)
+                                    QApplication.sendEvent(vp, clone)
+                                    break
+                                parent = parent.parent()
+                            return True
+                        break
+                    w = w.parent()
+            elif t == QEvent.Type.FocusOut:
+                if isinstance(receiver, _WHEEL_BLOCKED):
+                    _clicked.discard(id(receiver))
+            return super().notify(receiver, event)
+
+    return _App
+
+
 def main() -> None:
     """Application entry point."""
+    # Parse --debug before Qt consumes sys.argv
+    if "--debug" in sys.argv:
+        sys.argv.remove("--debug")
+        enable_debug_mode()
+
     # Phase 1: Robust Startup Validation
     # We run a quick check of imports and core components before starting Qt.
     from debug.startup_check import run_checks
@@ -319,6 +378,8 @@ def main() -> None:
 
     _install_exception_hook()
     logger.info("Application starting...")
+    if is_debug():
+        logger.debug("Debug mode enabled — verbose console output active.")
 
     # Front-load torch's native runtime on the main thread. The embedding model
     # runs on worker threads, and its first encode dlopen()s libtriton.so —
@@ -341,7 +402,8 @@ def main() -> None:
     register_builtin_providers()
     apply_beta_defaults()
 
-    app = QApplication(sys.argv)
+    _App = _make_application_class()
+    app = _App(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("Axiom AI")
     app.setApplicationDisplayName("Axiom AI — AI Role Playing Game")
