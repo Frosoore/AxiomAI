@@ -46,8 +46,9 @@ class NarrativeWorker(QThread):
     def __init__(
         self,
         session: Session,
-        action: object,  # PlayerAction (.text, .player_id)
+        action: object,  # PlayerAction (.text, .player_id) — solo/Companion
         *,
+        intents: dict[str, str] | None = None,  # Multiplayer: {player_id: text}
         temperature: float = 0.7,
         top_p: float = 1.0,
         verbosity: str = "balanced",
@@ -55,6 +56,7 @@ class NarrativeWorker(QThread):
         super().__init__()
         self._session = session
         self._action = action
+        self._intents = intents
         self._temperature = temperature
         self._top_p = top_p
         self._verbosity = verbosity
@@ -62,21 +64,33 @@ class NarrativeWorker(QThread):
     def run(self) -> None:
         """Execute one Session turn.  Never raises.
 
-        `Session.take_turn` decides the Companion hero action (when in Companion
-        mode), rebuilds history from the Event_Log, streams tokens and emits its
-        own "Ready." status at the end; we simply forward those to Qt signals.
+        Solo/Companion: `Session.take_turn` decides the Companion hero action
+        (when in Companion mode), rebuilds history from the Event_Log, streams
+        tokens and emits its own "Ready." status. Multiplayer (`intents` given):
+        `Session.take_turn_multiplayer` resolves every player's intent in a
+        single simultaneous tick. We forward callbacks to Qt signals either way.
         """
         try:
-            result = self._session.take_turn(
-                self._action.text,
-                player_id=self._action.player_id,
-                on_token=self.token_received.emit,
-                on_status=self.status_update.emit,
-                on_hero_decision=self.hero_decision_received.emit,
-                temperature=self._temperature,
-                top_p=self._top_p,
-                verbosity_level=self._verbosity,
-            )
+            if self._intents is not None:
+                result = self._session.take_turn_multiplayer(
+                    self._intents,
+                    on_token=self.token_received.emit,
+                    on_status=self.status_update.emit,
+                    temperature=self._temperature,
+                    top_p=self._top_p,
+                    verbosity_level=self._verbosity,
+                )
+            else:
+                result = self._session.take_turn(
+                    self._action.text,
+                    player_id=self._action.player_id,
+                    on_token=self.token_received.emit,
+                    on_status=self.status_update.emit,
+                    on_hero_decision=self.hero_decision_received.emit,
+                    temperature=self._temperature,
+                    top_p=self._top_p,
+                    verbosity_level=self._verbosity,
+                )
             self.turn_complete.emit(result)
 
         except LLMConnectionError as exc:

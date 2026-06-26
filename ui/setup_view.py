@@ -421,6 +421,7 @@ class SetupView(QWidget):
         self._difficulty_combo.addItem(tr("normal"), "Normal")
         self._difficulty_combo.addItem(tr("hardcore"), "Hardcore")
         self._difficulty_combo.addItem(tr("companion"), "Companion")
+        self._difficulty_combo.addItem(tr("multiplayer"), "Multiplayer")
         self._difficulty_label = QLabel(tr("difficulty"))
         form.addRow(self._difficulty_label, self._difficulty_combo)
         
@@ -588,6 +589,9 @@ class SetupView(QWidget):
         self._difficulty_combo.addItem(tr("hardcore"), "Hardcore")
         if companion_enabled:
             self._difficulty_combo.addItem(tr("companion"), "Companion")
+        # Multiplayer is always available (the players are added later via the
+        # Creator Studio, so we cannot gate it on the universe having ≥2 players).
+        self._difficulty_combo.addItem(tr("multiplayer"), "Multiplayer")
 
     def _build_dynamic_setup(self) -> None:
         for config in self._setup_configs:

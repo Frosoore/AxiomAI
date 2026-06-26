@@ -298,6 +298,23 @@ class ChatDisplayWidget(QWidget):
         cursor.insertText("\n\n")
         self._reset_states()
 
+    def append_player_prep(self, name: str, text: str):
+        """Display a queued player action in multiplayer (before resolution)."""
+        cursor = self._narrative_display.textCursor()
+        cursor.movePosition(QTextCursor.End)
+
+        header_fmt = QTextCharFormat()
+        header_fmt.setForeground(QColor("#4FC3F7"))  # Cyan
+        header_fmt.setFontWeight(QFont.Weight.Bold)
+        cursor.insertText(f"[{name}] ", header_fmt)
+
+        text_fmt = QTextCharFormat()
+        text_fmt.setForeground(QColor("#B3E5FC"))  # Light cyan
+        text_fmt.setFontItalic(True)
+        cursor.insertText(f"{text}", text_fmt)
+        cursor.insertText("\n\n")
+        self._reset_states()
+
 
     def append_assistant_separator(self):
         self._reset_states()

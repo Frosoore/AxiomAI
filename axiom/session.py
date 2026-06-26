@@ -362,6 +362,35 @@ class Session:
             hero_entity_id=hero_entity_id,
         )
 
+    def take_turn_multiplayer(
+        self,
+        intents: dict[str, str],
+        *,
+        on_token: Callable[[str], None] | None = None,
+        on_status: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        verbosity_level: str = "balanced",
+    ) -> ArbitratorResult:
+        """Resolve a multiplayer turn: every player intent in a single tick.
+
+        Unlike `take_turn` (solo/Companion), there is no AI hero decision — all
+        actors are human players whose intents are submitted together and resolved
+        simultaneously by the Arbitrator (narrated in the third person, cf. `mode
+        == "Multiplayer"` in `build_narrative_prompt`).
+        """
+        self._intent_pool.clear()
+        for pid, text in intents.items():
+            self.submit_intent(pid, text)
+
+        return self.resolve_tick(
+            on_token=on_token,
+            on_status=on_status,
+            temperature=temperature,
+            top_p=top_p,
+            verbosity_level=verbosity_level,
+        )
+
     def rewind(self, target_turn_id: int) -> dict[str, int]:
         """Bring the save back to its state at turn `target_turn_id`.
 

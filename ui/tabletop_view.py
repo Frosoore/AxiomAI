@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 
-from core.multiplayer_queue import ArbitratorWorker, PlayerAction
+from axiom.multiplayer import PlayerAction
 from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
 from axiom.session import Session
 
@@ -124,8 +124,10 @@ class TabletopView(HardcoreMixin, QWidget):
         # par tour ne doit pas écraser un worker encore en vol).
         self._canon_busy: bool = False
 
-        # Multi-player Queue System
-        self._arbitrator_worker: ArbitratorWorker | None = None
+        # Multiplayer (hotseat) turn accumulation: each player submits an intent
+        # in turn; once everyone has, the whole pool resolves as one tick.
+        self._pending_intents: dict[str, str] = {}
+        self._active_players: list[str] = []
 
         # Loading state tracking
         self._db_loaded: bool = False
@@ -310,6 +312,11 @@ class TabletopView(HardcoreMixin, QWidget):
         self._first_message_shown = False
         self._fact_pending = []
         self._fact_turn_counter = 0
+        # Multiplayer: never carry a half-filled intent pool across saves/sessions
+        # (a failed turn could otherwise make the next save resolve instantly with
+        # a previous player's queued action).
+        self._pending_intents = {}
+        self._active_players = []
 
         # Synchronise time from DB BEFORE other async loads
         self._resume_turn_id()
@@ -458,12 +465,19 @@ class TabletopView(HardcoreMixin, QWidget):
         players = [e for e in entities if e.get("entity_type") == "player"]
         for p in players:
             self._player_selector.addItem(p["name"], p["entity_id"])
-        
+
         # If no players defined, add a fallback so the UI isn't empty
         if self._player_selector.count() == 0:
             self._player_selector.addItem("Hero", "player_1")
-            
+
         self._player_selector.blockSignals(False)
+
+        # Multiplayer: remember the roster of human players so we know when every
+        # one of them has queued an intent for the current turn.
+        self._active_players = [
+            self._player_selector.itemData(i)
+            for i in range(self._player_selector.count())
+        ]
 
     @Slot(object)
     def _on_vector_ready(self, vm: "VectorMemory") -> None:
@@ -560,8 +574,14 @@ class TabletopView(HardcoreMixin, QWidget):
         if not text:
             return
 
+        # Multiplayer (hotseat): accumulate one intent per player, resolve once all
+        # players have queued. Solo/Companion keep the immediate single-turn path.
+        if self._mode == "Multiplayer":
+            self._handle_multiplayer_input(text)
+            return
+
         self._chat.set_send_enabled(False)
-        
+
         # Advance turn count FIRST (aligning memory turn_id with engine/database turn_id)
         self._turn_id += 1
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
@@ -608,6 +628,74 @@ class TabletopView(HardcoreMixin, QWidget):
             verbosity=self._llm_verbosity,
         )
         self._narrative_worker.hero_decision_received.connect(self._chat.append_hero_intent)
+        self._narrative_worker.token_received.connect(self._chat.append_token)
+        self._narrative_worker.turn_complete.connect(self._on_turn_complete)
+        self._narrative_worker.error_occurred.connect(self._on_worker_error)
+        self._narrative_worker.status_update.connect(self._main_window.on_status_update)
+        self._narrative_worker.status_update.connect(self._on_turn_status)
+        self._narrative_worker.start()
+
+    def _handle_multiplayer_input(self, text: str) -> None:
+        """Queue the selected player's intent; resolve once everyone has played."""
+        player_id = self._player_selector.currentData() or "player_1"
+        player_name = self._player_selector.currentText() or player_id
+
+        # Record / overwrite this player's intent and show it queued in the chat.
+        self._pending_intents[player_id] = text
+        self._chat.append_player_prep(player_name, text)
+
+        roster = self._active_players or [player_id]
+        remaining = [pid for pid in roster if pid not in self._pending_intents]
+
+        if remaining:
+            # Invite the next player who hasn't queued yet; keep the input live.
+            idx = self._player_selector.findData(remaining[0])
+            if idx >= 0:
+                self._player_selector.setCurrentIndex(idx)
+            self._main_window.on_status_update(
+                tr("mp_waiting_for", name=self._player_selector.currentText())
+            )
+            return
+
+        # Everyone has queued — resolve the whole pool as one simultaneous tick.
+        self._resolve_multiplayer_turn()
+
+    def _resolve_multiplayer_turn(self) -> None:
+        """Launch a NarrativeWorker that resolves all queued player intents at once."""
+        self._chat.set_send_enabled(False)
+
+        self._turn_id += 1
+        self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
+
+        # Record a combined history entry (the engine also logs each intent
+        # individually from the Event_Log when it rebuilds history).
+        combined = "\n".join(
+            f"{self._player_selector.itemText(self._player_selector.findData(pid)) or pid}: {txt}"
+            for pid, txt in self._pending_intents.items()
+        )
+        self._history.append({
+            "turn_id": self._turn_id,
+            "event_type": "user_input",
+            "payload": combined,
+        })
+
+        session = Session(
+            self._db_path,
+            self._save_id,
+            llm=self._llm,
+            vector_memory=self._vector_memory,
+            mode=self._mode,
+        )
+
+        from workers.narrative_worker import NarrativeWorker
+        self._narrative_worker = NarrativeWorker(
+            session,
+            None,
+            intents=dict(self._pending_intents),
+            temperature=self._llm_temperature,
+            top_p=self._llm_top_p,
+            verbosity=self._llm_verbosity,
+        )
         self._narrative_worker.token_received.connect(self._chat.append_token)
         self._narrative_worker.turn_complete.connect(self._on_turn_complete)
         self._narrative_worker.error_occurred.connect(self._on_worker_error)
@@ -676,6 +764,13 @@ class TabletopView(HardcoreMixin, QWidget):
 
         self._check_for_player_death(result)
         self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
+
+        # Multiplayer: the pool resolved, clear it for the next round and hand the
+        # baton back to the first player.
+        if self._mode == "Multiplayer":
+            self._pending_intents.clear()
+            if self._player_selector.count() > 0:
+                self._player_selector.setCurrentIndex(0)
 
         self._chat.set_send_enabled(True)
 
@@ -1160,6 +1255,12 @@ class TabletopView(HardcoreMixin, QWidget):
     def _on_worker_error(self, message: str) -> None:
         """Display background error to the user."""
         self._chat.set_send_enabled(True)
+        # A failed turn must not leave queued multiplayer intents behind, or the
+        # next attempt (or next save) would resolve with stale actions.
+        if self._mode == "Multiplayer":
+            self._pending_intents.clear()
+            if self._player_selector.count() > 0:
+                self._player_selector.setCurrentIndex(0)
         self._main_window.on_status_update(tr("error") + ": " + message)
 
         lowered = message.lower()

@@ -208,6 +208,10 @@ class ArbitratorEngine:
         # Determine the primary player ID for legacy events and UI fallback
         player_entity_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
         self._player_entity_id = player_entity_id
+        # All actors who submitted an intent this turn (multiplayer: several human
+        # players, possibly in different locations). Used by _fetch_relevant_entities
+        # so the context covers everyone's surroundings, not just the primary player.
+        self._active_actor_ids = list(intents.keys()) if intents else [player_entity_id]
         
         # Step 0 — Log intents
         _pending_events: list[tuple] = []
@@ -835,7 +839,8 @@ class ArbitratorEngine:
         Always includes:
         - Entities explicitly mentioned in the recent context.
         - Entities of type 'world' or 'faction' (global context).
-        - NPCs that share the same 'Location' stat as the player.
+        - NPCs that share the same 'Location' stat as ANY active player (in
+          multiplayer the players may be split across several locations).
         """
         # 1. Mentions-based detection
         text_to_scan = user_message.lower()
@@ -857,26 +862,33 @@ class ArbitratorEngine:
 
         # 2. Location-based and Type-based inclusion
         relevant = set(matched_ids)
-        
-        # Get player's location
-        player_id = getattr(self, "_player_entity_id", "player")
-        player_stats = all_stats.get(player_id, {})
-        player_loc = player_stats.get("Location", "").lower()
 
-        npc_count_at_loc = 0
+        # Collect every active player's location (multiplayer: players may be
+        # split across the map). Falls back to the single primary player.
+        actor_ids = getattr(self, "_active_actor_ids", None) or [
+            getattr(self, "_player_entity_id", "player")
+        ]
+        player_locs = {
+            loc
+            for aid in actor_ids
+            if (loc := all_stats.get(aid, {}).get("Location", "").lower())
+        }
+
+        # Cap NPCs PER location so a crowded scene can't bloat context, while
+        # still covering each player's surroundings.
+        npc_count_per_loc: dict[str, int] = {}
         for eid, etype in id_to_type.items():
             # Include all global entities
             if etype in ("world", "faction"):
                 relevant.add(eid)
                 continue
-            
-            # Include NPCs at the same location (Limit to 3 to prevent bloat)
-            if etype == "npc" and player_loc:
+
+            # Include NPCs at the same location as any active player (Limit 3/loc)
+            if etype == "npc" and player_locs:
                 entity_loc = all_stats.get(eid, {}).get("Location", "").lower()
-                if entity_loc == player_loc:
-                    if npc_count_at_loc < 3:
-                        relevant.add(eid)
-                        npc_count_at_loc += 1
+                if entity_loc in player_locs and npc_count_per_loc.get(entity_loc, 0) < 3:
+                    relevant.add(eid)
+                    npc_count_per_loc[entity_loc] = npc_count_per_loc.get(entity_loc, 0) + 1
 
         return relevant
 
