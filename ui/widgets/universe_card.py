@@ -45,6 +45,7 @@ class UniverseCard(QFrame):
         universe_name: str,
         last_updated: str,
         difficulty: str,
+        description: str = "",
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -52,6 +53,7 @@ class UniverseCard(QFrame):
         self._universe_name = universe_name
         self._last_updated = last_updated
         self._difficulty = difficulty
+        self._description = description
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -91,6 +93,14 @@ class UniverseCard(QFrame):
             f"border-radius: 4px; padding: 2px 6px; font-size: 11px;"
         )
         layout.addWidget(self._difficulty_label)
+
+        if self._description:
+            display_desc = (self._description[:700] + "...") if len(self._description) > 700 else self._description
+            self._desc_label = QLabel(display_desc)
+            self._desc_label.setWordWrap(True)
+            self._desc_label.setToolTip(self._description)
+            self._desc_label.setStyleSheet("color: #888888; font-size: 11px; margin: 4px 0 0 0;")
+            layout.addWidget(self._desc_label)
 
         layout.addStretch()
 

@@ -159,6 +159,14 @@ class CreatorStudioView(QWidget):
         lore_layout.addWidget(self._lore_edit)
         layout.addWidget(self._lore_group)
 
+        self._desc_group = QGroupBox(tr("universe_description_title"))
+        desc_layout = QVBoxLayout(self._desc_group)
+        self._description_edit = doc(QPlainTextEdit(), "creator_meta.description")
+        self._description_edit.setPlaceholderText(tr("universe_description_placeholder"))
+        self._description_edit.setMaximumHeight(80)
+        desc_layout.addWidget(self._description_edit)
+        layout.addWidget(self._desc_group)
+
         self._prompt_group = QGroupBox(tr("sys_prompt_override"))
         prompt_layout = QVBoxLayout(self._prompt_group)
         self._system_prompt_edit = doc(QPlainTextEdit(), "creator_meta.system_prompt")
@@ -257,6 +265,7 @@ class CreatorStudioView(QWidget):
         self._files_tab.retranslate_ui()
 
         self._lore_group.setTitle(tr("world_lore"))
+        self._desc_group.setTitle(tr("universe_description_title"))
         self._prompt_group.setTitle(tr("sys_prompt_override"))
         self._first_msg_group.setTitle(tr("init_narrative"))
         self._belief_missions_group.setTitle(tr("belief_missions_title"))
@@ -270,6 +279,7 @@ class CreatorStudioView(QWidget):
             self._verbosity_combo.setItemText(i, tr(self._verbosity_combo.itemData(i)))
         
         self._lore_edit.setPlaceholderText(tr("global_lore_placeholder"))
+        self._description_edit.setPlaceholderText(tr("universe_description_placeholder"))
         self._system_prompt_edit.setPlaceholderText(tr("system_prompt_placeholder"))
         self._first_message_edit.setPlaceholderText(tr("first_msg_placeholder"))
 
@@ -351,6 +361,7 @@ class CreatorStudioView(QWidget):
         
         meta = {
             "global_lore": self._lore_edit.toPlainText().strip(),
+            "universe_description": self._description_edit.toPlainText().strip(),
             "system_prompt": self._system_prompt_edit.toPlainText().strip(),
             "first_message": self._first_message_edit.toPlainText().strip(),
             "world_tension_level": str(self._tension_spin.value()),
@@ -433,6 +444,7 @@ class CreatorStudioView(QWidget):
         name = meta.get("universe_name", "Universe")
         self._universe_label.setText(f"{tr('creator_studio')} - {name}")
         self._lore_edit.setPlainText(meta.get("global_lore", ""))
+        self._description_edit.setPlainText(meta.get("universe_description", ""))
         self._system_prompt_edit.setPlainText(meta.get("system_prompt", ""))
         self._first_message_edit.setPlainText(meta.get("first_message", ""))
         # B-3: belief_missions JSON → "Name: mission" lines.

@@ -66,19 +66,20 @@ def apply_stat_preset(db_path: str, preset_name: str) -> int:
 
     return added_count
 
-def read_universe_card_metadata(db_path: str) -> tuple[str, str, str]:
+def read_universe_card_metadata(db_path: str) -> tuple[str, str, str, str]:
     """Read display metadata for a universe card widget.
 
     Args:
         db_path: Path to the universe .db file.
 
     Returns:
-        Tuple of (universe_name, last_updated_str, difficulty_str).
+        Tuple of (universe_name, last_updated_str, difficulty_str, description_str).
         Returns sensible defaults on any error.
     """
     name = Path(db_path).stem.replace("_", " ").title()
     last_updated = "Never"
     difficulty = "Normal"
+    description = ""
     try:
         with get_connection(db_path) as conn:
             row = conn.execute(
@@ -86,6 +87,11 @@ def read_universe_card_metadata(db_path: str) -> tuple[str, str, str]:
             ).fetchone()
             if row:
                 name = str(row["value"]).strip()
+            row = conn.execute(
+                "SELECT value FROM Universe_Meta WHERE key = 'universe_description';"
+            ).fetchone()
+            if row:
+                description = str(row["value"]).strip()
             row = conn.execute(
                 "SELECT player_name, difficulty, last_updated FROM Saves "
                 "ORDER BY last_updated DESC LIMIT 1;"
@@ -95,7 +101,7 @@ def read_universe_card_metadata(db_path: str) -> tuple[str, str, str]:
                 difficulty = str(row["difficulty"]).strip()
     except (sqlite3.Error, FileNotFoundError):
         pass
-    return name, last_updated, difficulty
+    return name, last_updated, difficulty, description
 
 
 def provision_blank_universe(db_path: str, name: str) -> None:
@@ -109,6 +115,10 @@ def provision_blank_universe(db_path: str, name: str) -> None:
         conn.execute(
             "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",
             ("universe_name", name),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",
+            ("universe_description", ""),
         )
         conn.execute(
             "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",

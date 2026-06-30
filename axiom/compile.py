@@ -40,6 +40,7 @@ _FRONTMATTER_DELIM = "+++"
 # Clés Universe_Meta connues, gérées par des sections structurées de universe.toml.
 # Toute autre clé est préservée verbatim dans [extra] (lossless).
 _META_NAME = "universe_name"
+_META_DESCRIPTION = "universe_description"
 _META_SYSTEM_PROMPT = "system_prompt"
 _META_GLOBAL_LORE = "global_lore"
 _META_FIRST_MESSAGE = "first_message"
@@ -50,6 +51,7 @@ _META_COMPANION_HERO = "companion_hero_id"
 
 _STRUCTURED_META_KEYS = frozenset({
     _META_NAME,
+    _META_DESCRIPTION,
     _META_SYSTEM_PROMPT,
     _META_GLOBAL_LORE,
     _META_FIRST_MESSAGE,
@@ -157,6 +159,9 @@ def _parse_universe(src_dir: Path) -> tuple[dict[str, str], set[str]]:
     name = meta_section.get("name")
     if name:
         meta[_META_NAME] = str(name)
+    description = meta_section.get("description")
+    if description:
+        meta[_META_DESCRIPTION] = str(description)
 
     narrative = data.get("narrative", {})
     if "system_prompt" in narrative:

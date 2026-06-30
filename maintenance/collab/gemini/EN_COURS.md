@@ -5,7 +5,7 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `main`
-**Chantier :** `feature-custom-wallpaper` (fonctionnalité de fond d'écran personnalisé) — terminé, en attente de commit utilisateur
+**Chantier :** `feature-universe-description` (fonctionnalité de description d'univers) — terminé, en attente de commit utilisateur
 
 ## Fichiers / modules que je touche en ce moment
 
@@ -21,15 +21,13 @@
 
 ## Fini / mergé récemment (info pour Claude)
 
-- `core/locales/*.toml` (Traductions locales)
-- `axiom/events.py` (Mise à jour SQLite)
-- `axiom/memory.py` (Mise à jour vectorielle)
-- `workers/db_tasks.py` & `workers/db_worker.py` (Tâches de fond)
-- `workers/vector_worker.py` (Tâche de fond vectorielle)
-- `ui/widgets/chat_display.py` & `ui/tabletop_view.py` (Intégration UI chat)
-- `feature-custom-wallpaper` (Fonctionnalité de fond d'écran personnalisé, toutes langues, tests OK)
+- `axiom/compile.py` / `axiom/decompile.py` / `axiom/db_helpers.py` / `axiom/library.py` (Universe description compilation, decompilation, and metadata retrieval roundtrip)
+- `ui/hub_view.py` / `ui/widgets/universe_card.py` (Display of word-wrapped universe descriptions in library cards)
+- `ui/creator_studio_view.py` (Metadata editing of descriptions in Creator Studio)
+- `ui/help_system.py` / `core/locales/*.toml` (Registered and localized help documentation for the description field across 10 languages)
 - `feature-edit-start-date` (Adventure start date/time customization in Creator Studio, 10 languages localized, tests OK, pending commit)
 - `feature-sort-saves` (Saves sorting by last updated / creation date in launch lobby view, 10 languages localized, tests OK, pending commit)
+
 
 
 
