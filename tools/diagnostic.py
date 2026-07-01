@@ -180,6 +180,26 @@ def _check_environment() -> Section:
     in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     sec.add(_tr("diag_check_venv"), OK if in_venv else WARN,
             sys.prefix if in_venv else _tr("diag_venv_none"))
+    if platform.system() == "Linux":
+        has_xcb_cursor = True
+        try:
+            out = subprocess.check_output(["/sbin/ldconfig", "-p"], stderr=subprocess.DEVNULL)
+            if b"libxcb-cursor.so.0" not in out:
+                has_xcb_cursor = False
+        except Exception:
+            try:
+                out = subprocess.check_output(["ldconfig", "-p"], stderr=subprocess.DEVNULL)
+                if b"libxcb-cursor.so.0" not in out:
+                    has_xcb_cursor = False
+            except Exception:
+                try:
+                    import ctypes.util
+                    if not ctypes.util.find_library("xcb-cursor"):
+                        has_xcb_cursor = False
+                except Exception:
+                    pass
+        sec.add("libxcb-cursor0", OK if has_xcb_cursor else FAIL,
+                "present" if has_xcb_cursor else "missing")
     return sec
 
 

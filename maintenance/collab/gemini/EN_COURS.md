@@ -5,7 +5,7 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `main`
-**Chantier :** `feature-universe-description` (fonctionnalité de description d'univers) — terminé, en attente de commit utilisateur
+**Chantier :** `TICKET-092-fix-xcb-cursor-crash` — terminé, en attente de commit utilisateur
 
 ## Fichiers / modules que je touche en ce moment
 
@@ -21,6 +21,7 @@
 
 ## Fini / mergé récemment (info pour Claude)
 
+- `TICKET-092-fix-xcb-cursor-crash` : Validation de `libxcb-cursor.so.0` sur Linux (`debug/startup_check.py`, `run.sh`, `tools/diagnostic.py`)
 - `axiom/compile.py` / `axiom/decompile.py` / `axiom/db_helpers.py` / `axiom/library.py` (Universe description compilation, decompilation, and metadata retrieval roundtrip)
 - `ui/hub_view.py` / `ui/widgets/universe_card.py` (Display of word-wrapped universe descriptions in library cards)
 - `ui/creator_studio_view.py` (Metadata editing of descriptions in Creator Studio)

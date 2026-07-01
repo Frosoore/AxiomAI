@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def check_db_worker():
     """Verify that DbWorker has all required signals defined on the class."""
-    print("[1/3] Checking DbWorker signals...")
+    print("[1/4] Checking DbWorker signals...")
     try:
         from workers.db_worker import DbWorker
         
@@ -41,7 +41,7 @@ def check_db_worker():
 
 def check_schema():
     """Verify that the schema producing function includes the new spatial tables."""
-    print("[2/3] Verifying database schema...")
+    print("[2/4] Verifying database schema...")
     try:
         from axiom.schema import EXPECTED_TABLES
         new_tables = ["Locations", "Location_Connections"]
@@ -55,9 +55,51 @@ def check_schema():
         print(f"FAILED: Unexpected error checking schema: {e}")
         return False
 
+def check_system_dependencies():
+    """Verify system-level libraries required by PySide6 / Qt are present on Linux."""
+    if sys.platform.startswith("linux"):
+        # If running in headless mode (e.g., CI or CLI play), skip checking GUI dependencies
+        qpa = os.environ.get("QT_QPA_PLATFORM", "").lower()
+        if qpa in ["offscreen", "minimal"]:
+            return True
+
+        print("[3/4] Verifying system GUI libraries...")
+        # Check libxcb-cursor.so.0
+        has_xcb_cursor = True
+        try:
+            import subprocess
+            out = subprocess.check_output(["/sbin/ldconfig", "-p"], stderr=subprocess.DEVNULL)
+            if b"libxcb-cursor.so.0" not in out:
+                has_xcb_cursor = False
+        except Exception:
+            try:
+                import subprocess
+                out = subprocess.check_output(["ldconfig", "-p"], stderr=subprocess.DEVNULL)
+                if b"libxcb-cursor.so.0" not in out:
+                    has_xcb_cursor = False
+            except Exception:
+                try:
+                    import ctypes.util
+                    if not ctypes.util.find_library("xcb-cursor"):
+                        has_xcb_cursor = False
+                except Exception:
+                    pass
+        
+        if not has_xcb_cursor:
+            print("  FAILED: libxcb-cursor0 is missing on your system!")
+            print("  This library is required for the PySide6 GUI to start under X11/Wayland.")
+            print("  HINT: Please install it using your system package manager:")
+            print("    Ubuntu/Debian/Mint: sudo apt update && sudo apt install libxcb-cursor0")
+            print("    Fedora/RHEL:        sudo dnf install xcb-cursor")
+            print("    Arch/Manjaro:       sudo pacman -S xcb-cursor")
+            return False
+            
+        print("SUCCESS: System GUI libraries verified.")
+    return True
+
 def check_imports():
     """Verify core imports aren't broken."""
-    print("[3/3] Verifying core imports...")
+    print("[4/4] Verifying core imports...")
     core_modules = [
         ('PySide6.QtWidgets', 'pyside6'),
         ('google.genai', 'google-genai'),
@@ -95,6 +137,9 @@ def run_checks():
         sys.exit(1)
 
     if not check_schema():
+        sys.exit(1)
+
+    if not check_system_dependencies():
         sys.exit(1)
         
     if not check_imports():

@@ -53,10 +53,17 @@ fi
 if [ "$OS" = "Linux" ] && command -v ldconfig &>/dev/null; then
     if ! ldconfig -p | grep -q "libxcb-cursor.so.0"; then
         echo "Warning: libxcb-cursor0 might be missing (required for PySide6 GUI)."
+        echo "You can install it with:"
+        echo "  Ubuntu/Debian/Mint: sudo apt update && sudo apt install libxcb-cursor0"
+        echo "  Fedora/RHEL:        sudo dnf install xcb-cursor"
+        echo "  Arch/Manjaro:       sudo pacman -S xcb-cursor"
     fi
     if ! ldconfig -p | grep -q "libQt6Svg.so.6"; then
         echo "Warning: libqt6svg6 might be missing (required for SVG icons)."
-        echo "You can install it with: sudo apt install libqt6svg6"
+        echo "You can install it with:"
+        echo "  Ubuntu/Debian/Mint: sudo apt update && sudo apt install libqt6svg6"
+        echo "  Fedora/RHEL:        sudo dnf install qt6-svg"
+        echo "  Arch/Manjaro:       sudo pacman -S qt6-svg"
     fi
 fi
 

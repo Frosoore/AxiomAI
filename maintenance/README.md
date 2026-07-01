@@ -156,6 +156,7 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `TICKET-050-fail-fast-429` | ✅ | Fail-fast sur 429 |
 | `TICKET-066-reasoning-models` | ✅ (validé GUI) | Modèles de raisonnement (gpt-oss) |
 | `TICKET-068-embedding-offline-stall` | ✅ (validé GUI) | 1ᵉʳ tour figé ~90 s → `local_files_only=True` dans `axiom/memory.py` |
+| `TICKET-092-fix-xcb-cursor-crash` | 🔄 | Empêcher le crash au lancement si libxcb-cursor0 est absente |
 
 ### features/
 | Sous-dossier | Statut | Description |
