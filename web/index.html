@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Axiom AI - AI Role Playing Game</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Menu Bar -->
+  <header class="menu-bar">
+    <div class="menu-left">
+      <div class="menu-item dropdown">
+        <span data-tr="menu_file">File</span>
+        <div class="dropdown-content">
+          <button id="btn-menu-settings" data-tr="menu_settings">Settings</button>
+          <button id="btn-menu-hub" data-tr="hub">Hub</button>
+          <hr>
+          <button id="btn-menu-quit" data-tr="menu_quit">Quit</button>
+        </div>
+      </div>
+      <div class="menu-item dropdown">
+        <span data-tr="menu_help">Help</span>
+        <div class="dropdown-content">
+          <button id="btn-menu-explain" data-tr="menu_explain_page">Explain Page</button>
+          <button id="btn-menu-help-directory" data-tr="menu_doc_directory">Documentation Directory</button>
+          <button id="btn-menu-tour" data-tr="menu_quick_tour">Quick Tour</button>
+          <button id="btn-menu-diag" data-tr="menu_diagnostic">Diagnostic</button>
+          <hr>
+          <button id="btn-menu-about" data-tr="menu_about">About</button>
+        </div>
+      </div>
+    </div>
+    <div class="menu-right">
+      <span class="app-title">Axiom AI</span>
+    </div>
+  </header>
+
+  <!-- Main View Container (SPA Stack) -->
+  <main id="view-stack">
+
+    <!-- Screen 0: Hub View -->
+    <section id="view-hub" class="screen-view active">
+      <div class="header-row">
+        <h1 data-tr="hub_title">Universe Library</h1>
+        <div class="header-actions">
+          <button id="hub-import-st-btn" class="btn-secondary" data-tr="import_st">Import SillyTavern</button>
+          <button id="hub-import-btn" class="btn-secondary" data-tr="import">Import .axiom</button>
+          <button id="hub-create-btn" class="btn-primary" data-tr="new_universe">New Universe</button>
+        </div>
+      </div>
+      
+      <!-- Universe Library Grid -->
+      <div id="universe-grid" class="universe-grid">
+        <!-- Cards injected dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- Screen 1: Story Setup View -->
+    <section id="view-setup" class="screen-view">
+      <div class="header-row">
+        <h1 data-tr="setup_title">Story Setup</h1>
+        <button id="setup-back-btn" class="btn-secondary" data-tr="back">Back</button>
+      </div>
+      <div class="setup-container">
+        <form id="setup-form">
+          <div id="setup-questions-container">
+            <!-- Dynamic questions injected here -->
+          </div>
+          <button type="submit" id="setup-submit-btn" class="btn-primary" data-tr="start_adventure">Start Adventure</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Screen 2: Tabletop View -->
+    <section id="view-tabletop" class="screen-view">
+      <div class="tabletop-layout">
+        
+        <!-- Left Sidebar: Entities & Stats / Inventory -->
+        <aside class="sidebar sidebar-left">
+          <nav class="studio-tabs sidebar-mini-tabs">
+            <button class="tab-btn active" data-panel="tabletop-entities-list" data-tr="stats">Stats</button>
+            <button class="tab-btn" data-panel="tabletop-inventory-list" data-tr="inventory">Inventory</button>
+          </nav>
+          <div id="tabletop-entities-list" class="entities-list">
+            <!-- Active entities and stats injected here -->
+          </div>
+          <div id="tabletop-inventory-list" class="entities-list hidden">
+            <!-- Per-entity inventory injected here -->
+          </div>
+        </aside>
+
+        <!-- Center: Narrative Chat -->
+        <article class="chat-container">
+          <div class="chat-header">
+            <span id="chat-save-title">Universe - Save</span>
+            <span id="chat-mode-tag" class="badge">Normal</span>
+          </div>
+          
+          <div id="chat-history" class="chat-history">
+            <!-- Message bubbles injected here -->
+          </div>
+
+          <div class="chat-input-area">
+            <div id="multiplayer-lobby" class="multiplayer-lobby hidden">
+              <div class="lobby-row">
+                <label for="mp-player-select" data-tr="active_player">Active Player:</label>
+                <select id="mp-player-select"></select>
+                <span id="mp-lobby-status"></span>
+              </div>
+              <div id="mp-queued-container" class="hidden">
+                <span data-tr="queued_actions" style="font-weight: 600;">Queued Actions:</span>
+                <ul id="mp-queued-list"></ul>
+              </div>
+            </div>
+            <div class="input-row">
+              <textarea id="chat-input" placeholder="Type your action here..." data-tr-placeholder="type_message" rows="1"></textarea>
+              <button id="chat-send-btn" class="btn-primary" data-tr="send">Send</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Right Sidebar: Mini-Dico & Timeline -->
+        <aside class="sidebar sidebar-right">
+          
+          <!-- Mini Dico -->
+          <div class="minidico-section">
+            <div class="sidebar-header">
+              <h2 data-tr="lore_search">Search Lore...</h2>
+            </div>
+            <div class="search-row" style="display: flex; gap: 6px;">
+              <input type="text" id="minidico-search" placeholder="Type to search..." data-tr-placeholder="search_lore_placeholder" style="flex: 1;">
+              <button id="minidico-ask-btn" class="btn-primary" data-tr="ask" style="padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: var(--border-radius); border: none;">Ask</button>
+            </div>
+            <div id="minidico-results" class="minidico-results">
+              <!-- Lore search results injected here -->
+            </div>
+          </div>
+
+          <!-- Spatial Neighbors / Navigation -->
+          <div class="navigation-section">
+            <div class="sidebar-header">
+              <h2 data-tr="tab_map">Map</h2>
+            </div>
+            <div id="tabletop-spatial-info" class="spatial-info">
+              <div class="current-loc-row">
+                <span class="label">Location:</span>
+                <span id="tabletop-current-location" class="value">-</span>
+              </div>
+              <div id="tabletop-travel-options" class="travel-options">
+                <!-- Travel options buttons injected here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline & Rewind -->
+          <div class="timeline-section">
+            <div class="sidebar-header">
+              <h2 data-tr="timeline">Timeline</h2>
+            </div>
+            <div class="timeline-controls">
+              <span id="timeline-clock" class="timeline-clock">Year 1, Frostfall 1, 08:00</span>
+              <div class="timeline-slider-row">
+                <input type="range" id="timeline-slider" min="0" max="0" value="0">
+                <span id="timeline-turn-label">Turn 0</span>
+              </div>
+              <button id="timeline-rewind-btn" class="btn-danger w-100" data-tr="rewind">Rewind</button>
+            </div>
+          </div>
+        </aside>
+
+      </div>
+    </section>
+
+    <!-- Screen 3: Creator Studio View -->
+    <section id="view-creator" class="screen-view">
+      <div class="header-row">
+        <h1 data-tr="creator_studio">Creator Studio</h1>
+        <div class="header-actions">
+          <button id="creator-save-btn" class="btn-primary" data-tr="save_changes">Save Changes (Ctrl+S)</button>
+          <button id="creator-back-btn" class="btn-secondary" data-tr="hub">Hub</button>
+        </div>
+      </div>
+
+      <!-- Studio Tabs Header -->
+      <nav class="studio-tabs">
+        <button class="tab-btn active" data-target="studio-tab-meta" data-tr="tab_meta">Metadata</button>
+        <button class="tab-btn" data-target="studio-tab-stats" data-tr="stats">Stats</button>
+        <button class="tab-btn" data-target="studio-tab-entities" data-tr="tab_entities">Entities</button>
+        <button class="tab-btn" data-target="studio-tab-map" data-tr="tab_map">Map</button>
+        <button class="tab-btn" data-target="studio-tab-rules" data-tr="tab_rules">Rules</button>
+        <button class="tab-btn" data-target="studio-tab-events" data-tr="tab_events">Events</button>
+        <button class="tab-btn" data-target="studio-tab-setup" data-tr="tab_setup">Story Setup</button>
+        <button class="tab-btn" data-target="studio-tab-lore" data-tr="tab_lore">Lore Book</button>
+        <button class="tab-btn" data-target="studio-tab-populate" data-tr="populate">Populate</button>
+        <button class="tab-btn" data-target="studio-tab-files" data-tr="tab_files">Files</button>
+      </nav>
+
+      <!-- Studio Tabs Container -->
+      <div class="studio-tab-content-container">
+
+        <!-- Tab: Metadata -->
+        <div id="studio-tab-meta" class="studio-tab-panel active">
+          <div class="form-group-box">
+            <label data-tr="universe_name">Universe Name:</label>
+            <input type="text" id="meta-name">
+          </div>
+          <div class="form-group-box">
+            <label data-tr="universe_description_title">Description:</label>
+            <textarea id="meta-description" rows="2"></textarea>
+          </div>
+          <div class="form-group-box">
+            <label data-tr="system_prompt">System Prompt:</label>
+            <textarea id="meta-system-prompt" rows="4"></textarea>
+          </div>
+          <div class="form-group-box">
+            <label data-tr="global_lore">Global Lore:</label>
+            <textarea id="meta-global-lore" rows="6"></textarea>
+          </div>
+          <div class="form-group-box">
+            <label data-tr="init_narrative">First Message:</label>
+            <textarea id="meta-first-message" rows="4"></textarea>
+          </div>
+          <div class="form-group-box">
+            <label data-tr="world_tension_level">World Tension Level (0.0 to 1.0):</label>
+            <input type="number" id="meta-tension" min="0" max="1" step="0.1" value="0.5">
+          </div>
+          <div class="form-group-box">
+            <h3 data-tr="companion_feature">Companion Mode</h3>
+            <label><input type="checkbox" id="meta-companion-enabled"> Enable Companion mode defaults</label>
+            <label data-tr="main_hero">Main Hero ID:</label>
+            <input type="text" id="meta-companion-hero-id" placeholder="hero">
+          </div>
+        </div>
+
+        <!-- Tab: Stats -->
+        <div id="studio-tab-stats" class="studio-tab-panel">
+          <div class="table-toolbar">
+            <input type="text" id="stats-new-id" placeholder="Stat ID">
+            <input type="text" id="stats-new-name" placeholder="Name">
+            <select id="stats-new-type">
+              <option value="numeric" data-tr="numeric">Numeric</option>
+              <option value="categorical" data-tr="categorical">Categorical</option>
+            </select>
+            <button id="stats-add-btn" class="btn-primary" data-tr="add">Add</button>
+            <div class="toolbar-divider"></div>
+            <select id="stats-preset-combo"></select>
+            <button id="stats-apply-preset-btn" class="btn-secondary" data-tr="apply_preset">Apply Preset</button>
+          </div>
+          <div class="table-container">
+            <table id="table-stats" class="studio-table">
+              <thead>
+                <tr>
+                  <th data-tr="id">ID</th>
+                  <th data-tr="name">Name</th>
+                  <th data-tr="type">Type</th>
+                  <th data-tr="description">Description</th>
+                  <th data-tr="options">Options</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Entities -->
+        <div id="studio-tab-entities" class="studio-tab-panel">
+          <div class="split-view">
+            <div class="split-left">
+              <div class="table-toolbar">
+                <input type="text" id="entities-new-id" placeholder="Entity ID">
+                <select id="entities-new-type">
+                  <option value="player">Player</option>
+                  <option value="npc">NPC</option>
+                  <option value="faction">Faction</option>
+                  <option value="world">World</option>
+                </select>
+                <input type="text" id="entities-new-name" placeholder="Name">
+                <button id="entities-add-btn" class="btn-primary" data-tr="add">Add</button>
+              </div>
+              <div class="table-container">
+                <table id="table-entities" class="studio-table">
+                  <thead>
+                    <tr>
+                      <th data-tr="id">ID</th>
+                      <th data-tr="type">Type</th>
+                      <th data-tr="name">Name</th>
+                      <th data-tr="description">Description</th>
+                      <th class="col-actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="split-right">
+              <h3 id="entity-stats-header">Initial Stats for selected entity</h3>
+              <div id="entity-stats-grid" class="entity-stats-grid">
+                <!-- Inputs for entity stats injected here -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Map -->
+        <div id="studio-tab-map" class="studio-tab-panel">
+          <div class="split-view">
+            <div class="split-left map-hierarchy-panel">
+              <div class="table-toolbar">
+                <input type="text" id="map-new-id" placeholder="Location ID">
+                <input type="text" id="map-new-name" placeholder="Name">
+                <select id="map-new-scale"></select>
+                <button id="map-add-btn" class="btn-primary" data-tr="add">Add</button>
+              </div>
+              <div class="tree-container">
+                <ul id="map-hierarchy-tree" class="tree-widget">
+                  <!-- Nodes injected here -->
+                </ul>
+              </div>
+            </div>
+            <div class="split-right node-editor-panel">
+              <div class="node-editor-toolbar">
+                <span class="label">Node Link Graph</span>
+                <span class="instructions">Double-click empty space to place node. Click node A then node B to connect. Click node/edge to select + Del. Drag nodes to position.</span>
+              </div>
+              <div id="map-graphics-view" class="map-graphics-view">
+                <canvas id="map-canvas"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Rules -->
+        <div id="studio-tab-rules" class="studio-tab-panel">
+          <div class="table-toolbar">
+            <input type="text" id="rules-new-id" placeholder="Rule ID">
+            <input type="number" id="rules-new-priority" value="0" min="0" max="999" placeholder="Priority">
+            <input type="text" id="rules-new-target" value="*" placeholder="Target (*)">
+            <button id="rules-add-btn" class="btn-primary" data-tr="add">Add</button>
+          </div>
+          <div class="table-container main-rules-table">
+            <table id="table-rules" class="studio-table">
+              <thead>
+                <tr>
+                  <th data-tr="rule_id">Rule ID</th>
+                  <th data-tr="priority">Priority</th>
+                  <th data-tr="target">Target</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="split-view rules-subpanels">
+            <div class="split-left">
+              <div class="sidebar-header">
+                <h3 data-tr="conditions">Conditions</h3>
+                <button id="cond-add-btn" class="btn-primary btn-sm">+</button>
+              </div>
+              <div class="table-container small-table">
+                <table id="table-conditions" class="studio-table">
+                  <thead>
+                    <tr>
+                      <th data-tr="stat">Stat</th>
+                      <th data-tr="operator">Operator</th>
+                      <th data-tr="value">Value</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="split-right">
+              <div class="sidebar-header">
+                <h3 data-tr="actions">Actions</h3>
+                <button id="action-add-btn" class="btn-primary btn-sm">+</button>
+              </div>
+              <div class="table-container small-table">
+                <table id="table-actions" class="studio-table">
+                  <thead>
+                    <tr>
+                      <th data-tr="type">Type</th>
+                      <th data-tr="stat">Stat</th>
+                      <th data-tr="value">Value</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Events -->
+        <div id="studio-tab-events" class="studio-tab-panel">
+          <!-- Calendar Configuration -->
+          <div class="calendar-config-box">
+            <h3>Universe Calendar & Adventure Start</h3>
+            <div class="grid-form">
+              <div class="form-group-box">
+                <label>Minutes per Hour:</label>
+                <input type="number" id="cal-mph" min="1" value="60">
+              </div>
+              <div class="form-group-box">
+                <label>Hours per Day:</label>
+                <input type="number" id="cal-hpd" min="1" value="24">
+              </div>
+              <div class="form-group-box">
+                <label>Adventure Start Day:</label>
+                <input type="number" id="cal-start-day" min="1" value="1">
+              </div>
+              <div class="form-group-box">
+                <label>Adventure Start Hour:</label>
+                <input type="number" id="cal-start-hour" min="0" max="23" value="8">
+              </div>
+              <div class="form-group-box">
+                <label>Adventure Start Minute:</label>
+                <input type="number" id="cal-start-minute" min="0" max="59" value="0">
+              </div>
+              <div class="form-group-box">
+                <label>Month Names (comma-separated):</label>
+                <input type="text" id="cal-months" placeholder="Frostfall, Embertide...">
+              </div>
+            </div>
+            <div class="calendar-preview-row">
+              <span>Preview Start:</span>
+              <span id="cal-preview-text" class="preview-badge">Year 1, Month 1 Day 1, 08:00</span>
+            </div>
+          </div>
+
+          <div class="table-toolbar m-t-16">
+            <input type="text" id="events-new-id" placeholder="Event ID">
+            <input type="number" id="events-new-trigger" value="0" min="0" placeholder="Trigger Minute">
+            <input type="text" id="events-new-title" placeholder="Title">
+            <button id="events-add-btn" class="btn-primary" data-tr="add">Add</button>
+          </div>
+          <div class="table-container">
+            <table id="table-events" class="studio-table">
+              <thead>
+                <tr>
+                  <th data-tr="id">ID</th>
+                  <th data-tr="trigger_minute">Trigger Minute</th>
+                  <th data-tr="title">Title</th>
+                  <th data-tr="description">Description</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Story Setup Questions -->
+        <div id="studio-tab-setup" class="studio-tab-panel">
+          <div class="table-toolbar">
+            <input type="text" id="setup-new-id" placeholder="Question ID">
+            <input type="text" id="setup-new-question" placeholder="Question Text">
+            <select id="setup-new-type">
+              <option value="text">text</option>
+              <option value="single_choice">single_choice</option>
+              <option value="multi_choice">multi_choice</option>
+            </select>
+            <button id="setup-add-btn" class="btn-primary" data-tr="add">Add</button>
+          </div>
+          <div class="table-container">
+            <table id="table-setup" class="studio-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Question</th>
+                  <th>Type</th>
+                  <th>Options (JSON)</th>
+                  <th>Max Sel</th>
+                  <th data-tr="priority">Priority</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Lore Book -->
+        <div id="studio-tab-lore" class="studio-tab-panel">
+          <div class="table-toolbar">
+            <select id="lore-new-category">
+              <option value="General">General</option>
+              <option value="Faction">Faction</option>
+              <option value="Location">Location</option>
+              <option value="Character">Character</option>
+              <option value="Magic">Magic</option>
+            </select>
+            <button id="lore-add-category-btn" class="btn-secondary">+</button>
+            <input type="text" id="lore-new-name" placeholder="Lore Title">
+            <button id="lore-add-btn" class="btn-primary" data-tr="add">Add</button>
+          </div>
+          <div class="table-container">
+            <table id="table-lore" class="studio-table">
+              <thead>
+                <tr>
+                  <th data-tr="type">Category</th>
+                  <th data-tr="name">Title</th>
+                  <th data-tr="description">Content</th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Populate -->
+        <div id="studio-tab-populate" class="studio-tab-panel">
+          <div class="populate-panel">
+            <h3>Generate Universe Content using AI</h3>
+            <p class="description">Select the sections you want to generate. Provide an instruction prompt or let the AI base it on the existing metadata/lore.</p>
+            
+            <div class="populate-targets-grid">
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-meta"> <span>Metadata (Prompt, Global Lore)</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-stats"> <span>Stat Definitions</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-entities"> <span>Entities & NPCs</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-map"> <span>Map Locations & Links</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-rules"> <span>Rules</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-events"> <span>Scheduled Events</span></label>
+              <label class="target-checkbox"><input type="checkbox" id="pop-target-lore"> <span>Lore Book Entries</span></label>
+            </div>
+
+            <div class="form-group-box">
+              <label>Instruction Prompt (Optional):</label>
+              <textarea id="pop-prompt" placeholder="E.g., A post-apocalyptic steam-punk wasteland populated by giant mechanical insects..." rows="3"></textarea>
+            </div>
+
+            <div class="populate-actions">
+              <button id="pop-preview-btn" class="btn-secondary">Generate Preview (Diff)</button>
+              <button id="pop-run-btn" class="btn-primary">Generate & Apply directly</button>
+            </div>
+
+            <div id="pop-log-container" class="pop-log-container hidden">
+              <h4>Generation Status Log:</h4>
+              <div id="pop-logs" class="pop-logs"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Files -->
+        <div id="studio-tab-files" class="studio-tab-panel">
+          <div class="files-tab-stack">
+            <!-- Folder-backed mode -->
+            <div id="files-panel-folder" class="split-view hidden">
+              <div class="split-left">
+                <ul id="files-tree" class="tree-widget">
+                  <!-- File tree nodes injected dynamically -->
+                </ul>
+              </div>
+              <div class="split-right file-editor-area">
+                <span id="files-current-path" class="file-path-indicator">No file selected</span>
+                <textarea id="files-editor-textarea" class="code-editor" readonly></textarea>
+                <button id="files-save-btn" class="btn-primary m-t-8 disabled" disabled>Save File</button>
+              </div>
+            </div>
+            <!-- Flat database mode -->
+            <div id="files-panel-flat" class="flat-db-warning-container">
+              <p data-tr="files_flat_db_msg">This universe is a flat legacy database. Converting it to a folder structure enables editing code files (TOML/Markdown), tracking changes in Git, and hot-reloading.</p>
+              <button id="files-convert-btn" class="btn-primary" data-tr="files_convert_btn">Convert to Folder Structure</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Status Bar / Volume -->
+  <footer class="status-bar">
+    <div class="status-left">
+      <span id="status-text" data-tr="ready">Ready.</span>
+      <button id="status-cancel-btn" class="btn-danger btn-sm hidden" data-tr="cancel_generation">Cancel</button>
+    </div>
+    <div class="status-right">
+      <span id="status-audio-label">Ambiance: -</span>
+      <div class="volume-control">
+        <span data-tr="vol">Vol:</span>
+        <input type="range" id="volume-slider" min="0" max="100" value="50">
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modal Overlays -->
+
+  <!-- Overlay: Settings -->
+  <div id="modal-settings" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 data-tr="settings_title">Settings</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <nav class="settings-tabs">
+          <button class="settings-tab-btn active" data-target="settings-panel-general" data-tr="tab_general">General</button>
+          <button class="settings-tab-btn" data-target="settings-panel-llm" data-tr="tab_llm">LLM Backend</button>
+          <button class="settings-tab-btn" data-target="settings-panel-image" data-tr="tab_image">Illustrations</button>
+          <button class="settings-tab-btn" data-target="settings-panel-personas">Personas</button>
+        </nav>
+        <div class="settings-content">
+          <!-- General -->
+          <div id="settings-panel-general" class="settings-panel active">
+            <div class="form-group">
+              <label data-tr="language">Language:</label>
+              <select id="setting-language"></select>
+            </div>
+            <div class="form-group">
+              <label data-tr="ui_font_size">UI Font Size:</label>
+              <input type="number" id="setting-font-size" min="10" max="30">
+            </div>
+            <div class="form-group">
+              <label data-tr="rag_chunks">RAG Memory Chunks:</label>
+              <input type="number" id="setting-rag-chunks" min="1" max="20">
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-audio-enabled"> Enable Background Audio</label>
+            </div>
+          </div>
+          <!-- LLM Backend -->
+          <div id="settings-panel-llm" class="settings-panel">
+            <div class="form-group">
+              <label>LLM Backend:</label>
+              <select id="setting-llm-backend">
+                <option value="universal">Universal (Ollama, LM Studio)</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="venice">Venice AI</option>
+                <option value="fireworks">Fireworks AI</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>API Base URL (Universal):</label>
+              <input type="text" id="setting-universal-url">
+            </div>
+            <div class="form-group">
+              <label>API Key (Cloud backends):</label>
+              <input type="password" id="setting-api-key" placeholder="Enter API Key...">
+            </div>
+            <div class="form-group">
+              <label>Model Name:</label>
+              <input type="text" id="setting-model-name">
+            </div>
+            <div class="form-group">
+              <label>Fallback Model (Gemini):</label>
+              <input type="text" id="setting-fallback-model">
+            </div>
+            <div class="form-group">
+              <label>Gemini Requests/Min (0=unlimited):</label>
+              <input type="number" id="setting-requests-limit" min="0">
+            </div>
+            <div class="form-group">
+              <label>Helper: Extraction Model:</label>
+              <input type="text" id="setting-extraction-model">
+            </div>
+            <div class="form-group">
+              <label>Helper: Timekeeper Model:</label>
+              <input type="text" id="setting-time-model">
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-timekeeper-enabled"> Enable Timekeeper</label>
+            </div>
+            <div class="form-group">
+              <button id="settings-test-btn" class="btn-secondary" data-tr="test_connection">Test Connection</button>
+              <span id="settings-test-status" class="status-msg"></span>
+            </div>
+          </div>
+          <!-- Illustrations -->
+          <div id="settings-panel-image" class="settings-panel">
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-image-enabled"> Enable Image Generation</label>
+            </div>
+            <div class="form-group">
+              <label>Image Backend:</label>
+              <select id="setting-image-backend">
+                <option value="gemini">Google Gemini (Cloud)</option>
+                <option value="stable_diffusion">Stable Diffusion WebUI (A1111)</option>
+                <option value="comfyui">ComfyUI</option>
+                <option value="mock">Mock Generator</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Image API URL:</label>
+              <input type="text" id="setting-image-url">
+            </div>
+            <div class="form-group">
+              <label>Image Width (px):</label>
+              <input type="number" id="setting-image-width" step="64" min="128" max="2048">
+            </div>
+            <div class="form-group">
+              <label>Image Height (px):</label>
+              <input type="number" id="setting-image-height" step="64" min="128" max="2048">
+            </div>
+            <div class="form-group">
+              <label>Steps:</label>
+              <input type="number" id="setting-image-steps" min="1" max="150">
+            </div>
+            <div class="form-group">
+              <label>CFG Scale:</label>
+              <input type="number" id="setting-image-cfg" step="0.5" min="1" max="30">
+            </div>
+            <div class="form-group">
+              <label>ComfyUI Workflow (JSON path/string):</label>
+              <input type="text" id="setting-image-workflow">
+            </div>
+          </div>
+          <!-- Personas -->
+          <div id="settings-panel-personas" class="settings-panel">
+            <div class="table-toolbar">
+              <button id="personas-add-btn" class="btn-primary" data-tr="add">Add</button>
+            </div>
+            <div class="table-container">
+              <table id="table-personas" class="studio-table">
+                <thead>
+                  <tr>
+                    <th data-tr="name">Name</th>
+                    <th data-tr="description">Description</th>
+                    <th class="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-save-btn" class="btn-primary" data-tr="save">Save</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Diagnostics -->
+  <div id="modal-diagnostics" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 data-tr="menu_diagnostic">Diagnostic</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="diagnostic-actions">
+          <button id="diag-run-btn" class="btn-primary">Run Diagnostics</button>
+          <label><input type="checkbox" id="diag-tests-checkbox"> Run Backend Test Suite (Slower)</label>
+        </div>
+        <div class="diag-output-box">
+          <pre id="diag-output">Click run to start diagnostics...</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-close" data-tr="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: About -->
+  <div id="modal-about" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 data-tr="menu_about">About Axiom AI</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="about-content">
+        <!-- Rendered via JS i18n -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-close" data-tr="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Diff Preview -->
+  <div id="modal-diff" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2>Content Generation Preview (Diff)</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="description">Review the AI proposed changes below. Green lines represent additions, red represents deletions.</p>
+        <div class="diff-container">
+          <pre id="diff-content"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="diff-apply-btn" class="btn-primary">Apply Changes</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Edit Save TOML -->
+  <div id="modal-edit-save" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 id="edit-save-title">Edit Save State (TOML)</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="description" style="margin-bottom: 12px; font-size: 13px; color: var(--subtext);">
+          Modify the materialized save state below. Only the differences (diff) will be applied. 
+          The underlying timeline structure is preserved.
+        </p>
+        <textarea id="edit-save-toml-textarea" style="width: 100%; height: 350px; font-family: var(--font-mono); font-size: 13px; background-color: var(--crust); color: var(--text); border: 1px solid var(--surface0); border-radius: var(--border-radius); padding: 12px; resize: vertical;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="edit-save-apply-btn" class="btn-primary">Apply Edits</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Edit Chat Message -->
+  <div id="modal-edit-message" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 id="edit-message-title">Edit Message</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="edit-message-textarea" style="width: 100%; height: 220px; font-size: 14px; background-color: var(--crust); color: var(--text); border: 1px solid var(--surface0); border-radius: var(--border-radius); padding: 12px; resize: vertical;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="edit-message-apply-btn" class="btn-primary" data-tr="save">Apply</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Explain Page -->
+  <div id="modal-explain" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 id="explain-title">Explain Page</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="explain-body" style="font-size: 14px; line-height: 1.6; color: var(--text);">
+        <!-- Injected explanation content -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-close" data-tr="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Help Directory -->
+  <div id="modal-help-directory" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 data-tr="doc_directory_title">Documentation Directory</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="font-size: 14px; display: flex; flex-direction: column; gap: 16px; max-height: 60vh;">
+        <input type="text" id="help-search-input" data-tr-placeholder="doc_search_placeholder" placeholder="Search documentation..." style="width: 100%; padding: 8px 12px; font-size: 14px; border: 1px solid var(--surface0); border-radius: var(--border-radius); background-color: var(--crust); color: var(--text);">
+        <div id="help-directory-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 8px;">
+          <!-- Injected directory content -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-close" data-tr="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Quick Tour -->
+  <div id="modal-tour" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="tour-step-title" data-tr="tour_title">Quick Tour</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="tour-step-body" style="font-size: 14px; line-height: 1.6; min-height: 120px; color: var(--text);">
+        <!-- Injected step content -->
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <span id="tour-step-indicator" style="font-size: 13px; color: var(--subtext); align-self: center;">Step 1 of 7</span>
+        <div style="display: flex; gap: 8px;">
+          <button id="tour-prev-btn" class="btn-secondary" data-tr="tour_back">Prev</button>
+          <button id="tour-next-btn" class="btn-primary" data-tr="tour_next">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

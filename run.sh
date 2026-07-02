@@ -123,5 +123,9 @@ python3 debug/startup_check.py
 
 # ── Launch ───────────────────────────────────────────────────
 echo "Starting Axiom AI..."
-# Use exec to replace the shell process with the python process
-exec python3 main.py "$@"
+if [ "$1" = "--web" ]; then
+    shift
+    exec python3 main_web.py "$@"
+else
+    exec python3 main.py "$@"
+fi
