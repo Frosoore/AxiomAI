@@ -26,6 +26,7 @@ from axiom.compile import (
     _META_CALENDAR,
     _META_COMPANION_ENABLED,
     _META_COMPANION_HERO,
+    _META_DESCRIPTION,
     _META_FIRST_MESSAGE,
     _META_GLOBAL_LORE,
     _META_NAME,
@@ -199,6 +200,8 @@ def _build_universe_toml(meta: dict[str, str], src_dir: Path) -> None:
     meta_tbl = tomlkit.table()
     if _META_NAME in meta:
         meta_tbl["name"] = meta[_META_NAME]
+    if _META_DESCRIPTION in meta:
+        meta_tbl["description"] = meta[_META_DESCRIPTION]
     doc["meta"] = meta_tbl
 
     narrative = tomlkit.table()

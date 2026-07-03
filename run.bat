@@ -44,7 +44,11 @@ echo Running environment validation...
 python debug/startup_check.py
 
 echo Starting Axiom AI...
-python main.py %*
+if "%1"=="--web" (
+    python main_web.py %2 %3 %4 %5 %6 %7 %8 %9
+) else (
+    python main.py %*
+)
 
 if %ERRORLEVEL% neq 0 (
     echo.

@@ -1,4 +1,3 @@
-# ~10 in-game days after the start.
 event_id = "quiet_men"
 trigger_minute = 14400
 title = "Quiet Men in Highport"

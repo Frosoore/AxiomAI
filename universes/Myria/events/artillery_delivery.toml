@@ -1,4 +1,3 @@
-# ~75 in-game days after the start.
 event_id = "artillery_delivery"
 trigger_minute = 108000
 title = "The Great Guns Are Delivered"

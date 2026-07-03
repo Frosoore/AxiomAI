@@ -152,4 +152,29 @@ Status legend: `[ ]` To Do · `[~]` In Progress · `[x]` Done
 - [x] 18.5 — Integration: Travel Distance -> Time passage logic
 - [x] 18.6 — Maintenance: Restore full test coverage (Fix Arbitrator tests)
 
+## Phase 19: Web Application Interface
+- [x] 19.1 — Web API Gateway & Threading Server (`main_web.py`)
+- [x] 19.2 — HTML5 SPA Layout (`web/index.html`)
+- [x] 19.3 — Theme & Styles (`web/style.css`)
+- [x] 19.4 — JS Client Controllers & Interactive Map (`web/app.js`)
+- [x] 19.5 — API Testing (`tests/test_web_server.py`)
+- [x] 19.6 — Launcher Integration: Add `--web` flag support to `run.sh` / `run.bat`
+- [x] 19.7 — Save Editing: Implement materialized save state TOML edits in web mode
+- [x] 19.8 — Endpoint documentation (`maintenance/features/web-ui-continuation/DOC.md`)
+- [x] 19.9 — Fix: gameplay loop crash (`Session` has no `_time_system`)
+- [x] 19.10 — Fix: opening narrative (`first_message` + `@tag` substitution) never written on save creation
+- [x] 19.11 — Add missing `/api/universes/delete` and `/api/diagnostic` endpoints
+- [x] 19.12 — Fix: `saves/fork` now delegates to `axiom.saves.fork_save` (was dropping modifiers/fired events)
+- [x] 19.13 — Inventory sidebar tab (`/api/session/inventory`)
+- [x] 19.14 — Chat message edit / regenerate / variant navigation (`/api/session/{variant,regenerate,edit-message}`)
+- [x] 19.15 — Global Personas system (`/api/personas`, Settings tab + Setup wizard picker)
+- [x] 19.16 — Ambiance audio playback (`/api/audio/track`, dual-`<audio>` crossfade)
+- [x] 19.17 — Hardcore mode permadeath flow (`/api/session/hardcore-delete`)
+- [x] 19.18 — Fix: `/api/saves/delete` called the wrong, wrong-arity engine function (500 on every call)
+- [ ] 19.19 — Memory Browser (Facts/Observations/Mental Models)
+- [x] 19.20 — Multiplayer/hotseat (player selector, per-player intent queue)
+- [ ] 19.21 — Canonize workflow (story → universe lore, diff preview)
+- [x] 19.22 — Help system depth (real tooltips, per-page explain, searchable directory, quick tour)
+- [ ] 19.23 — Settings gaps (wallpaper, image/negative prompts, model browser dialog, doc-tooltip/trim-sentence toggles)
+
 

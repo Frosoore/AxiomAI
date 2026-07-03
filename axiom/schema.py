@@ -77,7 +77,7 @@ _DDL_SAVES = """
 CREATE TABLE IF NOT EXISTS Saves (
     save_id        TEXT PRIMARY KEY,
     player_name    TEXT NOT NULL,
-    difficulty     TEXT NOT NULL CHECK(difficulty IN ('Normal', 'Hardcore', 'Companion')),
+    difficulty     TEXT NOT NULL CHECK(difficulty IN ('Normal', 'Hardcore', 'Companion', 'Multiplayer')),
     last_updated   TEXT NOT NULL,
     player_persona TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL DEFAULT ''
@@ -790,8 +790,10 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             return
         
         sql = row[0]
-        if "'Companion'" in sql:
-            # Already updated
+        if "'Multiplayer'" in sql:
+            # Already updated (constraint already lists the latest difficulty).
+            # NB: we key on the NEWEST value so that DBs created before a given
+            # difficulty was added (e.g. 'Companion'-only DBs) still re-migrate.
             return
             
         conn.execute("PRAGMA foreign_keys=OFF;")
@@ -823,7 +825,7 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             conn.execute("ALTER TABLE Saves_Temp RENAME TO Saves;")
             
             conn.execute("COMMIT;")
-            logger.debug("[SCHEMA] Saves table successfully migrated to support 'Companion' mode.")
+            logger.debug("[SCHEMA] Saves table successfully migrated to support 'Multiplayer' mode.")
         except Exception as e:
             conn.execute("ROLLBACK;")
             logger.error(f"[SCHEMA] Saves constraint migration failed: {e}")

@@ -172,16 +172,26 @@ class HubView(QWidget):
         # 2. Add or re-position cards
         for idx, u in enumerate(universes):
             db_path = u["db_path"]
-            if db_path in self._active_cards:
-                card = self._active_cards[db_path]
-                # Retranslate the card labels
-                if hasattr(card, "retranslate_ui"): card.retranslate_ui()
-            else:
+            card = self._active_cards.get(db_path)
+            if card:
+                if (card._universe_name != u["name"] or
+                    card._difficulty != u["difficulty"] or
+                    card._description != u.get("description", "") or
+                    card._last_updated != u["last_updated"]):
+                    self._grid_layout.removeWidget(card)
+                    card.deleteLater()
+                    del self._active_cards[db_path]
+                    card = None
+                else:
+                    if hasattr(card, "retranslate_ui"): card.retranslate_ui()
+
+            if not card:
                 card = UniverseCard(
                     db_path,
                     u["name"],
                     u["last_updated"],
-                    u["difficulty"]
+                    u["difficulty"],
+                    u.get("description", "")
                 )
                 card.play_requested.connect(self._on_card_play_requested)
                 card.export_requested.connect(self._on_card_export_requested)

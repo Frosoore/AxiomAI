@@ -97,6 +97,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     ),
     "creator_meta": (
         "world_lore",
+        "description",
         "system_prompt",
         "first_message",
         "companion",
@@ -251,6 +252,7 @@ SETTINGS_GENERAL_PAGE: tuple[str, tuple[str, ...]] = (
 # `_d` keys in the locales (and run tools/doc_check.py).
 DETAILS: frozenset[str] = frozenset({
     "creator_meta.world_lore",
+    "creator_meta.description",
     "creator_meta.system_prompt",
     "creator_meta.first_message",
     "creator_meta.companion",

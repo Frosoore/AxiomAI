@@ -387,11 +387,12 @@ def _mirror_tree(new_tree: Path, dest: Path) -> None:
 
 
 def _entry(db_path: Path, source_dir: Path | None) -> dict:
-    name, last_updated, difficulty = read_universe_card_metadata(str(db_path))
+    name, last_updated, difficulty, description = read_universe_card_metadata(str(db_path))
     return {
         "db_path": str(db_path),
         "source_dir": str(source_dir) if source_dir else None,
         "name": name,
         "last_updated": last_updated,
         "difficulty": difficulty,
+        "description": description,
     }

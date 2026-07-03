@@ -697,7 +697,7 @@ def build_narrative_prompt(
         current_time_str:       Optional formatted time string (e.g. Day 1, 08:00 (Morning)).
         scheduled_events:       Optional list of triggered world events to incorporate.
         spatial_context:        Optional dict with breadcrumb, description, and neighbors.
-        mode:                   Game mode ('Normal', 'Hardcore', 'Companion').
+        mode:                   Game mode ('Normal', 'Hardcore', 'Companion', 'Multiplayer').
         hero_entity_id:         The entity ID of the Hero (if applicable).
         local_character_names:  List of names of all characters present in the scene.
         basic_prompt:           Custom user instructions to append to the system prompt.
@@ -744,7 +744,14 @@ def build_narrative_prompt(
         "NARRATOR RULES:",
         "- Formatting: Use *actions* and \"dialogue\".",
         f"- Identity: You are the world's narrator and you control the NPCs.",
-        f"- Protagonist: '{player_id}' is the Human Player. Always address them as 'You' and center the narrative around their actions.",
+    ]
+
+    if mode == "Multiplayer":
+        rules.append(f"- Protagonists: The human players are {actors_str}. Narrate their actions in the THIRD person using their names. Because each player may use the first person ('I') in their intents, translate every player's 'I' to their OWN third-person name. NEVER use 'You' to address a single player, and NEVER merge two players into one person.")
+    else:
+        rules.append(f"- Protagonist: '{player_id}' is the Human Player. Always address them as 'You' and center the narrative around their actions.")
+
+    rules += [
         "- Storytelling: Weave ALL the actors' intents into a cohesive, engaging narrative scene. Describe them performing their intended actions together, then describe the outcome and how the NPCs react.",
         f"- Agency Limits: You must describe {actors_str} executing their intents, but DO NOT invent NEW actions, decisions, or dialogue for them beyond what they specified.",
     ]
@@ -842,10 +849,15 @@ def build_narrative_prompt(
         names_str = ", ".join(formatted_names[:-1]) + ", and " + formatted_names[-1]
         group_reminder = f" Note that {names_str} are ALL present in the scene together; NPCs must address the entire group of {len(formatted_names)} characters (DO NOT ignore any members or refer to them as 'you two')."
 
+    if mode == "Multiplayer":
+        translate_clause = "translate each player's 'I' to their OWN third-person name, never to 'You'"
+    else:
+        translate_clause = "translate 'I' to 'You' for the Player, and use the Companion's name"
+
     verbosity_map = {
-        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
-        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
-        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave {weave_word} {actors_str}'s distinct intents into the scene (translate 'I' to 'You' for the Player, and use the Companion's name). Do NOT merge them. Then describe NPC reactions.{group_reminder}"
+        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
+        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
+        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}"
     }
     final_instr = verbosity_map.get(verbosity_level.lower(), verbosity_map["balanced"])
     messages.append({"role": "system", "content": final_instr})
