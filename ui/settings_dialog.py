@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -398,8 +399,6 @@ class SettingsDialog(QDialog):
         self._memory_extract_btn.clicked.connect(self._on_extract_now)
         self._memory_browse_btn.clicked.connect(self._on_view_memory)
 
-        layout.addWidget(self._tabs)
-
         # ---- General section ----
         self._general_group = QGroupBox(tr("tab_general"))
         general_form = QFormLayout(self._general_group)
@@ -469,8 +468,15 @@ class SettingsDialog(QDialog):
         general_form.addRow(self._basic_prompt_label, self._basic_prompt)
         general_form.addRow(self._negative_prompt_label, self._negative_prompt)
         
-        layout.addWidget(self._general_group)
-
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self._tabs)
+        content_layout.addWidget(self._general_group)
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
 
         # ---- Buttons ----
         self._buttons = QDialogButtonBox(

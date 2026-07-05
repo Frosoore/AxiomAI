@@ -147,6 +147,7 @@ class Session:
         self._checkpoints = CheckpointManager(self._db_path)
         self._turn_id = get_max_turn_id(self._db_path, save_id)
         self._intent_pool: dict[str, str] = {}
+        self._entity_names: dict[str, str] | None = None
 
     @staticmethod
     def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
@@ -399,6 +400,7 @@ class Session:
         """
         summary = self._checkpoints.rewind(self._save_id, target_turn_id)
         self._arbitrator.invalidate_stats_cache()
+        self._entity_names = None
         self._turn_id = get_max_turn_id(self._db_path, self._save_id)
         # Les illustrations des tours annulés ne doivent pas réapparaître si on
         # rejoue jusqu'au même numéro de tour (TICKET-048).
@@ -524,16 +526,17 @@ class Session:
         """
         from axiom.schema import get_connection
         
-        # Load entity name mappings to resolve IDs to names in history
-        id_to_name = {}
-        try:
-            with get_connection(self._db_path) as conn:
-                rows = conn.execute("SELECT entity_id, name FROM Entities;").fetchall()
-                id_to_name = {r["entity_id"]: r["name"] for r in rows}
-        except Exception:
-            # Non-fatal: history then shows raw IDs instead of names. Trace it so
-            # a real DB error doesn't hide behind merely-ugly history.
-            logger.debug("Entity id→name map load failed; using raw IDs.", exc_info=True)
+        # Load entity name mappings to resolve IDs to names in history.
+        # Cache on the Session object — entities rarely change mid-session.
+        if self._entity_names is None:
+            try:
+                with get_connection(self._db_path) as conn:
+                    rows = conn.execute("SELECT entity_id, name FROM Entities;").fetchall()
+                    self._entity_names = {r["entity_id"]: r["name"] for r in rows}
+            except Exception:
+                logger.debug("Entity id→name map load failed; using raw IDs.", exc_info=True)
+                self._entity_names = {}
+        id_to_name = self._entity_names
 
         # Only load the recent turns the prompt can actually use (it caps at the
         # newest HISTORY_TURN_CAP turns). Loading the ENTIRE Event_Log every turn

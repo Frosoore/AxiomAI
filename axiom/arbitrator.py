@@ -416,6 +416,8 @@ class ArbitratorEngine:
             mode=self._mode,
             hero_entity_id=hero_name_str,
             local_character_names=local_character_names,
+            basic_prompt=getattr(cfg, "basic_prompt", ""),
+            negative_prompt=getattr(cfg, "negative_prompt", ""),
         )
 
         # Step 4 — Clear pending correction immediately after prompt is built

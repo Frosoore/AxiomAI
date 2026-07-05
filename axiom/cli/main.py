@@ -46,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="axiom",
         description="Axiom AI — headless command-line game engine.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable debug mode (verbose console output, full log verbosity).",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     play = sub.add_parser("play", help="Play a universe in the terminal.")
@@ -121,6 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Point d'entrée du CLI. Retourne un code de sortie process."""
+    from axiom.logger import enable_debug_mode
+
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.debug:
+        enable_debug_mode()
     return args.func(args)

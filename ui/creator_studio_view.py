@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -97,6 +98,7 @@ class CreatorStudioView(QWidget):
 
         # Tabs
         self._tabs = QTabWidget()
+        self._tabs.setUsesScrollButtons(True)
         self._entity_editor = EntityEditorWidget()
         self._rule_editor = RuleEditorWidget()
         self._stat_editor = StatDefinitionEditorWidget()
@@ -124,7 +126,10 @@ class CreatorStudioView(QWidget):
             "creator.tab_files",
         )):
             doc_tab(self._tabs, idx, ref)
-        layout.addWidget(self._tabs)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self._tabs)
+        layout.addWidget(scroll)
 
         # Connections
         self._tabs.currentChanged.connect(self._on_tab_changed)
