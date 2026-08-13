@@ -416,3 +416,45 @@ The specific scenario from the spec — "click Add Entity, type 'Gojo', click Sa
 - **Vector DB Patching**: Exposed embedding functions in `llm_engine/vector_memory.py` to allow clean mocking in tests while maintaining lazy-loading benefits.
 - **Validation**: Updated `debug/startup_check.py` to verify spatial table presence and worker readiness.
 
+---
+
+## [PHASE 19 | 2026-08-13] — Web daily driver & living game state
+
+### Web frontend (Slices 1–4)
+- Tabletop chrome: verbosity, canonize, rewind list, Hub, SSE token stream, real cancel.
+- Setup 3-tab lobby, `.axiomsave` pack/unpack, Hub export, file pickers.
+- Creator Studio depth (stat dropdowns, lore keywords, bulk assign, map populate).
+- Hover doc tooltips, first-launch tour, integrity toast. Per-provider settings keys.
+
+### Structured save editor
+- Hub / Setup **Edit** is a tabbed editor: **Entities** (per-entity live stats), **Inventory**, **Session lore**, **Temporary** (active modifiers), **Advanced TOML**.
+- Apply still goes through `apply_correction` (append-only journal). `GET/POST /api/saves/state` is the structured path; TOML export/edit remain for CLI and Advanced.
+- Entity-stat fields resolve `stat_id` vs authored key case-insensitively (`arousal` ↔ `Arousal`), so reopening Edit shows the values play already had.
+
+### Temporary stats
+- Each definition can be marked **temporary** (Creator checkbox). Kind is `heal`, `buildup`, or `duration`, stored in `parameters.dynamics`.
+- **Infer temporary…** (and first play if no profile exists) asks the extraction model to classify stats from name/description — not a hardcoded arousal/drug list.
+- Engine ticks heal toward resting, clamps buildup, holds peak, crashes on `stat_events`. Narrator is told not to fake decay.
+- Short overlays still use `Active_Modifiers` (`delta` + `minutes`, or `clear`).
+
+### Entity types and stat linking
+- `Entity_Types` catalog (builtins `player` / `npc` / `faction` / `world` plus author types such as `robot`). Each type has an engine **role**.
+- `Entities.entity_role` is denormalized from the type. Engine player lookup uses role.
+- `Stat_Type_Links`: empty = all types (backward compatible). Arbitrator rejects a stat that is not linked to the entity's type.
+- Universe-as-Code: `types/types.toml` and `applies_to = [...]` on `stats/definitions.toml`.
+
+### Nested inventory (play-emergent)
+- No Creator item catalog. Items appear from play or the save editor.
+- `Item_Instances` tree: holder is an entity, a location, or another instance (purse, drawer). Max depth 5.
+- Existing `Items_Inventory` bags migrate on open. LLM `inventory_changes` support `add` / `remove` / `move` plus `container_name` / `location_id`.
+- Play sidebar is a tree; click to move. `GET /api/session/inventory` returns `{tree, names}`.
+
+### Session lore
+- `Session_Lore` is save-scoped and **not** wiped by `refresh_definition`.
+- Canonize `scope=save` writes `Session_Lore`. World lore book stays the template.
+- `_fetch_relevant_lore` unions world + session; keyword fallback also scores a short content excerpt.
+- Turn snapshot includes `lore_hits` (`source`, `why`). Tabletop shows **Lore used this turn**.
+
+### Tests
+- Fixtures that described a private custom world now use bundled **Myria** names and lore.
+

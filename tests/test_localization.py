@@ -86,6 +86,7 @@ class TestCanonicalVerbosity:
 
     def test_inconnu_et_vide_retombent_sur_balanced(self) -> None:
         from core.localization import canonical_verbosity
-        assert canonical_verbosity("n'importe quoi") == "balanced"
-        assert canonical_verbosity("") == "balanced"
-        assert canonical_verbosity(None) == "balanced"
+        from axiom.prompts import DEFAULT_VERBOSITY_LEVEL
+        assert canonical_verbosity("n'importe quoi") == DEFAULT_VERBOSITY_LEVEL
+        assert canonical_verbosity("") == DEFAULT_VERBOSITY_LEVEL
+        assert canonical_verbosity(None) == DEFAULT_VERBOSITY_LEVEL

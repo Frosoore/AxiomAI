@@ -170,6 +170,11 @@ class SettingsDialog(QDialog):
         self._extraction_model.setPlaceholderText("e.g. llama3.1:8b")
         self._time_model = doc(QLineEdit(), "settings.time_model")
         self._time_model.setPlaceholderText("e.g. llama3.2:1b")
+        # Global default (also used by the web UI). Per-universe override still
+        # lives on the tabletop verbosity slider when a universe stores one.
+        self._default_verbosity_combo = doc(QComboBox(), "settings.default_verbosity")
+        for level in ("short", "balanced", "talkative"):
+            self._default_verbosity_combo.addItem(tr(level), level)
 
         self._univ_test_btn = doc(QPushButton(tr("test_connection")), "settings.test_connection")
         
@@ -180,10 +185,12 @@ class SettingsDialog(QDialog):
         self._univ_model_label = QLabel(tr("main_model"))
         self._univ_extraction_label = QLabel(tr("extraction_model"))
         self._univ_time_label = QLabel(tr("time_model"))
+        self._default_verbosity_label = QLabel(tr("default_verbosity"))
 
         univ_form.addRow(self._univ_url_label, self._univ_url)
         univ_form.addRow(self._univ_key_label, self._univ_key)
         univ_form.addRow(self._univ_model_label, self._univ_model)
+        univ_form.addRow(self._default_verbosity_label, self._default_verbosity_combo)
         univ_form.addRow(self._univ_extraction_label, self._extraction_model)
         univ_form.addRow(self._univ_time_label, self._time_model)
         
@@ -607,6 +614,11 @@ class SettingsDialog(QDialog):
         self._univ_url_label.setText(tr("base_url"))
         self._univ_key_label.setText(tr("api_key"))
         self._univ_model_label.setText(tr("main_model"))
+        self._default_verbosity_label.setText(tr("default_verbosity"))
+        for i in range(self._default_verbosity_combo.count()):
+            level = self._default_verbosity_combo.itemData(i)
+            if level:
+                self._default_verbosity_combo.setItemText(i, tr(level))
         self._univ_extraction_label.setText(tr("extraction_model"))
         self._univ_time_label.setText(tr("time_model"))
         self._univ_key.setPlaceholderText(tr("optional_key"))
@@ -691,6 +703,10 @@ class SettingsDialog(QDialog):
         self._univ_url.setText(config.universal_base_url)
         self._univ_key.setText(config.universal_api_key)
         self._univ_model.setText(config.universal_model)
+        from axiom.config import get_default_verbosity
+        v_idx = self._default_verbosity_combo.findData(get_default_verbosity(config))
+        if v_idx >= 0:
+            self._default_verbosity_combo.setCurrentIndex(v_idx)
         self._extraction_model.setText(config.extraction_model)
         self._time_model.setText(config.time_model)
         self._cloud_values = {
@@ -799,6 +815,7 @@ class SettingsDialog(QDialog):
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
             negative_prompt=self._negative_prompt.toPlainText().strip(),
+            default_verbosity=self._default_verbosity_combo.currentData() or "talkative",
             # Memory settings (Phase 2) — must be read back here or saving the
             # dialog would silently reset them to their defaults.
             memory_mode=self._memory_mode_combo.currentData() or "lite",

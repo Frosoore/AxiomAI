@@ -125,14 +125,61 @@ def materialize_state(
         ):
             base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
 
-        inventory = [
-            {"entity_id": r["entity_id"], "item_id": r["item_id"], "quantity": r["quantity"]}
+        from axiom.inventory import list_instances
+
+        inventory = list_instances(conn, save_id)
+        if not inventory:
+            inventory = [
+                {
+                    "entity_id": r["entity_id"],
+                    "item_id": r["item_id"],
+                    "quantity": r["quantity"],
+                    "holder_kind": "entity",
+                    "holder_id": r["entity_id"],
+                }
+                for r in conn.execute(
+                    "SELECT entity_id, item_id, quantity FROM Items_Inventory WHERE save_id = ? "
+                    "ORDER BY entity_id, item_id;",
+                    (save_id,),
+                )
+            ]
+
+        session_lore = []
+        try:
+            session_lore = [
+                {
+                    "entry_id": r["entry_id"],
+                    "category": r["category"] or "",
+                    "name": r["name"] or "",
+                    "keywords": r["keywords"] or "",
+                    "content": r["content"] or "",
+                    "origin_turn": int(r["origin_turn"] or 0),
+                }
+                for r in conn.execute(
+                    "SELECT entry_id, category, name, keywords, content, origin_turn "
+                    "FROM Session_Lore WHERE save_id = ? ORDER BY name;",
+                    (save_id,),
+                )
+            ]
+        except sqlite3.Error:
+            session_lore = []
+
+        entity_meta: dict[str, dict[str, str]] = {}
+        try:
+            ent_cols = {c[1] for c in conn.execute("PRAGMA table_info(Entities);")}
+            role_sel = "entity_role" if "entity_role" in ent_cols else "entity_type"
             for r in conn.execute(
-                "SELECT entity_id, item_id, quantity FROM Items_Inventory WHERE save_id = ? "
-                "ORDER BY entity_id, item_id;",
-                (save_id,),
-            )
-        ]
+                f"SELECT entity_id, name, entity_type, "
+                f"{role_sel} AS entity_role "
+                f"FROM Entities WHERE is_active = 1;"
+            ):
+                entity_meta[r["entity_id"]] = {
+                    "name": r["name"] or r["entity_id"],
+                    "entity_type": r["entity_type"] or "npc",
+                    "entity_role": r["entity_role"] or "npc",
+                }
+        except sqlite3.Error:
+            entity_meta = {}
         modifiers = [
             {
                 "entity_id": r["entity_id"],
@@ -148,10 +195,15 @@ def materialize_state(
         ]
         in_game_minutes = _in_game_minutes_at(conn, save_id, turn_id)
 
-    # Fusion base ⊕ état rejoué (le replay prévaut).
+    # Fusion base ⊕ état rejoué (le replay prévaut). Fold incoming keys onto
+    # the authored ones so `arousal` does not sit beside `Arousal`.
+    from axiom.events import resolve_stat_key
+
     entities: dict[str, dict[str, str]] = {eid: dict(stats) for eid, stats in base.items()}
     for eid, stats in replayed.items():
-        entities.setdefault(eid, {}).update(stats)
+        dest = entities.setdefault(eid, {})
+        for key, value in stats.items():
+            dest[resolve_stat_key(key, dest)] = value
 
     return {
         "save": {
@@ -161,7 +213,9 @@ def materialize_state(
         },
         "point": {"turn_id": turn_id, "in_game_minutes": in_game_minutes},
         "entities": entities,
+        "entity_meta": entity_meta,
         "inventory": inventory,
+        "session_lore": session_lore,
         "modifiers": modifiers,
     }
 
@@ -205,11 +259,32 @@ def export_save_state(
         inv = tomlkit.aot()
         for it in state["inventory"]:
             t = tomlkit.table()
-            t["entity_id"] = it["entity_id"]
+            if it.get("instance_id"):
+                t["instance_id"] = it["instance_id"]
             t["item_id"] = it["item_id"]
             t["quantity"] = it["quantity"]
+            t["holder_kind"] = it.get("holder_kind") or "entity"
+            t["holder_id"] = it.get("holder_id") or it.get("entity_id") or ""
+            if it.get("entity_id"):
+                t["entity_id"] = it["entity_id"]
+            if it.get("is_container"):
+                t["is_container"] = True
+            if it.get("name"):
+                t["name"] = it["name"]
             inv.append(t)
         doc["inventory"] = inv
+
+    if state.get("session_lore"):
+        lore = tomlkit.aot()
+        for entry in state["session_lore"]:
+            t = tomlkit.table()
+            t["entry_id"] = entry.get("entry_id") or ""
+            t["category"] = entry.get("category") or ""
+            t["name"] = entry.get("name") or ""
+            t["keywords"] = entry.get("keywords") or ""
+            t["content"] = entry.get("content") or ""
+            lore.append(t)
+        doc["session_lore"] = lore
 
     if state["modifiers"]:
         mods = tomlkit.aot()
@@ -274,12 +349,11 @@ def import_save_state(
     in_game_minutes = int(data.get("point", {}).get("in_game_minutes", 0))
     try:
         with get_connection(db_path) as conn:
-            for it in data.get("inventory", []):
-                conn.execute(
-                    "INSERT INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
-                    "VALUES (?, ?, ?, ?);",
-                    (save_id, it["entity_id"], it["item_id"], int(it.get("quantity", 1))),
-                )
+            from axiom.inventory import replace_inventory
+            from axiom.schema import migrate_schema
+            migrate_schema(db_path)
+            replace_inventory(conn, save_id, list(data.get("inventory") or []))
+            _replace_session_lore(conn, save_id, list(data.get("session_lore") or []), turn_id=0)
             for m in data.get("modifiers", []):
                 conn.execute(
                     "INSERT INTO Active_Modifiers "
@@ -337,31 +411,45 @@ def apply_correction(
         if conn.execute("SELECT 1 FROM Saves WHERE save_id = ?;", (save_id,)).fetchone() is None:
             raise SaveError(f"Save not found: {save_id}")
 
+    from axiom.events import resolve_stat_key, stat_key_aliases_from_definitions
+
+    current = materialize_state(db_path, save_id, at_turn=turn_id)
+    current_entities: dict[str, dict[str, str]] = current.get("entities") or {}
+    aliases: dict[str, str] = {}
+    with get_connection(db_path) as conn:
+        aliases = stat_key_aliases_from_definitions(conn)
+
     events: list[tuple[str, int, str, str, dict]] = []
     for eid, stats in patch.get("entities", {}).items():
+        existing = current_entities.get(eid, {})
+        written: dict[str, str] = {}
         for stat_key, value in stats.items():
+            canon = resolve_stat_key(str(stat_key), existing, aliases)
+            written[canon] = str(value)
+        for stat_key, value in written.items():
+            if str(existing.get(stat_key, "")) == value:
+                continue
             events.append((
                 save_id, turn_id, "manual_edit", eid,
-                {"entity_id": eid, "stat_key": stat_key, "value": str(value)},
+                {"entity_id": eid, "stat_key": stat_key, "value": value},
             ))
     if events:
         sourcer.append_events_batch(events)
 
     try:
         with get_connection(db_path) as conn:
-            for it in patch.get("inventory", []):
-                qty = int(it.get("quantity", 1))
-                if qty <= 0:
-                    conn.execute(
-                        "DELETE FROM Items_Inventory WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
-                        (save_id, it["entity_id"], it["item_id"]),
-                    )
-                else:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
-                        "VALUES (?, ?, ?, ?);",
-                        (save_id, it["entity_id"], it["item_id"], qty),
-                    )
+            if patch.get("inventory_replace"):
+                from axiom.inventory import replace_inventory
+                replace_inventory(conn, save_id, list(patch.get("inventory") or []))
+            else:
+                for it in patch.get("inventory", []):
+                    _apply_inventory_row(conn, save_id, it)
+            if "session_lore" in patch:
+                _replace_session_lore(
+                    conn, save_id, list(patch.get("session_lore") or []), turn_id=turn_id
+                )
+            if patch.get("modifiers_replace"):
+                conn.execute("DELETE FROM Active_Modifiers WHERE save_id = ?;", (save_id,))
             for m in patch.get("modifiers", []):
                 conn.execute(
                     "INSERT INTO Active_Modifiers "
@@ -376,6 +464,141 @@ def apply_correction(
 
     sourcer.rebuild_state_cache(save_id)
     return turn_id
+
+
+def _apply_inventory_row(conn: sqlite3.Connection, save_id: str, it: dict[str, Any]) -> None:
+    """Apply one inventory patch row. Quantity is absolute (0 = remove)."""
+    from axiom.inventory import ensure_item_definition
+
+    qty = int(it.get("quantity", 1) or 0)
+    holder_kind = it.get("holder_kind") or "entity"
+    holder_id = it.get("holder_id") or it.get("entity_id") or ""
+    item_id = it.get("item_id") or ""
+    instance_id = it.get("instance_id")
+    has_instances = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Item_Instances';"
+    ).fetchone()
+
+    if qty <= 0:
+        if has_instances:
+            if instance_id:
+                conn.execute(
+                    "DELETE FROM Item_Instances WHERE save_id = ? AND instance_id = ?;",
+                    (save_id, instance_id),
+                )
+            elif item_id and holder_id:
+                conn.execute(
+                    "DELETE FROM Item_Instances WHERE save_id = ? AND item_id = ? "
+                    "AND holder_kind = ? AND holder_id = ?;",
+                    (save_id, item_id, holder_kind, holder_id),
+                )
+        if holder_id and item_id:
+            conn.execute(
+                "DELETE FROM Items_Inventory WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
+                (save_id, holder_id, item_id),
+            )
+        return
+
+    if has_instances and holder_id and item_id:
+        item_id = ensure_item_definition(
+            conn, item_id,
+            name=str(it.get("name") or ""),
+            is_container=bool(it.get("is_container")),
+        )
+        if instance_id:
+            exists = conn.execute(
+                "SELECT 1 FROM Item_Instances WHERE instance_id = ?;", (instance_id,)
+            ).fetchone()
+            if exists:
+                conn.execute(
+                    "UPDATE Item_Instances SET quantity = ?, holder_kind = ?, holder_id = ?, "
+                    "item_id = ? WHERE instance_id = ?;",
+                    (qty, holder_kind, holder_id, item_id, instance_id),
+                )
+                return
+        existing = conn.execute(
+            "SELECT instance_id FROM Item_Instances WHERE save_id = ? AND item_id = ? "
+            "AND holder_kind = ? AND holder_id = ? LIMIT 1;",
+            (save_id, item_id, holder_kind, holder_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE Item_Instances SET quantity = ? WHERE instance_id = ?;",
+                (qty, existing[0]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO Item_Instances "
+                "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
+                "VALUES (?, ?, ?, ?, ?, ?);",
+                (instance_id or str(uuid.uuid4()), save_id, item_id, qty, holder_kind, holder_id),
+            )
+        return
+    if holder_id and item_id:
+        conn.execute(
+            "INSERT OR REPLACE INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
+            "VALUES (?, ?, ?, ?);",
+            (save_id, holder_id, item_id, qty),
+        )
+
+
+def _replace_session_lore(
+    conn: sqlite3.Connection,
+    save_id: str,
+    entries: list[dict[str, Any]],
+    *,
+    turn_id: int = 0,
+) -> None:
+    """Replace this save's Session_Lore with the given entries."""
+    try:
+        conn.execute("DELETE FROM Session_Lore WHERE save_id = ?;", (save_id,))
+    except sqlite3.Error:
+        return
+    for entry in entries:
+        name = str(entry.get("name") or "").strip()
+        content = str(entry.get("content") or "").strip()
+        if not name and not content:
+            continue
+        entry_id = str(entry.get("entry_id") or "").strip() or str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO Session_Lore "
+            "(entry_id, save_id, category, name, keywords, content, origin_turn) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?);",
+            (
+                entry_id,
+                save_id,
+                str(entry.get("category") or ""),
+                name,
+                str(entry.get("keywords") or ""),
+                content,
+                int(entry.get("origin_turn") or turn_id or 0),
+            ),
+        )
+
+
+def apply_structured_state(
+    db_path: str,
+    save_id: str,
+    payload: dict[str, Any],
+) -> int:
+    """Apply a structured save-editor payload (full inventory / lore replace)."""
+    from axiom.schema import migrate_schema
+
+    migrate_schema(db_path)
+    patch: dict[str, Any] = {}
+    if payload.get("entities"):
+        patch["entities"] = payload["entities"]
+    if "inventory" in payload:
+        patch["inventory"] = payload["inventory"]
+        patch["inventory_replace"] = True
+    if "session_lore" in payload:
+        patch["session_lore"] = payload["session_lore"]
+    if "modifiers" in payload:
+        patch["modifiers"] = payload["modifiers"]
+        patch["modifiers_replace"] = True
+    if not patch:
+        return resolve_point(db_path, save_id)
+    return apply_correction(db_path, save_id, patch)
 
 
 def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
@@ -401,23 +624,27 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
         if changed:
             entities[eid] = changed
 
-    inv_before = {
-        (i["entity_id"], i["item_id"]): int(i.get("quantity", 1))
-        for i in before.get("inventory", [])
-    }
-    inv_after = {
-        (i["entity_id"], i["item_id"]): int(i.get("quantity", 1))
-        for i in after.get("inventory", [])
-    }
-    inventory = [
-        {"entity_id": eid, "item_id": iid, "quantity": qty}
-        for (eid, iid), qty in inv_after.items()
-        if inv_before.get((eid, iid)) != qty
-    ]
-    inventory += [
-        {"entity_id": eid, "item_id": iid, "quantity": 0}
-        for (eid, iid) in inv_before.keys() - inv_after.keys()
-    ]
+    def _inv_key(i: dict) -> tuple:
+        if i.get("instance_id"):
+            return ("id", i["instance_id"])
+        holder = i.get("holder_id") or i.get("entity_id") or ""
+        kind = i.get("holder_kind") or "entity"
+        return ("stack", kind, holder, i.get("item_id"))
+
+    inv_before = {_inv_key(i): i for i in before.get("inventory", [])}
+    inv_after = {_inv_key(i): i for i in after.get("inventory", [])}
+    inventory: list[dict[str, Any]] = []
+    for key, it in inv_after.items():
+        prior = inv_before.get(key)
+        if prior is None or int(prior.get("quantity", 1)) != int(it.get("quantity", 1)) \
+                or (prior.get("holder_id") or prior.get("entity_id")) != (
+                    it.get("holder_id") or it.get("entity_id")):
+            inventory.append(it)
+    for key, it in inv_before.items():
+        if key not in inv_after:
+            gone = dict(it)
+            gone["quantity"] = 0
+            inventory.append(gone)
 
     def _mod_key(m: dict) -> tuple:
         return (m["entity_id"], m["stat_key"], float(m["delta"]),
@@ -426,7 +653,12 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
     known = {_mod_key(m) for m in before.get("modifiers", [])}
     modifiers = [m for m in after.get("modifiers", []) if _mod_key(m) not in known]
 
-    return {"entities": entities, "inventory": inventory, "modifiers": modifiers}
+    lore_before = before.get("session_lore") or []
+    lore_after = after.get("session_lore") or []
+    patch: dict[str, Any] = {"entities": entities, "inventory": inventory, "modifiers": modifiers}
+    if lore_before != lore_after:
+        patch["session_lore"] = lore_after
+    return patch
 
 
 def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *, at_turn: int | None = None) -> int:
@@ -437,6 +669,8 @@ def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *,
         "inventory": data.get("inventory", []),
         "modifiers": data.get("modifiers", []),
     }
+    if "session_lore" in data:
+        patch["session_lore"] = data.get("session_lore") or []
     return apply_correction(db_path, save_id, patch, at_turn=at_turn)
 
 
@@ -511,6 +745,36 @@ def fork_save(
             "VALUES (?, ?, ?, ?);",
             [(new_id, r["entity_id"], r["item_id"], r["quantity"]) for r in inv_rows],
         )
+        try:
+            inst_rows = conn.execute(
+                "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
+                "FROM Item_Instances WHERE save_id = ?;",
+                (save_id,),
+            ).fetchall()
+            conn.executemany(
+                "INSERT INTO Item_Instances "
+                "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
+                "VALUES (?, ?, ?, ?, ?, ?);",
+                [(str(uuid.uuid4()), new_id, r["item_id"], r["quantity"],
+                  r["holder_kind"], r["holder_id"]) for r in inst_rows],
+            )
+        except sqlite3.Error:
+            pass
+        try:
+            lore_rows = conn.execute(
+                "SELECT category, name, keywords, content, origin_turn "
+                "FROM Session_Lore WHERE save_id = ?;",
+                (save_id,),
+            ).fetchall()
+            conn.executemany(
+                "INSERT INTO Session_Lore "
+                "(entry_id, save_id, category, name, keywords, content, origin_turn) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?);",
+                [(str(uuid.uuid4()), new_id, r["category"], r["name"], r["keywords"],
+                  r["content"], r["origin_turn"]) for r in lore_rows],
+            )
+        except sqlite3.Error:
+            pass
         mod_rows = conn.execute(
             "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
             "WHERE save_id = ?;",

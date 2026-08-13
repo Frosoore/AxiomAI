@@ -154,7 +154,13 @@ class UniversalClient(LLMBackend):
     def _get_payload(self, messages: list[LLMMessage], stream: bool, temperature: float = 0.7, top_p: float = 1.0, response_format: str | None = None, stop_sequences: list[str] | None = None, max_tokens: int | None = None) -> dict:
         budget = max_tokens if max_tokens else 1024
         if _is_reasoning_model(self.model_name):
-            budget = max(budget, _REASONING_TOKEN_FLOOR)
+            # JSON / structured calls need room for CoT *and* the answer; the
+            # plain narrative floor (2048) is often fully spent on `reasoning`,
+            # leaving `content` empty or truncated mid-JSON (living memory).
+            floor = _REASONING_TOKEN_FLOOR
+            if response_format == "json":
+                floor = max(floor, 4096)
+            budget = max(budget, floor)
         payload = {
             "model": self.model_name,
             "messages": messages,
@@ -168,14 +174,23 @@ class UniversalClient(LLMBackend):
             # Fireworks accepts the parameter (probed live 2026-06-12).
             payload["reasoning_effort"] = "low"
 
-        # Merge stop sequences
-        stops = ["</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
-        if stop_sequences:
-            stops.extend(stop_sequences)
-        stops = list(dict.fromkeys(stops))
-        if self.max_stop_sequences is not None:
-            stops = stops[: self.max_stop_sequences]
-        payload["stop"] = stops
+        # Stop sequences are for narrative play. They break structured JSON
+        # extraction (empty or truncated `content` on several cloud models).
+        if response_format != "json":
+            stops = ["</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
+            if stop_sequences:
+                stops.extend(stop_sequences)
+            stops = list(dict.fromkeys(stops))
+            if self.max_stop_sequences is not None:
+                stops = stops[: self.max_stop_sequences]
+            payload["stop"] = stops
+        elif stop_sequences:
+            # Explicit caller stops only (no narrative defaults).
+            stops = list(dict.fromkeys(stop_sequences))
+            if self.max_stop_sequences is not None:
+                stops = stops[: self.max_stop_sequences]
+            if stops:
+                payload["stop"] = stops
 
         if response_format == "json":
             payload["response_format"] = {"type": "json_object"}
@@ -202,12 +217,25 @@ class UniversalClient(LLMBackend):
             data = response.json()
 
             choice = data["choices"][0]
-            # Reasoning models (gpt-oss, o-series…) put their chain-of-thought
-            # in `reasoning_content` and the answer in `content`. When the token
-            # budget is spent on reasoning, `content` is null or absent — that
-            # is an empty generation, NOT a malformed response, so tolerate it
-            # instead of raising KeyError (TICKET-066).
-            raw_text = choice.get("message", {}).get("content") or ""
+            # Reasoning models (gpt-oss, o-series, deepseek-v4…) put their
+            # chain-of-thought in `reasoning` / `reasoning_content` and the
+            # answer in `content`. When the token budget is spent on reasoning,
+            # `content` is null or absent — that is an empty generation, NOT a
+            # malformed response, so tolerate it instead of raising KeyError
+            # (TICKET-066). Prefer `content`; fall back to reasoning only when
+            # content is empty and the body looks like JSON (structured calls).
+            msg = choice.get("message", {}) or {}
+            raw_text = msg.get("content") or ""
+            if not str(raw_text).strip():
+                for key in ("reasoning_content", "reasoning"):
+                    alt = msg.get(key) or ""
+                    if isinstance(alt, str) and alt.strip() and (
+                        "{" in alt or "[" in alt
+                    ):
+                        # Last-ditch: some providers put the JSON answer only
+                        # inside the reasoning blob when content was truncated.
+                        raw_text = alt
+                        break
             reason = choice.get("finish_reason", "stop")
             if reason in ("length", "max_tokens"):
                 reason = "length"

@@ -1041,6 +1041,19 @@ class TestInventoryQuantityValidation:
         assert ok is False
         assert "whole number" in reason
 
+    def test_unknown_item_is_created_on_add(self, db_path: str) -> None:
+        arb = self._arb(db_path)
+        ok, reason = arb._validate_inventory_change(
+            "s1", {"entity_id": "player1", "item_id": "Hotel Key", "action": "add", "quantity": 1}
+        )
+        assert ok is True, reason
+        import sqlite3
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT item_id, name FROM Item_Definitions WHERE item_id = 'hotel_key';"
+            ).fetchone()
+        assert row is not None
+
     @pytest.mark.parametrize("bad", [0, -3])
     def test_non_positive_quantity_rejected(self, db_path: str, bad) -> None:
         arb = self._arb(db_path)

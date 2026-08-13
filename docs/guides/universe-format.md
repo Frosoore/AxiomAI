@@ -21,6 +21,8 @@ rules, lore, map…). Player saves are runtime data, stored separately — see
 ```text
 my-world/
 ├── universe.toml            # required: metadata, narration, calendar
+├── types/
+│   └── types.toml           # extra entity types (optional; builtins are seeded)
 ├── stats/
 │   └── definitions.toml     # stat definitions (optional)
 ├── entities/
@@ -85,7 +87,7 @@ One file per entity:
 
 ```toml
 entity_id = "innkeeper"          # required, stable identifier
-entity_type = "npc"              # default: "npc"
+entity_type = "npc"              # catalog id: builtin player/npc/faction/world, or a type you added
 name = "Marla the Innkeeper"
 description = "A weathered woman who hears everything."
 is_active = true                 # default: true
@@ -96,6 +98,23 @@ Location = "tavern"
 Mood = "wary"
 ```
 
+`entity_type` is a catalog id, not the character's name. The four builtins
+(`player`, `npc`, `faction`, `world`) are also **roles** the engine uses
+(who is the player, whom the Chronicler tracks). Extra types declare a role
+so a `robot` still counts as an `npc`.
+
+## Entity types — `types/types.toml`
+
+Optional. Builtins are always present. Add kinds the world needs:
+
+```toml
+[[types]]
+type_id = "robot"
+name = "Robot"
+role = "npc"                     # player | npc | faction | world
+description = "A constructed body. Battery, not blood."
+```
+
 ## Stat definitions — `stats/definitions.toml`
 
 ```toml
@@ -104,8 +123,42 @@ stat_id = "Health"
 name = "Health"
 description = "Hit points."
 value_type = "numeric"           # default: "numeric"
+temporary = true                 # engine ticks this; omit or false = lasting
 parameters = { min = 0, max = 100 }
+# applies_to = ["player", "npc"] # optional; omit = every type
+
+[definitions.dynamics]
+kind = "heal"                    # heal | buildup | duration
+resting = 100                    # value time pulls toward (healthy max, or 0)
+heal_minutes = 20160             # ~2 weeks to close a serious wound
+# peak_hold_minutes = 8          # buildup: how long it can sit at max
+# crash_on = ["orgasm"]          # buildup: event tags that snap to resting
+# extend_on = ["edging"]         # buildup: event tags that refresh the peak
+# basis = "Closes over days unless treated."
 ```
+
+`applies_to` lists type ids that may hold the stat. Empty (or omitted) means
+every type — existing worlds keep working. Arousal on a human player and
+Battery on a `robot` are the intended split.
+
+**Temporary** is a property of the definition, not a hardcoded list of names.
+When you Add a stat, Creator sends **name + optional note** through a fixed
+form: is it temporary, what kind, and is the timeline **fast** (scene /
+hours) or **slow** (days–weeks)? The note is never overwritten; an empty
+note may get a short description back. The stats table is a summary
+(lasting vs `kind · pace`); **Edit** opens the full profile. Crash/extend
+tags only appear on **buildup** meters. **Infer temporary…** runs the same
+form on every row. Play start classifies anything still unmarked on that
+save. The engine then:
+
+- **heal** — drifts toward `resting` with in-game time (wounds, vitality).
+- **buildup** — the narrator only reports scene-driven change; the engine
+  clamps, tracks time at peak, and snaps to resting on a listed `stat_events`
+  tag. Rate is allowed to vary by character.
+- **duration** — short overlay that also eases toward resting (intoxication).
+
+Lasting stats (cash, reputation, location) stay put until the story changes
+them. The narrator is told not to fake the decay.
 
 ## Rules — `rules/*.toml`
 
@@ -165,6 +218,11 @@ Without frontmatter, the `entry_id` is derived from the relative path and the
 name from the file name. The body is preserved byte-for-byte (compile →
 decompile round-trips are lossless).
 
+Keyword lists matter: the arbitrator matches a turn against `keywords` + name
+(and a short content excerpt) when semantic retrieval is off. Empty keywords
+weaken that fallback. Lore that belongs only to one playthrough lives in the
+save (`Session_Lore`), not under `lore/` — see [Saves](saves.md).
+
 ## Scheduled events — `events/*.toml`
 
 Events fire when the in-game clock reaches `trigger_minute`:
@@ -178,6 +236,11 @@ description = "The clockwork sun grinds to a halt."
 
 ## Items — `items/*.toml`
 
+Optional **definitions** only (name, category, whether it is a container).
+There is no world-template inventory: what a character carries or stashes
+appears during play (or in the save editor). Worlds like Myria may still
+ship a few named relics here.
+
 ```toml
 item_id = "rusty_sword"
 name = "Rusty Sword"
@@ -185,6 +248,8 @@ description = "It has seen better centuries."
 category = "weapon"              # default: "misc"
 weight = 3.5
 rarity = "common"
+is_container = false             # optional; bags, purses, drawers
+# capacity = 8                   # optional; omit = unlimited
 ```
 
 ## Story setup — `setup/questions.toml`

@@ -116,8 +116,8 @@ $ axiom save-fork MyWorld.db <save_id> --turn 10 --name "Alice (what if)"
 ### `axiom save-edit`
 
 Fix an existing save in place by applying a correction TOML (stat patches
-under `[state.<entity_id>]`, plus `[[inventory]]` and `[[modifiers]]`
-entries); `--turn` targets a past point:
+under `[state.<entity_id>]`, plus `[[inventory]]`, `[[session_lore]]` and
+`[[modifiers]]` entries); `--turn` targets a past point:
 
 ```console
 $ axiom save-edit MyWorld.db <save_id> patch.toml

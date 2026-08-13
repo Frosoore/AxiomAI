@@ -257,6 +257,8 @@ class RuleEditorWidget(QWidget):
         
         # Operator
         conds = rule.get("conditions", {})
+        if isinstance(conds, list):
+            conds = {"operator": "AND", "clauses": conds}
         op = str(conds.get("operator", "AND")).upper()
         self._operator_combo.setCurrentIndex(0 if op == "AND" else 1)
         

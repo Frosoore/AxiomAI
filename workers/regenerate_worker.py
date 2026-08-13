@@ -25,7 +25,7 @@ class RegenerateWorker(QThread):
     def __init__(self, llm: LLMBackend, db_path: str, save_id: str, turn_id: int,
                  history: list, system_prompt: str, user_message: str,
                  temperature: float = 0.7, top_p: float = 1.0,
-                 verbosity_level: str = "balanced"):
+                 verbosity_level: str = "talkative"):
         super().__init__()
         self._llm = llm
         self._db_path = db_path

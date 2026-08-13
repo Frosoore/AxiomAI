@@ -84,16 +84,32 @@ authoritative backlog across sessions (same convention as `maintenance/project_p
   `workers/db_tasks.py::DeleteSaveTask`. New test coverage for both.
 
 **Deferred to a follow-up session (documented, not started):**
-- [ ] Memory Browser (Facts/Observations/Mental Models, 3-tab dialog + trends) + Settings "Memory" tab
-- [ ] Multiplayer/hotseat (player selector, per-player intent queue, `axiom/multiplayer.py`)
-- [ ] Canonize workflow (story → universe lore, diff preview) + "Canon auto" toggle
-- [ ] Help system depth (real tooltips, per-page "Explain", searchable directory, real Quick Tour —
+- [x] Memory Browser (Facts/Observations/Mental Models, 3-tab dialog + trends) + Settings "Memory" tab
+- [x] Multiplayer/hotseat (player selector, per-player intent queue, `axiom/multiplayer.py`)
+- [x] Canonize workflow (story → universe lore, diff preview) + "Canon auto" toggle
+- [x] Help system depth (real tooltips, per-page "Explain", searchable directory, real Quick Tour —
       today `btn-menu-explain`/`btn-menu-tour` are placeholder `alert()`s)
-- [ ] Settings gaps: wallpaper picker, basic/negative image prompts, `doc_tooltips_enabled`,
+- [x] Settings gaps: wallpaper picker, basic/negative image prompts, `doc_tooltips_enabled`,
       `trim_sentences`, per-provider model browser dialog, `image_gemini_model`, `image_timeout`
-- [ ] Polish: checkpoint list dialog UX (vs raw slider), global cancel-generation button, timeline/
+- [x] Polish: checkpoint list dialog UX (vs raw slider), global cancel-generation button, timeline/
       chronicler world-news log tab (distinct from the rewind slider), hero-intent chat bubble
       styling (Companion mode), Ctrl+Z/Ctrl+Y rewind shortcuts, image click-to-zoom lightbox
+
+**Still later (Slices 2–4):**
+- [x] Setup lobby 3-tab (Resume / Persona / Story) + `.axiomsave` pack/unpack/duplicate/rename
+- [x] Hub Export universe + multipart file import
+- [x] Creator Studio depth (bulk edit, rule dropdowns, lore keywords, map populate)
+- [x] Hover `data-doc` tooltips + first-launch tour auto-open
+
+## Session 2026-08-13 — living game state
+
+- [x] Structured save editor (entities / nested inventory / session lore / Advanced TOML)
+- [x] Entity type catalog + Add type…; stats `applies_to`; arbitrator type gate
+- [x] Nested `Item_Instances` (no Creator inventory catalog); play tree + move
+- [x] `Session_Lore` + lore-hits rail; canonize save-scope no longer writes `Lore_Book`
+- [x] Tests use Myria names/lore, not a private custom world
+- [x] Save editor reloads live stats (case-insensitive keys); Temporary modifiers tab + play overlay
+- [x] Stat Temporary checkbox + Infer; engine-ticked heal/buildup/duration profiles
 
 Full inventory with Qt file/class/engine-call references for every item above: see the
 Explore-agent report archived at the bottom of `CHANGELOG.md`'s Session 2 entry.

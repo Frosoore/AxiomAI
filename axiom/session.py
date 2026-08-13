@@ -96,6 +96,14 @@ class Session:
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
+        try:
+            from axiom.schema import migrate_schema
+            migrate_schema(self._db_path)
+        except Exception:
+            from axiom.logger import logger
+            logger.exception(
+                "Schema migrate failed opening %s; session continues", self._db_path
+            )
         self._llm = llm
         # Timekeeper backend: an explicit one wins; otherwise build it from the
         # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
@@ -143,6 +151,11 @@ class Session:
 
         rules = load_rules_for_session(self._db_path)
         self._arbitrator = ArbitratorEngine(self._db_path, rules)
+        try:
+            from axiom.stat_dynamics import ensure_stat_dynamics
+            ensure_stat_dynamics(self._db_path, llm)
+        except Exception:
+            logger.debug("stat dynamics classify-on-start skipped", exc_info=True)
         self._events = EventSourcer(self._db_path)
         self._checkpoints = CheckpointManager(self._db_path)
         self._turn_id = get_max_turn_id(self._db_path, save_id)
@@ -185,7 +198,7 @@ class Session:
         on_status: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "balanced",
+        verbosity_level: str = "talkative",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
         """Resolve every intent currently in the pool as a single tick."""
@@ -329,7 +342,7 @@ class Session:
         on_hero_decision: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "balanced",
+        verbosity_level: str = "talkative",
         hero_action: str | None = None,
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
@@ -371,7 +384,7 @@ class Session:
         on_status: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "balanced",
+        verbosity_level: str = "talkative",
     ) -> ArbitratorResult:
         """Resolve a multiplayer turn: every player intent in a single tick.
 
@@ -434,7 +447,7 @@ class Session:
         user_message: str,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "balanced",
+        verbosity_level: str = "talkative",
         player_id: str = "player_1",
         on_token: Callable[[str], None] | None = None,
     ) -> str:

@@ -208,21 +208,53 @@ def _parse_universe(src_dir: Path) -> tuple[dict[str, str], set[str]]:
     return meta, referenced
 
 
-def _parse_stat_definitions(src_dir: Path) -> list[tuple]:
-    """stats/definitions.toml → lignes Stat_Definitions."""
+def _parse_stat_definitions(src_dir: Path) -> tuple[list[tuple], list[tuple]]:
+    """stats/definitions.toml → (Stat_Definitions rows, Stat_Type_Links rows)."""
     path = src_dir / "stats" / "definitions.toml"
     if not path.exists():
-        return []
+        return [], []
+    from axiom.stat_dynamics import fold_into_parameters
+
     data = _load_toml(path)
     rows: list[tuple] = []
+    links: list[tuple] = []
     for entry in data.get("definitions", []):
-        params = entry.get("parameters", {})
+        params = fold_into_parameters(entry)
+        stat_id = _require(entry, "stat_id", path.name)
         rows.append((
-            _require(entry, "stat_id", path.name),
+            stat_id,
             str(entry.get("name", entry["stat_id"])),
             str(entry.get("description", "")),
             str(entry.get("value_type", "numeric")),
             json.dumps(params) if isinstance(params, (dict, list)) else str(params),
+        ))
+        for type_id in entry.get("applies_to") or []:
+            tid = str(type_id).strip()
+            if tid:
+                links.append((stat_id, tid))
+    return rows, links
+
+
+def _parse_entity_types(src_dir: Path) -> list[tuple]:
+    """types/types.toml → Entity_Types rows (builtins are always seeded)."""
+    path = src_dir / "types" / "types.toml"
+    if not path.exists():
+        return []
+    data = _load_toml(path)
+    rows: list[tuple] = []
+    for entry in data.get("types", []):
+        type_id = str(entry.get("type_id") or "").strip()
+        if not type_id:
+            continue
+        role = str(entry.get("role") or "npc").strip().lower()
+        if role not in ("player", "npc", "faction", "world"):
+            role = "npc"
+        rows.append((
+            type_id,
+            str(entry.get("name") or type_id),
+            role,
+            str(entry.get("description") or ""),
+            1 if entry.get("is_builtin") else 0,
         ))
     return rows
 
@@ -391,6 +423,8 @@ def _parse_items(src_dir: Path) -> list[tuple]:
             str(data.get("category", "misc")),
             float(data.get("weight", 0.0)),
             str(data.get("rarity", "common")),
+            1 if data.get("is_container") else 0,
+            data.get("capacity"),
         ))
     return rows
 
@@ -407,12 +441,27 @@ def _populate(conn: sqlite3.Connection, parsed: dict[str, Any]) -> None:
         "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",
         list(parsed["meta"].items()),
     )
+    from axiom.schema import _seed_builtin_entity_types, ensure_entity_type
+
+    _seed_builtin_entity_types(conn)
+    conn.executemany(
+        "INSERT OR REPLACE INTO Entity_Types "
+        "(type_id, name, role, description, is_builtin) VALUES (?, ?, ?, ?, ?);",
+        parsed["entity_types"],
+    )
     conn.executemany(
         "INSERT INTO Stat_Definitions (stat_id, name, description, value_type, parameters) "
         "VALUES (?, ?, ?, ?, ?);",
         parsed["stat_definitions"],
     )
+    for _sid, tid in parsed["stat_type_links"]:
+        ensure_entity_type(conn, tid)
+    conn.executemany(
+        "INSERT OR IGNORE INTO Stat_Type_Links (stat_id, type_id) VALUES (?, ?);",
+        parsed["stat_type_links"],
+    )
     for row, stats in parsed["entities"]:
+        ensure_entity_type(conn, row[1])
         conn.execute(
             "INSERT INTO Entities (entity_id, entity_type, name, description, is_active) "
             "VALUES (?, ?, ?, ?, ?);",
@@ -453,8 +502,9 @@ def _populate(conn: sqlite3.Connection, parsed: dict[str, Any]) -> None:
         parsed["setup"],
     )
     conn.executemany(
-        "INSERT INTO Item_Definitions (item_id, name, description, category, weight, rarity) "
-        "VALUES (?, ?, ?, ?, ?, ?);",
+        "INSERT INTO Item_Definitions "
+        "(item_id, name, description, category, weight, rarity, is_container, capacity) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
         parsed["items"],
     )
     conn.commit()
@@ -464,9 +514,12 @@ def _parse_tree(src_dir: Path) -> dict[str, Any]:
     """Parse l'arborescence source complète en structures Python prêtes pour la DB."""
     meta, referenced = _parse_universe(src_dir)
     locations, connections = _parse_locations(src_dir)
+    stat_defs, stat_links = _parse_stat_definitions(src_dir)
     return {
         "meta": meta,
-        "stat_definitions": _parse_stat_definitions(src_dir),
+        "stat_definitions": stat_defs,
+        "stat_type_links": stat_links,
+        "entity_types": _parse_entity_types(src_dir),
         "entities": _parse_entities(src_dir),
         "rules": _parse_rules(src_dir),
         "locations": locations,

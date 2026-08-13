@@ -11,6 +11,9 @@ const STATE = {
   universes: [],
   selectedUniversePath: null,
   selectedSaveId: null,
+  setupSaves: [],
+  setupSort: 'last_updated',
+  setupSelectedSaveId: null,
   activeSession: null, // { db_path, save_id, difficulty, turn_id }
   
   // Settings
@@ -23,6 +26,7 @@ const STATE = {
   creatorModified: false,
   creatorActiveEntityId: null,
   creatorActiveRuleId: null,
+  creatorEditingStatId: null,
   
   // Timeline State
   checkpoints: [],
@@ -38,8 +42,18 @@ const STATE = {
   mapConnectingSource: null,
 
   // Text playback state
-  typewriterTimer: null,
+  typewriterTimer: null,   // legacy interval id (cleared if set)
+  typewriterRaf: null,     // requestAnimationFrame id for fast reveal
   isGenerating: false,
+  streamAbort: null,       // AbortController for SSE turn
+  pendingCheckpointTurn: null,
+  canonPreview: null,
+  cloudProvider: 'gemini',
+
+  // Memory editor (facts / beliefs / mental models)
+  memoryData: null,
+  memoryTab: 'models',
+  memorySelectedId: null,
 
   // Ambiance audio (crossfade, mirrors ui/ambiance_manager.py)
   ambianceTag: null,
@@ -57,7 +71,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTabHandlers();
   setupCanvasMapHandlers();
   setupSidebarMiniTabs();
+  setupSetupLobby();
   await refreshHub();
+  applyDocTooltips();
+  if (!localStorage.getItem('axiom_tour_seen')) {
+    localStorage.setItem('axiom_tour_seen', '1');
+    openQuickTour(0);
+  }
 });
 
 // ── i18n & Translation ──
@@ -93,11 +113,47 @@ function localizeDocument() {
 }
 
 // ── Config & Settings ──
+function stashCloudFieldsFromForm() {
+  if (!STATE.config) return;
+  const provider = (document.getElementById('setting-cloud-provider') || {}).value || STATE.cloudProvider;
+  const fields = CLOUD_FIELDS[provider];
+  if (!fields) return;
+  const keyEl = document.getElementById('setting-cloud-key');
+  const modelEl = document.getElementById('setting-cloud-model');
+  if (keyEl) STATE.config[fields.key] = keyEl.value;
+  if (modelEl) STATE.config[fields.model] = modelEl.value;
+  STATE.cloudProvider = provider;
+}
+
+function fillCloudFieldsToForm() {
+  if (!STATE.config) return;
+  const provider = (document.getElementById('setting-cloud-provider') || {}).value || STATE.cloudProvider || 'gemini';
+  const fields = CLOUD_FIELDS[provider] || CLOUD_FIELDS.gemini;
+  const keyEl = document.getElementById('setting-cloud-key');
+  const modelEl = document.getElementById('setting-cloud-model');
+  if (keyEl) keyEl.value = STATE.config[fields.key] || '';
+  if (modelEl) modelEl.value = STATE.config[fields.model] || '';
+}
+
+function applyWallpaper(path) {
+  if (path) {
+    const url = path.startsWith('data:') || path.startsWith('http') || path.startsWith('blob:')
+      ? path
+      : `file://${path}`;
+    // Local file:// rarely loads in the browser; treat as CSS url anyway.
+    document.body.style.backgroundImage = `linear-gradient(rgba(17,17,27,0.82), rgba(17,17,27,0.88)), url("${path.replace(/"/g, '\\"')}")`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
+  } else {
+    document.body.style.backgroundImage = '';
+  }
+}
+
 async function loadConfig() {
   try {
     const res = await fetch('/api/settings');
     STATE.config = await res.json();
-    // Inject values to general settings inputs
     document.getElementById('setting-language').innerHTML = '';
     const langs = {
       "en": "English", "fr": "Français", "es": "Español", "de": "Deutsch",
@@ -115,18 +171,38 @@ async function loadConfig() {
     document.getElementById('setting-rag-chunks').value = STATE.config.rag_chunk_count || 5;
     document.getElementById('setting-audio-enabled').checked = STATE.config.enable_audio;
 
-    // LLM inputs
+    const chronicler = document.getElementById('setting-chronicler');
+    if (chronicler) chronicler.value = STATE.config.chronicler_minutes_interval || 720;
+    const docTips = document.getElementById('setting-doc-tooltips');
+    if (docTips) docTips.checked = STATE.config.doc_tooltips_enabled !== false;
+    const trim = document.getElementById('setting-trim-sentences');
+    if (trim) trim.checked = STATE.config.trim_sentences !== false;
+    const wallpaper = document.getElementById('setting-wallpaper');
+    if (wallpaper) wallpaper.value = STATE.config.custom_wallpaper || '';
+    const basic = document.getElementById('setting-basic-prompt');
+    if (basic) basic.value = STATE.config.basic_prompt || '';
+    const negative = document.getElementById('setting-negative-prompt');
+    if (negative) negative.value = STATE.config.negative_prompt || '';
+
     document.getElementById('setting-llm-backend').value = STATE.config.llm_backend || 'universal';
     document.getElementById('setting-universal-url').value = STATE.config.universal_base_url || '';
-    document.getElementById('setting-api-key').value = STATE.config.universal_api_key || STATE.config.gemini_api_key || '';
-    document.getElementById('setting-model-name').value = STATE.config.universal_model || STATE.config.gemini_model || '';
+    const univKey = document.getElementById('setting-universal-key');
+    if (univKey) univKey.value = STATE.config.universal_api_key || '';
+    const univModel = document.getElementById('setting-universal-model');
+    if (univModel) univModel.value = STATE.config.universal_model || '';
+    document.getElementById('setting-default-verbosity').value = STATE.config.default_verbosity || 'talkative';
     document.getElementById('setting-fallback-model').value = STATE.config.gemini_fallback_model || '';
     document.getElementById('setting-requests-limit').value = STATE.config.llm_requests_per_minute || 0;
     document.getElementById('setting-extraction-model').value = STATE.config.extraction_model || '';
     document.getElementById('setting-time-model').value = STATE.config.time_model || '';
     document.getElementById('setting-timekeeper-enabled').checked = STATE.config.timekeeper_enabled;
 
-    // Image inputs
+    const backend = STATE.config.llm_backend || 'universal';
+    STATE.cloudProvider = CLOUD_FIELDS[backend] ? backend : 'gemini';
+    const cloudSel = document.getElementById('setting-cloud-provider');
+    if (cloudSel) cloudSel.value = STATE.cloudProvider;
+    fillCloudFieldsToForm();
+
     document.getElementById('setting-image-enabled').checked = STATE.config.image_generation_enabled;
     document.getElementById('setting-image-backend').value = STATE.config.image_backend || 'gemini';
     document.getElementById('setting-image-url').value = STATE.config.image_api_url || '';
@@ -135,37 +211,81 @@ async function loadConfig() {
     document.getElementById('setting-image-steps').value = STATE.config.image_steps || 20;
     document.getElementById('setting-image-cfg').value = STATE.config.image_cfg_scale || 7.0;
     document.getElementById('setting-image-workflow').value = STATE.config.image_comfyui_workflow || '';
+    const imgModel = document.getElementById('setting-image-gemini-model');
+    if (imgModel) imgModel.value = STATE.config.image_gemini_model || '';
+    const imgTimeout = document.getElementById('setting-image-timeout');
+    if (imgTimeout) imgTimeout.value = STATE.config.image_timeout || 180;
 
-    // Adjust font size on document
+    const memMode = document.getElementById('setting-memory-mode');
+    if (memMode) {
+      memMode.value = STATE.config.memory_mode || 'lite';
+      document.getElementById('setting-memory-interval').value =
+        STATE.config.memory_fact_interval != null ? STATE.config.memory_fact_interval : 5;
+      document.getElementById('setting-memory-model').value = STATE.config.memory_fact_model || '';
+      document.getElementById('setting-memory-beliefs').checked = !!STATE.config.memory_beliefs_enabled;
+      document.getElementById('setting-memory-mental-models').checked = !!STATE.config.memory_mental_models_enabled;
+      document.getElementById('setting-memory-reranker').checked = !!STATE.config.memory_reranker_enabled;
+      const cache = document.getElementById('setting-memory-prompt-cache');
+      if (cache) cache.checked = !!STATE.config.memory_prompt_cache_enabled;
+      refreshMemorySettingsEnabled();
+      memMode.onchange = refreshMemorySettingsEnabled;
+      document.getElementById('setting-memory-beliefs').onchange = refreshMemorySettingsEnabled;
+    }
+
     document.body.style.fontSize = `${STATE.config.ui_font_size}px`;
+    applyWallpaper(STATE.config.custom_wallpaper || '');
+    await refreshUniverseParamsPanel();
   } catch (err) {
     console.error('Failed to load settings:', err);
+  }
+}
+
+function refreshMemorySettingsEnabled() {
+  const living = (document.getElementById('setting-memory-mode') || {}).value === 'living';
+  const beliefs = document.getElementById('setting-memory-beliefs');
+  const models = document.getElementById('setting-memory-mental-models');
+  const interval = document.getElementById('setting-memory-interval');
+  const model = document.getElementById('setting-memory-model');
+  if (interval) interval.disabled = !living;
+  if (model) model.disabled = !living;
+  if (beliefs) beliefs.disabled = !living;
+  if (models) {
+    models.disabled = !living || !(beliefs && beliefs.checked);
   }
 }
 
 async function saveConfig() {
   if (!STATE.config) return;
   const backend = document.getElementById('setting-llm-backend').value;
-  const key = document.getElementById('setting-api-key').value;
-  const model = document.getElementById('setting-model-name').value;
 
   STATE.config.language = document.getElementById('setting-language').value;
   STATE.config.ui_font_size = parseInt(document.getElementById('setting-font-size').value) || 14;
   STATE.config.rag_chunk_count = parseInt(document.getElementById('setting-rag-chunks').value) || 5;
   STATE.config.enable_audio = document.getElementById('setting-audio-enabled').checked;
+  const chronicler = document.getElementById('setting-chronicler');
+  if (chronicler) STATE.config.chronicler_minutes_interval = parseInt(chronicler.value, 10) || 720;
+  const docTips = document.getElementById('setting-doc-tooltips');
+  if (docTips) STATE.config.doc_tooltips_enabled = docTips.checked;
+  const trim = document.getElementById('setting-trim-sentences');
+  if (trim) STATE.config.trim_sentences = trim.checked;
+  const wallpaper = document.getElementById('setting-wallpaper');
+  if (wallpaper) STATE.config.custom_wallpaper = wallpaper.value || '';
+  const basic = document.getElementById('setting-basic-prompt');
+  if (basic) STATE.config.basic_prompt = basic.value || '';
+  const negative = document.getElementById('setting-negative-prompt');
+  if (negative) STATE.config.negative_prompt = negative.value || '';
 
   STATE.config.llm_backend = backend;
-  if (backend === 'universal') {
-    STATE.config.universal_base_url = document.getElementById('setting-universal-url').value;
-    STATE.config.universal_api_key = key;
-    STATE.config.universal_model = model;
-  } else {
-    STATE.config.gemini_api_key = key;
-    STATE.config.gemini_model = model;
-    STATE.config.gemini_fallback_model = document.getElementById('setting-fallback-model').value;
-    STATE.config.llm_requests_per_minute = parseInt(document.getElementById('setting-requests-limit').value) || 0;
-  }
-  
+  STATE.config.universal_base_url = document.getElementById('setting-universal-url').value;
+  const univKey = document.getElementById('setting-universal-key');
+  if (univKey) STATE.config.universal_api_key = univKey.value;
+  const univModel = document.getElementById('setting-universal-model');
+  if (univModel) STATE.config.universal_model = univModel.value;
+  stashCloudFieldsFromForm();
+  STATE.config.gemini_fallback_model = document.getElementById('setting-fallback-model').value;
+  STATE.config.llm_requests_per_minute = parseInt(document.getElementById('setting-requests-limit').value) || 0;
+  STATE.config.default_verbosity = document.getElementById('setting-default-verbosity').value || 'talkative';
+
   STATE.config.extraction_model = document.getElementById('setting-extraction-model').value;
   STATE.config.time_model = document.getElementById('setting-time-model').value;
   STATE.config.timekeeper_enabled = document.getElementById('setting-timekeeper-enabled').checked;
@@ -178,6 +298,26 @@ async function saveConfig() {
   STATE.config.image_steps = parseInt(document.getElementById('setting-image-steps').value) || 20;
   STATE.config.image_cfg_scale = parseFloat(document.getElementById('setting-image-cfg').value) || 7.0;
   STATE.config.image_comfyui_workflow = document.getElementById('setting-image-workflow').value;
+  const imgModel = document.getElementById('setting-image-gemini-model');
+  if (imgModel) STATE.config.image_gemini_model = imgModel.value || '';
+  const imgTimeout = document.getElementById('setting-image-timeout');
+  if (imgTimeout) STATE.config.image_timeout = parseInt(imgTimeout.value, 10) || 180;
+
+  if (document.getElementById('setting-memory-mode')) {
+    STATE.config.memory_mode = document.getElementById('setting-memory-mode').value || 'lite';
+    STATE.config.memory_fact_interval =
+      parseInt(document.getElementById('setting-memory-interval').value, 10) || 0;
+    STATE.config.memory_fact_model =
+      (document.getElementById('setting-memory-model').value || '').trim();
+    STATE.config.memory_beliefs_enabled =
+      document.getElementById('setting-memory-beliefs').checked;
+    STATE.config.memory_mental_models_enabled =
+      document.getElementById('setting-memory-mental-models').checked;
+    STATE.config.memory_reranker_enabled =
+      document.getElementById('setting-memory-reranker').checked;
+    const cache = document.getElementById('setting-memory-prompt-cache');
+    if (cache) STATE.config.memory_prompt_cache_enabled = cache.checked;
+  }
 
   try {
     const res = await fetch('/api/settings', {
@@ -191,12 +331,38 @@ async function saveConfig() {
       await loadConfig();
       if (!isAudioEnabled()) stopAmbiance();
       closeAllModals();
+      applyDocTooltips();
       showStatus('Settings saved successfully.');
     } else {
       alert('Error saving settings.');
     }
   } catch (err) {
     console.error(err);
+  }
+}
+
+async function refreshUniverseParamsPanel() {
+  const hint = document.getElementById('settings-params-hint');
+  const saveBtn = document.getElementById('settings-params-save-btn');
+  const tempEl = document.getElementById('setting-univ-temp');
+  const topEl = document.getElementById('setting-univ-top-p');
+  if (!tempEl) return;
+  const uni = STATE.selectedUniversePath || (STATE.activeSession && STATE.activeSession.universe_path);
+  const qs = uni ? `?universe=${encodeURIComponent(uni)}` : '';
+  try {
+    const res = await fetch(`/api/universe/params${qs}`);
+    if (!res.ok) {
+      if (hint) hint.textContent = tr('no_universe_loaded') || 'Load a universe or start a session to edit sampling params.';
+      if (saveBtn) saveBtn.disabled = true;
+      return;
+    }
+    const data = await res.json();
+    tempEl.value = data.llm_temperature;
+    topEl.value = data.llm_top_p;
+    if (hint) hint.textContent = tr('univ_params_info') || 'Temperature and top-p for the loaded universe.';
+    if (saveBtn) saveBtn.disabled = false;
+  } catch (err) {
+    if (saveBtn) saveBtn.disabled = true;
   }
 }
 
@@ -260,6 +426,7 @@ async function populateSetupPersonaPicker() {
   try {
     const res = await fetch('/api/personas');
     const personas = await res.json();
+    select.innerHTML = '<option value="">-- Write your own below --</option>';
     personas.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.persona_id;
@@ -312,9 +479,10 @@ function renderUniverseGrid() {
         <!-- Saves listed here -->
       </div>
       <div class="card-footer">
-        <button class="btn-primary play-new-btn" data-tr="play">Play New</button>
-        <button class="btn-secondary edit-uni-btn" data-tr="edit">Edit Universe</button>
-        <button class="btn-danger delete-uni-btn" data-tr="delete">Delete</button>
+        <button class="btn-primary play-new-btn" data-tr="play" data-doc="hub.card_play">Play New</button>
+        <button class="btn-secondary export-uni-btn" data-tr="export" data-doc="hub.card_export">Export</button>
+        <button class="btn-secondary edit-uni-btn" data-tr="edit" data-doc="hub.card_edit">Edit Universe</button>
+        <button class="btn-danger delete-uni-btn" data-tr="delete" data-doc="hub.card_delete">Delete</button>
       </div>
     `;
 
@@ -344,14 +512,15 @@ function renderUniverseGrid() {
         `;
 
         item.querySelector('.play-save-btn').onclick = () => startSession(uni.path, save.save_id, save.difficulty);
-        item.querySelector('.edit-save-btn').onclick = () => editSave(uni.path, save.save_id);
+        item.querySelector('.edit-save-btn').onclick = () => editSave(uni.path, save.save_id, save.db_path);
         item.querySelector('.fork-save-btn').onclick = () => forkSave(uni.path, save.save_id, save.turn_id);
         item.querySelector('.delete-save-btn').onclick = () => deleteSave(uni.path, save.save_id);
         savesList.appendChild(item);
       });
     }
 
-    card.querySelector('.play-new-btn').onclick = () => loadSetupView(uni.path);
+    card.querySelector('.play-new-btn').onclick = () => loadSetupView(uni.path, 'story');
+    card.querySelector('.export-uni-btn').onclick = () => exportUniverse(uni.path, uni.name);
     card.querySelector('.edit-uni-btn').onclick = () => openCreatorStudio(uni.path);
     card.querySelector('.delete-uni-btn').onclick = () => deleteUniverse(uni.path);
 
@@ -423,41 +592,27 @@ async function forkSave(universePath, saveId, maxTurnId) {
   }
 }
 
-// ── Setup View (New Save Questionnaire) ──
-async function loadSetupView(universePath) {
+// ── Setup View (3-tab lobby) ──
+function showSetupTab(tab) {
+  document.querySelectorAll('#setup-tabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-setup-tab') === tab);
+  });
+  ['saves', 'persona', 'story'].forEach(name => {
+    const panel = document.getElementById(`setup-panel-${name}`);
+    if (panel) panel.classList.toggle('hidden', name !== tab);
+  });
+  if (tab === 'saves') refreshSetupSavesList();
+}
+
+async function loadSetupView(universePath, tab = 'story') {
   STATE.selectedUniversePath = universePath;
+  STATE.setupSelectedSaveId = null;
   try {
     const res = await fetch(`/api/setup/questions?universe=${encodeURIComponent(universePath)}`);
     const data = await res.json();
-    
+
     const container = document.getElementById('setup-questions-container');
     container.innerHTML = '';
-
-    // Add Player details block
-    container.innerHTML = `
-      <div class="setup-question-box">
-        <label>Player Name</label>
-        <input type="text" id="setup-player-name" value="Alice" required style="width:100%;">
-      </div>
-      <div class="setup-question-box">
-        <label>Saved Persona (optional)</label>
-        <select id="setup-persona-picker" style="width:100%;">
-          <option value="">-- Write your own below --</option>
-        </select>
-      </div>
-      <div class="setup-question-box">
-        <label>Player Persona Description</label>
-        <textarea id="setup-player-persona" placeholder="A reformed clockwork thief..." rows="2" style="width:100%;"></textarea>
-      </div>
-      <div class="setup-question-box">
-        <label>Difficulty Mode</label>
-        <select id="setup-difficulty" style="width:100%;">
-          <option value="Normal">Normal</option>
-          <option value="Companion">Companion Mode</option>
-          <option value="Hardcore">Hardcore (Permadeath)</option>
-        </select>
-      </div>
-    `;
 
     await populateSetupPersonaPicker();
 
@@ -500,10 +655,180 @@ async function loadSetupView(universePath) {
     }
 
     showScreen('view-setup');
+    showSetupTab(tab);
+    await loadSetupSaves();
   } catch (err) {
     console.error(err);
     alert('Failed to load questionnaire.');
   }
+}
+
+async function loadSetupSaves() {
+  if (!STATE.selectedUniversePath) return;
+  try {
+    const res = await fetch('/api/universes');
+    const all = await res.json();
+    const uni = (all || []).find(u => u.path === STATE.selectedUniversePath);
+    STATE.setupSaves = (uni && uni.saves) || [];
+    refreshSetupSavesList();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function refreshSetupSavesList() {
+  const list = document.getElementById('setup-saves-list');
+  if (!list) return;
+  const key = STATE.setupSort || 'last_updated';
+  const saves = (STATE.setupSaves || []).slice().sort((a, b) => {
+    const av = a[key] || '';
+    const bv = b[key] || '';
+    return String(bv).localeCompare(String(av));
+  });
+  list.innerHTML = '';
+  if (!saves.length) {
+    list.innerHTML = '<li class="checkpoint-item">No save files.</li>';
+    return;
+  }
+  saves.forEach(save => {
+    const li = document.createElement('li');
+    li.className = 'checkpoint-item' + (save.save_id === STATE.setupSelectedSaveId ? ' selected' : '');
+    li.textContent = `${save.player_name} · ${save.difficulty} · Turn ${save.turn_id} · ${save.last_updated || ''}`;
+    li.onclick = () => {
+      STATE.setupSelectedSaveId = save.save_id;
+      refreshSetupSavesList();
+    };
+    li.ondblclick = () => startSession(STATE.selectedUniversePath, save.save_id, save.difficulty);
+    list.appendChild(li);
+  });
+}
+
+function selectedSetupSave() {
+  return (STATE.setupSaves || []).find(s => s.save_id === STATE.setupSelectedSaveId) || null;
+}
+
+function setupSetupLobby() {
+  document.querySelectorAll('#setup-tabs .tab-btn').forEach(btn => {
+    btn.onclick = () => showSetupTab(btn.getAttribute('data-setup-tab'));
+  });
+  const sortEl = document.getElementById('setup-saves-sort');
+  if (sortEl) sortEl.onchange = () => {
+    STATE.setupSort = sortEl.value;
+    refreshSetupSavesList();
+  };
+  const launchFromSaves = () => {
+    const save = selectedSetupSave();
+    if (!save) {
+      alert('Select a save to launch.');
+      return;
+    }
+    startSession(STATE.selectedUniversePath, save.save_id, save.difficulty);
+  };
+  const launchBtn = document.getElementById('setup-launch-save-btn');
+  if (launchBtn) launchBtn.onclick = launchFromSaves;
+  document.getElementById('setup-export-save-btn').onclick = () => {
+    const save = selectedSetupSave();
+    if (!save) return alert('Select a save first.');
+    window.location.href = `/api/saves/pack?universe=${encodeURIComponent(STATE.selectedUniversePath)}&save_id=${encodeURIComponent(save.save_id)}`;
+  };
+  document.getElementById('setup-duplicate-save-btn').onclick = async () => {
+    const save = selectedSetupSave();
+    if (!save) return alert('Select a save first.');
+    const name = prompt('Name for the copy:', `${save.player_name} (copy)`);
+    if (!name) return;
+    const res = await fetch('/api/saves/duplicate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ universe_path: STATE.selectedUniversePath, save_id: save.save_id, name })
+    });
+    if (res.ok) { await loadSetupSaves(); await refreshHub(); showStatus('Save duplicated.'); }
+    else alert('Failed to duplicate save.');
+  };
+  document.getElementById('setup-rename-save-btn').onclick = async () => {
+    const save = selectedSetupSave();
+    if (!save) return alert('Select a save first.');
+    const name = prompt('New name:', save.player_name);
+    if (!name) return;
+    const res = await fetch('/api/saves/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ universe_path: STATE.selectedUniversePath, save_id: save.save_id, name })
+    });
+    if (res.ok) { await loadSetupSaves(); await refreshHub(); showStatus('Save renamed.'); }
+    else alert('Failed to rename save.');
+  };
+  document.getElementById('setup-edit-save-btn').onclick = () => {
+    const save = selectedSetupSave();
+    if (!save) return alert('Select a save first.');
+    editSave(STATE.selectedUniversePath, save.save_id, save.db_path);
+  };
+  document.getElementById('setup-delete-save-btn').onclick = async () => {
+    const save = selectedSetupSave();
+    if (!save) return alert('Select a save first.');
+    await deleteSave(STATE.selectedUniversePath, save.save_id);
+    STATE.setupSelectedSaveId = null;
+    await loadSetupSaves();
+  };
+  const importBtn = document.getElementById('setup-import-save-btn');
+  const importFile = document.getElementById('setup-import-save-file');
+  if (importBtn && importFile) {
+    importBtn.onclick = () => importFile.click();
+    importFile.onchange = () => unpackSaveUpload(importFile.files && importFile.files[0], false);
+  }
+  const createPersona = document.getElementById('setup-persona-create-btn');
+  if (createPersona) createPersona.onclick = async () => {
+    const name = prompt('Persona name:');
+    if (!name) return;
+    const description = prompt('Persona description:') || '';
+    STATE.personas = STATE.personas || [];
+    STATE.personas.push({ persona_id: generatePersonaId(), name, description });
+    await savePersonas();
+    fillPersonasTable();
+    await populateSetupPersonaPicker();
+    const picker = document.getElementById('setup-persona-picker');
+    if (picker) picker.value = STATE.personas[STATE.personas.length - 1].persona_id;
+    const desc = document.getElementById('setup-player-persona');
+    if (desc) desc.value = description;
+  };
+}
+
+async function unpackSaveUpload(file, force) {
+  if (!file || !STATE.selectedUniversePath) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('universe_path', STATE.selectedUniversePath);
+  if (force) fd.append('force', 'true');
+  try {
+    const res = await fetch('/api/saves/unpack', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.needs_force) {
+      if (confirm(data.error + '\n\nImport anyway?')) return unpackSaveUpload(file, true);
+      return;
+    }
+    if (!res.ok) {
+      alert(data.error || 'Failed to import save.');
+      return;
+    }
+    await loadSetupSaves();
+    await refreshHub();
+    showStatus('Save imported.');
+  } catch (err) {
+    console.error(err);
+    alert('Failed to import save.');
+  }
+}
+
+function exportUniverse(path, name) {
+  window.location.href = `/api/universes/export?universe=${encodeURIComponent(path)}`;
+}
+
+async function uploadUniverseFile(url, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(url, { method: 'POST', body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Import failed');
+  return data;
 }
 
 // ── Game Session Logic (Tabletop) ──
@@ -516,7 +841,9 @@ async function startSession(universePath, saveId, difficulty) {
       body: JSON.stringify({ universe_path: universePath, save_id: saveId, difficulty })
     });
     if (res.ok) {
+      STATE.selectedUniversePath = universePath;
       STATE.activeSession = await res.json();
+      STATE.activeSession.universe_path = universePath;
       document.getElementById('chat-save-title').textContent = `${STATE.activeSession.universe_name} - ${STATE.activeSession.player_name}`;
       document.getElementById('chat-mode-tag').textContent = STATE.activeSession.difficulty;
       rebuildChatFromHistory();
@@ -527,6 +854,7 @@ async function startSession(universePath, saveId, difficulty) {
       await refreshTabletopState();
       showScreen('view-tabletop');
       showStatus('Ready.');
+      checkSessionIntegrity();
     } else {
       let errMsg = 'Failed to start session.';
       try {
@@ -548,24 +876,53 @@ async function refreshTabletopState() {
   // Stats Sidebar
   const statsList = document.getElementById('tabletop-entities-list');
   statsList.innerHTML = '';
-  for (const [eid, stats] of Object.entries(STATE.activeSession.current_stats || {})) {
-    const name = eid === 'player' ? STATE.activeSession.player_name : eid;
+  const playerEid = STATE.activeSession.player_entity_id || 'player';
+  const entityRows = Array.isArray(STATE.activeSession.entities) && STATE.activeSession.entities.length
+    ? STATE.activeSession.entities
+    : Object.entries(STATE.activeSession.current_stats || {}).map(([eid, estats]) => ({
+        entity_id: eid,
+        name: eid === playerEid ? (STATE.activeSession.player_name || eid) : eid,
+        entity_type: (eid === playerEid || eid === 'player') ? 'player' : 'npc',
+        stats: estats,
+      }));
+  entityRows.forEach(ent => {
+    const eid = ent.entity_id;
+    const name = ent.name || (eid === playerEid ? STATE.activeSession.player_name : eid);
+    const etype = ent.entity_type || ((eid === playerEid || eid === 'player') ? 'player' : 'npc');
     const box = document.createElement('div');
     box.className = 'entity-box';
     box.innerHTML = `
       <div class="entity-box-header">
         <span>${name}</span>
-        <span class="type">${eid === 'player' ? 'player' : 'npc'}</span>
+        <span class="type">${etype}</span>
       </div>
     `;
-    for (const [k, v] of Object.entries(stats)) {
-      const row = document.createElement('div');
-      row.className = 'entity-stat-row';
-      row.innerHTML = `<span>${k}</span><span class="val">${v}</span>`;
-      box.appendChild(row);
+    const stats = ent.stats || {};
+    const keys = Object.keys(stats).filter(k => !String(k).startsWith('__')).sort((a, b) => a.localeCompare(b));
+    const mods = (STATE.activeSession.modifiers || []).filter(m => m.entity_id === eid);
+    if (!keys.length) {
+      const empty = document.createElement('div');
+      empty.className = 'entity-stat-row';
+      empty.innerHTML = `<span class="save-meta">No stats yet.</span>`;
+      box.appendChild(empty);
+    } else {
+      keys.forEach(k => {
+        const row = document.createElement('div');
+        row.className = 'entity-stat-row';
+        const hint = mods
+          .filter(m => String(m.stat_key || '').toLowerCase() === String(k).toLowerCase())
+          .map(m => {
+            const d = Number(m.delta);
+            const sign = d >= 0 ? '+' : '';
+            return `${sign}${d} · ${m.minutes_remaining}m`;
+          })
+          .join(', ');
+        row.innerHTML = `<span>${k}${hint ? ` <span class="stat-mod-hint">${hint}</span>` : ''}</span><span class="val">${stats[k]}</span>`;
+        box.appendChild(row);
+      });
     }
     statsList.appendChild(box);
-  }
+  });
 
   // Current Location & Spatial nav
   const currentLoc = STATE.activeSession.current_location || '-';
@@ -584,8 +941,18 @@ async function refreshTabletopState() {
     travelOps.innerHTML = `<span class="save-meta">No connection nodes.</span>`;
   }
 
-  // Timeline
-  document.getElementById('timeline-clock').textContent = STATE.activeSession.time_formatted;
+  // Header + rewind clock
+  const clock = STATE.activeSession.time_formatted || '';
+  const turnId = STATE.activeSession.turn_id || 0;
+  const clockEl = document.getElementById('timeline-clock');
+  if (clockEl) clockEl.textContent = clock;
+  const headerClock = document.getElementById('chat-clock-label');
+  if (headerClock) headerClock.textContent = clock;
+  const headerTurn = document.getElementById('chat-turn-label');
+  if (headerTurn) headerTurn.textContent = `Turn ${turnId}`;
+  syncVerbositySlider(STATE.activeSession.verbosity);
+
+  refreshChroniclerTimeline();
 
   // Fetch timeline checkpoints
   try {
@@ -602,15 +969,106 @@ async function refreshTabletopState() {
   }
 
   await refreshInventory();
+  renderLoreHits(STATE.activeSession.lore_hits);
+}
+
+function syncVerbositySlider(level) {
+  const slider = document.getElementById('chat-verbosity');
+  const label = document.getElementById('chat-verbosity-label');
+  if (!slider) return;
+  const idx = VERBOSITY_LEVELS.indexOf(level);
+  slider.value = idx >= 0 ? idx : 2;
+  if (label) label.textContent = tr(VERBOSITY_LEVELS[slider.value] || 'talkative');
+}
+
+async function refreshChroniclerTimeline() {
+  const container = document.getElementById('tabletop-timeline-list');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/session/timeline');
+    if (!res.ok) {
+      container.innerHTML = `<span class="save-meta" style="padding:8px;">No timeline yet.</span>`;
+      return;
+    }
+    const events = await res.json();
+    container.innerHTML = '';
+    if (!events.length) {
+      container.innerHTML = `<span class="save-meta" style="padding:8px;">No world-news events yet.</span>`;
+      return;
+    }
+    events.forEach(ev => {
+      const box = document.createElement('div');
+      box.className = 'entity-box';
+      box.innerHTML = `
+        <div class="entity-box-header">
+          <span>Turn ${ev.turn_id}</span>
+          <span class="type">${ev.in_game_time ?? ''}</span>
+        </div>
+        <div class="entity-stat-row"><span>${ev.description || ''}</span></div>
+      `;
+      container.appendChild(box);
+    });
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 // ── Inventory (left sidebar tab) ──
+const CLOUD_FIELDS = {
+  gemini: { key: 'gemini_api_key', model: 'gemini_model' },
+  claude: { key: 'anthropic_api_key', model: 'anthropic_model' },
+  venice: { key: 'venice_api_key', model: 'venice_model' },
+  fireworks: { key: 'fireworks_api_key', model: 'fireworks_model' },
+  openai: { key: 'openai_api_key', model: 'openai_model' },
+  openrouter: { key: 'openrouter_api_key', model: 'openrouter_model' },
+};
+
+const VERBOSITY_LEVELS = ['short', 'balanced', 'talkative'];
+
 const RARITY_COLORS = {
   common: '#cdd6f4',
   rare: '#4fa3ff',
   epic: '#a335ee',
   legendary: '#ff8000'
 };
+
+function renderInvNodes(nodes, parent, names) {
+  (nodes || []).forEach(n => {
+    const color = RARITY_COLORS[(n.rarity || 'common').toLowerCase()] || RARITY_COLORS.common;
+    const row = document.createElement('div');
+    row.className = 'entity-stat-row inv-tree-item';
+    row.title = n.description || '';
+    const qty = n.quantity && n.quantity !== 1 ? `x${n.quantity}` : '';
+    const bag = n.is_container ? ' ▸' : '';
+    row.innerHTML = `<span style="color:${color}; font-weight:600;">${n.name || n.item_id}${bag}</span><span class="val">${qty}</span>`;
+    if (n.instance_id) {
+      row.style.cursor = 'pointer';
+      row.onclick = async (e) => {
+        e.stopPropagation();
+        const dest = prompt('Move to holder (entity:id, location:id, or instance:id)', '');
+        if (!dest) return;
+        const parts = dest.split(':');
+        await fetch('/api/session/inventory/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instance_id: n.instance_id,
+            dest_holder_kind: parts[0],
+            dest_holder_id: parts.slice(1).join(':')
+          })
+        });
+        refreshInventory();
+      };
+    }
+    parent.appendChild(row);
+    if (n.contents && n.contents.length) {
+      const nest = document.createElement('div');
+      nest.className = 'inv-nested';
+      parent.appendChild(nest);
+      renderInvNodes(n.contents, nest, names);
+    }
+  });
+}
 
 async function refreshInventory() {
   const container = document.getElementById('tabletop-inventory-list');
@@ -619,36 +1077,51 @@ async function refreshInventory() {
     const res = await fetch('/api/session/inventory');
     const data = await res.json();
     container.innerHTML = '';
-
-    const entityIds = Object.keys(data || {});
-    if (entityIds.length === 0) {
+    const tree = data.tree || [];
+    const names = data.names || {};
+    if (!tree.length) {
+      // Backward compat: old {entityId: [items]} shape
+      const entityIds = Object.keys(data || {}).filter(k => k !== 'tree' && k !== 'names');
+      if (!entityIds.length) {
+        container.innerHTML = `<span class="save-meta" style="padding: 8px;">No items.</span>`;
+        return;
+      }
+    }
+    if (!tree.length) {
       container.innerHTML = `<span class="save-meta" style="padding: 8px;">No items.</span>`;
       return;
     }
-
-    entityIds.forEach(eid => {
-      const items = data[eid] || [];
-      if (items.length === 0) return;
-      const displayName = eid === 'player' ? (STATE.activeSession ? STATE.activeSession.player_name : eid) : eid;
-
+    tree.forEach(root => {
+      const title = names[root.holder_id] || root.holder_id;
+      const kind = root.holder_kind === 'location' ? 'at' : (root.holder_kind === 'entity' ? 'on' : '');
       const box = document.createElement('div');
       box.className = 'entity-box';
-      box.innerHTML = `<div class="entity-box-header"><span>${displayName}</span><span class="type">inventory</span></div>`;
-
-      items.forEach(item => {
-        const color = RARITY_COLORS[(item.rarity || 'common').toLowerCase()] || RARITY_COLORS.common;
-        const row = document.createElement('div');
-        row.className = 'entity-stat-row';
-        row.title = item.description || '';
-        row.innerHTML = `<span style="color:${color}; font-weight:600;">${item.name}</span><span class="val">x${item.quantity}</span>`;
-        box.appendChild(row);
-      });
-
+      box.innerHTML = `<div class="entity-box-header"><span>${kind} ${title}</span><span class="type">inventory</span></div>`;
+      renderInvNodes(root.contents || [], box, names);
       container.appendChild(box);
     });
   } catch (err) {
     console.error('Failed to load inventory:', err);
   }
+}
+
+function renderLoreHits(hits) {
+  const box = document.getElementById('tabletop-lore-hits');
+  if (!box) return;
+  const list = hits || [];
+  if (!list.length) {
+    box.innerHTML = `<span class="save-meta" style="padding:8px;">None this turn.</span>`;
+    return;
+  }
+  box.innerHTML = '';
+  list.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'lore-hit';
+    row.title = h.content || '';
+    row.innerHTML = `<strong>${h.name || '(untitled)'}</strong>
+      <span class="save-meta">${h.source || 'world'} · ${h.why || 'match'}${h.category ? ' · ' + h.category : ''}</span>`;
+    box.appendChild(row);
+  });
 }
 
 function setupSidebarMiniTabs() {
@@ -766,9 +1239,120 @@ function sendTravelIntent(locId, locName) {
   document.getElementById('chat-input').focus();
 }
 
-async function submitTurn() {
+function setGenerating(on, statusMsg) {
+  STATE.isGenerating = !!on;
+  const cancelBtn = document.getElementById('status-cancel-btn');
+  const sendBtn = document.getElementById('chat-send-btn');
+  if (cancelBtn) cancelBtn.classList.toggle('hidden', !on);
+  if (sendBtn) sendBtn.disabled = !!on;
+  if (statusMsg) showStatus(statusMsg);
+  if (!on) {
+    STATE.streamAbort = null;
+    showStatus('Ready.');
+  }
+}
+
+async function cancelActiveGeneration() {
+  try {
+    await fetch('/api/session/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  } catch (err) {
+    console.error(err);
+  }
+  if (STATE.streamAbort) {
+    try { STATE.streamAbort.abort(); } catch (e) {}
+  }
+  setGenerating(false, 'Generation cancelled.');
+}
+
+function parseSseChunk(buffer, onEvent) {
+  const parts = buffer.split('\n\n');
+  const rest = parts.pop();
+  for (const block of parts) {
+    let event = 'message';
+    const dataLines = [];
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) continue;
+    let payload = {};
+    try { payload = JSON.parse(dataLines.join('\n')); } catch (e) { payload = { text: dataLines.join('\n') }; }
+    onEvent(event, payload);
+  }
+  return rest;
+}
+
+async function streamSessionTurn(body) {
+  const controller = new AbortController();
+  STATE.streamAbort = controller;
+  const res = await fetch('/api/session/turn/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  });
+  if (!res.ok || !res.body) {
+    let err = 'Failed to resolve turn.';
+    try { err = (await res.json()).error || err; } catch (e) {}
+    throw new Error(err);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let liveText = '';
+  let liveBubble = null;
+  let doneSnapshot = null;
+  let streamError = null;
+
+  const ensureLiveBubble = () => {
+    if (liveBubble) return liveBubble;
+    liveBubble = appendBubble('narrator', '', { streaming: true });
+    return liveBubble;
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    buf = parseSseChunk(buf, (event, data) => {
+      if (event === 'status' && data.message) showStatus(data.message);
+      else if (event === 'token') {
+        liveText += data.text || '';
+        const bubble = ensureLiveBubble();
+        const textDiv = bubble.querySelector('.bubble-text');
+        if (textDiv) textDiv.textContent = liveText;
+        const chatHistory = document.getElementById('chat-history');
+        if (chatHistory) chatHistory.scrollTop = chatHistory.scrollHeight;
+      } else if (event === 'done') {
+        doneSnapshot = data;
+      } else if (event === 'cancelled') {
+        streamError = data.error || 'Generation cancelled.';
+      } else if (event === 'error') {
+        streamError = data.error || 'Turn failed.';
+      }
+    });
+  }
+
+  if (streamError) throw new Error(streamError);
+  return doneSnapshot;
+}
+
+const CONTINUE_PROMPT =
+  'Continue. The player does not take a new action. Advance the scene from here and narrate what happens next.';
+
+async function continueNarration() {
+  if (STATE.isGenerating) return;
+  await submitTurn(CONTINUE_PROMPT, 'Continue');
+}
+
+async function submitTurn(overrideText, displayText) {
   const inputEl = document.getElementById('chat-input');
-  const text = inputEl.value.trim();
+  const text = (overrideText != null ? String(overrideText) : inputEl.value).trim();
   if (!text || STATE.isGenerating) return;
 
   const isMultiplayer = STATE.activeSession && STATE.activeSession.difficulty === 'Multiplayer';
@@ -795,76 +1379,52 @@ async function submitTurn() {
       return;
     }
 
-    STATE.isGenerating = true;
-    document.getElementById('status-cancel-btn').classList.remove('hidden');
-    showStatus('Consulting Arbitrator (Multiplayer)...');
-
     const intentsPayload = Object.assign({}, STATE.pendingIntents);
     STATE.pendingIntents = {};
-
+    setGenerating(true, 'Consulting Arbitrator (Multiplayer)...');
     try {
-      const res = await fetch('/api/session/turn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ intents: intentsPayload })
-      });
-
-      if (res.ok) {
-        const result = await res.json();
+      const result = await streamSessionTurn({ intents: intentsPayload });
+      if (result) {
         STATE.activeSession = Object.assign({}, STATE.activeSession, result);
-        rebuildChatFromHistory({ animateLastNarrative: true });
+        rebuildChatFromHistory({ animateLastNarrative: false });
         updateAmbiance(result.game_state_tag);
         await refreshTabletopState();
         updateMultiplayerLobby();
-      } else {
-        const err = await res.json();
-        appendBubble('system', err.error || 'Failed to resolve turn.', {});
+        reportRejectedChanges(result);
+        if (result.hardcore_death) await handleHardcoreDeath();
+        else maybeAutoCanonize();
       }
     } catch (err) {
       console.error(err);
-      appendBubble('system', 'Connection error resolving turn.', {});
+      appendBubble('system', err.message || 'Connection error resolving turn.', {});
     } finally {
-      STATE.isGenerating = false;
-      document.getElementById('status-cancel-btn').classList.add('hidden');
-      showStatus('Ready.');
+      setGenerating(false);
     }
-  } else {
-    inputEl.value = '';
-    STATE.isGenerating = true;
-    document.getElementById('status-cancel-btn').classList.remove('hidden');
-    showStatus('Consulting Arbitrator...');
+    return;
+  }
 
-    appendBubble('player', text, {});
-
-    try {
-      const res = await fetch('/api/session/turn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_input: text })
-      });
-
-      if (res.ok) {
-        const result = await res.json();
-        STATE.activeSession = Object.assign({}, STATE.activeSession, result);
-        rebuildChatFromHistory({ animateLastNarrative: true });
-        updateAmbiance(result.game_state_tag);
-        await refreshTabletopState();
-        if (result.hardcore_death) {
-          await handleHardcoreDeath();
-          return;
-        }
-      } else {
-        const err = await res.json();
-        appendBubble('system', err.error || 'Failed to resolve turn.', {});
-      }
-    } catch (err) {
-      console.error(err);
-      appendBubble('system', 'Connection error resolving turn.', {});
-    } finally {
-      STATE.isGenerating = false;
-      document.getElementById('status-cancel-btn').classList.add('hidden');
-      showStatus('Ready.');
+  inputEl.value = '';
+  appendBubble('player', displayText || text, {});
+  setGenerating(true, displayText === 'Continue' ? 'Continuing…' : 'Consulting Arbitrator...');
+  if (STATE.config && STATE.config.image_generation_enabled) {
+    showImagePlaceholder();
+  }
+  try {
+    const result = await streamSessionTurn({ player_input: text });
+    if (result) {
+      STATE.activeSession = Object.assign({}, STATE.activeSession, result);
+      rebuildChatFromHistory({ animateLastNarrative: false });
+      updateAmbiance(result.game_state_tag);
+      await refreshTabletopState();
+      reportRejectedChanges(result);
+      if (result.hardcore_death) await handleHardcoreDeath();
+      else maybeAutoCanonize();
     }
+  } catch (err) {
+    console.error(err);
+    appendBubble('system', err.message || 'Connection error resolving turn.', {});
+  } finally {
+    setGenerating(false);
   }
 }
 
@@ -910,11 +1470,11 @@ function rebuildChatFromHistory(opts = {}) {
   history.forEach((ev, idx) => {
     const isLast = idx === history.length - 1;
     const animate = !!(opts.animateLastNarrative && isLast && ev.event_type === 'narrative_text');
-    renderHistoryEvent(ev, animate);
+    renderHistoryEvent(ev, animate, isLast);
   });
 }
 
-function renderHistoryEvent(ev, animate) {
+function renderHistoryEvent(ev, animate, isLast) {
   const p = ev.payload;
   if (ev.event_type === 'user_input' || ev.event_type === 'hero_intent') {
     const text = (p && typeof p === 'object') ? (p.text || '') : String(p || '');
@@ -935,6 +1495,7 @@ function renderHistoryEvent(ev, animate) {
     }
     appendBubble('narrator', text, {
       turnId: ev.turn_id, eventType: 'narrative_text', activeIdx, totalVariants, animate,
+      isLast: !!isLast,
       // Images are keyed by turn number on disk (assets/<save_id>/turn_<n>.png);
       // not every turn has one, so the <img> just hides itself on 404.
       imgCandidate: true,
@@ -958,8 +1519,10 @@ function appendBubble(role, text, opts = {}) {
     if (opts.imgCandidate && STATE.activeSession) {
       const img = document.createElement('img');
       img.className = 'chat-illustration';
+      img.alt = 'Turn illustration';
       img.src = `/assets/${STATE.activeSession.save_id}/turn_${opts.turnId}.png`;
       img.onerror = () => img.remove();
+      img.onclick = () => openLightbox(img.src);
       bubble.appendChild(img);
     }
     if (opts.turnId !== undefined && opts.turnId !== null) {
@@ -972,24 +1535,92 @@ function appendBubble(role, text, opts = {}) {
     textDiv.innerHTML = formatMarkdown(cleanText);
     finishBubble();
   } else {
-    // Typewriter effect over the already-complete text (the backend has no
-    // streaming endpoint; this just paces the reveal client-side).
-    let currentText = '';
-    let index = 0;
-    if (STATE.typewriterTimer) clearInterval(STATE.typewriterTimer);
-    STATE.typewriterTimer = setInterval(() => {
-      if (index < cleanText.length) {
-        currentText += cleanText[index++];
-        textDiv.innerHTML = formatMarkdown(currentText);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-      } else {
-        clearInterval(STATE.typewriterTimer);
-        STATE.typewriterTimer = null;
-        finishBubble();
-      }
-    }, 15);
+    // Fast client-side reveal over already-complete text (backend is not
+    // token-streaming). Target ~0.4s total so it feels animated but finishes
+    // almost immediately; background tabs snap to full text (browsers throttle
+    // timers/rAF when the window is unfocused).
+    startFastTypewriter(cleanText, textDiv, chatHistory, finishBubble);
   }
   return bubble;
+}
+
+/** Cancel any in-flight typewriter (interval or rAF). */
+function stopTypewriter() {
+  if (STATE.typewriterTimer) {
+    clearInterval(STATE.typewriterTimer);
+    STATE.typewriterTimer = null;
+  }
+  if (STATE.typewriterRaf) {
+    cancelAnimationFrame(STATE.typewriterRaf);
+    STATE.typewriterRaf = null;
+  }
+}
+
+/**
+ * Reveal `fullText` into `textDiv` in a short animated burst.
+ * Completes in roughly TYPEWRITER_TARGET_MS regardless of length (chunked).
+ */
+function startFastTypewriter(fullText, textDiv, chatHistory, onDone) {
+  stopTypewriter();
+  const len = fullText.length;
+  if (len === 0) {
+    textDiv.innerHTML = '';
+    onDone();
+    return;
+  }
+
+  // ~400ms full reveal; clamp so tiny messages still animate a beat and
+  // huge ones don't crawl. ~10×+ faster than the old 1 char / 15ms path.
+  const TYPEWRITER_TARGET_MS = 400;
+  const MIN_CHUNK = 24;
+  const start = performance.now();
+  let index = 0;
+  let lastFormatAt = 0;
+
+  const finish = () => {
+    stopTypewriter();
+    textDiv.innerHTML = formatMarkdown(fullText);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    onDone();
+  };
+
+  // If the user tabs away mid-reveal, browsers freeze rAF/timers — snap done.
+  const onVis = () => {
+    if (document.hidden && STATE.typewriterRaf) finish();
+  };
+  document.addEventListener('visibilitychange', onVis);
+
+  const tick = (now) => {
+    if (document.hidden) {
+      document.removeEventListener('visibilitychange', onVis);
+      finish();
+      return;
+    }
+    const elapsed = now - start;
+    const progress = Math.min(1, elapsed / TYPEWRITER_TARGET_MS);
+    // Time-based target index, but always advance by at least MIN_CHUNK.
+    const timeTarget = Math.ceil(progress * len);
+    index = Math.min(len, Math.max(timeTarget, index + MIN_CHUNK));
+
+    // Avoid formatMarkdown every frame (expensive). Plain text mid-reveal;
+    // reformat every ~80 chars and once at the end for *bold*/italics.
+    if (index >= len || index - lastFormatAt >= 80) {
+      textDiv.innerHTML = formatMarkdown(fullText.slice(0, index));
+      lastFormatAt = index;
+    } else {
+      textDiv.textContent = fullText.slice(0, index);
+    }
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+    if (index < len) {
+      STATE.typewriterRaf = requestAnimationFrame(tick);
+    } else {
+      document.removeEventListener('visibilitychange', onVis);
+      finish();
+    }
+  };
+
+  STATE.typewriterRaf = requestAnimationFrame(tick);
 }
 
 function appendBubbleControls(bubble, currentText, opts) {
@@ -998,6 +1629,7 @@ function appendBubbleControls(bubble, currentText, opts) {
 
   const editBtn = document.createElement('button');
   editBtn.className = 'bubble-action-btn';
+  editBtn.type = 'button';
   editBtn.textContent = tr('edit') || 'Edit';
   editBtn.onclick = () => startEditMessage(opts.turnId, opts.eventType, currentText);
   controls.appendChild(editBtn);
@@ -1005,9 +1637,20 @@ function appendBubbleControls(bubble, currentText, opts) {
   if (opts.eventType === 'narrative_text') {
     const regenBtn = document.createElement('button');
     regenBtn.className = 'bubble-action-btn';
+    regenBtn.type = 'button';
     regenBtn.textContent = tr('regenerate') || 'Regenerate';
     regenBtn.onclick = () => regenerateMessage(opts.turnId);
     controls.appendChild(regenBtn);
+
+    if (opts.isLast) {
+      const contBtn = document.createElement('button');
+      contBtn.className = 'bubble-action-btn';
+      contBtn.type = 'button';
+      contBtn.textContent = 'Continue';
+      contBtn.title = 'Advance the scene without a new player action';
+      contBtn.onclick = () => continueNarration();
+      controls.appendChild(contBtn);
+    }
 
     if (opts.totalVariants > 1) {
       const nav = document.createElement('span');
@@ -1037,6 +1680,40 @@ function appendBubbleControls(bubble, currentText, opts) {
   }
 
   bubble.appendChild(controls);
+}
+
+function reportRejectedChanges(result) {
+  const rejected = (result && result.rejected_changes) || [];
+  const inv = (result && result.inventory_changes) || [];
+  const parts = [];
+  if (inv.length) {
+    parts.push(inv.map(c => `${c.action || 'add'} ${c.quantity || 1}× ${c.item_id}`).join(', '));
+  }
+  if (rejected.length) {
+    parts.push('skipped ' + rejected.slice(0, 3).map(r => {
+      const key = r.stat_key || r.stat || '?';
+      return `${r.entity_id || '?'}.${key}`;
+    }).join(', '));
+  }
+  if (parts.length) showStatus(parts.join(' · '));
+}
+
+function renderColoredDiff(el, text) {
+  if (!el) return;
+  const src = text || '';
+  if (!src.trim()) {
+    el.textContent = '(no file-level diff — review the list above)';
+    return;
+  }
+  el.innerHTML = '';
+  src.split('\n').forEach(line => {
+    const span = document.createElement('div');
+    if (line.startsWith('+') && !line.startsWith('+++')) span.className = 'diff-added';
+    else if (line.startsWith('-') && !line.startsWith('---')) span.className = 'diff-removed';
+    else span.className = 'diff-meta';
+    span.textContent = line || ' ';
+    el.appendChild(span);
+  });
 }
 
 function applySessionUpdate(data) {
@@ -1245,39 +1922,317 @@ function fillCreatorStats() {
   const defs = STATE.creatorData.stats || [];
   defs.forEach((stat, rIdx) => {
     const tr = document.createElement('tr');
+    if (stat.stat_id === STATE.creatorEditingStatId) tr.className = 'selected';
+    const desc = stat.description || '';
     tr.innerHTML = `
-      <td><input type="text" value="${stat.stat_id}" readonly></td>
-      <td><input type="text" value="${stat.name}" data-key="name" data-idx="${rIdx}"></td>
-      <td>
-        <select data-key="value_type" data-idx="${rIdx}">
-          <option value="numeric" ${stat.value_type === 'numeric' ? 'selected' : ''}>Numeric</option>
-          <option value="categorical" ${stat.value_type === 'categorical' ? 'selected' : ''}>Categorical</option>
-        </select>
+      <td class="stat-id-cell">${escapeHtml(stat.stat_id)}</td>
+      <td>${escapeHtml(stat.name || '')}</td>
+      <td><span class="save-meta">${escapeHtml(stat.value_type || 'numeric')}</span></td>
+      <td class="stat-desc-cell" title="${escapeHtml(desc)}">${escapeHtml(desc)}</td>
+      <td>${creatorStatSummaryBadge(stat)}</td>
+      <td class="col-actions">
+        <button type="button" class="btn-secondary btn-sm" data-edit="1">Edit</button>
+        <button type="button" class="btn-table-del">&times;</button>
       </td>
-      <td><input type="text" value="${stat.description || ''}" data-key="description" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${stat.parameters ? JSON.stringify(stat.parameters) : ''}" data-key="parameters" data-idx="${rIdx}"></td>
-      <td><button class="btn-table-del">&times;</button></td>
     `;
-    tr.querySelector('.btn-table-del').onclick = () => {
+    tr.querySelector('[data-edit]').onclick = (e) => {
+      e.stopPropagation();
+      openCreatorStatEditor(stat.stat_id);
+    };
+    tr.querySelector('.btn-table-del').onclick = (e) => {
+      e.stopPropagation();
+      if (STATE.creatorEditingStatId === stat.stat_id) {
+        STATE.creatorEditingStatId = null;
+        closeAllModals();
+      }
       STATE.creatorData.stats.splice(rIdx, 1);
       fillCreatorStats();
     };
-    tr.querySelectorAll('input, select').forEach(el => {
-      el.onchange = (e) => {
-        const key = e.target.getAttribute('data-key');
-        const idx = parseInt(e.target.getAttribute('data-idx'));
-        let val = e.target.value;
-        if (key === 'parameters') {
-          try { val = JSON.parse(val); } catch(ex) {}
-        }
-        STATE.creatorData.stats[idx][key] = val;
-      };
-    });
+    tr.onclick = () => openCreatorStatEditor(stat.stat_id);
     table.appendChild(tr);
   });
 }
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function creatorStatSummaryBadge(stat) {
+  const p = creatorStatParams(stat);
+  if (!p.temporary) return `<span class="stat-badge lasting">Lasting</span>`;
+  const dyn = (p.dynamics && typeof p.dynamics === 'object') ? p.dynamics : {};
+  const kind = dyn.kind || 'heal';
+  const pace = dyn.pace || 'medium';
+  return `<span class="stat-badge temp">${escapeHtml(kind)} · ${escapeHtml(pace)}</span>`;
+}
+
+function creatorStatParams(stat) {
+  if (!stat.parameters || typeof stat.parameters !== 'object' || Array.isArray(stat.parameters)) {
+    stat.parameters = {};
+  }
+  return stat.parameters;
+}
+
+function creatorStatOptionsText(params) {
+  if (params.options && Array.isArray(params.options)) return params.options.join(', ');
+  const min = params.min;
+  const max = params.max;
+  if (min != null || max != null) return `min:${min != null ? min : 0}, max:${max != null ? max : 100}`;
+  return '';
+}
+
+function minutesToScale(minutes) {
+  const m = Number(minutes) || 0;
+  if (m >= 1440 && m % 1440 === 0) return { n: m / 1440, unit: 'days' };
+  if (m >= 60 && m % 60 === 0) return { n: m / 60, unit: 'hours' };
+  return { n: m || 1, unit: 'minutes' };
+}
+
+function creatorPaceMinutes(kind, pace) {
+  const table = {
+    heal: { fast: 240, medium: 1440, slow: 20160 },
+    buildup: { fast: 8, medium: 30, slow: 240 },
+    duration: { fast: 90, medium: 480, slow: 1440 }
+  };
+  const row = table[kind] || table.heal;
+  return row[pace] || row.medium;
+}
+
+function scaleToMinutes(n, unit) {
+  const v = Math.max(1, Number(n) || 1);
+  if (unit === 'days') return v * 1440;
+  if (unit === 'hours') return v * 60;
+  return v;
+}
+
+function creatorEditingStat() {
+  if (!STATE.creatorData || !STATE.creatorEditingStatId) return null;
+  return (STATE.creatorData.stats || []).find(s => s.stat_id === STATE.creatorEditingStatId) || null;
+}
+
+function openCreatorStatEditor(statId) {
+  STATE.creatorEditingStatId = statId;
+  fillCreatorStatEditor();
+  openModal('modal-edit-stat');
+  fillCreatorStats();
+}
+
+function fillCreatorStatEditor() {
+  const stat = creatorEditingStat();
+  const title = document.getElementById('edit-stat-title');
+  if (!stat || !title) return;
+  const p = creatorStatParams(stat);
+  const dyn = (p.dynamics && typeof p.dynamics === 'object') ? p.dynamics : {};
+  const kind = dyn.kind || 'heal';
+  const minutes = Number(kind === 'buildup' ? (dyn.peak_hold_minutes || 8) : (dyn.heal_minutes || 10080));
+  const scale = minutesToScale(minutes);
+  title.textContent = `Edit ${stat.name || stat.stat_id}`;
+  document.getElementById('edit-stat-name').value = stat.name || '';
+  document.getElementById('edit-stat-type').value = stat.value_type || 'numeric';
+  document.getElementById('edit-stat-desc').value = stat.description || '';
+  document.getElementById('edit-stat-min').value = p.min != null ? p.min : '';
+  document.getElementById('edit-stat-max').value = p.max != null ? p.max : '';
+  document.getElementById('edit-stat-temporary').checked = !!p.temporary;
+  document.getElementById('edit-stat-kind').value = kind;
+  document.getElementById('edit-stat-pace').value = dyn.pace || 'medium';
+  document.getElementById('edit-stat-resting').value = dyn.resting != null ? dyn.resting : '';
+  document.getElementById('edit-stat-scale-n').value = scale.n;
+  document.getElementById('edit-stat-scale-unit').value = scale.unit;
+  document.getElementById('edit-stat-crash').value = [].concat(dyn.crash_on || []).join(', ');
+  document.getElementById('edit-stat-extend').value = [].concat(dyn.extend_on || []).join(', ');
+  const applies = document.getElementById('edit-stat-applies');
+  const selected = new Set(stat.applies_to || []);
+  applies.innerHTML = '';
+  creatorTypeCatalog().forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.type_id;
+    opt.textContent = t.name || t.type_id;
+    opt.selected = selected.has(t.type_id);
+    applies.appendChild(opt);
+  });
+  syncCreatorStatEditorChrome();
+}
+
+function syncCreatorStatEditorChrome() {
+  const temp = document.getElementById('edit-stat-temporary').checked;
+  const kind = document.getElementById('edit-stat-kind').value;
+  document.getElementById('edit-stat-temp-fields').classList.toggle('hidden', !temp);
+  document.getElementById('edit-stat-lasting-hint').classList.toggle('hidden', temp);
+  document.getElementById('edit-stat-events-wrap').classList.toggle('hidden', !temp || kind !== 'buildup');
+  const hints = {
+    heal: 'Time pulls this toward resting (a wound closing, vitality returning). No crash tags — healing is not an orgasm switch.',
+    buildup: 'The scene raises it. Pace is how long it can sit at max. Crash tags snap it to resting; extend tags hold the peak.',
+    duration: 'A short overlay that wears off on its own (a dose, a rush).'
+  };
+  document.getElementById('edit-stat-kind-hint').textContent = hints[kind] || '';
+}
+
+function applyCreatorStatEditor(remapPace) {
+  const stat = creatorEditingStat();
+  if (!stat) return;
+  const p = creatorStatParams(stat);
+  stat.name = document.getElementById('edit-stat-name').value.trim() || stat.name;
+  stat.value_type = document.getElementById('edit-stat-type').value;
+  stat.description = document.getElementById('edit-stat-desc').value;
+  const minV = document.getElementById('edit-stat-min').value;
+  const maxV = document.getElementById('edit-stat-max').value;
+  if (minV !== '') p.min = Number(minV);
+  if (maxV !== '') p.max = Number(maxV);
+  const applies = document.getElementById('edit-stat-applies');
+  stat.applies_to = Array.from(applies.selectedOptions).map(o => o.value);
+  const temp = document.getElementById('edit-stat-temporary').checked;
+  p.temporary = temp;
+  if (!temp) {
+    syncCreatorStatEditorChrome();
+    return;
+  }
+  if (!p.dynamics || typeof p.dynamics !== 'object') p.dynamics = {};
+  const kind = document.getElementById('edit-stat-kind').value || 'heal';
+  const pace = document.getElementById('edit-stat-pace').value || 'medium';
+  const kindChanged = remapPace || p.dynamics.kind !== kind || p.dynamics.pace !== pace;
+  p.dynamics.kind = kind;
+  p.dynamics.pace = pace;
+  p.dynamics.inferred = false;
+  const rest = document.getElementById('edit-stat-resting').value;
+  if (rest !== '') p.dynamics.resting = Number(rest);
+  let minutes = scaleToMinutes(
+    document.getElementById('edit-stat-scale-n').value,
+    document.getElementById('edit-stat-scale-unit').value
+  );
+  if (kindChanged) {
+    minutes = creatorPaceMinutes(kind, pace);
+    const scaled = minutesToScale(minutes);
+    document.getElementById('edit-stat-scale-n').value = scaled.n;
+    document.getElementById('edit-stat-scale-unit').value = scaled.unit;
+  }
+  if (kind === 'buildup') {
+    p.dynamics.peak_hold_minutes = minutes;
+    p.dynamics.crash_on = document.getElementById('edit-stat-crash').value.split(',').map(s => s.trim()).filter(Boolean);
+    p.dynamics.extend_on = document.getElementById('edit-stat-extend').value.split(',').map(s => s.trim()).filter(Boolean);
+  } else {
+    p.dynamics.heal_minutes = minutes;
+    p.dynamics.crash_on = [];
+    p.dynamics.extend_on = [];
+  }
+  syncCreatorStatEditorChrome();
+}
+
+async function classifyCreatorStat(statId) {
+  if (!STATE.creatorData) return;
+  const stat = (STATE.creatorData.stats || []).find(s => s.stat_id === statId);
+  if (!stat) return;
+  showStatus(`Classifying ${stat.name || statId}…`);
+  try {
+    const hint = (STATE.creatorData.metadata && (STATE.creatorData.metadata.global_lore || STATE.creatorData.metadata.name)) || '';
+    const res = await fetch('/api/creator/infer-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stats: [stat], world_hint: hint })
+    });
+    if (!res.ok) {
+      showStatus('Could not classify that stat — set Temporary by hand if you want.');
+      return;
+    }
+    const data = await res.json();
+    const hit = (data.stats || [])[0];
+    if (!hit) return;
+    const live = (STATE.creatorData.stats || []).find(s => s.stat_id === statId);
+    if (!live) return;
+    if (hit.parameters) live.parameters = hit.parameters;
+    if (hit.description && !(live.description || '').trim()) live.description = hit.description;
+    fillCreatorStats();
+    if (STATE.creatorEditingStatId === statId) fillCreatorStatEditor();
+    const dyn = (live.parameters && live.parameters.dynamics) || {};
+    if (live.parameters && live.parameters.temporary) {
+      showStatus(`${live.name}: temporary · ${dyn.kind || '?'} · ${dyn.pace || 'medium'}`);
+    } else {
+      showStatus(`${live.name}: lasting (won’t tick on its own).`);
+    }
+  } catch (err) {
+    console.error(err);
+    showStatus('Could not classify that stat — set Temporary by hand if you want.');
+  }
+}
+
+async function inferCreatorStatDynamics() {
+  if (!STATE.creatorData || !STATE.selectedUniversePath) return;
+  showStatus('Classifying temporary stats…');
+  try {
+    const hint = (STATE.creatorData.metadata && (STATE.creatorData.metadata.global_lore || STATE.creatorData.metadata.name)) || '';
+    const res = await fetch('/api/creator/infer-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stats: STATE.creatorData.stats || [], world_hint: hint })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Failed to infer temporary stats.');
+      return;
+    }
+    const data = await res.json();
+    const incoming = data.stats || [];
+    const byId = {};
+    incoming.forEach(s => { if (s.stat_id) byId[s.stat_id] = s; });
+    (STATE.creatorData.stats || []).forEach(stat => {
+      const hit = byId[stat.stat_id];
+      if (!hit) return;
+      if (hit.parameters) stat.parameters = hit.parameters;
+      if (hit.description && !(stat.description || '').trim()) stat.description = hit.description;
+    });
+    fillCreatorStats();
+    if (STATE.creatorEditingStatId) fillCreatorStatEditor();
+    showStatus('Profiles updated — open Edit on a row to review.');
+  } catch (err) {
+    console.error(err);
+    alert('Failed to infer temporary stats.');
+  }
+}
+
+function creatorTypeCatalog() {
+  const list = (STATE.creatorData && STATE.creatorData.entity_types) || [];
+  if (list.length) return list;
+  return [
+    { type_id: 'player', name: 'Player', role: 'player', is_builtin: true },
+    { type_id: 'npc', name: 'NPC', role: 'npc', is_builtin: true },
+    { type_id: 'faction', name: 'Faction', role: 'faction', is_builtin: true },
+    { type_id: 'world', name: 'World', role: 'world', is_builtin: true },
+  ];
+}
+
+function creatorAppliesToCell(stat, rIdx) {
+  const selected = new Set(stat.applies_to || []);
+  const opts = creatorTypeCatalog().map(t =>
+    `<option value="${t.type_id}" ${selected.has(t.type_id) ? 'selected' : ''}>${t.name || t.type_id}</option>`
+  ).join('');
+  return `<select multiple data-applies="1" data-idx="${rIdx}" title="Empty = all types">${opts}</select>`;
+}
+
+function statAppliesToType(def, typeId) {
+  const links = def.applies_to || [];
+  if (!links.length) return true;
+  return links.includes(typeId);
+}
+
+function refreshCreatorTypeSelect() {
+  const sel = document.getElementById('entities-new-type');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '';
+  creatorTypeCatalog().forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.type_id;
+    opt.textContent = `${t.name || t.type_id} (${t.role || t.type_id})`;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
 function fillCreatorEntities() {
+  refreshCreatorTypeSelect();
   const table = document.getElementById('table-entities').querySelector('tbody');
   table.innerHTML = '';
   const list = STATE.creatorData.entities || [];
@@ -1324,7 +2279,7 @@ function fillCreatorEntities() {
   header.textContent = `Initial Stats for ${ent.name}`;
   
   const activeStats = ent.stats || {};
-  const statDefs = STATE.creatorData.stats || [];
+  const statDefs = (STATE.creatorData.stats || []).filter(def => statAppliesToType(def, ent.entity_type));
   
   statDefs.forEach(def => {
     const row = document.createElement('div');
@@ -1458,7 +2413,7 @@ function fillCreatorRules() {
   conditions.forEach((cond, cIdx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" value="${cond.stat || ''}" data-key="stat" data-idx="${cIdx}"></td>
+      <td>${statSelectHtml(cond.stat || '', cIdx)}</td>
       <td>
         <select data-key="operator" data-idx="${cIdx}">
           <option value="==" ${cond.operator === '==' ? 'selected' : ''}>==</option>
@@ -1499,7 +2454,7 @@ function fillCreatorRules() {
           <option value="set_status" ${act.type === 'set_status' ? 'selected' : ''}>set_status</option>
         </select>
       </td>
-      <td><input type="text" value="${act.stat || ''}" data-key="stat" data-idx="${aIdx}"></td>
+      <td>${statSelectHtml(act.stat || '', aIdx)}</td>
       <td><input type="text" value="${act.value || act.delta || ''}" data-key="value" data-idx="${aIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
@@ -1526,6 +2481,39 @@ function fillCreatorRules() {
       };
     });
     actionTable.appendChild(tr);
+  });
+  wireStudioFillDown(document.getElementById('table-rules'));
+  wireStudioFillDown(document.getElementById('table-conditions'));
+  wireStudioFillDown(document.getElementById('table-actions'));
+}
+
+function statSelectHtml(selected, idx) {
+  const stats = (STATE.creatorData && STATE.creatorData.stats) || [];
+  const opts = [`<option value="">—</option>`].concat(stats.map(s => {
+    const id = s.stat_id || '';
+    const sel = id === selected ? 'selected' : '';
+    return `<option value="${id}" ${sel}>${s.name || id}</option>`;
+  }));
+  return `<select data-key="stat" data-idx="${idx}">${opts.join('')}</select>`;
+}
+
+function wireStudioFillDown(root) {
+  if (!root) return;
+  root.querySelectorAll('input, select').forEach(input => {
+    if (input.dataset.fillDown) return;
+    input.dataset.fillDown = '1';
+    input.addEventListener('click', (e) => {
+      if (!e.shiftKey) return;
+      const td = input.closest('td');
+      const tr = input.closest('tr');
+      if (!td || !tr || !tr.previousElementSibling) return;
+      const col = Array.from(tr.children).indexOf(td);
+      const src = tr.previousElementSibling.children[col]
+        && tr.previousElementSibling.children[col].querySelector('input, select');
+      if (!src) return;
+      input.value = src.value;
+      input.dispatchEvent(new Event('change'));
+    });
   });
 }
 
@@ -1631,9 +2619,17 @@ function fillCreatorLore() {
     tr.innerHTML = `
       <td><input type="text" value="${entry.category || 'General'}" data-key="category" data-idx="${rIdx}"></td>
       <td><input type="text" value="${entry.name}" data-key="name" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${entry.keywords || ''}" data-key="keywords" data-idx="${rIdx}" class="${entry.keywords ? '' : 'warn-empty'}" placeholder="keywords help recall"></td>
       <td><input type="text" value="${entry.text || ''}" data-key="text" data-idx="${rIdx}"></td>
-      <td><button class="btn-table-del">&times;</button></td>
+      <td>
+        <button class="btn-secondary btn-sm lore-row-pop" type="button">AI</button>
+        <button class="btn-table-del">&times;</button>
+      </td>
     `;
+    tr.querySelector('.lore-row-pop').onclick = (e) => {
+      e.stopPropagation();
+      triggerPopulateTargets(['lore'], false);
+    };
     tr.querySelector('.btn-table-del').onclick = () => {
       STATE.creatorData.lore.splice(rIdx, 1);
       fillCreatorLore();
@@ -1647,6 +2643,7 @@ function fillCreatorLore() {
     });
     table.appendChild(tr);
   });
+  wireStudioFillDown(document.getElementById('table-lore'));
 }
 
 function fillCreatorFiles() {
@@ -1996,32 +2993,37 @@ function openModal(id) {
 }
 
 function setupTabHandlers() {
-  // Studio tabs
-  document.querySelectorAll('.studio-tabs .tab-btn').forEach(btn => {
+  // Creator Studio only — Setup / save-editor tabs reuse .studio-tabs but
+  // use data-setup-tab / data-save-tab and have their own handlers.
+  document.querySelectorAll('#view-creator .studio-tabs .tab-btn[data-target]').forEach(btn => {
     btn.onclick = (e) => {
-      document.querySelectorAll('.studio-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.studio-tab-panel').forEach(p => p.classList.remove('active'));
-      
-      e.target.classList.add('active');
-      const targetId = e.target.getAttribute('data-target');
-      document.getElementById(targetId).classList.add('active');
-      
+      const targetId = e.currentTarget.getAttribute('data-target');
+      const panel = targetId ? document.getElementById(targetId) : null;
+      if (!panel) return;
+
+      document.querySelectorAll('#view-creator .studio-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#view-creator .studio-tab-panel').forEach(p => p.classList.remove('active'));
+
+      e.currentTarget.classList.add('active');
+      panel.classList.add('active');
+
       if (targetId === 'studio-tab-map') {
-        // Redraw canvas
         setTimeout(drawCanvasMap, 50);
       }
     };
   });
 
-  // Settings tabs
-  document.querySelectorAll('.settings-tabs .settings-tab-btn').forEach(btn => {
+  // Settings tabs only (do NOT match Memory modal tabs — those use
+  // data-memory-tab and are wired in setupUIEventListeners).
+  document.querySelectorAll('#modal-settings .settings-tabs .settings-tab-btn').forEach(btn => {
     btn.onclick = (e) => {
-      document.querySelectorAll('.settings-tabs .settings-tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('#modal-settings .settings-tabs .settings-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#modal-settings .settings-panel').forEach(p => p.classList.remove('active'));
       
       e.target.classList.add('active');
       const targetId = e.target.getAttribute('data-target');
-      document.getElementById(targetId).classList.add('active');
+      const panel = targetId ? document.getElementById(targetId) : null;
+      if (panel) panel.classList.add('active');
     };
   });
 }
@@ -2060,11 +3062,122 @@ function setupUIEventListeners() {
       window.close();
     }
   };
-  document.getElementById('status-cancel-btn').onclick = () => {
-    STATE.isGenerating = false;
-    document.getElementById('status-cancel-btn').classList.add('hidden');
-    showStatus('Generation cancelled.');
+  document.getElementById('status-cancel-btn').onclick = () => cancelActiveGeneration();
+
+  const hubBtn = document.getElementById('btn-tabletop-hub');
+  if (hubBtn) hubBtn.onclick = () => {
+    stopAmbiance();
+    showScreen('view-hub');
   };
+
+  const rewindHdr = document.getElementById('btn-tabletop-rewind');
+  if (rewindHdr) rewindHdr.onclick = () => openCheckpointDialog();
+
+  const verbSlider = document.getElementById('chat-verbosity');
+  if (verbSlider) {
+    verbSlider.oninput = () => {
+      const label = document.getElementById('chat-verbosity-label');
+      const level = VERBOSITY_LEVELS[parseInt(verbSlider.value, 10)] || 'talkative';
+      if (label) label.textContent = tr(level);
+    };
+    verbSlider.onchange = async () => {
+      const level = VERBOSITY_LEVELS[parseInt(verbSlider.value, 10)] || 'talkative';
+      try {
+        await fetch('/api/session/verbosity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level })
+        });
+        if (STATE.activeSession) STATE.activeSession.verbosity = level;
+      } catch (err) {
+        console.error(err);
+      }
+    };
+  }
+
+  const canonBtn = document.getElementById('btn-canonize');
+  if (canonBtn) canonBtn.onclick = () => runCanonize(true);
+
+  const checkpointApply = document.getElementById('checkpoint-apply-btn');
+  if (checkpointApply) checkpointApply.onclick = () => applyCheckpointRewind();
+
+  const cloudSel = document.getElementById('setting-cloud-provider');
+  if (cloudSel) {
+    cloudSel.onchange = () => {
+      const prev = STATE.cloudProvider;
+      const fields = CLOUD_FIELDS[prev];
+      if (fields && STATE.config) {
+        const keyEl = document.getElementById('setting-cloud-key');
+        const modelEl = document.getElementById('setting-cloud-model');
+        if (keyEl) STATE.config[fields.key] = keyEl.value;
+        if (modelEl) STATE.config[fields.model] = modelEl.value;
+      }
+      STATE.cloudProvider = cloudSel.value;
+      fillCloudFieldsToForm();
+    };
+  }
+
+  const browseModels = document.getElementById('settings-browse-models-btn');
+  if (browseModels) browseModels.onclick = () => openModelBrowser();
+
+  const paramsSave = document.getElementById('settings-params-save-btn');
+  if (paramsSave) paramsSave.onclick = () => saveUniverseParams();
+
+  const extractNow = document.getElementById('settings-extract-now-btn');
+  if (extractNow) extractNow.onclick = () => {
+    closeAllModals();
+    memoryExtractNow();
+  };
+  const browseMem = document.getElementById('settings-browse-memory-btn');
+  if (browseMem) browseMem.onclick = () => {
+    closeAllModals();
+    openMemoryEditor();
+  };
+
+  const wallpaperBrowse = document.getElementById('setting-wallpaper-browse');
+  const wallpaperFile = document.getElementById('setting-wallpaper-file');
+  if (wallpaperBrowse && wallpaperFile) {
+    wallpaperBrowse.onclick = () => wallpaperFile.click();
+    wallpaperFile.onchange = () => {
+      const file = wallpaperFile.files && wallpaperFile.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      document.getElementById('setting-wallpaper').value = url;
+      applyWallpaper(url);
+    };
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('view-tabletop').classList.contains('active')) return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'y')) {
+      e.preventDefault();
+      openCheckpointDialog();
+    }
+  });
+
+  const memBtn = document.getElementById('btn-open-memory');
+  if (memBtn) memBtn.onclick = () => openMemoryEditor();
+  document.querySelectorAll('#memory-tabs .settings-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#memory-tabs .settings-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      STATE.memoryTab = btn.getAttribute('data-memory-tab') || 'models';
+      STATE.memorySelectedId = null;
+      renderMemoryList();
+    };
+  });
+  const memAdd = document.getElementById('memory-add-fact-btn');
+  const memEdit = document.getElementById('memory-edit-btn');
+  const memDel = document.getElementById('memory-delete-btn');
+  const memExt = document.getElementById('memory-extract-btn');
+  const memRef = document.getElementById('memory-refresh-btn');
+  if (memAdd) memAdd.onclick = () => memoryAddFact();
+  if (memEdit) memEdit.onclick = () => memoryEditSelected();
+  if (memDel) memDel.onclick = () => memoryDeleteSelected();
+  if (memExt) memExt.onclick = () => memoryExtractNow();
+  if (memRef) memRef.onclick = () => loadMemoryData();
 
   // Mini-Dico search triggers
   const minidicoSearch = document.getElementById('minidico-search');
@@ -2086,6 +3199,60 @@ function setupUIEventListeners() {
   document.getElementById('settings-save-btn').onclick = saveConfig;
   document.getElementById('edit-save-apply-btn').onclick = submitSaveEdit;
   document.getElementById('edit-message-apply-btn').onclick = submitMessageEdit;
+  document.querySelectorAll('#edit-save-tabs .tab-btn').forEach(btn => {
+    btn.onclick = () => switchSaveEditTab(btn.getAttribute('data-save-tab'));
+  });
+  const modAdd = document.getElementById('edit-mod-add-btn');
+  if (modAdd) modAdd.onclick = addSaveModifier;
+  const modEnt = document.getElementById('edit-mod-entity');
+  if (modEnt) modEnt.onchange = fillSaveModifierSelects;
+  const invAdd = document.getElementById('edit-inv-add-btn');
+  if (invAdd) invAdd.onclick = () => {
+    if (!STATE.editingSaveState) return;
+    const name = (document.getElementById('edit-inv-name').value || '').trim();
+    if (!name) return;
+    const qty = parseInt(document.getElementById('edit-inv-qty').value, 10) || 1;
+    const holder = (document.getElementById('edit-inv-holder').value || 'entity:').split(':');
+    const isC = document.getElementById('edit-inv-container').checked;
+    if (!STATE.editingSaveState.inventory) STATE.editingSaveState.inventory = [];
+    STATE.editingSaveState.inventory.push({
+      instance_id: 'tmp-' + Date.now(),
+      item_id: name.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      name,
+      quantity: qty,
+      holder_kind: holder[0] || 'entity',
+      holder_id: holder.slice(1).join(':'),
+      is_container: isC
+    });
+    document.getElementById('edit-inv-name').value = '';
+    renderSaveInventory();
+  };
+  const loreAdd = document.getElementById('edit-lore-add-btn');
+  if (loreAdd) loreAdd.onclick = () => {
+    if (!STATE.editingSaveState) return;
+    if (!STATE.editingSaveState.session_lore) STATE.editingSaveState.session_lore = [];
+    STATE.editingSaveState.session_lore.push({
+      entry_id: '', name: 'New entry', category: 'General', keywords: '', content: ''
+    });
+    renderSaveLore();
+  };
+  const addTypeBtn = document.getElementById('entities-add-type-btn');
+  if (addTypeBtn) addTypeBtn.onclick = () => {
+    const typeId = prompt('New entity type id (e.g. robot, humanoid):');
+    if (!typeId) return;
+    const role = prompt('Engine role: player, npc, faction, or world', 'npc') || 'npc';
+    if (!STATE.creatorData.entity_types) STATE.creatorData.entity_types = creatorTypeCatalog();
+    const id = typeId.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+    if (STATE.creatorData.entity_types.some(t => t.type_id === id)) return;
+    STATE.creatorData.entity_types.push({
+      type_id: id,
+      name: typeId.trim(),
+      role: ['player', 'npc', 'faction', 'world'].includes(role) ? role : 'npc',
+      is_builtin: false
+    });
+    refreshCreatorTypeSelect();
+    fillCreatorStats();
+  };
   
   // Test connection settings
   document.getElementById('settings-test-btn').onclick = async () => {
@@ -2222,15 +3389,43 @@ function setupUIEventListeners() {
   };
 
   // Add Stats Creator Studio
+  const inferBtn = document.getElementById('stats-infer-btn');
+  if (inferBtn) inferBtn.onclick = inferCreatorStatDynamics;
+  const statDone = document.getElementById('edit-stat-done-btn');
+  if (statDone) statDone.onclick = () => {
+    applyCreatorStatEditor(false);
+    fillCreatorStats();
+    closeAllModals();
+  };
+  const statReclass = document.getElementById('edit-stat-reclassify-btn');
+  if (statReclass) statReclass.onclick = () => {
+    applyCreatorStatEditor(false);
+    if (STATE.creatorEditingStatId) classifyCreatorStat(STATE.creatorEditingStatId);
+  };
+  ['edit-stat-name', 'edit-stat-type', 'edit-stat-desc', 'edit-stat-min', 'edit-stat-max',
+   'edit-stat-resting', 'edit-stat-scale-n', 'edit-stat-scale-unit',
+   'edit-stat-crash', 'edit-stat-extend', 'edit-stat-applies'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.onchange = () => applyCreatorStatEditor(false);
+  });
+  const tempEl = document.getElementById('edit-stat-temporary');
+  if (tempEl) tempEl.onchange = () => applyCreatorStatEditor(false);
+  ['edit-stat-kind', 'edit-stat-pace'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.onchange = () => applyCreatorStatEditor(true);
+  });
   document.getElementById('stats-add-btn').onclick = () => {
     const id = document.getElementById('stats-new-id').value.trim();
     const name = document.getElementById('stats-new-name').value.trim();
+    const note = (document.getElementById('stats-new-desc').value || '').trim();
     const type = document.getElementById('stats-new-type').value;
     if (!id || !name) return;
-    STATE.creatorData.stats.push({ stat_id: id, name, value_type: type, description: '', parameters: {} });
+    STATE.creatorData.stats.push({ stat_id: id, name, value_type: type, description: note, parameters: {} });
     fillCreatorStats();
     document.getElementById('stats-new-id').value = '';
     document.getElementById('stats-new-name').value = '';
+    document.getElementById('stats-new-desc').value = '';
+    classifyCreatorStat(id);
   };
 
   // Apply Presets Creator Studio
@@ -2273,6 +3468,25 @@ function setupUIEventListeners() {
     STATE.creatorData.rules.push({ rule_id: id, priority, target_entity: target, conditions: [], actions: [] });
     fillCreatorRules();
     document.getElementById('rules-new-id').value = '';
+  };
+
+  const lorePop = document.getElementById('lore-populate-btn');
+  if (lorePop) lorePop.onclick = () => triggerPopulateTargets(['lore'], false);
+  const mapPop = document.getElementById('map-populate-btn');
+  if (mapPop) mapPop.onclick = () => triggerPopulateTargets(['map'], false);
+  const assignStats = document.getElementById('entities-assign-stats-btn');
+  if (assignStats) assignStats.onclick = () => {
+    if (!STATE.creatorActiveEntityId || !STATE.creatorData) return;
+    const ent = (STATE.creatorData.entities || []).find(e => e.entity_id === STATE.creatorActiveEntityId);
+    if (!ent) return;
+    if (!ent.stats) ent.stats = {};
+    (STATE.creatorData.stats || []).filter(def => statAppliesToType(def, ent.entity_type)).forEach(def => {
+      if (ent.stats[def.stat_id] == null || ent.stats[def.stat_id] === '') {
+        ent.stats[def.stat_id] = def.value_type === 'numeric' ? '0' : '';
+      }
+    });
+    fillCreatorEntities();
+    showStatus('Assigned defined stats to the selected entity.');
   };
 
   document.getElementById('cond-add-btn').onclick = () => {
@@ -2322,8 +3536,10 @@ function setupUIEventListeners() {
     
     if (!STATE.creatorData.lore) STATE.creatorData.lore = [];
     STATE.creatorData.lore.push({
+      entry_id: generatePersonaId(),
       category: cat,
       name,
+      keywords: '',
       text: ''
     });
 
@@ -2378,7 +3594,10 @@ function setupUIEventListeners() {
   document.getElementById('pop-run-btn').onclick = () => triggerPopulate(false);
   document.getElementById('pop-preview-btn').onclick = () => triggerPopulate(true);
 
-  // Apply diff preview content
+  const canonApply = document.getElementById('canonize-apply-btn');
+  if (canonApply) canonApply.onclick = () => applyCanonizeSelection();
+
+  // Apply populate preview (Creator Studio)
   document.getElementById('diff-apply-btn').onclick = async () => {
     showStatus('Applying generated changes...');
     try {
@@ -2428,49 +3647,44 @@ function setupUIEventListeners() {
   };
 
   // Import .axiom
-  document.getElementById('hub-import-btn').onclick = async () => {
-    const fileUrl = prompt('Enter the absolute path of the .axiom file to import:');
-    if (!fileUrl) return;
-    try {
-      const res = await fetch('/api/universes/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: fileUrl })
-      });
-      if (res.ok) {
-        refreshHub();
-        showStatus('.axiom universe imported successfully.');
-      } else {
-        const data = await res.json();
-        alert(`Failed to import universe: ${data.error}`);
-      }
-    } catch(err) {
-      console.error(err);
-    }
+  const hubImportFile = document.getElementById('hub-import-file');
+  document.getElementById('hub-import-btn').onclick = () => {
+    if (hubImportFile) hubImportFile.click();
   };
-
-  // Import SillyTavern character card
-  document.getElementById('hub-import-st-btn').onclick = async () => {
-    const filePath = prompt('Enter the absolute path of the SillyTavern character PNG card to import:');
-    if (!filePath) return;
-    try {
-      const res = await fetch('/api/universes/import-st', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath })
-      });
-      if (res.ok) {
-        refreshHub();
-        showStatus('SillyTavern character imported as a playable universe.');
-      } else {
-        const data = await res.json();
-        alert(`Failed to import character card: ${data.error}`);
+  if (hubImportFile) {
+    hubImportFile.onchange = async () => {
+      const file = hubImportFile.files && hubImportFile.files[0];
+      if (!file) return;
+      showStatus('Importing universe...');
+      try {
+        await uploadUniverseFile('/api/universes/import', file);
+        await refreshHub();
+        showStatus('Universe imported.');
+      } catch (err) {
+        alert(err.message || 'Failed to import universe.');
       }
-    } catch(err) {
-      console.error(err);
-    }
+      hubImportFile.value = '';
+    };
+  }
+  const hubImportStFile = document.getElementById('hub-import-st-file');
+  document.getElementById('hub-import-st-btn').onclick = () => {
+    if (hubImportStFile) hubImportStFile.click();
   };
-
+  if (hubImportStFile) {
+    hubImportStFile.onchange = async () => {
+      const file = hubImportStFile.files && hubImportStFile.files[0];
+      if (!file) return;
+      showStatus('Importing SillyTavern card...');
+      try {
+        await uploadUniverseFile('/api/universes/import-st', file);
+        await refreshHub();
+        showStatus('SillyTavern card imported.');
+      } catch (err) {
+        alert(err.message || 'Failed to import card.');
+      }
+      hubImportStFile.value = '';
+    };
+  }
   // Audio volume slider
   document.getElementById('volume-slider').oninput = async (e) => {
     const vol = parseFloat(e.target.value) / 100;
@@ -2540,7 +3754,7 @@ async function triggerPopulate(previewOnly) {
       const data = await res.json();
       logBox.textContent += 'Generation complete!\n';
       if (previewOnly) {
-        document.getElementById('diff-content').textContent = data.diff || 'No changes proposed.';
+        renderColoredDiff(document.getElementById('diff-content'), data.diff || 'No changes proposed.');
         openModal('modal-diff');
       } else {
         logBox.textContent += 'Changes written directly to the database.\n';
@@ -2556,58 +3770,869 @@ async function triggerPopulate(previewOnly) {
   }
 }
 
+async function triggerPopulateTargets(targets, previewOnly) {
+  if (!STATE.selectedUniversePath) return;
+  showStatus('Generating content…');
+  try {
+    const res = await fetch(`/api/creator/populate?universe=${encodeURIComponent(STATE.selectedUniversePath)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets, prompt: '', preview: !!previewOnly })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || 'Populate failed.');
+      return;
+    }
+    if (previewOnly) {
+      renderColoredDiff(document.getElementById('diff-content'), data.diff || 'No changes proposed.');
+      openModal('modal-diff');
+    } else {
+      await openCreatorStudio(STATE.selectedUniversePath);
+      showStatus('Populate applied.');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Populate failed.');
+  }
+}
+
+function applyDocTooltips() {
+  const on = STATE.config && STATE.config.doc_tooltips_enabled !== false;
+  document.querySelectorAll('[data-doc]').forEach(el => {
+    const ref = el.getAttribute('data-doc') || '';
+    const parts = ref.split('.');
+    if (parts.length < 2) return;
+    if (!on) {
+      el.removeAttribute('title');
+      return;
+    }
+    const title = tr(`doc_${parts[0]}_${parts[1]}_t`);
+    const body = tr(`doc_${parts[0]}_${parts[1]}`);
+    const text = [title, body].filter(s => s && s !== `doc_${parts[0]}_${parts[1]}_t` && s !== `doc_${parts[0]}_${parts[1]}`).join(' — ');
+    if (text) el.title = text;
+  });
+}
+
+async function checkSessionIntegrity() {
+  try {
+    const res = await fetch('/api/session/integrity');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ok === false) {
+      const n = Object.keys(data.mismatches || {}).length;
+      showStatus(tr('integrity_warning') || `State cache mismatch on ${n} entit${n === 1 ? 'y' : 'ies'}.`);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 // ── Status Bar Helpers ──
 function showStatus(msg) {
   document.getElementById('status-text').textContent = msg;
 }
 
-// ── Save TOML Edit Flow ──
-async function editSave(universePath, saveId) {
-  showStatus('Exporting save state to TOML...');
+// ── Story Memory editor (facts / beliefs / mental models) ──
+async function openMemoryEditor() {
+  if (!STATE.activeSession) {
+    alert(tr('memory_browser_no_session') || 'Load a game to browse its memory.');
+    return;
+  }
+  STATE.memoryTab = 'models';
+  STATE.memorySelectedId = null;
+  document.querySelectorAll('#memory-tabs .settings-tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === 0);
+  });
+  openModal('modal-memory');
+  await loadMemoryData();
+}
+
+async function loadMemoryData() {
   try {
-    const res = await fetch(`/api/saves/export?universe=${encodeURIComponent(universePath)}&save_id=${encodeURIComponent(saveId)}`);
-    if (res.ok) {
-      const data = await res.json();
-      STATE.editingSaveUniversePath = universePath;
-      STATE.editingSaveId = saveId;
-      STATE.editingSaveOriginalToml = data.toml;
-      
-      document.getElementById('edit-save-title').textContent = `Edit Save State (${saveId.substring(0, 8)}...)`;
-      document.getElementById('edit-save-toml-textarea').value = data.toml;
-      openModal('modal-edit-save');
-      showStatus('Save state exported.');
-    } else {
-      alert('Failed to export save state.');
+    const res = await fetch('/api/session/memory');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showStatus(err.error || 'Failed to load memory');
+      return;
+    }
+    STATE.memoryData = await res.json();
+    renderMemoryList();
+  } catch (err) {
+    console.error(err);
+    showStatus('Failed to load memory');
+  }
+}
+
+function renderMemoryList() {
+  const root = document.getElementById('memory-list');
+  if (!root) return;
+  const data = STATE.memoryData || { facts: [], beliefs: [], mental_models: [] };
+  const tab = STATE.memoryTab || 'models';
+  const addBtn = document.getElementById('memory-add-fact-btn');
+  if (addBtn) addBtn.style.display = tab === 'facts' ? '' : 'none';
+
+  let rows = [];
+  if (tab === 'facts') {
+    rows = (data.facts || []).map(f => ({
+      id: f.fact_id,
+      title: f.statement,
+      meta: `T${f.turn_id} · ${f.fact_type}${(f.entities && f.entities.length) ? ' · ' + f.entities.join(', ') : ''}`,
+    }));
+  } else if (tab === 'beliefs') {
+    rows = (data.beliefs || []).map(b => ({
+      id: b.observation_id,
+      title: b.statement,
+      meta: `${b.subject || tr('memory_browser_world') || '(world)'} · ${b.trend || ''} · T${b.updated_turn_id}`,
+    }));
+  } else {
+    rows = (data.mental_models || []).map(m => ({
+      id: m.model_id,
+      title: m.summary,
+      meta: `${m.subject || tr('memory_browser_world') || '(world)'} · T${m.updated_turn_id}`,
+    }));
+  }
+
+  if (!rows.length) {
+    const emptyKey = tab === 'facts'
+      ? 'memory_browser_empty_facts'
+      : (tab === 'beliefs' ? 'memory_browser_empty_beliefs' : 'memory_browser_empty_models');
+    root.innerHTML = `<p class="hint">${tr(emptyKey) || 'Nothing here yet.'}</p>`;
+    return;
+  }
+
+  root.innerHTML = rows.map(r => {
+    const sel = STATE.memorySelectedId === r.id ? ' selected' : '';
+    const title = escapeHtml(r.title);
+    const meta = escapeHtml(r.meta);
+    return `<div class="memory-row${sel}" data-id="${r.id}" role="button" tabindex="0">
+      <div class="memory-row-title">${title}</div>
+      <div class="memory-row-meta">${meta}</div>
+    </div>`;
+  }).join('');
+
+  root.querySelectorAll('.memory-row').forEach(el => {
+    el.onclick = () => {
+      STATE.memorySelectedId = Number(el.getAttribute('data-id'));
+      renderMemoryList();
+    };
+  });
+}
+
+function escapeHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function memoryMutate(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'Memory update failed');
+    return null;
+  }
+  if (data.memory) {
+    STATE.memoryData = data.memory;
+    STATE.memorySelectedId = null;
+    renderMemoryList();
+  }
+  return data;
+}
+
+async function memoryAddFact() {
+  const statement = prompt(tr('memory_browser_col_fact') || 'Fact', '');
+  if (statement == null) return;
+  const text = statement.trim();
+  if (!text) return;
+  await memoryMutate('/api/session/memory/fact', { action: 'create', statement: text });
+}
+
+async function memoryEditSelected() {
+  if (STATE.memorySelectedId == null) {
+    alert(tr('memory_browser_select_row') || 'Select a row first.');
+    return;
+  }
+  const tab = STATE.memoryTab;
+  const data = STATE.memoryData || {};
+  if (tab === 'facts') {
+    const f = (data.facts || []).find(x => x.fact_id === STATE.memorySelectedId);
+    if (!f) return;
+    const statement = prompt(tr('memory_browser_col_fact') || 'Fact', f.statement);
+    if (statement == null) return;
+    await memoryMutate('/api/session/memory/fact', {
+      action: 'update', fact_id: f.fact_id, statement: statement.trim(),
+    });
+  } else if (tab === 'beliefs') {
+    const b = (data.beliefs || []).find(x => x.observation_id === STATE.memorySelectedId);
+    if (!b) return;
+    const statement = prompt(tr('memory_browser_col_belief') || 'Belief', b.statement);
+    if (statement == null) return;
+    const subject = prompt(tr('memory_browser_col_subject') || 'Subject', b.subject || '');
+    if (subject == null) return;
+    await memoryMutate('/api/session/memory/belief', {
+      action: 'update',
+      observation_id: b.observation_id,
+      statement: statement.trim(),
+      subject: subject.trim(),
+    });
+  } else {
+    const m = (data.mental_models || []).find(x => x.model_id === STATE.memorySelectedId);
+    if (!m) return;
+    const summary = prompt(tr('memory_browser_col_profile') || 'Profile', m.summary);
+    if (summary == null) return;
+    const subject = prompt(tr('memory_browser_col_subject') || 'Subject', m.subject || '');
+    if (subject == null) return;
+    await memoryMutate('/api/session/memory/model', {
+      action: 'update',
+      model_id: m.model_id,
+      summary: summary.trim(),
+      subject: subject.trim(),
+    });
+  }
+}
+
+async function memoryDeleteSelected() {
+  if (STATE.memorySelectedId == null) {
+    alert(tr('memory_browser_select_row') || 'Select a row first.');
+    return;
+  }
+  if (!confirm(tr('memory_browser_delete_confirm') || 'Delete this memory entry?')) return;
+  const tab = STATE.memoryTab;
+  if (tab === 'facts') {
+    await memoryMutate('/api/session/memory/fact', {
+      action: 'delete', fact_id: STATE.memorySelectedId,
+    });
+  } else if (tab === 'beliefs') {
+    await memoryMutate('/api/session/memory/belief', {
+      action: 'delete', observation_id: STATE.memorySelectedId,
+    });
+  } else {
+    await memoryMutate('/api/session/memory/model', {
+      action: 'delete', model_id: STATE.memorySelectedId,
+    });
+  }
+}
+
+async function memoryExtractNow() {
+  showStatus(tr('memory_extracting') || 'Distilling memory from recent story…');
+  try {
+    // Relative URL — must be same origin as the page (127.0.0.1 vs localhost).
+    const res = await fetch('/api/session/memory/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errMsg = data.error || `Extract failed (HTTP ${res.status})`;
+      alert(errMsg);
+      showStatus(errMsg);
+      return;
+    }
+    if (data.memory) {
+      STATE.memoryData = data.memory;
+      STATE.memorySelectedId = null;
+      // Jump to Facts so a successful extract is visible (Profiles is default tab).
+      STATE.memoryTab = 'facts';
+      document.querySelectorAll('#memory-tabs .settings-tab-btn').forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-memory-tab') === 'facts');
+      });
+      renderMemoryList();
+    }
+    const msg = data.message || data.error || `Stored ${data.facts_stored || 0} fact(s).`;
+    showStatus(msg);
+    if (data.status === 'skipped' || data.status === 'error') {
+      alert(msg);
+    } else if ((data.facts_stored || 0) > 0) {
+      showStatus(msg);
     }
   } catch (err) {
     console.error(err);
-    alert('Error exporting save state.');
+    // Browser "Could not connect" / Failed to fetch — network or server process gone.
+    const detail = (err && err.message) ? err.message : String(err);
+    const hint =
+      `Could not reach the web server for memory extract (${detail}).\n\n` +
+      `Check: (1) terminal still running python main_web.py, ` +
+      `(2) open the app at the same host as the server (use http://127.0.0.1:8000 not file://), ` +
+      `(3) if you restarted the server, re-open the save so a session is loaded.`;
+    alert(hint);
+    showStatus('Extract failed — server not reachable');
+  }
+}
+
+function openLightbox(src) {
+  const img = document.getElementById('lightbox-image');
+  if (!img) return;
+  img.src = src;
+  openModal('modal-lightbox');
+}
+
+function showImagePlaceholder() {
+  const existing = document.getElementById('image-placeholder-bubble');
+  if (existing) existing.remove();
+  const chatHistory = document.getElementById('chat-history');
+  if (!chatHistory) return;
+  const bubble = document.createElement('div');
+  bubble.id = 'image-placeholder-bubble';
+  bubble.className = 'chat-bubble system';
+  bubble.textContent = tr('generating_image') || 'Generating illustration…';
+  chatHistory.appendChild(bubble);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+async function openCheckpointDialog() {
+  if (!STATE.activeSession) return;
+  try {
+    const res = await fetch('/api/session/checkpoints');
+    const checkpoints = res.ok ? await res.json() : [];
+    const list = document.getElementById('checkpoint-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const turns = Array.isArray(checkpoints) ? checkpoints.slice().reverse() : [];
+    if (!turns.length && STATE.activeSession.turn_id != null) {
+      for (let t = STATE.activeSession.turn_id; t >= 0; t--) turns.push(t);
+    }
+    turns.forEach((turn, i) => {
+      const li = document.createElement('li');
+      li.className = 'checkpoint-item' + (i === 0 ? ' selected' : '');
+      li.dataset.turn = turn;
+      li.textContent = tr('turn_fmt', { count: turn }) || `Turn ${turn}`;
+      li.onclick = () => {
+        list.querySelectorAll('.checkpoint-item').forEach(el => el.classList.remove('selected'));
+        li.classList.add('selected');
+        STATE.pendingCheckpointTurn = parseInt(turn, 10);
+      };
+      list.appendChild(li);
+    });
+    STATE.pendingCheckpointTurn = turns.length ? parseInt(turns[0], 10) : 0;
+    openModal('modal-checkpoints');
+  } catch (err) {
+    console.error(err);
+    alert('Could not load checkpoints.');
+  }
+}
+
+async function applyCheckpointRewind() {
+  const turn = STATE.pendingCheckpointTurn;
+  if (turn == null) return;
+  if (!confirm(`Rewind session back to turn ${turn}? This will permanently remove all actions taken after it.`)) return;
+  showStatus('Rewinding...');
+  try {
+    const res = await fetch('/api/session/rewind', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_turn_id: turn })
+    });
+    if (res.ok) {
+      STATE.activeSession = await res.json();
+      rebuildChatFromHistory();
+      await refreshTabletopState();
+      closeAllModals();
+      showStatus('Rewind completed.');
+    } else {
+      alert('Failed to rewind session.');
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function runCanonize(preview) {
+  if (!STATE.activeSession) {
+    alert('Start a session first.');
+    return;
+  }
+  showStatus(tr('canonize_running') || 'Canonizing recent story…');
+  try {
+    const res = await fetch('/api/session/canonize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview: !!preview })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.error || 'Canonize failed.';
+      showStatus(msg);
+      if (preview) alert(msg);
+      return;
+    }
+    if (data.applied) {
+      const counts = data.counts || {};
+      showStatus(tr('canon_applied_msg') || `Canon applied (${counts.entities || 0} entities, ${counts.lore || 0} lore).`);
+      return;
+    }
+    if (!data.diff && !(data.diffs && data.diffs.length)) {
+      showStatus(tr('canon_none_msg') || 'Nothing new to canonize.');
+      return;
+    }
+    STATE.canonPreview = data;
+    renderCanonizePicker(data);
+    openModal('modal-canonize');
+    showStatus('Review the canonize preview.');
+  } catch (err) {
+    console.error(err);
+    showStatus('Canonize failed.');
+    if (preview) alert('Canonize failed.');
+  }
+}
+
+function renderCanonizePicker(data) {
+  const box = document.getElementById('canonize-picks');
+  if (!box) return;
+  box.innerHTML = '';
+  const lore = data.lore_entries || [];
+  const ents = data.entities || [];
+  if (!lore.length && !ents.length) {
+    box.innerHTML = '<p class="hint">Nothing new to pick.</p>';
+  }
+  lore.forEach((entry, i) => {
+    const id = `canon-lore-${i}`;
+    const wrap = document.createElement('label');
+    wrap.className = 'canon-pick';
+    wrap.innerHTML = `
+      <input type="checkbox" id="${id}" data-kind="lore" data-idx="${i}" checked>
+      <div>
+        <strong>${entry.name || 'Untitled'}</strong>
+        <span class="save-meta"> ${entry.category || 'General'}${entry.keywords ? ' · ' + entry.keywords : ''}</span>
+        <div class="canon-pick-body">${entry.content || ''}</div>
+      </div>
+    `;
+    box.appendChild(wrap);
+  });
+  ents.forEach((ent, i) => {
+    const id = `canon-ent-${i}`;
+    const wrap = document.createElement('label');
+    wrap.className = 'canon-pick';
+    wrap.innerHTML = `
+      <input type="checkbox" id="${id}" data-kind="entity" data-idx="${i}" checked>
+      <div>
+        <strong>${ent.name || 'Unnamed'}</strong>
+        <span class="save-meta"> ${ent.entity_type || 'npc'}</span>
+        <div class="canon-pick-body">${ent.description || ''}</div>
+      </div>
+    `;
+    box.appendChild(wrap);
+  });
+  const raw = data.diff || (data.diffs || []).map(d => d.diff || '').join('\n\n');
+  renderColoredDiff(document.getElementById('canonize-diff'), raw);
+}
+
+async function applyCanonizeSelection() {
+  if (!STATE.canonPreview) return;
+  const lore = [];
+  const entities = [];
+  document.querySelectorAll('#canonize-picks input[type="checkbox"]:checked').forEach(cb => {
+    const idx = parseInt(cb.getAttribute('data-idx'), 10);
+    const kind = cb.getAttribute('data-kind');
+    if (kind === 'lore' && STATE.canonPreview.lore_entries[idx]) {
+      lore.push(STATE.canonPreview.lore_entries[idx]);
+    }
+    if (kind === 'entity' && STATE.canonPreview.entities[idx]) {
+      entities.push(STATE.canonPreview.entities[idx]);
+    }
+  });
+  if (!lore.length && !entities.length) {
+    alert('Tick at least one entry, or cancel.');
+    return;
+  }
+  const scopeEl = document.querySelector('input[name="canon-scope"]:checked');
+  const scope = (scopeEl && scopeEl.value) || 'save';
+  showStatus('Applying selected canon…');
+  try {
+    const res = await fetch('/api/session/canonize/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lore_entries: lore, entities, scope })
+    });
+    const data = await res.json().catch(() => ({}));
+    STATE.canonPreview = null;
+    if (!res.ok) {
+      alert(data.error || 'Failed to apply canonize.');
+      return;
+    }
+    closeAllModals();
+    const n = (data.counts && data.counts.lore) || lore.length;
+    const where = data.scope === 'world' ? 'world lorebook' : 'this save only';
+    showStatus(`Canon applied (${n} lore) — ${where}.`);
+  } catch (err) {
+    console.error(err);
+    alert('Failed to apply canonize.');
+  }
+}
+
+function maybeAutoCanonize() {
+  const box = document.getElementById('chat-canon-auto');
+  if (!box || !box.checked || STATE.isGenerating) return;
+  runCanonize(false);
+}
+
+async function openModelBrowser() {
+  const list = document.getElementById('model-list');
+  if (!list) return;
+  list.innerHTML = '<li class="checkpoint-item">Loading…</li>';
+  openModal('modal-models');
+  try {
+    const res = await fetch('/api/models');
+    const data = res.ok ? await res.json() : { models: [] };
+    const models = data.models || [];
+    list.innerHTML = '';
+    if (!models.length) {
+      list.innerHTML = '<li class="checkpoint-item">No models returned.</li>';
+      return;
+    }
+    models.forEach(mid => {
+      const li = document.createElement('li');
+      li.className = 'checkpoint-item';
+      li.textContent = mid;
+      li.onclick = () => {
+        const field = document.getElementById('setting-universal-model');
+        if (field) field.value = mid;
+        closeAllModals();
+        openModal('modal-settings');
+      };
+      list.appendChild(li);
+    });
+  } catch (err) {
+    list.innerHTML = '<li class="checkpoint-item">Failed to list models.</li>';
+  }
+}
+
+async function saveUniverseParams() {
+  const uni = STATE.selectedUniversePath || null;
+  const temp = parseFloat(document.getElementById('setting-univ-temp').value);
+  const topP = parseFloat(document.getElementById('setting-univ-top-p').value);
+  try {
+    const res = await fetch('/api/universe/params', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        universe_path: uni,
+        llm_temperature: temp,
+        llm_top_p: topP,
+      })
+    });
+    if (res.ok) showStatus('Universe params saved.');
+    else alert('Failed to save universe params.');
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ── Structured save editor ──
+function switchSaveEditTab(tab) {
+  document.querySelectorAll('#edit-save-tabs .tab-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-save-tab') === tab);
+  });
+  ['entities', 'inventory', 'lore', 'modifiers', 'toml'].forEach(name => {
+    const panel = document.getElementById(`edit-save-panel-${name}`);
+    if (panel) panel.classList.toggle('hidden', name !== tab);
+  });
+}
+
+function lookupEntityStat(stats, def) {
+  const empty = { key: (def && def.stat_id) || '', value: '' };
+  if (!stats || !def) return empty;
+  if (stats[def.stat_id] != null) return { key: def.stat_id, value: stats[def.stat_id] };
+  if (def.name && stats[def.name] != null) return { key: def.name, value: stats[def.name] };
+  const wantId = String(def.stat_id || '').toLowerCase();
+  const wantName = String(def.name || '').toLowerCase();
+  for (const k of Object.keys(stats)) {
+    const lk = String(k).toLowerCase();
+    if (lk === wantId || (wantName && lk === wantName)) return { key: k, value: stats[k] };
+  }
+  return empty;
+}
+
+function statAppliesToSaveEntity(def, typeId) {
+  const links = def.applies_to || [];
+  if (!links.length) return true;
+  return links.includes(typeId);
+}
+
+function renderSaveEntityList() {
+  const box = document.getElementById('edit-save-entity-list');
+  if (!box || !STATE.editingSaveState) return;
+  box.innerHTML = '';
+  (STATE.editingSaveState.entities || []).forEach(ent => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'edit-save-entity-btn' + (STATE.editingSaveEntityId === ent.entity_id ? ' active' : '');
+    row.innerHTML = `<strong>${ent.name || ent.entity_id}</strong><span class="save-meta">${ent.entity_type} · ${ent.entity_role}</span>`;
+    row.onclick = () => {
+      STATE.editingSaveEntityId = ent.entity_id;
+      renderSaveEntityList();
+      renderSaveEntityStats();
+    };
+    box.appendChild(row);
+  });
+}
+
+function renderSaveEntityStats() {
+  const grid = document.getElementById('edit-save-entity-stats');
+  const header = document.getElementById('edit-save-entity-header');
+  const st = STATE.editingSaveState;
+  if (!grid || !st) return;
+  const ent = (st.entities || []).find(e => e.entity_id === STATE.editingSaveEntityId);
+  if (!ent) {
+    header.textContent = 'Select an entity';
+    grid.innerHTML = '';
+    return;
+  }
+  header.textContent = `${ent.name} (${ent.entity_type})`;
+  grid.innerHTML = '';
+  const defs = st.stat_definitions || [];
+  const shown = defs.filter(d => statAppliesToSaveEntity(d, ent.entity_type));
+  const keys = new Set(shown.map(d => d.stat_id));
+  Object.keys(ent.stats || {}).forEach(k => { if (!String(k).startsWith('__')) keys.add(k); });
+  const rows = shown.length ? shown : Object.keys(ent.stats || {}).map(k => ({ stat_id: k, name: k, value_type: 'categorical' }));
+  rows.forEach(def => {
+    if (shown.length && !statAppliesToSaveEntity(def, ent.entity_type) && !(def.stat_id in (ent.stats || {}))) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'form-group';
+    const found = lookupEntityStat(ent.stats, def);
+    const val = found.value != null ? found.value : '';
+    wrap.innerHTML = `<label>${def.name || def.stat_id}</label><input type="text" value="${val}">`;
+    wrap.querySelector('input').onchange = (e) => {
+      if (!ent.stats) ent.stats = {};
+      const writeKey = found.key || def.stat_id;
+      if (writeKey !== def.stat_id && def.stat_id in ent.stats) delete ent.stats[def.stat_id];
+      ent.stats[writeKey] = e.target.value;
+    };
+    grid.appendChild(wrap);
+  });
+  if (!rows.length) {
+    grid.innerHTML = `<span class="save-meta">No stats linked to type ${ent.entity_type}.</span>`;
+  }
+}
+
+function fillSaveModifierSelects() {
+  const entSel = document.getElementById('edit-mod-entity');
+  const statSel = document.getElementById('edit-mod-stat');
+  if (!entSel || !statSel || !STATE.editingSaveState) return;
+  const st = STATE.editingSaveState;
+  const prevEnt = entSel.value;
+  const prevStat = statSel.value;
+  entSel.innerHTML = '';
+  (st.entities || []).forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e.entity_id;
+    opt.textContent = e.name || e.entity_id;
+    entSel.appendChild(opt);
+  });
+  if ([...entSel.options].some(o => o.value === prevEnt)) entSel.value = prevEnt;
+  const ent = (st.entities || []).find(e => e.entity_id === entSel.value);
+  statSel.innerHTML = '';
+  const defs = st.stat_definitions || [];
+  const shown = defs.filter(d => !ent || statAppliesToSaveEntity(d, ent.entity_type));
+  (shown.length ? shown : defs).forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.name || d.stat_id;
+    opt.textContent = d.name || d.stat_id;
+    statSel.appendChild(opt);
+  });
+  if ([...statSel.options].some(o => o.value === prevStat)) statSel.value = prevStat;
+}
+
+function renderSaveModifiers() {
+  const box = document.getElementById('edit-save-modifiers-list');
+  if (!box || !STATE.editingSaveState) return;
+  fillSaveModifierSelects();
+  const items = STATE.editingSaveState.modifiers || [];
+  box.innerHTML = '';
+  if (!items.length) {
+    box.innerHTML = `<span class="save-meta">No temporary effects. Add one for arousal, a drug, adrenaline…</span>`;
+    return;
+  }
+  items.forEach((m, idx) => {
+    const row = document.createElement('div');
+    row.className = 'inv-row';
+    const name = (STATE.editingSaveNames || {})[m.entity_id] || m.entity_id;
+    const sign = Number(m.delta) >= 0 ? '+' : '';
+    row.innerHTML = `<span>${name} · ${m.stat_key} ${sign}${m.delta}</span><span class="save-meta">${m.minutes_remaining} min</span>`;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn-table-del';
+    del.textContent = '×';
+    del.onclick = () => {
+      STATE.editingSaveState.modifiers.splice(idx, 1);
+      renderSaveModifiers();
+    };
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+function addSaveModifier() {
+  if (!STATE.editingSaveState) return;
+  const entityId = document.getElementById('edit-mod-entity').value;
+  const statKey = document.getElementById('edit-mod-stat').value;
+  const delta = parseFloat(document.getElementById('edit-mod-delta').value);
+  const minutes = parseInt(document.getElementById('edit-mod-minutes').value, 10);
+  if (!entityId || !statKey || Number.isNaN(delta) || !minutes || minutes < 1) return;
+  if (!STATE.editingSaveState.modifiers) STATE.editingSaveState.modifiers = [];
+  STATE.editingSaveState.modifiers.push({
+    entity_id: entityId,
+    stat_key: statKey,
+    delta,
+    minutes_remaining: minutes,
+  });
+  renderSaveModifiers();
+}
+
+function saveInvHolderLabel(it) {
+  const names = STATE.editingSaveNames || {};
+  if (it.holder_kind === 'instance') {
+    const parent = (STATE.editingSaveState.inventory || []).find(x => x.instance_id === it.holder_id);
+    return parent ? `in ${parent.name || parent.item_id}` : `in ${it.holder_id}`;
+  }
+  if (it.holder_kind === 'location') return `at ${names[it.holder_id] || it.holder_id}`;
+  return `on ${names[it.holder_id] || it.holder_id}`;
+}
+
+function renderSaveInventory() {
+  const box = document.getElementById('edit-save-inventory-tree');
+  const holderSel = document.getElementById('edit-inv-holder');
+  if (!box || !STATE.editingSaveState) return;
+  const items = STATE.editingSaveState.inventory || [];
+  box.innerHTML = '';
+  if (!items.length) {
+    box.innerHTML = `<span class="save-meta">No items yet. Add a purse, a toy, cash — whatever this run created.</span>`;
+  }
+  items.forEach((it, idx) => {
+    const row = document.createElement('div');
+    row.className = 'inv-row';
+    const label = `${it.name || it.item_id}${it.is_container ? ' [bag]' : ''}`;
+    row.innerHTML = `<span>${label}</span><span class="save-meta">${saveInvHolderLabel(it)}</span>
+      <input type="number" min="1" value="${it.quantity || 1}" style="width:64px;">
+      <button type="button" class="btn-table-del">&times;</button>`;
+    row.querySelector('input').onchange = (e) => { it.quantity = parseInt(e.target.value, 10) || 1; };
+    row.querySelector('button').onclick = () => {
+      STATE.editingSaveState.inventory.splice(idx, 1);
+      renderSaveInventory();
+    };
+    box.appendChild(row);
+  });
+  if (holderSel) {
+    holderSel.innerHTML = '';
+    (STATE.editingSaveState.entities || []).forEach(e => {
+      const o = document.createElement('option');
+      o.value = `entity:${e.entity_id}`;
+      o.textContent = `On ${e.name}`;
+      holderSel.appendChild(o);
+    });
+    items.filter(i => i.is_container).forEach(i => {
+      const o = document.createElement('option');
+      o.value = `instance:${i.instance_id}`;
+      o.textContent = `In ${i.name || i.item_id}`;
+      holderSel.appendChild(o);
+    });
+  }
+}
+
+function renderSaveLore() {
+  const box = document.getElementById('edit-save-lore-list');
+  if (!box || !STATE.editingSaveState) return;
+  box.innerHTML = '';
+  (STATE.editingSaveState.session_lore || []).forEach((entry, idx) => {
+    const card = document.createElement('div');
+    card.className = 'lore-edit-card';
+    const emptyKw = !(entry.keywords || '').trim();
+    card.innerHTML = `
+      <div class="form-group"><label>Name</label><input data-k="name" value="${entry.name || ''}"></div>
+      <div class="form-group"><label>Category</label><input data-k="category" value="${entry.category || ''}"></div>
+      <div class="form-group"><label>Keywords ${emptyKw ? '<span class="warn-empty-label">(empty — weaker recall)</span>' : ''}</label>
+        <input data-k="keywords" value="${entry.keywords || ''}" class="${emptyKw ? 'warn-empty' : ''}"></div>
+      <div class="form-group"><label>Content</label><textarea data-k="content" rows="3">${entry.content || ''}</textarea></div>
+      <button type="button" class="btn-table-del">Remove</button>`;
+    card.querySelectorAll('input, textarea').forEach(el => {
+      el.onchange = () => { entry[el.getAttribute('data-k')] = el.value; };
+    });
+    card.querySelector('button').onclick = () => {
+      STATE.editingSaveState.session_lore.splice(idx, 1);
+      renderSaveLore();
+    };
+    box.appendChild(card);
+  });
+}
+
+async function editSave(universePath, saveId, dbPath) {
+  showStatus('Loading save state...');
+  try {
+    const q = new URLSearchParams({ save_id: saveId || '' });
+    if (universePath) q.set('universe', universePath);
+    if (dbPath) q.set('db', dbPath);
+    const res = await fetch(`/api/saves/state?${q.toString()}`);
+    if (!res.ok) {
+      let msg = 'Failed to load save state.';
+      try {
+        const err = await res.json();
+        if (err && err.error) msg += '\n' + err.error;
+      } catch (e) {}
+      alert(msg);
+      return;
+    }
+    const data = await res.json();
+    STATE.editingSaveUniversePath = universePath;
+    STATE.editingSaveId = saveId;
+    STATE.editingSaveDbPath = dbPath || data.db_path || '';
+    STATE.editingSaveState = data;
+    STATE.editingSaveEntityId = (data.entities && data.entities[0] && data.entities[0].entity_id) || null;
+    STATE.editingSaveNames = {};
+    (data.entities || []).forEach(e => { STATE.editingSaveNames[e.entity_id] = e.name; });
+
+    const tomlRes = await fetch(`/api/saves/export?universe=${encodeURIComponent(universePath)}&save_id=${encodeURIComponent(saveId)}`);
+    if (tomlRes.ok) {
+      const t = await tomlRes.json();
+      STATE.editingSaveOriginalToml = t.toml;
+      document.getElementById('edit-save-toml-textarea').value = t.toml || '';
+    }
+
+    document.getElementById('edit-save-title').textContent = `Edit Game State (${saveId.substring(0, 8)}…)`;
+    switchSaveEditTab('entities');
+    renderSaveEntityList();
+    renderSaveEntityStats();
+    renderSaveInventory();
+    renderSaveLore();
+    renderSaveModifiers();
+    openModal('modal-edit-save');
+    showStatus('Save state loaded.');
+  } catch (err) {
+    console.error(err);
+    alert('Error loading save state.');
   }
 }
 
 async function submitSaveEdit() {
-  const editedToml = document.getElementById('edit-save-toml-textarea').value;
   showStatus('Applying save state edits...');
   try {
-    const res = await fetch('/api/saves/edit', {
+    const st = STATE.editingSaveState || {};
+    const entities = {};
+    (st.entities || []).forEach(e => { entities[e.entity_id] = e.stats || {}; });
+    const res = await fetch('/api/saves/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         universe_path: STATE.editingSaveUniversePath,
         save_id: STATE.editingSaveId,
-        original_toml: STATE.editingSaveOriginalToml,
-        edited_toml: editedToml
+        db_path: STATE.editingSaveDbPath || '',
+        entities,
+        inventory: st.inventory || [],
+        session_lore: st.session_lore || [],
+        modifiers: st.modifiers || []
       })
     });
     if (res.ok) {
       const data = await res.json();
       closeAllModals();
       await refreshHub();
-      if (data.status === 'no_change') {
-        showStatus('No changes were made.');
-      } else {
-        showStatus(`Save edited successfully (Turn correction: ${data.turn}).`);
-      }
+      showStatus(`Save edited (turn ${data.turn}).`);
     } else {
       const err = await res.json();
       alert(`Failed to apply save edits: ${err.error}`);

@@ -74,6 +74,9 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
 
     parsed = _parse_tree(src_dir)  # lève CompileError avant d'ouvrir la DB
 
+    from axiom.schema import migrate_schema
+    migrate_schema(str(db_path))
+
     # Provenance des entités : les DBs d'avant la colonne `origin` marquent tout
     # 'definition' par défaut → au premier refresh, on « amnistie » les entités
     # absentes de la source (joueur, PNJ découverts en jeu) au lieu de les
@@ -148,11 +151,25 @@ def _sync_definition(
         list(parsed["meta"].items()),
     )
 
+    from axiom.schema import _seed_builtin_entity_types, ensure_entity_type
+
+    conn.execute("DELETE FROM Stat_Type_Links;")
+    _seed_builtin_entity_types(conn)
+    conn.executemany(
+        "INSERT OR REPLACE INTO Entity_Types "
+        "(type_id, name, role, description, is_builtin) VALUES (?, ?, ?, ?, ?);",
+        parsed.get("entity_types") or [],
+    )
+
     conn.execute("DELETE FROM Stat_Definitions;")
     conn.executemany(
         "INSERT INTO Stat_Definitions (stat_id, name, description, value_type, parameters) "
         "VALUES (?, ?, ?, ?, ?);",
         parsed["stat_definitions"],
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO Stat_Type_Links (stat_id, type_id) VALUES (?, ?);",
+        parsed.get("stat_type_links") or [],
     )
 
     conn.execute("DELETE FROM Rules;")
@@ -161,6 +178,11 @@ def _sync_definition(
         "VALUES (?, ?, ?, ?, ?);",
         parsed["rules"],
     )
+
+    from axiom.schema import salvage_orphan_lore_to_session
+    world_lore_ids = {str(row[0]) for row in (parsed.get("lore") or [])}
+    world_lore_ids |= {str(row[2]) for row in (parsed.get("lore") or []) if len(row) > 2}
+    salvage_orphan_lore_to_session(conn, world_lore_ids)
 
     conn.execute("DELETE FROM Lore_Book;")
     conn.executemany(
@@ -195,7 +217,7 @@ def _sync_definition(
         conn,
         table="Item_Definitions",
         pk="item_id",
-        columns=("item_id", "name", "description", "category", "weight", "rarity"),
+        columns=("item_id", "name", "description", "category", "weight", "rarity", "is_container", "capacity"),
         rows=parsed["items"],
     )
     _sync_by_pk(
@@ -220,6 +242,8 @@ def _sync_entities(
     de la colonne) requalifie en 'runtime' les entités absentes de la source au
     lieu de les supprimer.
     """
+    from axiom.schema import ensure_entity_type
+
     rows = [row for row, _stats in entities]
     incoming = {row[0] for row in rows}
     existing: dict[str, str] = {
@@ -242,6 +266,7 @@ def _sync_entities(
 
     for row in rows:
         entity_id, entity_type, name, description, is_active = row
+        ensure_entity_type(conn, entity_type)
         if entity_id in existing:
             conn.execute(
                 "UPDATE Entities SET entity_type = ?, name = ?, description = ?, "

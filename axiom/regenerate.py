@@ -14,7 +14,7 @@ import json
 from typing import Callable
 
 from axiom.backends.base import LLMBackend
-from axiom.prompts import build_narrative_prompt
+from axiom.prompts import DEFAULT_VERBOSITY_LEVEL, build_narrative_prompt
 from axiom.schema import get_connection
 
 # Mapping verbosité → plafond de tokens (aligné sur l'arbitrator).
@@ -50,7 +50,7 @@ def regenerate_variant(
     user_message: str,
     temperature: float = 0.7,
     top_p: float = 1.0,
-    verbosity_level: str = "balanced",
+    verbosity_level: str = DEFAULT_VERBOSITY_LEVEL,
     player_id: str = "player_1",
     on_token: Callable[[str], None] | None = None,
 ) -> str:
@@ -80,7 +80,10 @@ def regenerate_variant(
 
     stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>",
              f"\n{player_id}:", f"\n[{player_id}]"]
-    max_tokens = _VERBOSITY_TO_TOKENS.get(verbosity_level.lower(), 400)
+    max_tokens = _VERBOSITY_TO_TOKENS.get(
+        verbosity_level.lower(),
+        _VERBOSITY_TO_TOKENS[DEFAULT_VERBOSITY_LEVEL],
+    )
 
     narrative_text = ""
     for token in llm.stream_tokens(

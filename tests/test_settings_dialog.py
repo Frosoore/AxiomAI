@@ -70,6 +70,22 @@ def test_settings_dialog_image_fields(qtbot) -> None:
     assert updated_cfg.image_timeout == 90
 
 
+def test_settings_dialog_default_verbosity_roundtrip(qtbot) -> None:
+    """Global default verbosity loads and saves via the LLM settings tab."""
+    cfg = AppConfig(default_verbosity="short")
+    dialog = SettingsDialog(cfg)
+    qtbot.addWidget(dialog)
+
+    assert dialog._default_verbosity_combo.currentData() == "short"
+
+    idx = dialog._default_verbosity_combo.findData("talkative")
+    assert idx >= 0
+    dialog._default_verbosity_combo.setCurrentIndex(idx)
+
+    updated = dialog.collect_config()
+    assert updated.default_verbosity == "talkative"
+
+
 def test_settings_dialog_gemini_image_backend_selectable(qtbot) -> None:
     cfg = AppConfig(image_backend="gemini")
 

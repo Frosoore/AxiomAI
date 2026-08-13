@@ -389,8 +389,14 @@ class PrepareSaveTask(BaseDbTask):
     """
 
     def execute(self) -> str:
+        from axiom.schema import migrate_schema
         from axiom.savestore import refresh_save_definition
         self.signals.status.emit("Preparing save...")
+        try:
+            migrate_schema(self.db_path)
+        except Exception:
+            from axiom.logger import logger
+            logger.exception("Schema migrate failed for %s", self.db_path)
         refresh_save_definition(self.db_path)
         return self.db_path
 

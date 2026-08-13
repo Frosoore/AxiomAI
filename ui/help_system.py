@@ -66,6 +66,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "verbosity",
         "canon_auto",
         "canonize",
+        "memory",
         "rewind",
         "back",
         "sidebar_stats",
@@ -121,6 +122,7 @@ PAGES: dict[str, tuple[str, ...]] = {
         "base_url",
         "api_key",
         "main_model",
+        "default_verbosity",
         "extraction_model",
         "time_model",
         "test_connection",
@@ -219,7 +221,7 @@ CREATOR_TAB_PAGES: tuple[str, ...] = (
 # listed elements; the General group (always visible below the tabs) is appended.
 SETTINGS_TAB_PAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("settings_llm", (
-        "tab_llm", "base_url", "api_key", "main_model",
+        "tab_llm", "base_url", "api_key", "main_model", "default_verbosity",
         "extraction_model", "time_model", "test_connection",
     )),
     ("settings_cloud", (

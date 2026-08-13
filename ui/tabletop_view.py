@@ -101,7 +101,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._lore_book: list[dict] = []
         self._llm_temperature: float = 0.7
         self._llm_top_p: float = 1.0
-        self._llm_verbosity: str = "balanced"
+        from axiom.config import get_default_verbosity
+        self._llm_verbosity: str = get_default_verbosity()
         self._active_session_name: str = ""
         self._arbitrator = None
         self._chronicler = None
@@ -200,12 +201,13 @@ class TabletopView(HardcoreMixin, QWidget):
         
         self._verbosity_slider = doc(QSlider(Qt.Horizontal), "tabletop.verbosity")
         self._verbosity_slider.setRange(0, 2)
-        self._verbosity_slider.setValue(1)
+        _v0 = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 2)
+        self._verbosity_slider.setValue(_v0)
         self._verbosity_slider.setFixedWidth(70) # Keep slider compact
         self._verbosity_slider.valueChanged.connect(self._on_verbosity_changed)
         right_layout.addWidget(self._verbosity_slider)
         
-        self._verbosity_status_label = QLabel(tr("balanced"))
+        self._verbosity_status_label = QLabel(tr(self._llm_verbosity))
         self._verbosity_status_label.setFixedWidth(60)
         right_layout.addWidget(self._verbosity_status_label)
         
@@ -221,6 +223,12 @@ class TabletopView(HardcoreMixin, QWidget):
         self._canonize_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         right_layout.addWidget(self._canonize_btn)
         right_layout.addSpacing(15)
+
+        # Living-memory editor (facts / beliefs / mental models).
+        self._memory_btn = doc(QPushButton(tr("memory_browser_btn")), "tabletop.memory")
+        self._memory_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        right_layout.addWidget(self._memory_btn)
+        right_layout.addSpacing(10)
 
         # Buttons (Dynamic size based on content)
         self._rewind_btn = doc(QPushButton(tr("rewind")), "tabletop.rewind")
@@ -253,6 +261,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._rewind_btn.clicked.connect(self._on_rewind_clicked)
         self._hub_btn.clicked.connect(self._on_hub_clicked)
         self._canonize_btn.clicked.connect(self._on_canonize_clicked)
+        self._memory_btn.clicked.connect(self.open_memory_browser)
         self._chat.message_submitted.connect(self._on_send_message)
         self._chat.variant_requested.connect(self._on_variant_requested)
         self._chat.regenerate_requested.connect(self._on_regenerate_requested)
@@ -286,6 +295,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._hub_btn.setText(tr("hub"))
         self._canon_auto_check.setText(tr("canon_auto"))
         self._canonize_btn.setText(tr("canonize_btn"))
+        self._memory_btn.setText(tr("memory_browser_btn"))
         # NB: les tooltips (doc intégrée) sont retraduits globalement par
         # ui.help_system.retranslate_tooltips() via MainWindow.retranslate_ui().
 
@@ -440,8 +450,11 @@ class TabletopView(HardcoreMixin, QWidget):
         # TICKET-032 : normalise les valeurs historiques stockées localisées
         # (« équilibré »…) — sinon tr() râle et le niveau retombe en défaut.
         from core.localization import canonical_verbosity
-        self._llm_verbosity = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
-        v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 1)
+        from axiom.config import get_default_verbosity
+        # Universe meta wins when set; otherwise Settings → default_verbosity.
+        stored = (meta.get("llm_verbosity") or "").strip()
+        self._llm_verbosity = canonical_verbosity(stored or get_default_verbosity())
+        v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 2)
         self._verbosity_slider.setValue(v_idx)
         self._verbosity_status_label.setText(tr(self._llm_verbosity).capitalize())
 
@@ -1167,10 +1180,11 @@ class TabletopView(HardcoreMixin, QWidget):
             self._fact_turn_counter = 0
             return
 
-        # Pick the extraction backend: reuse the game LLM, or build a cheaper
-        # override if the user set one. A build failure falls back to the game
-        # LLM (extract_facts itself degrades gracefully on a dead backend).
-        override = str(getattr(cfg, "memory_fact_model", "") or "").strip()
+        # Prefer memory_fact_model, else extraction_model (JSON helper), else
+        # the game narrator. Narrator/reasoning models often return empty JSON
+        # for living-memory distillation (CoT eats the token budget).
+        from axiom.config import resolve_memory_fact_model
+        override = resolve_memory_fact_model(cfg)
         llm = self._llm
         if override:
             try:
@@ -1298,8 +1312,9 @@ class TabletopView(HardcoreMixin, QWidget):
     @Slot(int)
     def _on_verbosity_changed(self, value: int) -> None:
         """Update verbosity level and save to DB."""
+        from axiom.config import get_default_verbosity
         v_map = {0: "short", 1: "balanced", 2: "talkative"}
-        self._llm_verbosity = v_map.get(value, "balanced")
+        self._llm_verbosity = v_map.get(value, get_default_verbosity())
         self._verbosity_status_label.setText(tr(self._llm_verbosity).capitalize())
         
         # Persist to universe meta

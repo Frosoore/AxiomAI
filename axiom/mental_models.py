@@ -182,6 +182,67 @@ def count_mental_models(db_path: str, save_id: str) -> int:
     return int(row[0])
 
 
+def get_mental_model(
+    db_path: str, save_id: str, model_id: int
+) -> MentalModel | None:
+    """Fetch one mental model owned by ``save_id``, or ``None``."""
+    with get_connection(db_path) as conn:
+        ensure_mental_models_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Mental_Models WHERE model_id = ? AND save_id = ?;",
+            (int(model_id), save_id),
+        ).fetchone()
+    return _row_to_model(row) if row is not None else None
+
+
+def update_mental_model(
+    db_path: str,
+    save_id: str,
+    model_id: int,
+    *,
+    summary: str | None = None,
+    subject: str | None = None,
+) -> bool:
+    """Update a mental model's summary/subject. Returns True if a row changed.
+
+    Blank ``summary`` is rejected. Marks the model non-stale (player override is
+    authoritative until the next automatic refresh).
+    """
+    with get_connection(db_path) as conn:
+        ensure_mental_models_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Mental_Models WHERE model_id = ? AND save_id = ?;",
+            (int(model_id), save_id),
+        ).fetchone()
+        if row is None:
+            return False
+
+        new_summary = row["summary"] if summary is None else (summary or "").strip()
+        if not new_summary:
+            return False
+        new_subject = row["subject"] if subject is None else (subject or "")
+
+        cur = conn.execute(
+            "UPDATE Mental_Models SET summary = ?, subject = ?, stale = 0 "
+            "WHERE model_id = ? AND save_id = ?;",
+            (new_summary, new_subject, int(model_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_mental_model(db_path: str, save_id: str, model_id: int) -> bool:
+    """Delete one mental model owned by ``save_id``. Returns True if removed."""
+    with get_connection(db_path) as conn:
+        ensure_mental_models_table(conn)
+        cur = conn.execute(
+            "DELETE FROM Mental_Models WHERE model_id = ? AND save_id = ?;",
+            (int(model_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def stale_subjects(
     db_path: str, save_id: str, *, max_turn_id: int | None = None, limit: int = 5
 ) -> list[str]:

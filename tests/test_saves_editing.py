@@ -139,7 +139,11 @@ def test_import_hand_written(universe_db: str, tmp_path: Path):
     assert state["save"]["difficulty"] == "Hardcore"
     assert state["entities"]["player_1"]["Health"] == "42"
     assert state["point"]["in_game_minutes"] == 600
-    assert state["inventory"] == [{"entity_id": "player_1", "item_id": "sword", "quantity": 1}]
+    assert len(state["inventory"]) == 1
+    inv = state["inventory"][0]
+    assert inv["item_id"] == "sword"
+    assert inv["quantity"] == 1
+    assert inv.get("entity_id") == "player_1" or inv.get("holder_id") == "player_1"
 
 
 def test_modifiers_roundtrip(universe_db: str, tmp_path: Path):
@@ -185,15 +189,16 @@ def test_imported_save_is_playable(universe_db: str, tmp_path: Path):
     assert stats["player_1"]["Health"] == "55"
 
 
-def test_import_invalid_item_fk(universe_db: str, tmp_path: Path):
-    """Un item inconnu (FK) doit échouer proprement en SaveError."""
+def test_import_unknown_item_is_created(universe_db: str, tmp_path: Path):
+    """Play-emergent items have no catalog row; import auto-creates the definition."""
     toml = tmp_path / "s.toml"
     toml.write_text('[save]\nplayer_name = "P"\ndifficulty = "Normal"\n'
                     '[state.player_1]\nHealth = "1"\n'
                     '[[inventory]]\nentity_id = "player_1"\nitem_id = "ghost_item"\nquantity = 1\n',
                     encoding="utf-8")
-    with pytest.raises(SaveError):
-        import_save_state(universe_db, toml)
+    save_id = import_save_state(universe_db, toml)
+    state = materialize_state(universe_db, save_id)
+    assert any(i["item_id"] == "ghost_item" for i in state["inventory"])
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +229,9 @@ def test_apply_correction_inventory_and_modifiers(universe_db: str):
         "modifiers": [{"entity_id": "player_1", "stat_key": "Health", "delta": 3.0, "minutes_remaining": 10}],
     })
     state = materialize_state(universe_db, save_id)
-    assert state["inventory"] == [{"entity_id": "player_1", "item_id": "sword", "quantity": 2}]
+    assert len(state["inventory"]) == 1
+    assert state["inventory"][0]["item_id"] == "sword"
+    assert state["inventory"][0]["quantity"] == 2
     assert state["modifiers"][0]["delta"] == 3.0
 
 

@@ -135,9 +135,10 @@ class TestCreateUniverseDb:
         assert {"save_id", "entity_id", "stat_key", "stat_value"}.issubset(cols)
 
     def test_entity_type_constraint(self, tmp_db: str) -> None:
-        """Entities.entity_type must reject values outside the allowed set."""
+        """Entities.entity_type must reference Entity_Types (unknown ids rejected)."""
         create_universe_db(tmp_db)
         with sqlite3.connect(tmp_db) as conn:
+            conn.execute("PRAGMA foreign_keys=ON;")
             with pytest.raises(sqlite3.IntegrityError):
                 conn.execute(
                     "INSERT INTO Entities (entity_id, entity_type, name) VALUES (?, ?, ?);",

@@ -288,7 +288,7 @@ def _mark_legacy_runtime_entities(db_path: Path) -> None:
         hero_id = hero[0] if hero else ""
         conn.execute(
             "UPDATE Entities SET origin = 'runtime' "
-            "WHERE entity_type = 'player' AND entity_id != ?;",
+            "WHERE COALESCE(entity_role, entity_type) = 'player' AND entity_id != ?;",
             (hero_id,),
         )
         conn.commit()

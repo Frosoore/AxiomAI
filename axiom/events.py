@@ -24,6 +24,54 @@ from typing import Any
 from axiom.schema import get_connection
 
 
+def resolve_stat_key(
+    raw: str,
+    existing_keys: Any = None,
+    aliases: dict[str, str] | None = None,
+) -> str:
+    """Map an incoming stat name/id onto the key already stored on the entity.
+
+    Authored stats often use the display name (``Arousal``) while
+    ``Stat_Definitions.stat_id`` is lowercase (``arousal``). Replay, the
+    save editor, and the LLM must write the existing key so ``State_Cache``
+    and ``Entity_Stats`` stay a single row.
+    """
+    if not raw:
+        return raw
+    keys = list(existing_keys or [])
+    if raw in keys:
+        return raw
+    lower = str(raw).lower()
+    for key in keys:
+        if str(key).lower() == lower:
+            return str(key)
+    if aliases:
+        canon = aliases.get(lower)
+        if canon:
+            for key in keys:
+                if str(key).lower() == str(canon).lower():
+                    return str(key)
+            return canon
+    return raw
+
+
+def stat_key_aliases_from_definitions(conn: sqlite3.Connection) -> dict[str, str]:
+    """Prefer the authored display name as the canonical key for a definition."""
+    aliases: dict[str, str] = {}
+    try:
+        for row in conn.execute("SELECT stat_id, name FROM Stat_Definitions;"):
+            sid = str(row[0] or "").strip()
+            name = str(row[1] or "").strip()
+            canon = name or sid
+            if sid:
+                aliases[sid.lower()] = canon
+            if name:
+                aliases[name.lower()] = canon
+    except sqlite3.Error:
+        return {}
+    return aliases
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -173,9 +221,13 @@ class EventSourcer:
         unless force_full=True.
         """
         target_turn = up_to_turn_id if up_to_turn_id is not None else 9999999
-        
-        # 1. Load nearest snapshot
-        cache: dict[str, dict[str, str]] = {}
+
+        # 0. Seed from authored Entity_Stats so the cache is never "only the
+        # stats the LLM happened to mention". Snapshots / events overlay this.
+        from axiom.db_helpers import load_definition_stats
+        cache: dict[str, dict[str, str]] = {
+            eid: dict(stats) for eid, stats in load_definition_stats(self._db_path).items()
+        }
         start_turn = -1 # Start from turn 0 if no snapshot
         
         if not force_full:
@@ -191,7 +243,9 @@ class EventSourcer:
                 
                 if row:
                     start_turn = row["turn_id"]
-                    cache = json.loads(row["state_json"])
+                    snap = json.loads(row["state_json"]) or {}
+                    for eid, stats in snap.items():
+                        cache.setdefault(eid, {}).update(stats)
 
         # 2. Replay events from after the snapshot (or turn 0 if force_full)
         events = self.get_events(save_id, start_turn_id=start_turn, up_to_turn_id=up_to_turn_id)
@@ -448,7 +502,15 @@ class EventSourcer:
             stat_key: str = payload["stat_key"]
 
             if entity_id not in cache:
-                cache[entity_id] = {}
+                # Case-insensitive entity alias (e.g. Ysolde Brask → ysolde_brask).
+                for eid in cache:
+                    if eid.lower() == str(entity_id).lower():
+                        entity_id = eid
+                        break
+                else:
+                    cache[entity_id] = {}
+
+            stat_key = resolve_stat_key(stat_key, cache.get(entity_id, {}))
 
             if event_type == "stat_set" or "value" in payload:
                 # Unconditional string assignment

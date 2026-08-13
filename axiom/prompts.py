@@ -33,6 +33,14 @@ Older turns are silently dropped to keep context windows manageable.
 A "turn" is one user message + one assistant message, so at most
 2 * HISTORY_TURN_CAP individual messages are included from history."""
 
+DEFAULT_VERBOSITY_LEVEL: str = "talkative"
+"""Factory fallback for narrator length ('short' | 'balanced' | 'talkative').
+
+User-facing default lives in ``AppConfig.default_verbosity`` (Settings → LLM).
+This constant is only the factory default for that field and for call sites that
+do not load config. Prefer ``axiom.config.get_default_verbosity()``.
+"""
+
 
 def _strip_media_tags(text: str) -> str:
     """Remove Markdown and HTML image tags to keep the prompt text-only.
@@ -51,13 +59,16 @@ Allowed game_state_tag values: 'exploration', 'combat', 'dialogue', 'tension'.
 
 CRITICAL RULES:
 1. FACTIONS: Adjust dialogue based on entity 'Reputation' or 'Alliance'.
-2. INVENTORY: Manage items via "inventory_changes" using "action": "add"|"remove".
+2. INVENTORY: When a character picks up, buys, is given, stores, or loses a physical object, emit inventory_changes. Use action "add", "remove", or "move", a snake_case item_id, and quantity. New items are allowed — invent a short item_id from the object name. Put carried items on the entity (entity_id). Put stashed items in a container (container_name like "purse" or "nightstand_drawer") and/or a location_id. Mark bags, purses, drawers, boxes with is_container true.
 3. CONTINUITY: Advance the scene based on the actors' intents. Do not repeat their exact words.
+4. STATS: Lasting stats (wealth, reputation, location, identity) use state_changes. Temporary stats are listed in TEMPORARY STATS with an engine profile — do not invent decay yourself. For a new injury, a fresh dose, or a scene-driven rise/fall, emit a state_change. When a crash/extend event listed on that profile happens, emit stat_events. Short overlays may use modifiers ({delta, minutes} or {clear: true}).
 
 ~~~json
 {
   "state_changes": [{"entity_id": "...", "stat_key": "...", "delta": 0, "value": "..."}],
-  "inventory_changes": [{"entity_id": "...", "item_id": "...", "action": "add", "quantity": 1}],
+  "stat_events": [{"entity_id": "...", "event": "..."}],
+  "modifiers": [{"entity_id": "...", "stat_key": "...", "delta": 0, "minutes": 20}],
+  "inventory_changes": [{"entity_id": "...", "item_id": "...", "action": "add", "quantity": 1, "container_name": "", "location_id": "", "is_container": false}],
   "narrative_events": ["event_id"],
   "scene_pace": "deliberate",
   "game_state_tag": "exploration"
@@ -351,9 +362,12 @@ def build_populate_rules_prompt(
         "    {\n"
         "      \"rule_id\": \"<UNIQUE_ID>\",\n"
         "      \"priority\": 10,\n"
-        "      \"conditions\": [\n"
-        "        {\"target\": \"*\", \"stat\": \"Health\", \"comparator\": \"<=\", \"value\": \"0\"}\n"
-        "      ],\n"
+        "      \"conditions\": {\n"
+        "        \"operator\": \"AND\",\n"
+        "        \"clauses\": [\n"
+        "          {\"stat\": \"Health\", \"comparator\": \"<=\", \"value\": \"0\"}\n"
+        "        ]\n"
+        "      },\n"
         "      \"actions\": [\n"
         "        {\"type\": \"stat_set\", \"stat\": \"Status\", \"value\": \"Dead\"}\n"
         "      ]\n"
@@ -514,7 +528,8 @@ CRITICAL RULES:
 3. Extract ONLY elements that are clearly established by the story — no invention.
 4. NEVER extract the player character itself.
 5. Skip anything already present in the known entities / lore lists.
-6. If nothing new is canon-worthy, return {"entities": [], "lore_entries": []}.
+6. Every lore entry MUST include keywords: a comma-separated list of 4-10 search terms (places, people, slang) like "red light, street, pickup, alley".
+7. If nothing new is canon-worthy, return {"entities": [], "lore_entries": []}.
 """
 
 
@@ -544,6 +559,7 @@ def build_canonize_prompt(
         "    {\n"
         "      \"category\": \"<General|Faction|Location|Character|Magic>\",\n"
         "      \"name\": \"<ENTRY_NAME_HERE>\",\n"
+        "      \"keywords\": \"<comma, separated, search, terms>\",\n"
         "      \"content\": \"<WHAT_THE_STORY_ESTABLISHED>\"\n"
         "    }\n"
         "  ]\n"
@@ -662,7 +678,7 @@ def build_narrative_prompt(
     global_lore: str | None = None,
     player_persona: str | None = None,
     lore_book: list[dict] | None = None,
-    verbosity_level: str = "balanced",
+    verbosity_level: str = DEFAULT_VERBOSITY_LEVEL,
     current_time_str: str | None = None,
     scheduled_events: list[dict] | None = None,
     spatial_context: dict | None = None,
@@ -859,7 +875,10 @@ def build_narrative_prompt(
         "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
         "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}"
     }
-    final_instr = verbosity_map.get(verbosity_level.lower(), verbosity_map["balanced"])
+    final_instr = verbosity_map.get(
+        verbosity_level.lower(),
+        verbosity_map[DEFAULT_VERBOSITY_LEVEL],
+    )
     messages.append({"role": "system", "content": final_instr})
 
     return messages
@@ -981,9 +1000,30 @@ def format_entity_stats_block(entity_snapshots: list[dict]) -> str:
         stats: dict = snap.get("stats", {})
 
         lines.append(f"[{entity_type.upper()}] {name} (id: {entity_id})")
+        mods = snap.get("modifiers") or []
+        mods_by_stat: dict[str, list] = {}
+        for mod in mods:
+            if not isinstance(mod, dict):
+                continue
+            mk = str(mod.get("stat_key") or "")
+            mods_by_stat.setdefault(mk.lower(), []).append(mod)
         if stats:
             for key, value in stats.items():
-                lines.append(f"    {key}: {value}")
+                if str(key).startswith("__"):
+                    continue
+                extra = ""
+                note = (snap.get("dyn_notes") or {}).get(key) or (snap.get("dyn_notes") or {}).get(str(key).lower())
+                if note:
+                    extra = f"  [{note}]"
+                lines.append(f"    {key}: {value}{extra}")
+                for mod in mods_by_stat.get(str(key).lower(), []):
+                    try:
+                        delta = float(mod.get("delta", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    sign = "+" if delta >= 0 else ""
+                    mins = mod.get("minutes_remaining", mod.get("minutes", "?"))
+                    lines.append(f"      temporary {sign}{delta:g} for {mins} min")
         else:
             lines.append("    (no stats)")
         lines.append("")  # blank line between entities

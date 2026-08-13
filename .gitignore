@@ -40,3 +40,5 @@ mise.toml
 # Documentation (Sphinx) — build output + compiled gettext catalogs
 docs/_build/
 *.mo
+
+.ds_store

@@ -174,8 +174,10 @@ def canonical_verbosity(value: str) -> str:
     valeur canonique attendue partout ailleurs (`short`/`balanced`/`talkative`).
     Accepte les deux : canonique tel quel, sinon recherche inverse dans toutes
     les langues (migration douce des univers déjà enregistrés). Inconnu →
-    'balanced'.
+    DEFAULT_VERBOSITY_LEVEL (see axiom.prompts).
     """
+    from axiom.config import get_default_verbosity
+
     v = (value or "").strip().lower()
     if v in _VERBOSITY_LEVELS:
         return v
@@ -183,7 +185,7 @@ def canonical_verbosity(value: str) -> str:
         for level in _VERBOSITY_LEVELS:
             if lang_dict.get(level, "").lower() == v:
                 return level
-    return "balanced"
+    return get_default_verbosity()
 
 
 def compute_coverage(reference: str = "en") -> dict[str, dict[str, list[str]]]:

@@ -255,6 +255,69 @@ def count_observations(db_path: str, save_id: str) -> int:
     return int(row[0])
 
 
+def get_observation(
+    db_path: str, save_id: str, observation_id: int
+) -> Observation | None:
+    """Fetch one belief owned by ``save_id``, or ``None`` if missing / wrong save."""
+    with get_connection(db_path) as conn:
+        ensure_observations_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Observations WHERE observation_id = ? AND save_id = ?;",
+            (int(observation_id), save_id),
+        ).fetchone()
+    return _row_to_observation(row) if row is not None else None
+
+
+def update_observation(
+    db_path: str,
+    save_id: str,
+    observation_id: int,
+    *,
+    statement: str | None = None,
+    subject: str | None = None,
+) -> bool:
+    """Update a belief's text/subject. Returns True if a row changed.
+
+    Blank ``statement`` is rejected. ``sources`` / ``proof_count`` are left as-is
+    (player corrections edit the claim, not the evidence graph).
+    """
+    with get_connection(db_path) as conn:
+        ensure_observations_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Observations WHERE observation_id = ? AND save_id = ?;",
+            (int(observation_id), save_id),
+        ).fetchone()
+        if row is None:
+            return False
+
+        new_statement = (
+            row["statement"] if statement is None else (statement or "").strip()
+        )
+        if not new_statement:
+            return False
+        new_subject = row["subject"] if subject is None else (subject or "")
+
+        cur = conn.execute(
+            "UPDATE Observations SET statement = ?, subject = ? "
+            "WHERE observation_id = ? AND save_id = ?;",
+            (new_statement, new_subject, int(observation_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_observation(db_path: str, save_id: str, observation_id: int) -> bool:
+    """Delete one belief owned by ``save_id``. Returns True if a row was removed."""
+    with get_connection(db_path) as conn:
+        ensure_observations_table(conn)
+        cur = conn.execute(
+            "DELETE FROM Observations WHERE observation_id = ? AND save_id = ?;",
+            (int(observation_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def rollback_observations(conn, save_id: str, target_turn_id: int) -> dict[str, int]:
     """Roll a save's beliefs back to their state at ``target_turn_id``.
 

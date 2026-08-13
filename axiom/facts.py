@@ -171,6 +171,74 @@ def count_facts(db_path: str, save_id: str) -> int:
     return int(row[0])
 
 
+def get_fact(db_path: str, save_id: str, fact_id: int) -> Fact | None:
+    """Fetch one fact owned by ``save_id``, or ``None`` if missing / wrong save."""
+    with get_connection(db_path) as conn:
+        ensure_facts_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Facts WHERE fact_id = ? AND save_id = ?;",
+            (int(fact_id), save_id),
+        ).fetchone()
+    return _row_to_fact(row) if row is not None else None
+
+
+def update_fact(
+    db_path: str,
+    save_id: str,
+    fact_id: int,
+    *,
+    statement: str | None = None,
+    fact_type: str | None = None,
+    who: str | None = None,
+    entities: list[str] | None = None,
+) -> bool:
+    """Update fields on a fact owned by ``save_id``. Returns True if a row changed.
+
+    Blank ``statement`` is rejected (returns False without writing). Only columns
+    explicitly passed (not ``None``) are updated.
+    """
+    with get_connection(db_path) as conn:
+        ensure_facts_table(conn)
+        row = conn.execute(
+            "SELECT * FROM Facts WHERE fact_id = ? AND save_id = ?;",
+            (int(fact_id), save_id),
+        ).fetchone()
+        if row is None:
+            return False
+
+        new_statement = row["statement"] if statement is None else (statement or "").strip()
+        if not new_statement:
+            return False
+        new_type = row["fact_type"] if fact_type is None else (
+            fact_type if fact_type in FACT_TYPES else "world"
+        )
+        new_who = row["who"] if who is None else (who or "")
+        if entities is None:
+            new_entities = row["entities"]
+        else:
+            new_entities = json.dumps(list(entities), ensure_ascii=False)
+
+        cur = conn.execute(
+            "UPDATE Facts SET statement = ?, fact_type = ?, who = ?, entities = ? "
+            "WHERE fact_id = ? AND save_id = ?;",
+            (new_statement, new_type, new_who, new_entities, int(fact_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_fact(db_path: str, save_id: str, fact_id: int) -> bool:
+    """Delete one fact owned by ``save_id``. Returns True if a row was removed."""
+    with get_connection(db_path) as conn:
+        ensure_facts_table(conn)
+        cur = conn.execute(
+            "DELETE FROM Facts WHERE fact_id = ? AND save_id = ?;",
+            (int(fact_id), save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def rollback_facts(db_path: str, save_id: str, target_turn_id: int) -> int:
     """Delete a save's facts from turns after ``target_turn_id``. Returns the count.
 

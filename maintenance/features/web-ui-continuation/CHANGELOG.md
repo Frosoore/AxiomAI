@@ -1,5 +1,38 @@
 # CHANGELOG — web-ui-continuation
 
+## Session 2026-08-13 — classify on add (name + note)
+
+- Add-stat sends STAT_NAME + AUTHOR_NOTE through a fixed form: temporary?,
+  kind, pace (fast / medium / slow). Engine maps pace to minutes.
+- User note is never overwritten; blank note may receive a short description.
+
+## Session 2026-08-13 — stat dynamics (not hardcoded names)
+
+- Creator Stats: Temporary checkbox, kind, timescale, crash/extend tags, **Infer temporary…**.
+- Profiles live in `Stat_Definitions.parameters`. Engine ticks heal / peak / crash.
+- Play start classifies any stat that still has no profile (save-local).
+- Narrator prompt lists TEMPORARY STATS generically; `stat_events` replace named special cases.
+
+## Session 2026-08-13 — editor stats + temporary modifiers
+
+- Save editor entity fields resolve `stat_id` vs authored key case-insensitively,
+  so Apply then re-Edit shows the same numbers play already had.
+- New **Temporary** tab lists `Active_Modifiers`. Apply replaces that list.
+- Narrator JSON accepts `modifiers` (`delta` + `minutes`, or `clear`). They overlay
+  the tabletop sidebar and tick down with in-game minutes.
+
+## Session 2026-08-13 — living game state
+
+- Save Edit is no longer a single TOML textarea. Tabs: Entities (type-filtered stats),
+  Inventory (tree, add container/item), Session lore (save-only, empty-keyword warning),
+  Advanced TOML.
+- `GET/POST /api/saves/state` wrap `materialize_state` / `apply_structured_state`.
+- Creator: extendable `Entity_Types`, stat `applies_to` multi-select, initial-stats panel
+  filtered by type. Still no inventory tab (items are play-emergent).
+- Play inventory is a nestable tree (`Item_Instances`); `POST /api/session/inventory/move`.
+- Session lore + turn `lore_hits` on the right rail. Canonize `scope=save` → `Session_Lore`.
+- Web tests that named a private custom world now use Myria (`ysolde_brask`, Usurper lore).
+
 ## Session 1 (2026-07-02)
 
 - Read the full web stack (`main_web.py` 1207 lines, `web/app.js` 2048 lines, `web/index.html`,

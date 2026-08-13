@@ -3,6 +3,7 @@ import threading
 import time
 import socket
 import urllib.request
+import urllib.parse
 import json
 from pathlib import Path
 import pytest
@@ -46,12 +47,17 @@ def web_server():
 
 class _NarrativeStub:
     """Fake main LLM backend: always answers the same fixed prose turn."""
+    last_finish_reason = "stop"
+
     def complete(self, messages, stream: bool = False, **kwargs):
         from axiom.backends.base import LLMResponse
         return LLMResponse("The story continues.", None, "stop")
 
     def stream_tokens(self, messages, **kwargs):
         yield "The story continues."
+
+    def parse_tool_call(self, text):
+        return text, None
 
     def is_available(self) -> bool:
         return True
@@ -469,11 +475,18 @@ def test_session_inventory_endpoint(web_server):
             req = urllib.request.urlopen(f"{web_server}/api/session/inventory")
             assert req.status == 200
             inv = json.loads(req.read().decode("utf-8"))
-            assert "player" in inv
-            assert len(inv["player"]) == 1
-            assert inv["player"][0]["name"] == "Rusty Sword"
-            assert inv["player"][0]["rarity"] == "rare"
-            assert inv["player"][0]["quantity"] == 1
+            if "tree" in inv:
+                roots = [r for r in inv["tree"] if r.get("holder_id") == "player"]
+                assert roots, inv
+                items = roots[0].get("contents") or []
+                assert len(items) == 1
+                assert items[0]["name"] == "Rusty Sword"
+                assert items[0]["rarity"] == "rare"
+                assert items[0]["quantity"] == 1
+            else:
+                assert "player" in inv
+                assert len(inv["player"]) == 1
+                assert inv["player"][0]["name"] == "Rusty Sword"
     finally:
         if db_file.exists():
             db_file.unlink()
@@ -777,8 +790,8 @@ def test_saves_delete_removes_only_the_targeted_save(web_server):
 
         # The universe .db itself must still exist (only one save was deleted).
         assert db_file.exists()
-        from axiom.db_helpers import load_saves
-        remaining = load_saves(str(db_file))
+        from axiom.savestore import list_saves
+        remaining = list_saves(str(db_file))
         assert {s["save_id"] for s in remaining} == {keep_id}
     finally:
         if db_file.exists():
@@ -843,8 +856,8 @@ def test_hardcore_delete_removes_save_and_blocks_non_hardcore(web_server):
             assert status == 200, data
             status, data = _post_json(f"{web_server}/api/session/hardcore-delete", {})
             assert status == 400, data
-            from axiom.db_helpers import load_saves
-            assert any(s["save_id"] == normal_save_id for s in load_saves(str(db_file)))
+            from axiom.savestore import list_saves
+            assert any(s["save_id"] == normal_save_id for s in list_saves(str(db_file)))
 
             # Hardcore-mode session: hardcore-delete wipes the save.
             status, data = _post_json(f"{web_server}/api/saves/create", {
@@ -859,7 +872,7 @@ def test_hardcore_delete_removes_save_and_blocks_non_hardcore(web_server):
             status, data = _post_json(f"{web_server}/api/session/hardcore-delete", {})
             assert status == 200, data
             assert data.get("status") == "success"
-            assert not any(s["save_id"] == hardcore_save_id for s in load_saves(str(db_file)))
+            assert not any(s["save_id"] == hardcore_save_id for s in list_saves(str(db_file)))
 
             # The session is gone: further turns must fail cleanly (no dangling ACTIVE_SESSION).
             status, data = _post_json(f"{web_server}/api/session/turn", {"player_input": "hello"})
@@ -1077,5 +1090,367 @@ def test_session_lore_search(web_server):
             db_file.unlink()
 
 
+def test_settings_post_preserves_per_provider_keys(web_server):
+    """POST /api/settings must keep fireworks/claude fields (not clobber them
+    into gemini_*). The old web client wrote every cloud backend into Gemini.
+    """
+    req = urllib.request.urlopen(f"{web_server}/api/settings")
+    original = json.loads(req.read().decode("utf-8"))
+    cfg = dict(original)
+    cfg["llm_backend"] = "fireworks"
+    cfg["fireworks_api_key"] = "fw-secret-test"
+    cfg["fireworks_model"] = "accounts/fireworks/models/gpt-oss-120b"
+    cfg["anthropic_api_key"] = "claude-secret-test"
+    cfg["anthropic_model"] = "claude-opus-4-8"
+    cfg["gemini_api_key"] = "gemini-should-stay"
+    cfg["gemini_model"] = "gemini-2.0-flash"
+
+    try:
+        status, data = _post_json(f"{web_server}/api/settings", cfg)
+        assert status == 200, data
+
+        req = urllib.request.urlopen(f"{web_server}/api/settings")
+        saved = json.loads(req.read().decode("utf-8"))
+        assert saved["fireworks_api_key"] == "fw-secret-test"
+        assert saved["fireworks_model"] == "accounts/fireworks/models/gpt-oss-120b"
+        assert saved["anthropic_api_key"] == "claude-secret-test"
+        assert saved["anthropic_model"] == "claude-opus-4-8"
+        assert saved["gemini_api_key"] == "gemini-should-stay"
+        assert saved["gemini_model"] == "gemini-2.0-flash"
+    finally:
+        _post_json(f"{web_server}/api/settings", original)
+
+
+def test_session_snapshot_uses_named_player_entity(web_server):
+    """Location / player_entity_id must follow Entities.entity_type=player,
+    not the literal stats key 'player'. Myria's authored cast uses named
+    ids (e.g. ysolde_brask), the same shape a custom player entity has.
+    """
+    from unittest.mock import patch
+    from axiom.db_helpers import provision_blank_universe
+    from axiom.schema import create_universe_db, get_connection
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_named_player.db"
+    if db_file.exists():
+        db_file.unlink()
+
+    try:
+        create_universe_db(str(db_file))
+        provision_blank_universe(str(db_file), "Myria")
+        with get_connection(str(db_file)) as conn:
+            conn.execute(
+                "INSERT INTO Entities (entity_id, entity_type, name, is_active) "
+                "VALUES ('ysolde_brask', 'player', 'Captain Ysolde Brask', 1);"
+            )
+            conn.commit()
+
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            status, data = _post_json(f"{web_server}/api/saves/create", {
+                "universe_path": str(db_file),
+                "player_name": "Captain Ysolde Brask",
+                "player_persona": "",
+                "difficulty": "Normal",
+                "setup_answers": {},
+            })
+            assert status == 200, data
+            save_id = data["save_id"]
+            # Definition is copied into the save db; re-insert on the play db
+            # after start if create_save copies entities from universe.
+            status, data = _post_json(f"{web_server}/api/session/start", {
+                "universe_path": str(db_file),
+                "save_id": save_id,
+                "difficulty": "Normal",
+            })
+            assert status == 200, data
+            assert data.get("player_entity_id") == "ysolde_brask"
+            assert "verbosity" in data
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_session_turn_stream_emits_done(web_server):
+    """POST /api/session/turn/stream is SSE: a mocked turn must end with done."""
+    from unittest.mock import patch
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_turn_stream.db"
+    if db_file.exists():
+        db_file.unlink()
+
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Stream Universe")
+            req = urllib.request.Request(
+                f"{web_server}/api/session/turn/stream",
+                data=json.dumps({"player_input": "I look around."}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as res:
+                assert res.status == 200
+                assert "text/event-stream" in res.headers.get("Content-Type", "")
+                body = res.read().decode("utf-8")
+            assert "event: done" in body
+            assert "The story continues." in body
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_session_cancel_without_turn(web_server):
+    """POST /api/session/cancel is always 200; count=0 when nothing is running."""
+    status, data = _post_json(f"{web_server}/api/session/cancel", {})
+    assert status == 200
+    assert data["cancelled"] is False
+    assert data["count"] == 0
+
+
+def test_session_verbosity_and_timeline(web_server):
+    """Verbosity persists on Universe_Meta; timeline is a JSON list."""
+    from unittest.mock import patch
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_verbosity.db"
+    if db_file.exists():
+        db_file.unlink()
+
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Verbosity Universe")
+            status, data = _post_json(f"{web_server}/api/session/verbosity", {"level": "short"})
+            assert status == 200, data
+            assert data["level"] == "short"
+
+            req = urllib.request.urlopen(f"{web_server}/api/session/timeline")
+            assert req.status == 200
+            timeline = json.loads(req.read().decode("utf-8"))
+            assert isinstance(timeline, list)
+
+            req = urllib.request.urlopen(f"{web_server}/api/models")
+            assert req.status == 200
+            models = json.loads(req.read().decode("utf-8"))
+            assert "models" in models
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_canonize_requires_folder_universe(web_server):
+    """Canonize on a flat .db (no Universe-as-Code folder) is 422."""
+    from unittest.mock import patch
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_canonize_flat.db"
+    if db_file.exists():
+        db_file.unlink()
+
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Flat Canon Universe")
+            status, data = _post_json(
+                f"{web_server}/api/session/canonize",
+                {"preview": True, "text": "The hero entered the hall."},
+            )
+            assert status == 422, data
+            assert "error" in data
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_saves_duplicate_and_rename(web_server):
+    """POST /api/saves/duplicate and /api/saves/rename wrap savestore helpers."""
+    from axiom.db_helpers import provision_blank_universe
+    from axiom.schema import create_universe_db
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_dup_rename.db"
+    if db_file.exists():
+        db_file.unlink()
+    try:
+        create_universe_db(str(db_file))
+        provision_blank_universe(str(db_file), "Dup Universe")
+        status, data = _post_json(f"{web_server}/api/saves/create", {
+            "universe_path": str(db_file),
+            "player_name": "Aria",
+            "player_persona": "",
+            "difficulty": "Normal",
+            "setup_answers": {},
+        })
+        assert status == 200, data
+        save_id = data["save_id"]
+
+        status, data = _post_json(f"{web_server}/api/saves/duplicate", {
+            "universe_path": str(db_file),
+            "save_id": save_id,
+            "name": "Aria Copy",
+        })
+        assert status == 200, data
+        assert data["save_id"] != save_id
+
+        status, data = _post_json(f"{web_server}/api/saves/rename", {
+            "universe_path": str(db_file),
+            "save_id": save_id,
+            "name": "Renamed Aria",
+        })
+        assert status == 200, data
+        assert data["name"] == "Renamed Aria"
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_saves_pack_and_unpack_roundtrip(web_server):
+    """GET /api/saves/pack downloads an archive; POST unpack restores it."""
+    import tempfile
+    from axiom.db_helpers import provision_blank_universe
+    from axiom.schema import create_universe_db
+    from axiom.savestore import list_saves
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_pack_unpack.db"
+    if db_file.exists():
+        db_file.unlink()
+    archive = None
+    try:
+        create_universe_db(str(db_file))
+        provision_blank_universe(str(db_file), "Pack Universe")
+        status, data = _post_json(f"{web_server}/api/saves/create", {
+            "universe_path": str(db_file),
+            "player_name": "Aria",
+            "player_persona": "",
+            "difficulty": "Normal",
+            "setup_answers": {},
+        })
+        assert status == 200, data
+        save_id = data["save_id"]
+
+        url = (
+            f"{web_server}/api/saves/pack?universe={urllib.parse.quote(str(db_file))}"
+            f"&save_id={urllib.parse.quote(save_id)}"
+        )
+        req = urllib.request.urlopen(url)
+        assert req.status == 200
+        blob = req.read()
+        assert len(blob) > 20
+        archive = Path(tempfile.mkstemp(suffix=".axiomsave")[1])
+        archive.write_bytes(blob)
+
+        status, data = _post_json(f"{web_server}/api/saves/unpack", {
+            "universe_path": str(db_file),
+            "path": str(archive),
+        })
+        assert status == 200, data
+        assert data["save_id"]
+        ids = {s["save_id"] for s in list_saves(str(db_file))}
+        assert save_id in ids
+        assert data["save_id"] in ids
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+        if archive is not None:
+            archive.unlink(missing_ok=True)
+
+
+def test_universe_export_download(web_server):
+    """GET /api/universes/export returns a .axiom archive for a flat db."""
+    from axiom.db_helpers import provision_blank_universe
+    from axiom.schema import create_universe_db
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_uni_export.db"
+    if db_file.exists():
+        db_file.unlink()
+    try:
+        create_universe_db(str(db_file))
+        provision_blank_universe(str(db_file), "Export Universe")
+        url = f"{web_server}/api/universes/export?universe={urllib.parse.quote(str(db_file))}"
+        req = urllib.request.urlopen(url)
+        assert req.status == 200
+        data = req.read()
+        assert data[:2] == b"PK"  # zip / .axiom
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_session_integrity_endpoint(web_server):
+    """GET /api/session/integrity reports EventSourcer.validate_integrity."""
+    from unittest.mock import patch
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_integrity.db"
+    if db_file.exists():
+        db_file.unlink()
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Integrity Universe")
+            req = urllib.request.urlopen(f"{web_server}/api/session/integrity")
+            assert req.status == 200
+            data = json.loads(req.read().decode("utf-8"))
+            assert "ok" in data
+            assert "mismatches" in data
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+def test_canonize_apply_save_scope_writes_lore_to_save(web_server):
+    """Selected lore goes into this save's Lore_Book, not a missing world tree."""
+    from unittest.mock import patch
+    from axiom.schema import get_connection
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_canon_save.db"
+    if db_file.exists():
+        db_file.unlink()
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Canon Save Universe")
+            status, data = _post_json(f"{web_server}/api/session/canonize/apply", {
+                "scope": "save",
+                "lore_entries": [{
+                    "category": "history",
+                    "name": "The Usurper of the Ash Throne",
+                    "keywords": "arven deymar, usurper, coup, empire",
+                    "content": "A commoner took the Ash Throne; every power on Myria is watching.",
+                }],
+                "entities": [],
+            })
+            assert status == 200, data
+            assert data.get("scope") == "save"
+            from main_web import ACTIVE_SESSION
+            with get_connection(ACTIVE_SESSION._db_path) as conn:
+                row = conn.execute(
+                    "SELECT name, keywords FROM Session_Lore "
+                    "WHERE name = 'The Usurper of the Ash Throne';"
+                ).fetchone()
+                if row is None:
+                    row = conn.execute(
+                        "SELECT name, keywords FROM Lore_Book "
+                        "WHERE name = 'The Usurper of the Ash Throne';"
+                    ).fetchone()
+            assert row is not None
+            assert "usurper" in (row["keywords"] or "").lower()
+    finally:
+        if db_file.exists():
+            db_file.unlink()
 
 

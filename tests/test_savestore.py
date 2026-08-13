@@ -106,7 +106,8 @@ class TestCreateSave:
                 return True
 
         session = Session(info["db_path"], info["save_id"], llm=FakeLLM(), mode="Normal")
-        assert session.current_stats() == {}  # save fraîche : rien de matérialisé (normal)
+        # Fresh save still shows authored Entity_Stats (overlay, not an empty cache).
+        assert session.current_stats().get("alice", {}).get("Health") == "80"
 
         # La définition copiée est bien celle que le moteur lit en jeu.
         from axiom.db_helpers import load_active_entities
@@ -183,6 +184,106 @@ class TestRefreshOnOpen:
         shutil.rmtree(source_tree)
         # La save reste résoluble et jouable (définition embarquée).
         assert prepare_save_for_play(universe_db, info["save_id"]) == info["db_path"]
+
+
+class TestLegacyMigrate:
+    """A save from last month must still play after a code pull."""
+
+    def test_flat_inventory_is_copied_not_dropped(self, universe_db: Path):
+        info = create_save(universe_db, "Hero", "Normal")
+        save_db = info["db_path"]
+        with sqlite3.connect(save_db) as conn:
+            conn.execute(
+                "INSERT INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
+                "VALUES (?, 'alice', 'sword', 2);",
+                (info["save_id"],),
+            )
+            conn.execute("DROP TABLE Item_Instances;")
+            conn.commit()
+
+        opened = prepare_save_for_play(universe_db, info["save_id"])
+        assert opened == save_db
+        with sqlite3.connect(save_db) as conn:
+            rows = conn.execute(
+                "SELECT item_id, quantity, holder_id FROM Item_Instances WHERE save_id = ?;",
+                (info["save_id"],),
+            ).fetchall()
+        assert rows == [("sword", 2, "alice")]
+
+    def test_play_promoted_lore_survives_world_refresh(
+        self, universe_db: Path, source_tree: Path
+    ):
+        info = create_save(universe_db, "Hero", "Normal")
+        save_db = info["db_path"]
+        with sqlite3.connect(save_db) as conn:
+            conn.execute(
+                "INSERT INTO Lore_Book (entry_id, category, name, keywords, content) "
+                "VALUES ('harbour-rumour', 'rumour', 'The sealed contract', "
+                "'bunker, contract', 'Brask will not name her charter.');"
+            )
+            conn.commit()
+        _write(source_tree / "lore" / "highport.md", "Highport climbs from the water.\n")
+
+        prepare_save_for_play(universe_db, info["save_id"])
+        with sqlite3.connect(save_db) as conn:
+            session = conn.execute(
+                "SELECT name FROM Session_Lore WHERE save_id = ? AND name = ?;",
+                (info["save_id"], "The sealed contract"),
+            ).fetchone()
+            world = {
+                r[0] for r in conn.execute("SELECT name FROM Lore_Book;")
+            }
+        assert session is not None
+        assert "The sealed contract" not in world
+
+    def test_find_save_db_by_id(self, universe_db: Path):
+        from axiom.savestore import find_save_db
+        info = create_save(universe_db, "Hero", "Normal")
+        assert find_save_db(info["save_id"]) == info["db_path"]
+        assert find_save_db("missing-id") is None
+
+    def test_old_entity_check_does_not_hide_save(self, tmp_path: Path):
+        """Pre-catalog Entities CHECK used to crash migrate → Hub listed nothing."""
+        from axiom.db_helpers import load_saves
+        from axiom.schema import create_universe_db, get_connection
+
+        db = tmp_path / "legacy_check.db"
+        create_universe_db(str(db))
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("PRAGMA foreign_keys=OFF;")
+            conn.execute("DROP TABLE Entities;")
+            conn.execute(
+                """
+                CREATE TABLE Entities (
+                    entity_id   TEXT PRIMARY KEY,
+                    entity_type TEXT NOT NULL CHECK(entity_type IN ('player', 'npc', 'faction', 'world')),
+                    name        TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_active   INTEGER NOT NULL DEFAULT 1,
+                    origin      TEXT NOT NULL DEFAULT 'definition'
+                );
+                """
+            )
+            conn.execute(
+                "INSERT INTO Entities (entity_id, entity_type, name) "
+                "VALUES ('ysolde_brask', 'player', 'Ysolde');"
+            )
+            conn.execute(
+                "INSERT INTO Saves (save_id, player_name, difficulty, last_updated, "
+                "player_persona, created_at) VALUES "
+                "('s1', 'Ysolde', 'Normal', '2026-08-01', '', '2026-08-01');"
+            )
+            conn.commit()
+
+        rows = load_saves(str(db))
+        assert [r["save_id"] for r in rows] == ["s1"]
+        assert rows[0]["player_name"] == "Ysolde"
+        with get_connection(str(db)) as conn:
+            sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE name='Entities';"
+            ).fetchone()[0]
+        assert "entity_role" in sql
+        assert "entity_type IN" not in sql
 
 
 class TestCliOnSeparatedSaves:

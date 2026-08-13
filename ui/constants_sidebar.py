@@ -142,7 +142,7 @@ class ConstantsSidebar(QWidget):
             if stats:
                 for stat_key, stat_value in stats.items():
                     # Use stat_fmt if available
-                    label_text = tr("stat_fmt", key=stat_key, val="").rstrip(":").rstrip(" :").rstrip("：")
+                    label_text = tr("stat_fmt", stat=stat_key, val="").rstrip(":").rstrip(" :").rstrip("：")
                     from axiom.config import load_config
                     lang = getattr(load_config(), "language", "en")
                     colon = "：" if lang in ("zh", "ja") else ":"

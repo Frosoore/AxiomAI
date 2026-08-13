@@ -188,6 +188,17 @@ def populate_stats(
     return inserted
 
 
+def _normalize_conditions(conditions: Any) -> dict:
+    """Coerce LLM output into the {"operator", "clauses"} shape the rules engine expects."""
+    if isinstance(conditions, dict) and "operator" in conditions:
+        return conditions
+    if isinstance(conditions, list):
+        return {"operator": "AND", "clauses": conditions}
+    if isinstance(conditions, dict):
+        return {"operator": "AND", "clauses": [conditions]}
+    return {"operator": "AND", "clauses": []}
+
+
 def populate_rules(
     db_path: str,
     mode: str = "auto",
@@ -226,7 +237,7 @@ def populate_rules(
             conn.execute(
                 "INSERT INTO Rules (rule_id, priority, conditions, actions, target_entity) "
                 "VALUES (?, ?, ?, ?, ?);",
-                (rule_id, r.get("priority", 0), json.dumps(r.get("conditions", {})),
+                (rule_id, r.get("priority", 0), json.dumps(_normalize_conditions(r.get("conditions", {}))),
                  json.dumps(r.get("actions", [])), r.get("target_entity", "*")))
             existing_rules.append(rule_id)
             inserted += 1
@@ -387,6 +398,8 @@ def populate_entities(
                 etype = str(ent.get("entity_type", "npc")).lower()
                 if etype not in ("npc", "faction"):
                     etype = "npc"
+                from axiom.schema import ensure_entity_type
+                ensure_entity_type(conn, etype)
                 conn.execute(
                     "INSERT INTO Entities (entity_id, name, entity_type, description, is_active) "
                     "VALUES (?, ?, ?, ?, 1);",

@@ -90,6 +90,10 @@ class AppConfig:
                              usually still has budget. Empty = no fallback.
         basic_prompt:        Custom user-provided system instructions.
         negative_prompt:     Custom user-provided negative system instructions (things to avoid).
+        default_verbosity:   Global default narrator length ('short' | 'balanced' |
+                             'talkative'). Used by the web UI always, and by the
+                             desktop tabletop when a universe has no stored
+                             llm_verbosity. Does not change token-budget mapping.
         image_generation_enabled: Whether narrative image generation is enabled.
         image_backend:       Image generation backend ("mock", "stable_diffusion", or "comfyui").
         image_api_url:       API base URL for the local image generator.
@@ -167,6 +171,9 @@ class AppConfig:
     language: str = "en"
     basic_prompt: str = ""
     negative_prompt: str = ""
+    # Global default for narrator length. Factory value matches
+    # axiom.prompts.DEFAULT_VERBOSITY_LEVEL; users override in Settings.
+    default_verbosity: str = "talkative"
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
     trim_sentences: bool = True
@@ -313,10 +320,32 @@ def load_config() -> AppConfig:
         known = {f for f in AppConfig.__dataclass_fields__}
         filtered = {k: v for k, v in raw.items() if k in known}
         config = AppConfig(**filtered)
+        config.default_verbosity = _normalize_verbosity(config.default_verbosity)
         _CONFIG_CACHE[str(config_file)] = (mtime, config)
         return config
     except Exception:
         return AppConfig()
+
+
+_VALID_VERBOSITY = frozenset({"short", "balanced", "talkative"})
+
+
+def _normalize_verbosity(value: str | None) -> str:
+    """Clamp an arbitrary string to a valid verbosity level."""
+    v = (value or "").strip().lower()
+    if v in _VALID_VERBOSITY:
+        return v
+    return "talkative"
+
+
+def get_default_verbosity(config: AppConfig | None = None) -> str:
+    """Return the app-wide default narrator verbosity from settings.
+
+    Used by the web UI and as the desktop fallback when a universe has no
+    stored ``llm_verbosity``. Token budgets stay mapped inside the arbitrator.
+    """
+    cfg = config if config is not None else load_config()
+    return _normalize_verbosity(getattr(cfg, "default_verbosity", None))
 
 
 def save_config(config: AppConfig) -> None:
@@ -357,6 +386,28 @@ def resolve_extraction_model(config: AppConfig) -> str:
     to the provider's main model in that case.
     """
     return _cloud_main_model(config) or config.extraction_model
+
+
+def resolve_memory_fact_model(config: AppConfig) -> str | None:
+    """Model for living-memory fact/belief distillation.
+
+    Preference:
+      1. ``memory_fact_model`` when the user set an explicit override
+      2. else ``extraction_model`` (structured JSON helper — not the narrator)
+      3. else ``None`` → caller uses the main game model
+
+    Using the narrator (often a reasoning/chat model) for fact JSON is a common
+    failure mode: CoT burns the token budget and ``content`` comes back empty
+    or truncated mid-JSON, so the Facts tab stays empty despite living mode.
+    """
+    explicit = str(getattr(config, "memory_fact_model", "") or "").strip()
+    if explicit:
+        return explicit
+    extraction = str(getattr(config, "extraction_model", "") or "").strip()
+    if extraction:
+        # Same cloud-backend rule as resolve_extraction_model.
+        return resolve_extraction_model(config)
+    return None
 
 
 def resolve_time_model(config: AppConfig) -> str:

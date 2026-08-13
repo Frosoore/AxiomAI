@@ -30,6 +30,15 @@ existing save — the definition copy is resynchronised when the save is
 opened, while the runtime state survives. A save is therefore a single
 portable file.
 
+**Pulling new Axiom code does not delete saves.** They live under
+`~/AxiomAI/saves/`, not in the git tree. The first time you open a save after
+an upgrade, `migrate_schema` runs in place: new tables/columns are added, a
+flat inventory bag is copied into the nested `Item_Instances` tree, and
+play-promoted lore that used to sit in `Lore_Book` is moved to `Session_Lore`
+before a world refresh can wipe it. A one-time `save_<id>.db.pre-migrate.bak`
+is written next to the file on that first structural migrate. Journal,
+stats, and turns stay. If migrate itself throws, the save still opens.
+
 (Saves created by very old versions live *inside* the universe `.db`; they
 remain listed and playable as-is.)
 
@@ -91,10 +100,26 @@ in_game_minutes = 540
 Health = "100"
 Mood = "friendly"
 
-[[inventory]]
-entity_id = "player_alice"
+[[inventory]]            # nested: holder is entity, location, or container instance
 item_id = "rusty_sword"
 quantity = 1
+holder_kind = "entity"
+holder_id = "player_alice"
+entity_id = "player_alice"   # legacy alias for holder_kind=entity
+
+[[inventory]]
+item_id = "purse"
+quantity = 1
+holder_kind = "entity"
+holder_id = "player_alice"
+is_container = true
+
+[[session_lore]]         # this playthrough only — not the world lore book
+entry_id = "harbour-rumour"
+category = "rumour"
+name = "The sealed contract"
+keywords = "bunker, contract, highport"
+content = "Brask is recruiting and will not name her charter."
 
 [[modifiers]]
 entity_id = "player_alice"
@@ -103,6 +128,25 @@ delta = 2
 minutes_remaining = 120
 ```
 
+Old flat `[[inventory]]` rows (`entity_id` / `item_id` / `quantity` only) still
+import as items carried on that entity.
+
+On the **web** Hub, Edit opens a structured editor (entities, nested inventory,
+session lore, temporary modifiers) with the TOML above as the Advanced tab. Qt
+still uses the TOML dialog. Both apply through the same `apply_correction` path.
+
+**Stats the editor shows are the live play values** (Event_Log replayed on top
+of authored `Entity_Stats`), not the universe template. Stat keys are matched
+case-insensitively: a definition id `arousal` and an authored key `Arousal` are
+the same field.
+
+**Temporary stats** are marked on the definition (Creator checkbox, Infer, or
+play-start classification). The engine ticks them from that profile: heal
+toward resting over days, hold a buildup at max for a few minutes, crash on a
+listed event. Extra short overlays still live in `[[modifiers]]` / the
+Temporary tab and count down in in-game minutes. The narrator emits
+`stat_events` (and optional modifiers); it does not invent a decay schedule.
+
 Two rules keep editing safe:
 
 1. The journal stays the source of truth. Imports create a *new* save whose
@@ -110,6 +154,10 @@ Two rules keep editing safe:
    state by replaying the journal.
 2. An imported save starts with an empty vector memory — it fills up again as
    you play.
+
+**Session lore** (`Session_Lore`) is runtime data on the save. World refresh
+and a new game do not see it. Promoting a fact into the universe still goes
+through Canonize with **world** scope.
 
 ## Sharing a save
 

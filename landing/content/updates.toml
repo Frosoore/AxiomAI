@@ -17,6 +17,41 @@
 # =============================================================================
 
 [[update]]
+id = "2026-08"
+label = "August 2026"
+summary = "Web becomes the daily driver (streaming, cancel, full settings and lobby), and play state is finally editable without a TOML blob: typed stats, session lore that stays on the save, and nested inventory."
+
+[[update.section]]
+title = "Added"
+kind = "added"
+items = [
+    "Web Slices 1–4: SSE token stream with real cancel, tabletop chrome, Setup lobby, <code>.axiomsave</code> pack/unpack, Creator depth, hover docs, first-launch tour.",
+    "Structured save editor (entities, nested inventory, session lore, temporary modifiers) with TOML kept as Advanced.",
+    "Temporary is a per-stat checkbox (heal / buildup / duration). Infer or first play classifies them; the engine ticks healing and peak/crash instead of hardcoding stat names.",
+    "Extendable entity types and stat↔type linking (Battery on a robot, not on every human).",
+    "Nested play inventory: purse vs home drawer, no Creator item catalog.",
+    "Session lore that survives a world refresh, plus a “Lore used this turn” list so you can see why a book fired.",
+]
+
+[[update.section]]
+title = "Fixed"
+kind = "fixed"
+items = [
+    "Tabletop stats overlay authored values with play changes and resolve aliases like <code>player</code> onto the real entity id.",
+    "Save editor entity stats now reload the live values (definition id <code>arousal</code> and authored <code>Arousal</code> are the same field).",
+    "Unknown items are created on pickup (worlds do not need an <code>items/</code> catalog).",
+    "Canonize apply defaults to this save so a new game is not polluted by the last run’s lore.",
+]
+
+[[update.section]]
+title = "Changed"
+kind = "changed"
+items = [
+    "World lore book stays the template; play-promoted entries live on the save unless you opt into world scope.",
+    "Test fixtures use the bundled Myria universe, not a private custom world.",
+]
+
+[[update]]
 id = "2026-06"
 label = "June 2026"
 summary = "Axiom enters its public early-alpha. The focus this month was getting testers in: a default universe, built-in free keys, a self-diagnostic, Windows fixes, evolving memory, and this very website."

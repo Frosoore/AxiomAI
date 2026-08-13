@@ -48,9 +48,11 @@
       <div class="header-row">
         <h1 data-tr="hub_title">Universe Library</h1>
         <div class="header-actions">
-          <button id="hub-import-st-btn" class="btn-secondary" data-tr="import_st">Import SillyTavern</button>
-          <button id="hub-import-btn" class="btn-secondary" data-tr="import">Import .axiom</button>
-          <button id="hub-create-btn" class="btn-primary" data-tr="new_universe">New Universe</button>
+          <button id="hub-import-st-btn" class="btn-secondary" data-tr="import_st" data-doc="hub.import_st">Import SillyTavern</button>
+          <input type="file" id="hub-import-st-file" accept=".png,.json,.webp" hidden>
+          <button id="hub-import-btn" class="btn-secondary" data-tr="import" data-doc="hub.import">Import .axiom</button>
+          <input type="file" id="hub-import-file" accept=".axiom" hidden>
+          <button id="hub-create-btn" class="btn-primary" data-tr="new_universe" data-doc="hub.create">New Universe</button>
         </div>
       </div>
       
@@ -60,19 +62,69 @@
       </div>
     </section>
 
-    <!-- Screen 1: Story Setup View -->
+    <!-- Screen 1: Story Setup View (3-tab lobby, mirrors ui/setup_view.py) -->
     <section id="view-setup" class="screen-view">
       <div class="header-row">
         <h1 data-tr="setup_title">Story Setup</h1>
-        <button id="setup-back-btn" class="btn-secondary" data-tr="back">Back</button>
+        <button id="setup-back-btn" class="btn-secondary" data-tr="hub" data-doc="setup.back">Hub</button>
       </div>
+      <nav class="studio-tabs" id="setup-tabs">
+        <button type="button" class="tab-btn" data-setup-tab="saves" data-tr="resume_save" data-doc="setup.tab_saves">Resume</button>
+        <button type="button" class="tab-btn" data-setup-tab="persona" data-tr="tab_persona" data-doc="setup.tab_persona">Persona</button>
+        <button type="button" class="tab-btn active" data-setup-tab="story" data-tr="tab_setup" data-doc="setup.tab_story">Story Setup</button>
+      </nav>
       <div class="setup-container">
-        <form id="setup-form">
-          <div id="setup-questions-container">
-            <!-- Dynamic questions injected here -->
+        <div id="setup-panel-saves" class="setup-panel hidden">
+          <div class="table-toolbar">
+            <label data-tr="sort_by">Sort by</label>
+            <select id="setup-saves-sort" data-doc="setup.sort_saves">
+              <option value="last_updated" data-tr="sort_last_updated">Last updated</option>
+              <option value="created_at" data-tr="sort_creation_date">Created</option>
+            </select>
+            <button type="button" id="setup-import-save-btn" class="btn-secondary" data-tr="import_save" data-doc="setup.import_save">Import</button>
+            <input type="file" id="setup-import-save-file" accept=".axiomsave,.zip" hidden>
+            <button type="button" id="setup-export-save-btn" class="btn-secondary" data-tr="export_save" data-doc="setup.export_save">Export</button>
+            <button type="button" id="setup-duplicate-save-btn" class="btn-secondary" data-tr="duplicate_save" data-doc="setup.duplicate_save">Duplicate</button>
+            <button type="button" id="setup-rename-save-btn" class="btn-secondary" data-tr="rename_save" data-doc="setup.rename_save">Rename</button>
+            <button type="button" id="setup-edit-save-btn" class="btn-secondary" data-tr="edit_save" data-doc="setup.edit_save">Edit</button>
+            <button type="button" id="setup-delete-save-btn" class="btn-danger" data-tr="delete_save" data-doc="setup.delete_save">Delete</button>
+            <button type="button" id="setup-launch-save-btn" class="btn-primary" data-tr="launch_session" data-doc="setup.launch">Launch</button>
           </div>
-          <button type="submit" id="setup-submit-btn" class="btn-primary" data-tr="start_adventure">Start Adventure</button>
-        </form>
+          <p class="hint" data-tr="continuous_save_note">Saves are continuous — every turn is written immediately.</p>
+          <ul id="setup-saves-list" class="checkpoint-list" data-doc="setup.saves_list"></ul>
+        </div>
+        <div id="setup-panel-persona" class="setup-panel hidden">
+          <div class="setup-question-box">
+            <label data-tr="name">Player Name</label>
+            <input type="text" id="setup-player-name" value="Alice" data-doc="setup.player_name">
+          </div>
+          <div class="setup-question-box">
+            <label>Saved Persona</label>
+            <div class="search-row" style="display:flex; gap:6px;">
+              <select id="setup-persona-picker" style="flex:1;" data-doc="setup.persona_list"></select>
+              <button type="button" id="setup-persona-create-btn" class="btn-secondary" data-tr="add" data-doc="setup.add_persona">Add</button>
+            </div>
+          </div>
+          <div class="setup-question-box">
+            <label>Player Persona Description</label>
+            <textarea id="setup-player-persona" rows="3" placeholder="A reformed clockwork thief..."></textarea>
+          </div>
+          <div class="setup-question-box">
+            <label>Difficulty Mode</label>
+            <select id="setup-difficulty" data-doc="setup.difficulty">
+              <option value="Normal">Normal</option>
+              <option value="Companion">Companion Mode</option>
+              <option value="Hardcore">Hardcore (Permadeath)</option>
+              <option value="Multiplayer">Multiplayer (Hotseat)</option>
+            </select>
+          </div>
+        </div>
+        <div id="setup-panel-story" class="setup-panel">
+          <form id="setup-form">
+            <div id="setup-questions-container"></div>
+            <button type="submit" id="setup-submit-btn" class="btn-primary" data-tr="start_adventure" data-doc="setup.launch">Start Adventure</button>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -85,6 +137,7 @@
           <nav class="studio-tabs sidebar-mini-tabs">
             <button class="tab-btn active" data-panel="tabletop-entities-list" data-tr="stats">Stats</button>
             <button class="tab-btn" data-panel="tabletop-inventory-list" data-tr="inventory">Inventory</button>
+            <button class="tab-btn" data-panel="tabletop-timeline-list" data-tr="timeline">Timeline</button>
           </nav>
           <div id="tabletop-entities-list" class="entities-list">
             <!-- Active entities and stats injected here -->
@@ -92,13 +145,35 @@
           <div id="tabletop-inventory-list" class="entities-list hidden">
             <!-- Per-entity inventory injected here -->
           </div>
+          <div id="tabletop-timeline-list" class="entities-list hidden">
+            <!-- Chronicler / world-news log injected here -->
+          </div>
         </aside>
 
         <!-- Center: Narrative Chat -->
         <article class="chat-container">
           <div class="chat-header">
-            <span id="chat-save-title">Universe - Save</span>
-            <span id="chat-mode-tag" class="badge">Normal</span>
+            <div class="chat-header-left">
+              <span id="chat-save-title">Universe - Save</span>
+              <span id="chat-mode-tag" class="badge">Normal</span>
+              <span id="chat-turn-label" class="chat-meta">Turn 0</span>
+              <span id="chat-clock-label" class="chat-meta">—</span>
+            </div>
+            <div class="chat-header-right">
+              <label class="verbosity-control" for="chat-verbosity">
+                <span data-tr="verbosity">Verbosity</span>
+                <input type="range" id="chat-verbosity" min="0" max="2" value="2" data-doc="tabletop.verbosity">
+                <span id="chat-verbosity-label">Talkative</span>
+              </label>
+              <label class="canon-auto-label">
+                <input type="checkbox" id="chat-canon-auto" data-doc="tabletop.canon_auto">
+                <span data-tr="canon_auto">Canon auto</span>
+              </label>
+              <button id="btn-canonize" class="btn-secondary btn-sm" data-tr="canonize_btn" data-doc="tabletop.canonize">Canonize</button>
+              <button id="btn-open-memory" class="btn-secondary btn-sm" data-tr="memory_browser_btn" data-doc="tabletop.memory">Memory</button>
+              <button id="btn-tabletop-rewind" class="btn-secondary btn-sm" data-tr="rewind" data-doc="tabletop.rewind">Rewind</button>
+              <button id="btn-tabletop-hub" class="btn-secondary btn-sm" data-tr="hub" data-doc="tabletop.back">Hub</button>
+            </div>
           </div>
           
           <div id="chat-history" class="chat-history">
@@ -126,6 +201,15 @@
 
         <!-- Right Sidebar: Mini-Dico & Timeline -->
         <aside class="sidebar sidebar-right">
+
+          <div class="lore-hits-section">
+            <div class="sidebar-header">
+              <h2>Lore used this turn</h2>
+            </div>
+            <div id="tabletop-lore-hits" class="lore-hits-list">
+              <span class="save-meta" style="padding:8px;">None yet — play a turn that mentions a keyword.</span>
+            </div>
+          </div>
           
           <!-- Mini Dico -->
           <div class="minidico-section">
@@ -242,6 +326,7 @@
           <div class="table-toolbar">
             <input type="text" id="stats-new-id" placeholder="Stat ID">
             <input type="text" id="stats-new-name" placeholder="Name">
+            <input type="text" id="stats-new-desc" placeholder="Note (optional) — what this meter is" style="min-width:220px;">
             <select id="stats-new-type">
               <option value="numeric" data-tr="numeric">Numeric</option>
               <option value="categorical" data-tr="categorical">Categorical</option>
@@ -250,16 +335,20 @@
             <div class="toolbar-divider"></div>
             <select id="stats-preset-combo"></select>
             <button id="stats-apply-preset-btn" class="btn-secondary" data-tr="apply_preset">Apply Preset</button>
+            <button id="stats-infer-btn" class="btn-secondary" data-tr="infer_temporary">Infer temporary…</button>
           </div>
+          <p class="description" style="font-size:12px;color:var(--subtext);margin:8px 0 0;">
+            Name + optional note. Add classifies lasting vs temporary (fast scene vs slow heal). Open <b>Edit</b> for the full profile — the table stays a summary.
+          </p>
           <div class="table-container">
-            <table id="table-stats" class="studio-table">
+            <table id="table-stats" class="studio-table table-stats-compact">
               <thead>
                 <tr>
                   <th data-tr="id">ID</th>
                   <th data-tr="name">Name</th>
                   <th data-tr="type">Type</th>
                   <th data-tr="description">Description</th>
-                  <th data-tr="options">Options</th>
+                  <th>Profile</th>
                   <th class="col-actions"></th>
                 </tr>
               </thead>
@@ -280,6 +369,7 @@
                   <option value="faction">Faction</option>
                   <option value="world">World</option>
                 </select>
+                <button type="button" id="entities-add-type-btn" class="btn-secondary btn-sm">Add type…</button>
                 <input type="text" id="entities-new-name" placeholder="Name">
                 <button id="entities-add-btn" class="btn-primary" data-tr="add">Add</button>
               </div>
@@ -300,6 +390,7 @@
             </div>
             <div class="split-right">
               <h3 id="entity-stats-header">Initial Stats for selected entity</h3>
+              <button type="button" id="entities-assign-stats-btn" class="btn-secondary btn-sm">Assign all defined stats</button>
               <div id="entity-stats-grid" class="entity-stats-grid">
                 <!-- Inputs for entity stats injected here -->
               </div>
@@ -316,6 +407,7 @@
                 <input type="text" id="map-new-name" placeholder="Name">
                 <select id="map-new-scale"></select>
                 <button id="map-add-btn" class="btn-primary" data-tr="add">Add</button>
+                <button id="map-populate-btn" class="btn-secondary" data-tr="populate">Populate</button>
               </div>
               <div class="tree-container">
                 <ul id="map-hierarchy-tree" class="tree-widget">
@@ -501,6 +593,7 @@
             <button id="lore-add-category-btn" class="btn-secondary">+</button>
             <input type="text" id="lore-new-name" placeholder="Lore Title">
             <button id="lore-add-btn" class="btn-primary" data-tr="add">Add</button>
+            <button id="lore-populate-btn" class="btn-secondary" data-tr="populate">Populate</button>
           </div>
           <div class="table-container">
             <table id="table-lore" class="studio-table">
@@ -508,6 +601,7 @@
                 <tr>
                   <th data-tr="type">Category</th>
                   <th data-tr="name">Title</th>
+                  <th>Keywords</th>
                   <th data-tr="description">Content</th>
                   <th class="col-actions"></th>
                 </tr>
@@ -596,6 +690,32 @@
 
   <!-- Modal Overlays -->
 
+  <!-- Overlay: Story Memory editor -->
+  <div id="modal-memory" class="modal-overlay">
+    <div class="modal-box modal-box-wide">
+      <div class="modal-header">
+        <h2 data-tr="memory_browser_title">Story memory</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint" data-tr="memory_browser_editor_hint">Edit or delete wrong auto-memory. Changes apply next turn.</p>
+        <nav class="settings-tabs" id="memory-tabs">
+          <button class="settings-tab-btn active" data-memory-tab="models" data-tr="memory_browser_tab_models">Profiles</button>
+          <button class="settings-tab-btn" data-memory-tab="beliefs" data-tr="memory_browser_tab_beliefs">Beliefs</button>
+          <button class="settings-tab-btn" data-memory-tab="facts" data-tr="memory_browser_tab_facts">Facts</button>
+        </nav>
+        <div id="memory-list" class="memory-list"></div>
+        <div class="memory-actions" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+          <button id="memory-add-fact-btn" class="btn-secondary" data-tr="memory_browser_add_fact">Add fact…</button>
+          <button id="memory-edit-btn" class="btn-secondary" data-tr="memory_browser_edit">Edit…</button>
+          <button id="memory-delete-btn" class="btn-danger" data-tr="memory_browser_delete">Delete</button>
+          <button id="memory-extract-btn" class="btn-primary" data-tr="extract_now">Extract now</button>
+          <button id="memory-refresh-btn" class="btn-secondary" data-tr="memory_browser_refresh">Refresh</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Overlay: Settings -->
   <div id="modal-settings" class="modal-overlay">
     <div class="modal-box">
@@ -606,8 +726,11 @@
       <div class="modal-body">
         <nav class="settings-tabs">
           <button class="settings-tab-btn active" data-target="settings-panel-general" data-tr="tab_general">General</button>
-          <button class="settings-tab-btn" data-target="settings-panel-llm" data-tr="tab_llm">LLM Backend</button>
+          <button class="settings-tab-btn" data-target="settings-panel-llm" data-tr="tab_llm">Universal</button>
+          <button class="settings-tab-btn" data-target="settings-panel-cloud" data-tr="tab_cloud">Cloud</button>
+          <button class="settings-tab-btn" data-target="settings-panel-params" data-tr="univ_params">Universe params</button>
           <button class="settings-tab-btn" data-target="settings-panel-image" data-tr="tab_image">Illustrations</button>
+          <button class="settings-tab-btn" data-target="settings-panel-memory" data-tr="tab_memory">Memory</button>
           <button class="settings-tab-btn" data-target="settings-panel-personas">Personas</button>
         </nav>
         <div class="settings-content">
@@ -628,8 +751,34 @@
             <div class="form-group">
               <label><input type="checkbox" id="setting-audio-enabled"> Enable Background Audio</label>
             </div>
+            <div class="form-group">
+              <label data-tr="chronicler_minutes_label">Chronicler interval (in-game minutes):</label>
+              <input type="number" id="setting-chronicler" min="5" max="100000" step="5">
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-doc-tooltips" data-tr="show_doc_tooltips"> Show documentation tooltips</label>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-trim-sentences" data-tr="trim_sentences"> Trim unfinished sentences</label>
+            </div>
+            <div class="form-group">
+              <label data-tr="wallpaper_placeholder">Custom wallpaper (path or URL):</label>
+              <div class="search-row" style="display:flex; gap:6px;">
+                <input type="text" id="setting-wallpaper" style="flex:1;">
+                <input type="file" id="setting-wallpaper-file" accept="image/*" hidden>
+                <button type="button" id="setting-wallpaper-browse" class="btn-secondary" data-tr="browse">Browse</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label data-tr="basic_prompt_placeholder">Basic prompt (always prepended):</label>
+              <textarea id="setting-basic-prompt" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label data-tr="negative_prompt_placeholder">Negative prompt (things to avoid):</label>
+              <textarea id="setting-negative-prompt" rows="3"></textarea>
+            </div>
           </div>
-          <!-- LLM Backend -->
+          <!-- Universal / local LLM -->
           <div id="settings-panel-llm" class="settings-panel">
             <div class="form-group">
               <label>LLM Backend:</label>
@@ -645,23 +794,26 @@
             </div>
             <div class="form-group">
               <label>API Base URL (Universal):</label>
-              <input type="text" id="setting-universal-url">
+              <input type="text" id="setting-universal-url" placeholder="http://localhost:11434/v1">
             </div>
             <div class="form-group">
-              <label>API Key (Cloud backends):</label>
-              <input type="password" id="setting-api-key" placeholder="Enter API Key...">
+              <label>API Key (optional):</label>
+              <input type="password" id="setting-universal-key" placeholder="Enter API Key...">
             </div>
             <div class="form-group">
               <label>Model Name:</label>
-              <input type="text" id="setting-model-name">
+              <div class="search-row" style="display:flex; gap:6px;">
+                <input type="text" id="setting-universal-model" style="flex:1;" placeholder="e.g. llama3.2">
+                <button type="button" id="settings-browse-models-btn" class="btn-secondary">Browse</button>
+              </div>
             </div>
             <div class="form-group">
-              <label>Fallback Model (Gemini):</label>
-              <input type="text" id="setting-fallback-model">
-            </div>
-            <div class="form-group">
-              <label>Gemini Requests/Min (0=unlimited):</label>
-              <input type="number" id="setting-requests-limit" min="0">
+              <label data-tr="default_verbosity">Default verbosity:</label>
+              <select id="setting-default-verbosity">
+                <option value="short" data-tr="short">Short</option>
+                <option value="balanced" data-tr="balanced">Balanced</option>
+                <option value="talkative" data-tr="talkative">Talkative</option>
+              </select>
             </div>
             <div class="form-group">
               <label>Helper: Extraction Model:</label>
@@ -677,6 +829,51 @@
             <div class="form-group">
               <button id="settings-test-btn" class="btn-secondary" data-tr="test_connection">Test Connection</button>
               <span id="settings-test-status" class="status-msg"></span>
+            </div>
+          </div>
+          <!-- Cloud providers (per-provider key/model stash) -->
+          <div id="settings-panel-cloud" class="settings-panel">
+            <div class="form-group">
+              <label>Cloud provider:</label>
+              <select id="setting-cloud-provider">
+                <option value="gemini">Google Gemini</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="venice">Venice AI</option>
+                <option value="fireworks">Fireworks AI</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>API Key:</label>
+              <input type="password" id="setting-cloud-key" placeholder="Enter API Key...">
+            </div>
+            <div class="form-group">
+              <label>Model Name:</label>
+              <input type="text" id="setting-cloud-model" placeholder="e.g. gemini-2.0-flash">
+            </div>
+            <div class="form-group">
+              <label>Fallback Model (Gemini):</label>
+              <input type="text" id="setting-fallback-model">
+            </div>
+            <div class="form-group">
+              <label>Gemini Requests/Min (0=unlimited):</label>
+              <input type="number" id="setting-requests-limit" min="0">
+            </div>
+          </div>
+          <!-- Per-universe LLM sampling (disabled until a universe/session is selected) -->
+          <div id="settings-panel-params" class="settings-panel">
+            <p class="hint" id="settings-params-hint" data-tr="univ_params_info">Temperature and top-p for the loaded universe.</p>
+            <div class="form-group">
+              <label data-tr="llm_temp">Temperature:</label>
+              <input type="number" id="setting-univ-temp" min="0" max="1" step="0.05" value="0.7">
+            </div>
+            <div class="form-group">
+              <label data-tr="llm_top_p">Top-p:</label>
+              <input type="number" id="setting-univ-top-p" min="0" max="1" step="0.05" value="1.0">
+            </div>
+            <div class="form-group">
+              <button type="button" id="settings-params-save-btn" class="btn-secondary" disabled>Save universe params</button>
             </div>
           </div>
           <!-- Illustrations -->
@@ -714,8 +911,51 @@
               <input type="number" id="setting-image-cfg" step="0.5" min="1" max="30">
             </div>
             <div class="form-group">
+              <label>Gemini image model:</label>
+              <input type="text" id="setting-image-gemini-model" placeholder="gemini-2.5-flash-image">
+            </div>
+            <div class="form-group">
+              <label>Image timeout (seconds):</label>
+              <input type="number" id="setting-image-timeout" min="10" max="900" step="10">
+            </div>
+            <div class="form-group">
               <label>ComfyUI Workflow (JSON path/string):</label>
               <input type="text" id="setting-image-workflow">
+            </div>
+          </div>
+          <!-- Living memory (auto facts / beliefs) -->
+          <div id="settings-panel-memory" class="settings-panel">
+            <p class="hint" data-tr="doc_settings_memory_mode">Lite = offline search only. Living = AI also distils facts every N turns (used by desktop and web).</p>
+            <div class="form-group">
+              <label data-tr="memory_mode_label">Memory mode:</label>
+              <select id="setting-memory-mode">
+                <option value="lite" data-tr="memory_mode_lite">Lite (offline, deterministic)</option>
+                <option value="living" data-tr="memory_mode_living">Living (AI facts)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label data-tr="memory_fact_interval_label">Extract facts every (turns):</label>
+              <input type="number" id="setting-memory-interval" min="0" max="100" title="0 = manual Extract now only">
+            </div>
+            <div class="form-group">
+              <label data-tr="memory_fact_model_label">Fact extraction model:</label>
+              <input type="text" id="setting-memory-model" data-tr-placeholder="memory_fact_model_placeholder" placeholder="default (game model)">
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-memory-beliefs" data-tr="memory_beliefs_label"> Evolving beliefs</label>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-memory-mental-models" data-tr="memory_mental_models_label"> Living profiles (mental models)</label>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-memory-reranker" data-tr="memory_reranker_label"> Neural reranker</label>
+            </div>
+            <div class="form-group">
+              <label><input type="checkbox" id="setting-memory-prompt-cache" data-tr="memory_prompt_cache_label"> Gemini prompt cache</label>
+            </div>
+            <div class="form-group">
+              <button type="button" id="settings-extract-now-btn" class="btn-primary" data-tr="extract_now">Extract now</button>
+              <button type="button" id="settings-browse-memory-btn" class="btn-secondary" data-tr="memory_browser_btn">Browse memory</button>
             </div>
           </div>
           <!-- Personas -->
@@ -783,6 +1023,34 @@
     </div>
   </div>
 
+  <!-- Overlay: Canonize picker -->
+  <div id="modal-canonize" class="modal-overlay">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h2 data-tr="canonize_btn">Canonize</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Tick only the entries you want. Default is this save only — a new game will not inherit them.</p>
+        <div class="form-group" style="margin: 10px 0 14px;">
+          <label style="display:block; margin-bottom:6px;"><input type="radio" name="canon-scope" value="save" checked> This save only</label>
+          <label style="display:block;"><input type="radio" name="canon-scope" value="world"> Write into the world lorebook (new games will include this)</label>
+        </div>
+        <div id="canonize-picks" class="canonize-picks"></div>
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer; color:var(--subtext);">Raw diff</summary>
+          <div class="diff-container" style="margin-top:8px;">
+            <pre id="canonize-diff" class="diff-pre"></pre>
+          </div>
+        </details>
+      </div>
+      <div class="modal-footer">
+        <button id="canonize-apply-btn" class="btn-primary">Apply selected</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Overlay: Diff Preview -->
   <div id="modal-diff" class="modal-overlay">
     <div class="modal-box modal-lg">
@@ -793,7 +1061,7 @@
       <div class="modal-body">
         <p class="description">Review the AI proposed changes below. Green lines represent additions, red represents deletions.</p>
         <div class="diff-container">
-          <pre id="diff-content"></pre>
+          <pre id="diff-content" class="diff-pre"></pre>
         </div>
       </div>
       <div class="modal-footer">
@@ -803,23 +1071,172 @@
     </div>
   </div>
 
-  <!-- Overlay: Edit Save TOML -->
+  <!-- Overlay: structured save editor -->
   <div id="modal-edit-save" class="modal-overlay">
-    <div class="modal-box modal-lg">
+    <div class="modal-box modal-lg modal-save-editor">
       <div class="modal-header">
-        <h2 id="edit-save-title">Edit Save State (TOML)</h2>
+        <h2 id="edit-save-title">Edit Game State</h2>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
         <p class="description" style="margin-bottom: 12px; font-size: 13px; color: var(--subtext);">
-          Modify the materialized save state below. Only the differences (diff) will be applied. 
-          The underlying timeline structure is preserved.
+          Edit this playthrough only. World templates stay clean. Apply writes a correction (rewind stays intact).
         </p>
-        <textarea id="edit-save-toml-textarea" style="width: 100%; height: 350px; font-family: var(--font-mono); font-size: 13px; background-color: var(--crust); color: var(--text); border: 1px solid var(--surface0); border-radius: var(--border-radius); padding: 12px; resize: vertical;"></textarea>
+        <nav class="studio-tabs" id="edit-save-tabs">
+          <button type="button" class="tab-btn active" data-save-tab="entities">Entities</button>
+          <button type="button" class="tab-btn" data-save-tab="inventory">Inventory</button>
+          <button type="button" class="tab-btn" data-save-tab="lore">Session lore</button>
+          <button type="button" class="tab-btn" data-save-tab="modifiers">Temporary</button>
+          <button type="button" class="tab-btn" data-save-tab="toml">Advanced TOML</button>
+        </nav>
+        <div id="edit-save-panel-entities" class="edit-save-panel">
+          <div class="split-view">
+            <div class="split-left" style="max-width: 240px;">
+              <div id="edit-save-entity-list" class="edit-save-list"></div>
+            </div>
+            <div class="split-right">
+              <h3 id="edit-save-entity-header">Select an entity</h3>
+              <div id="edit-save-entity-stats" class="entity-stats-grid"></div>
+            </div>
+          </div>
+        </div>
+        <div id="edit-save-panel-inventory" class="edit-save-panel hidden">
+          <div class="table-toolbar">
+            <input type="text" id="edit-inv-name" placeholder="Item name">
+            <input type="number" id="edit-inv-qty" value="1" min="1" style="width:70px;">
+            <select id="edit-inv-holder"></select>
+            <label class="chk"><input type="checkbox" id="edit-inv-container"> Container</label>
+            <button type="button" id="edit-inv-add-btn" class="btn-primary btn-sm">Add</button>
+          </div>
+          <div id="edit-save-inventory-tree" class="inv-tree"></div>
+        </div>
+        <div id="edit-save-panel-lore" class="edit-save-panel hidden">
+          <p class="description" style="font-size:12px;color:var(--subtext);">This save only — new games will not inherit these entries.</p>
+          <div id="edit-save-lore-list"></div>
+          <button type="button" id="edit-lore-add-btn" class="btn-secondary btn-sm">Add lore entry</button>
+        </div>
+        <div id="edit-save-panel-modifiers" class="edit-save-panel hidden">
+          <p class="description" style="font-size:12px;color:var(--subtext);">
+            Temporary buffs/debuffs. They overlay the entity's base stat and tick down with in-game minutes (arousal, drugs, adrenaline). Apply replaces this list.
+          </p>
+          <div class="table-toolbar">
+            <select id="edit-mod-entity"></select>
+            <select id="edit-mod-stat"></select>
+            <input type="number" id="edit-mod-delta" value="1" step="any" style="width:80px;" title="Delta">
+            <input type="number" id="edit-mod-minutes" value="30" min="1" style="width:80px;" title="Minutes">
+            <button type="button" id="edit-mod-add-btn" class="btn-primary btn-sm">Add</button>
+          </div>
+          <div id="edit-save-modifiers-list"></div>
+        </div>
+        <div id="edit-save-panel-toml" class="edit-save-panel hidden">
+          <textarea id="edit-save-toml-textarea" style="width: 100%; height: 320px; font-family: var(--font-mono); font-size: 13px; background-color: var(--crust); color: var(--text); border: 1px solid var(--surface0); border-radius: var(--border-radius); padding: 12px; resize: vertical;"></textarea>
+        </div>
       </div>
       <div class="modal-footer">
         <button id="edit-save-apply-btn" class="btn-primary">Apply Edits</button>
         <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Creator stat detail -->
+  <div id="modal-edit-stat" class="modal-overlay">
+    <div class="modal-box modal-lg modal-stat-editor">
+      <div class="modal-header">
+        <h2 id="edit-stat-title">Edit stat</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="stat-edit-grid">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="edit-stat-name">
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <select id="edit-stat-type">
+              <option value="numeric">Numeric</option>
+              <option value="categorical">Categorical</option>
+            </select>
+          </div>
+          <div class="form-group form-span-2">
+            <label>Description / note</label>
+            <textarea id="edit-stat-desc" rows="3" placeholder="What this meter is. Kept as you wrote it."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Range (numeric)</label>
+            <div class="dyn-scale">
+              <input type="number" id="edit-stat-min" placeholder="min" style="width:80px;">
+              <span class="save-meta">to</span>
+              <input type="number" id="edit-stat-max" placeholder="max" style="width:80px;">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Applies to</label>
+            <select id="edit-stat-applies" multiple></select>
+            <span class="save-meta">Empty = every entity type</span>
+          </div>
+        </div>
+
+        <fieldset class="stat-temp-box">
+          <legend>
+            <label class="chk"><input type="checkbox" id="edit-stat-temporary"> Temporary — this number moves with time, not only when the story says so</label>
+          </legend>
+          <p class="description" id="edit-stat-lasting-hint">Leave unchecked for cash, reputation, location, identity.</p>
+          <div id="edit-stat-temp-fields">
+            <div class="stat-edit-grid">
+              <div class="form-group">
+                <label>How it moves</label>
+                <select id="edit-stat-kind">
+                  <option value="heal">Heal — drifts back (wound, vitality)</option>
+                  <option value="buildup">Buildup — rises in-scene, may snap down</option>
+                  <option value="duration">Duration — short overlay that wears off</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Pace</label>
+                <select id="edit-stat-pace">
+                  <option value="fast">Fast — minutes to a few hours</option>
+                  <option value="medium">Medium — hours to a day</option>
+                  <option value="slow">Slow — days to weeks</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Resting value</label>
+                <input type="number" id="edit-stat-resting" placeholder="0 or 100">
+                <span class="save-meta">Where time pulls it: 0 for a problem meter, 100 for a healthy pool.</span>
+              </div>
+              <div class="form-group">
+                <label>Timescale (override)</label>
+                <div class="dyn-scale">
+                  <input type="number" id="edit-stat-scale-n" min="1" style="width:80px;">
+                  <select id="edit-stat-scale-unit">
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                    <option value="days">days</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <p class="description" id="edit-stat-kind-hint"></p>
+            <div id="edit-stat-events-wrap" class="stat-edit-grid hidden">
+              <div class="form-group form-span-2">
+                <label>Reset when (crash events)</label>
+                <input type="text" id="edit-stat-crash" placeholder="e.g. orgasm">
+                <span class="save-meta">Story beats that snap this meter to resting. Empty is fine. Only for buildup stats — not wounds or cash.</span>
+              </div>
+              <div class="form-group form-span-2">
+                <label>Hold peak when (extend events)</label>
+                <input type="text" id="edit-stat-extend" placeholder="e.g. edging">
+                <span class="save-meta">Beats that keep it at max a bit longer. Leave empty if unused.</span>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="edit-stat-reclassify-btn" class="btn-secondary">Re-classify from name + note</button>
+        <button type="button" id="edit-stat-done-btn" class="btn-primary">Done</button>
       </div>
     </div>
   </div>
@@ -892,6 +1309,48 @@
           <button id="tour-prev-btn" class="btn-secondary" data-tr="tour_back">Prev</button>
           <button id="tour-next-btn" class="btn-primary" data-tr="tour_next">Next</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Checkpoint rewind list -->
+  <div id="modal-checkpoints" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 data-tr="rewind_title">Rewind to turn</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Pick a checkpoint. Everything after that turn is discarded.</p>
+        <ul id="checkpoint-list" class="checkpoint-list"></ul>
+      </div>
+      <div class="modal-footer">
+        <button id="checkpoint-apply-btn" class="btn-danger" data-tr="rewind">Rewind</button>
+        <button class="btn-secondary modal-close" data-tr="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay: Image lightbox -->
+  <div id="modal-lightbox" class="modal-overlay">
+    <div class="modal-box modal-lg" style="background: transparent; box-shadow: none; padding: 0;">
+      <button class="modal-close" style="position:absolute; top:12px; right:12px;">&times;</button>
+      <img id="lightbox-image" alt="Illustration" style="max-width:100%; max-height:80vh; display:block; margin:0 auto; border-radius: var(--border-radius);">
+    </div>
+  </div>
+
+  <!-- Overlay: Model browser -->
+  <div id="modal-models" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Browse models</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <ul id="model-list" class="checkpoint-list"></ul>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-close" data-tr="close">Close</button>
       </div>
     </div>
   </div>

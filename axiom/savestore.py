@@ -39,13 +39,15 @@ from axiom.schema import create_universe_db
 # explicites = schéma courant ; l'univers source est migré avant copie).
 _DEFINITION_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Universe_Meta", ("key", "value")),
+    ("Entity_Types", ("type_id", "name", "role", "description", "is_builtin")),
     ("Stat_Definitions", ("stat_id", "name", "description", "value_type", "parameters")),
-    ("Entities", ("entity_id", "entity_type", "name", "description", "is_active", "origin")),
+    ("Stat_Type_Links", ("stat_id", "type_id")),
+    ("Entities", ("entity_id", "entity_type", "entity_role", "name", "description", "is_active", "origin")),
     ("Entity_Stats", ("entity_id", "stat_key", "stat_value")),
     ("Rules", ("rule_id", "priority", "conditions", "actions", "target_entity")),
     ("Lore_Book", ("entry_id", "category", "name", "keywords", "content")),
     ("Scheduled_Events", ("event_id", "trigger_minute", "title", "description")),
-    ("Item_Definitions", ("item_id", "name", "description", "category", "weight", "rarity")),
+    ("Item_Definitions", ("item_id", "name", "description", "category", "weight", "rarity", "is_container", "capacity")),
     ("Story_Setup", ("setup_id", "question", "type", "options", "max_selections", "priority")),
     ("Locations", ("location_id", "name", "scale", "parent_id", "description", "x", "y")),
     ("Location_Connections", ("source_id", "target_id", "distance_km")),
@@ -265,6 +267,7 @@ def _copy_definition(universe_db: Path, save_db: Path) -> None:
         migrate_location_tables,
         migrate_lore_book_table,
         migrate_scheduled_events_table,
+        migrate_schema,
         migrate_stat_definitions_table,
     )
 
@@ -273,6 +276,7 @@ def _copy_definition(universe_db: Path, save_db: Path) -> None:
     migrate_entities_table(str(universe_db))
     migrate_scheduled_events_table(str(universe_db))
     migrate_location_tables(str(universe_db))
+    migrate_schema(str(universe_db))
 
     if save_db.exists():
         raise SaveStoreError(f"Save db already exists: {save_db}")
@@ -285,8 +289,12 @@ def _copy_definition(universe_db: Path, save_db: Path) -> None:
         conn.execute("BEGIN;")
         for table, columns in _DEFINITION_COPY:
             cols = ", ".join(columns)
+            # OR REPLACE: create_universe_db already seeds Entity_Types (and
+            # any other catalog with a known PK), so a plain INSERT would
+            # collide on the builtin rows.
             conn.execute(
-                f"INSERT INTO main.{table} ({cols}) SELECT {cols} FROM universe.{table};"
+                f"INSERT OR REPLACE INTO main.{table} ({cols}) "
+                f"SELECT {cols} FROM universe.{table};"
             )
         conn.commit()
         conn.execute("DETACH DATABASE universe;")
@@ -339,7 +347,43 @@ def resolve_save_db(universe_db: str | Path, save_id: str) -> str | None:
     for row in list_saves(universe_db):
         if row.get("save_id") == save_id:
             return row["db_path"]
-    return None
+    return find_save_db(save_id)
+
+
+def find_save_db(save_id: str) -> str | None:
+    """Find ``save_<id>.db`` under the saves root when listing missed it."""
+    sid = (save_id or "").strip()
+    if not sid:
+        return None
+    from axiom.paths import get_saves_dir
+
+    exact = get_saves_dir() / f"save_{sid}.db"
+    if exact.is_file():
+        return str(exact)
+    try:
+        matches = list(get_saves_dir().glob(f"*/save_{sid}.db"))
+    except OSError:
+        return None
+    return str(matches[0]) if matches else None
+
+
+def rename_save(universe_db: str | Path, save_id: str, new_name: str) -> bool:
+    """Rename a save's player_name. Returns False if the save is missing."""
+    from axiom.schema import get_connection
+
+    db = resolve_save_db(universe_db, save_id)
+    if not db:
+        return False
+    name = (new_name or "").strip()
+    if not name:
+        raise SaveStoreError("New name is empty")
+    with get_connection(db) as conn:
+        cur = conn.execute(
+            "UPDATE Saves SET player_name = ? WHERE save_id = ?;",
+            (name, save_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def prepare_save_for_play(universe_db: str | Path, save_id: str) -> str | None:
@@ -358,7 +402,17 @@ def prepare_save_for_play(universe_db: str | Path, save_id: str) -> str | None:
     db_path = resolve_save_db(universe_db, save_id)
     if db_path is None:
         return None
-    refresh_save_definition(db_path)
+    from axiom.schema import migrate_schema
+    try:
+        migrate_schema(db_path)
+    except Exception:
+        from axiom.logger import logger
+        logger.exception("Schema migrate failed for %s; opening save as-is", db_path)
+    try:
+        refresh_save_definition(db_path)
+    except Exception:
+        from axiom.logger import logger
+        logger.exception("Definition refresh failed for %s; opening save as-is", db_path)
     return db_path
 
 
@@ -370,6 +424,13 @@ def refresh_save_definition(save_db: str | Path) -> bool:
     playable as-is).
     """
     save_db = Path(save_db)
+    from axiom.schema import migrate_schema
+    try:
+        migrate_schema(str(save_db))
+    except Exception:
+        from axiom.logger import logger
+        logger.exception("Schema migrate failed for %s", save_db)
+
     if not is_separated_save_db(save_db):
         return False
 
@@ -415,6 +476,8 @@ _RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
     ("Timeline", ("event_id", "save_id", "turn_id", "in_game_time", "description")),
     ("Fired_Scheduled_Events", ("save_id", "event_id", "fired_turn_id")),
     ("Items_Inventory", ("save_id", "entity_id", "item_id", "quantity")),
+    ("Item_Instances", ("instance_id", "save_id", "item_id", "quantity", "holder_kind", "holder_id")),
+    ("Session_Lore", ("entry_id", "save_id", "category", "name", "keywords", "content", "origin_turn")),
     ("Active_Modifiers", ("modifier_id", "save_id", "entity_id", "stat_key", "delta", "minutes_remaining")),
     # Living-mode memory (Phase 2 facts, Phase 3 beliefs) travels with the save.
     # These tables are created lazily, so a save that never used living mode may

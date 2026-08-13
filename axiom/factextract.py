@@ -35,6 +35,7 @@ Rules:
 - Do not perform arithmetic or invent numbers.
 - Prefer concrete, durable facts (who did what, where, why; states that changed).
 - Skip pure mood/atmosphere with no informational content.
+- Do NOT write analysis, chain-of-thought, or preamble. Output JSON only.
 
 For each fact provide:
 - "type": one of "world" (about the world/NPCs), "experience" (something the \
@@ -69,6 +70,59 @@ def _build_messages(
     ]
 
 
+def _try_parse_json_blob(text: str) -> object | None:
+    """Parse a JSON object/array from model text, including fenced / truncated."""
+    if not text or not str(text).strip():
+        return None
+    s = str(text).strip()
+    # Strip common markdown fences.
+    if s.startswith("```"):
+        lines = s.split("\n")
+        # drop first fence line and optional trailing fence
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    try:
+        return json.loads(s)
+    except (ValueError, TypeError):
+        pass
+    # Truncated object: keep complete {...} fact dicts inside a facts array.
+    if '"facts"' in s or s.lstrip().startswith("{"):
+        start = s.find("{")
+        if start >= 0:
+            chunk = s[start:]
+            # Close a truncated {"facts":[ {...}, {... incomplete
+            if '"facts"' in chunk and "[" in chunk:
+                # Keep only fully closed {...} objects inside the array.
+                arr_start = chunk.find("[")
+                body = chunk[arr_start + 1 :]
+                items: list[dict] = []
+                depth = 0
+                obj_start = None
+                for i, ch in enumerate(body):
+                    if ch == "{":
+                        if depth == 0:
+                            obj_start = i
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0 and obj_start is not None:
+                            frag = body[obj_start : i + 1]
+                            try:
+                                obj = json.loads(frag)
+                                if isinstance(obj, dict):
+                                    items.append(obj)
+                            except (ValueError, TypeError):
+                                pass
+                            obj_start = None
+                if items:
+                    return {"facts": items}
+            # Truncated single object — not recoverable as facts list.
+    return None
+
+
 def _payload_to_items(resp) -> list[dict]:
     """Pull the list of fact dicts out of an LLMResponse, tolerating shapes.
 
@@ -82,10 +136,9 @@ def _payload_to_items(resp) -> list[dict]:
         candidates.append(tool_call)
     text = getattr(resp, "narrative_text", None)
     if isinstance(text, str) and text.strip():
-        try:
-            candidates.append(json.loads(text.strip()))
-        except (ValueError, TypeError):
-            pass
+        parsed = _try_parse_json_blob(text)
+        if parsed is not None:
+            candidates.append(parsed)
 
     for cand in candidates:
         if isinstance(cand, dict) and isinstance(cand.get("facts"), list):
@@ -131,18 +184,45 @@ def extract_facts(
     known_entities: list[str] | None = None,
     when_hint: str | None = None,
     max_facts: int = _MAX_FACTS_DEFAULT,
+    max_tokens: int | None = 4096,
 ) -> list[Fact]:
     """Extract structured facts from ``narrative_text`` using ``llm``.
 
     Returns ``[]`` for empty input or on any backend/parse failure (never raises),
     so a living-mode background job can call it fire-and-forget.
+
+    ``max_tokens`` defaults high enough for reasoning models (CoT + JSON body).
     """
     if not narrative_text or not narrative_text.strip():
         return []
     messages = _build_messages(narrative_text, known_entities, when_hint, max_facts)
     try:
-        resp = llm.complete(messages, response_format="json", temperature=0.2)
+        resp = llm.complete(
+            messages,
+            response_format="json",
+            temperature=0.2,
+            max_tokens=max_tokens,
+        )
     except Exception:
         # LLM unreachable / cancelled / provider error → no facts this turn.
+        try:
+            from axiom.logger import logger
+            logger.warning("Fact extraction LLM call failed.", exc_info=True)
+        except Exception:
+            pass
         return []
-    return _coerce_facts(_payload_to_items(resp), max_facts)
+    items = _payload_to_items(resp)
+    facts = _coerce_facts(items, max_facts)
+    if not facts:
+        try:
+            from axiom.logger import logger
+            finish = getattr(resp, "finish_reason", "")
+            sample = (getattr(resp, "narrative_text", None) or "")[:160]
+            logger.warning(
+                "Fact extraction returned 0 facts (finish=%s, sample=%r).",
+                finish,
+                sample,
+            )
+        except Exception:
+            pass
+    return facts

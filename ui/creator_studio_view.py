@@ -225,6 +225,10 @@ class CreatorStudioView(QWidget):
         # n'est que la traduction (sinon « équilibré » finissait en base).
         for level in ("short", "balanced", "talkative"):
             self._verbosity_combo.addItem(tr(level), level)
+        from axiom.config import get_default_verbosity
+        _dv = get_default_verbosity()
+        _di = self._verbosity_combo.findData(_dv)
+        self._verbosity_combo.setCurrentIndex(_di if _di >= 0 else 2)
         self._verbosity_label_row = QLabel(f"{tr('verbosity')}:")
         tension_form.addRow(self._verbosity_label_row, self._verbosity_combo)
 
@@ -363,7 +367,8 @@ class CreatorStudioView(QWidget):
 
         events, cal_meta = self._scheduled_events_editor.collect_data()
         locs, conns = self._map_editor.collect_data()
-        
+        from axiom.config import get_default_verbosity
+
         meta = {
             "global_lore": self._lore_edit.toPlainText().strip(),
             "universe_description": self._description_edit.toPlainText().strip(),
@@ -372,7 +377,7 @@ class CreatorStudioView(QWidget):
             "world_tension_level": str(self._tension_spin.value()),
             "llm_temperature": str(self._temp_spin.value()),
             "llm_top_p": str(self._top_p_spin.value()),
-            "llm_verbosity": self._verbosity_combo.currentData() or "balanced",
+            "llm_verbosity": self._verbosity_combo.currentData() or get_default_verbosity(),
             "companion_mode_enabled": "1" if self._companion_enabled_check.isChecked() else "0",
             "companion_hero_id": self._companion_hero_combo.currentData() or "",
             "calendar_config": cal_meta.get("calendar_config", "{}"),
@@ -465,8 +470,14 @@ class CreatorStudioView(QWidget):
         
         # TICKET-032 : normalise les valeurs historiques stockées localisées.
         from core.localization import canonical_verbosity
-        v = canonical_verbosity(meta.get("llm_verbosity", "balanced"))
-        self._verbosity_combo.setCurrentIndex(max(0, self._verbosity_combo.findData(v)))
+        from axiom.config import get_default_verbosity
+        fallback = get_default_verbosity()
+        stored = (meta.get("llm_verbosity") or "").strip()
+        v = canonical_verbosity(stored or fallback)
+        idx = self._verbosity_combo.findData(v)
+        self._verbosity_combo.setCurrentIndex(
+            idx if idx >= 0 else self._verbosity_combo.findData(fallback)
+        )
 
         # Companion Feature
         enabled = meta.get("companion_mode_enabled") == "1"

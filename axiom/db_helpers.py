@@ -155,6 +155,7 @@ def create_new_save(
         migrate_saves_difficulty_constraint,
         migrate_active_modifiers_table,
         migrate_indexes,
+        migrate_schema,
     )
 
     migrate_saves_table(db_path)
@@ -163,6 +164,7 @@ def create_new_save(
     migrate_inventory_tables(db_path)
     migrate_active_modifiers_table(db_path)
     migrate_indexes(db_path)
+    migrate_schema(db_path)
     save_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     with get_connection(db_path) as conn:
@@ -195,6 +197,7 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_saves_difficulty_constraint,
         migrate_active_modifiers_table,
         migrate_indexes,
+        migrate_schema,
     )
 
     try:
@@ -204,6 +207,14 @@ def load_saves(db_path: str) -> list[dict]:
         migrate_inventory_tables(db_path)
         migrate_active_modifiers_table(db_path)
         migrate_indexes(db_path)
+    except sqlite3.Error:
+        logger.exception("Pre-list save migrations failed for %s", db_path)
+    try:
+        migrate_schema(db_path)
+    except sqlite3.Error:
+        # A failed upgrade must not hide the playthrough on the Hub.
+        logger.exception("Schema migrate failed while listing %s", db_path)
+    try:
         with get_connection(db_path) as conn:
             rows = conn.execute(
                 "SELECT save_id, player_name, difficulty, last_updated, player_persona, created_at "
@@ -299,6 +310,29 @@ def load_active_entities(db_path: str) -> list[dict]:
         return []
 
 
+def load_definition_stats(db_path: str) -> dict[str, dict[str, str]]:
+    """Initial stats from the universe definition (Entity_Stats).
+
+    State_Cache only holds *changes* after play starts. The sidebar and
+    ``rebuild_state_cache`` must overlay those changes on this base, or a
+    player entity with six authored stats shows as empty / one random key.
+    """
+    try:
+        with get_connection(db_path) as conn:
+            rows = conn.execute(
+                "SELECT es.entity_id, es.stat_key, es.stat_value "
+                "FROM Entity_Stats es "
+                "JOIN Entities e ON e.entity_id = es.entity_id "
+                "WHERE e.is_active = 1;"
+            ).fetchall()
+        out: dict[str, dict[str, str]] = {}
+        for r in rows:
+            out.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
+        return out
+    except (sqlite3.Error, FileNotFoundError):
+        return {}
+
+
 def get_max_turn_id(db_path: str, save_id: str) -> int:
     """Read the highest turn_id from Event_Log for a save (session resume).
 
@@ -371,16 +405,43 @@ def get_time_of_day_context(total_minutes: int) -> str:
     return f"Day {days}, {hours:02d}:{mins:02d} ({phase})"
 
 def get_inventory(db_path: str, save_id: str, entity_id: str) -> list[dict]:
-    """Fetch the inventory for a specific entity in a save."""
+    """Fetch the inventory for a specific entity in a save (flat, on-person)."""
     inventory = []
     try:
         from axiom.schema import get_connection
         with get_connection(db_path) as conn:
+            has_inst = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Item_Instances';"
+            ).fetchone()
+            if has_inst:
+                rows = conn.execute(
+                    """
+                    SELECT i.item_id,
+                           COALESCE(d.name, i.item_id) AS name,
+                           COALESCE(d.description, '') AS description,
+                           COALESCE(d.category, 'misc') AS category,
+                           COALESCE(d.weight, 0) AS weight,
+                           COALESCE(d.rarity, 'common') AS rarity,
+                           i.quantity
+                    FROM Item_Instances i
+                    LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
+                    WHERE i.save_id = ? AND i.holder_kind = 'entity' AND i.holder_id = ?;
+                    """,
+                    (save_id, entity_id),
+                ).fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
             rows = conn.execute(
                 """
-                SELECT i.item_id, d.name, d.description, d.category, d.weight, d.rarity, i.quantity
+                SELECT i.item_id,
+                       COALESCE(d.name, i.item_id) AS name,
+                       COALESCE(d.description, '') AS description,
+                       COALESCE(d.category, 'misc') AS category,
+                       COALESCE(d.weight, 0) AS weight,
+                       COALESCE(d.rarity, 'common') AS rarity,
+                       i.quantity
                 FROM Items_Inventory i
-                JOIN Item_Definitions d ON i.item_id = d.item_id
+                LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
                 WHERE i.save_id = ? AND i.entity_id = ?;
                 """,
                 (save_id, entity_id)

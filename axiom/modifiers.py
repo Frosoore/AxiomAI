@@ -70,11 +70,13 @@ class ModifierProcessor:
         Raises:
             sqlite3.Error: On any database failure.
         """
+        from axiom.events import resolve_stat_key
+
         modifiers = self._fetch_modifiers(save_id, entity_id)
         result: dict[str, str] = dict(base_stats)
 
         for mod in modifiers:
-            stat_key: str = mod["stat_key"]
+            stat_key: str = resolve_stat_key(str(mod["stat_key"]), result)
             delta: float = mod["delta"]
             current_raw = result.get(stat_key, "0")
             try:
@@ -184,6 +186,44 @@ class ModifierProcessor:
             conn.commit()
 
         return modifier_id
+
+    def clear_modifiers(
+        self,
+        save_id: str,
+        entity_id: str,
+        stat_key: str | None = None,
+    ) -> int:
+        """Remove active modifiers for an entity, optionally limited to one stat.
+
+        Matching on ``stat_key`` is case-insensitive so ``arousal`` clears
+        ``Arousal``. Returns the number of rows deleted.
+        """
+        with get_connection(self._db_path) as conn:
+            if stat_key:
+                rows = conn.execute(
+                    """
+                    SELECT modifier_id, stat_key FROM Active_Modifiers
+                    WHERE save_id = ? AND entity_id = ?;
+                    """,
+                    (save_id, entity_id),
+                ).fetchall()
+                want = stat_key.lower()
+                ids = [r[0] for r in rows if str(r[1]).lower() == want]
+                if not ids:
+                    return 0
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"DELETE FROM Active_Modifiers WHERE modifier_id IN ({placeholders});",
+                    ids,
+                )
+                conn.commit()
+                return len(ids)
+            cur = conn.execute(
+                "DELETE FROM Active_Modifiers WHERE save_id = ? AND entity_id = ?;",
+                (save_id, entity_id),
+            )
+            conn.commit()
+            return int(cur.rowcount or 0)
 
     def snapshot_modifiers(self, save_id: str, turn_id: int) -> None:
         """Capture this save's post-tick Active_Modifiers state for the turn.

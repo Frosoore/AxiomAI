@@ -111,6 +111,15 @@ def read_definition(db_path: str | Path) -> dict[str, Any]:
             )
         ]
 
+        stat_links: dict[str, list[str]] = {}
+        try:
+            for r in conn.execute(
+                "SELECT stat_id, type_id FROM Stat_Type_Links ORDER BY stat_id, type_id;"
+            ):
+                stat_links.setdefault(r["stat_id"], []).append(r["type_id"])
+        except sqlite3.Error:
+            stat_links = {}
+
         stat_definitions = [
             {
                 "stat_id": r["stat_id"],
@@ -118,12 +127,31 @@ def read_definition(db_path: str | Path) -> dict[str, Any]:
                 "description": r["description"],
                 "value_type": r["value_type"],
                 "parameters": json.loads(r["parameters"] or "{}"),
+                "applies_to": stat_links.get(r["stat_id"], []),
             }
             for r in conn.execute(
                 "SELECT stat_id, name, description, value_type, parameters "
                 "FROM Stat_Definitions ORDER BY stat_id;"
             )
         ]
+
+        entity_types = []
+        try:
+            entity_types = [
+                {
+                    "type_id": r["type_id"],
+                    "name": r["name"],
+                    "role": r["role"],
+                    "description": r["description"],
+                    "is_builtin": bool(r["is_builtin"]),
+                }
+                for r in conn.execute(
+                    "SELECT type_id, name, role, description, is_builtin "
+                    "FROM Entity_Types ORDER BY is_builtin DESC, type_id;"
+                )
+            ]
+        except sqlite3.Error:
+            entity_types = []
 
         locations = [
             dict(r) for r in conn.execute(
@@ -173,6 +201,7 @@ def read_definition(db_path: str | Path) -> dict[str, Any]:
 
     return {
         "meta": meta,
+        "entity_types": entity_types,
         "entities": entities,
         "rules": rules,
         "stat_definitions": stat_definitions,
@@ -331,10 +360,33 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
             t["name"] = d["name"]
             t["description"] = d["description"]
             t["value_type"] = d["value_type"]
-            t["parameters"] = d["parameters"]
+            params = dict(d.get("parameters") or {})
+            dyn = params.pop("dynamics", None)
+            temporary = params.pop("temporary", None)
+            if temporary is not None:
+                t["temporary"] = bool(temporary)
+            t["parameters"] = params
+            if isinstance(dyn, dict) and dyn:
+                t["dynamics"] = dyn
+            if d.get("applies_to"):
+                t["applies_to"] = list(d["applies_to"])
             arr.append(t)
         doc["definitions"] = arr
         _write_toml(out / "stats" / "definitions.toml", doc)
+
+    custom_types = [t for t in data.get("entity_types") or [] if not t.get("is_builtin")]
+    if custom_types:
+        tdoc = tomlkit.document()
+        tarr = tomlkit.aot()
+        for typ in custom_types:
+            t = tomlkit.table()
+            t["type_id"] = typ["type_id"]
+            t["name"] = typ["name"]
+            t["role"] = typ["role"]
+            t["description"] = typ.get("description") or ""
+            tarr.append(t)
+        tdoc["types"] = tarr
+        _write_toml(out / "types" / "types.toml", tdoc)
 
     ent_names = _UniqueNames()
     for ent in data["entities"]:

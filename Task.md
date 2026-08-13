@@ -171,10 +171,21 @@ Status legend: `[ ]` To Do · `[~]` In Progress · `[x]` Done
 - [x] 19.16 — Ambiance audio playback (`/api/audio/track`, dual-`<audio>` crossfade)
 - [x] 19.17 — Hardcore mode permadeath flow (`/api/session/hardcore-delete`)
 - [x] 19.18 — Fix: `/api/saves/delete` called the wrong, wrong-arity engine function (500 on every call)
-- [ ] 19.19 — Memory Browser (Facts/Observations/Mental Models)
+- [x] 19.19 — Memory Browser / editor (Facts/Observations/Mental Models; desktop + web)
 - [x] 19.20 — Multiplayer/hotseat (player selector, per-player intent queue)
-- [ ] 19.21 — Canonize workflow (story → universe lore, diff preview)
+- [x] 19.21 — Canonize workflow (story → universe lore, diff preview)
 - [x] 19.22 — Help system depth (real tooltips, per-page explain, searchable directory, quick tour)
-- [ ] 19.23 — Settings gaps (wallpaper, image/negative prompts, model browser dialog, doc-tooltip/trim-sentence toggles)
+- [x] 19.23 — Settings gaps (wallpaper, image/negative prompts, model browser dialog, doc-tooltip/trim-sentence toggles)
+- [x] 19.24 — Slice 1 daily-driver parity: SSE turn + real cancel, tabletop chrome (verbosity/canon/rewind/hub), named player entity, Multiplayer in Setup
+- [x] 19.25 — Slice 2 Setup lobby + save pack/unpack/duplicate/rename + Hub export + file uploads
+- [x] 19.26 — Slice 3 Creator Studio depth (stat dropdowns, lore keywords, bulk stats, fill-down, map populate)
+- [x] 19.27 — Slice 4 hover doc tooltips, first-launch tour, integrity toast
+- [x] 19.28 — Structured save editor (entities / inventory / session lore / Advanced TOML)
+- [x] 19.29 — Entity type catalog + stat↔type linking (Creator + arbitrator gate)
+- [x] 19.30 — Nested play inventory (`Item_Instances`, purse vs home drawer; no Creator item catalog)
+- [x] 19.31 — Session lore table + lore-hits on the tabletop; keyword fallback uses a content excerpt
+- [x] 19.32 — Tests use Myria fixtures (not a private custom world)
+- [x] 19.33 — Save editor reloads live stats (case-insensitive stat keys) + temporary modifiers in play/editor
+- [x] 19.34 — Temporary is a per-stat checkbox/profile (heal / buildup / duration); engine ticks it; Infer + play-start classify
 
 

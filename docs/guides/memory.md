@@ -16,6 +16,25 @@ reimplemented on Axiom's offline stack (ChromaDB + SQLite + a pluggable
 `LLMBackend`) while preserving its core invariant: everything is keyed by
 `turn_id`, so a rewind rolls the whole memory back in lockstep with the events.
 
+## Editing memory in the app
+
+Wrong or outdated living-mode entries can be fixed without a database tool:
+
+- **Desktop:** tabletop **Memory** button, or Settings → Memory → Browse memory.
+- **Web:** tabletop **Memory** button (modal editor).
+
+You can **edit** or **delete** facts, beliefs, and mental models, and **add** a fact
+manually. Changes live in the save's SQLite tables and affect the next turn's
+structured recall. This does **not** edit the Chroma vector log of raw narrative
+chunks, and it is **not** Canonize (universe definition).
+
+**Lore books** are a separate recall path. World entries (`lore/**/*.md` →
+`Lore_Book`) are copied into each save at create. Play-promoted entries
+(Canonize → this save, or the save editor's Session lore tab) live in
+`Session_Lore` and do **not** pollute a new game. After a turn the tabletop
+lists **Lore used this turn** (semantic, keyword, or link, and world vs
+session). Empty keywords on an entry weaken the keyword fallback.
+
 ## The two modes
 
 The mode is a per-save preference, read from

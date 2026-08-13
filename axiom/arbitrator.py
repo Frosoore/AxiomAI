@@ -25,30 +25,37 @@ the prompt immediately before the user's input, then immediately cleared
 so it cannot affect turn N+2.
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
 import json
 import re
 import sqlite3
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from axiom.logger import logger
 from axiom.rules import RulesEngine
-from axiom.events import EventSourcer
-from axiom.modifiers import ModifierProcessor
-from axiom.schema import get_connection
+
+
+def _slug_item_id(raw: str) -> str:
+    """Turn an LLM item label into a stable item_id."""
+    slug = re.sub(r"[^a-z0-9]+", "_", (raw or "").strip().lower()).strip("_")
+    return (slug[:64] or "item")
 from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
+from axiom.db_helpers import (
+    get_current_time,
+    get_spatial_context,
+    get_time_of_day_context,
+)
+from axiom.events import EventSourcer, resolve_stat_key
+from axiom.memory import VectorMemory
+from axiom.modifiers import ModifierProcessor
 from axiom.prompts import (
     HISTORY_TURN_CAP,
     build_narrative_prompt,
     build_timekeeper_prompt,
     format_entity_stats_block,
 )
-from axiom.memory import VectorMemory
-from axiom.db_helpers import (
-    get_current_time,
-    get_spatial_context,
-    get_time_of_day_context,
-)
+from axiom.schema import get_connection
 
 
 # Common words ignored when matching a turn's input against Lore_Book keywords
@@ -94,17 +101,21 @@ class ArbitratorResult:
         game_state_tag:   The ambiance tag returned by the LLM (e.g. 'exploration').
         player_entity_id: The ID of the player who sent the message for this turn.
         image_path:       The file path of the generated image for this turn.
+
     """
+
     narrative_text: str
     applied_changes: list[dict[str, Any]] = field(default_factory=list)
     rejected_changes: list[dict[str, Any]] = field(default_factory=list)
     inventory_changes: list[dict[str, Any]] = field(default_factory=list)
+    applied_modifiers: list[dict[str, Any]] = field(default_factory=list)
     triggered_rules: list[dict[str, Any]] = field(default_factory=list)
     rule_chain_warning: bool = False
     game_state_tag: str = "exploration"
     player_entity_id: str = "player"
     elapsed_minutes: int = 1
     scene_pace: str = "deliberate"
+    lore_hits: list[dict[str, Any]] = field(default_factory=list)
     image_path: str | None = None
     #: Absolute in-game time (minutes) after this turn — i.e. the value written
     #: to the Timeline. Lets the GUI refresh its clock without a main-thread DB
@@ -122,6 +133,7 @@ class ArbitratorEngine:
     Args:
         db_path:            Path to the universe .db for direct entity queries.
         rules_list:         List of creator-defined rules.
+
     """
 
     def __init__(
@@ -133,7 +145,7 @@ class ArbitratorEngine:
         self._rules_engine = RulesEngine(rules_list)
         self._event_sourcer = EventSourcer(db_path)
         self._modifier_processor = ModifierProcessor(db_path)
-        
+
         # Dependencies to be injected via configure()
         self._llm: LLMBackend | None = None
         self._vector_memory: VectorMemory | None = None
@@ -176,7 +188,7 @@ class ArbitratorEngine:
         stream_token_callback: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "balanced",
+        verbosity_level: str = "talkative",
         mode: str = "Normal",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
@@ -201,18 +213,19 @@ class ArbitratorEngine:
 
         Raises:
             LLMConnectionError: If the LLM backend is unreachable.
+
         """
         self._mode = mode
         self._hero_entity_id = hero_entity_id
-        
+
         # Determine the primary player ID for legacy events and UI fallback
-        player_entity_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
+        player_entity_id = next((aid for aid in intents if aid != hero_entity_id), "player") if intents else "player"
         self._player_entity_id = player_entity_id
         # All actors who submitted an intent this turn (multiplayer: several human
         # players, possibly in different locations). Used by _fetch_relevant_entities
         # so the context covers everyone's surroundings, not just the primary player.
         self._active_actor_ids = list(intents.keys()) if intents else [player_entity_id]
-        
+
         # Step 0 — Log intents
         _pending_events: list[tuple] = []
         for actor_id, intent_text in intents.items():
@@ -235,7 +248,7 @@ class ArbitratorEngine:
         # NB: imported locally so tests can patch `axiom.config.load_config`.
         from axiom.config import load_config
         cfg = load_config()
-        
+
         # Calculate the oldest turn ID still in the history window
         max_turn_id = max(0, turn_id - HISTORY_TURN_CAP)
 
@@ -295,7 +308,7 @@ class ArbitratorEngine:
             exclude_chunk_type="lore",  # lore has its own retrieval (TICKET-072)
         )
         rag_chunks = [r["text"] for r in rag_results if r.get("chunk_type") != "lore"]
-        
+
         # Step 3 — Relevant Context Filtering (Context Optimization)
         # Only send stats for entities that are "active" in the current context
         # to save tokens and reduce LLM confusion.
@@ -303,13 +316,13 @@ class ArbitratorEngine:
             save_id, combined_intents_text, history, rag_chunks, all_stats
         )
         logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
-        
+
         # Always include the actors that submitted intents
-        for actor_id in intents.keys():
+        for actor_id in intents:
             relevant_entity_ids.add(actor_id)
         if not intents:
             relevant_entity_ids.add("player")
-        
+
         filtered_stats = {
             eid: stats for eid, stats in all_stats.items()
             if eid in relevant_entity_ids
@@ -318,20 +331,50 @@ class ArbitratorEngine:
         # query above (so on-scene names could bias retrieval — TICKET-073).
 
         # Step 4 — Build prompt (with pending correction)
+        active_modifiers = self._load_active_modifiers(save_id)
+        from axiom.stat_dynamics import (
+            dynamics_by_key,
+            format_dynamics_prompt,
+            lookup_dynamics,
+            peak_hold_note,
+        )
+        dyn_table = dynamics_by_key(self._db_path)
+        now_minutes = get_current_time(self._db_path, save_id)
         entity_block = format_entity_stats_block(
             [
                 {
-                    "entity_id": eid, 
-                    "name": id_to_name.get(eid, eid), 
-                    "entity_type": id_to_type.get(eid, "unknown"), 
-                    "stats": stats
+                    "entity_id": eid,
+                    "name": id_to_name.get(eid, eid),
+                    "entity_type": id_to_type.get(eid, "unknown"),
+                    "stats": stats,
+                    "modifiers": active_modifiers.get(eid, []),
+                    "dyn_notes": {
+                        k: peak_hold_note(stats, k, dyn, now_minutes)
+                        for k, dyn in (
+                            (key, lookup_dynamics(key, dyn_table))
+                            for key in stats
+                        )
+                        if dyn and peak_hold_note(stats, k, dyn, now_minutes)
+                    },
                 }
                 for eid, stats in filtered_stats.items()
             ]
         )
-        
+        dyn_prompt = format_dynamics_prompt(self._db_path)
+        if dyn_prompt:
+            entity_block = f"{entity_block}\n\n{dyn_prompt}"
+
         # Fetch actual Lore Book entries if available (subset matching the query)
         lore_book_subset = self._fetch_relevant_lore(save_id, combined_intents_text)
+
+        try:
+            from axiom.inventory import format_inventory_prompt, load_inventory_tree
+            inv_tree = load_inventory_tree(self._db_path, save_id)
+            inv_text = format_inventory_prompt(inv_tree, id_to_name)
+            if inv_text and inv_text != "(empty)":
+                entity_block = f"{entity_block}\n\nINVENTORY (nested: on person / in containers / at locations)\n{inv_text}"
+        except Exception:
+            pass
 
         # Get current time context
         total_mins = get_current_time(self._db_path, save_id)
@@ -366,9 +409,7 @@ class ArbitratorEngine:
         # Living memory mode: surface distilled long-term facts (those about the
         # characters on scene, then the most recent ones) as extra [MEMORY] lines.
         # Lite mode never calls this, so the deterministic path is unchanged.
-        from axiom.config import (
-            memory_mode_is_living, memory_beliefs_active, memory_mental_models_active
-        )
+        from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
         if memory_mode_is_living(cfg):
             fact_lines = self._fetch_relevant_facts(
                 save_id,
@@ -426,22 +467,22 @@ class ArbitratorEngine:
         # Step 5 — Call LLM (streaming or non-streaming based on callback)
         # Phase 11: Dynamic stop sequences to prevent impersonation
         stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>"]
-        for actor_id in intents.keys():
+        for actor_id in intents:
             stops.extend([f"\n{actor_id}:", f"\n[{actor_id}]"])
-        
+
         # Mapping verbosity to max_tokens to prevent runaway generation
         verbosity_to_tokens = {
             "short": 150,
             "balanced": 400,
             "talkative": 1024
         }
-        max_tokens = verbosity_to_tokens.get(verbosity_level.lower(), 400)
-        
+        max_tokens = verbosity_to_tokens.get(verbosity_level.lower(), 1024)
+
         llm_response = self._call_llm(
-            messages, 
-            stream_token_callback, 
-            temperature, 
-            top_p, 
+            messages,
+            stream_token_callback,
+            temperature,
+            top_p,
             stop_sequences=stops,
             max_tokens=max_tokens
         )
@@ -450,11 +491,23 @@ class ArbitratorEngine:
         # Step 6 — Parse tool call
         state_changes: list[dict[str, Any]] = []
         inventory_changes: list[dict[str, Any]] = []
+        modifier_changes: list[dict[str, Any]] = []
+        stat_events: list[dict[str, Any]] = []
         game_state_tag: str = "exploration"
         scene_pace: str = "deliberate"
         if llm_response.tool_call:
             state_changes = llm_response.tool_call.get("state_changes", [])
             inventory_changes = llm_response.tool_call.get("inventory_changes", [])
+            modifier_changes = llm_response.tool_call.get("modifiers", []) or []
+            stat_events = llm_response.tool_call.get("stat_events", []) or []
+            if not isinstance(state_changes, list):
+                state_changes = []
+            if not isinstance(inventory_changes, list):
+                inventory_changes = []
+            if not isinstance(modifier_changes, list):
+                modifier_changes = []
+            if not isinstance(stat_events, list):
+                stat_events = []
             game_state_tag = str(llm_response.tool_call.get("game_state_tag", "exploration")).strip().lower()
             scene_pace = str(llm_response.tool_call.get("scene_pace", "deliberate")).strip().lower()
 
@@ -511,11 +564,18 @@ class ArbitratorEngine:
 
         # Load the set of defined stat names ONCE per turn (lowercased) instead
         # of re-querying Stat_Definitions for every single change (was an N+1).
-        defined_stats = self._load_defined_stats() if state_changes else set()
+        defined_stats = self._load_defined_stats() if (state_changes or modifier_changes) else set()
 
+        entity_meta = self._load_entity_meta()
         for change in state_changes:
-            entity_id: str = change.get("entity_id", "")
-            stat_key: str = change.get("stat_key", "")
+            entity_id: str = self._resolve_entity_id(
+                change.get("entity_id", ""), all_stats, entity_meta
+            )
+            stat_key: str = self._resolve_stat_key(
+                change.get("stat_key", ""), all_stats.get(entity_id, {})
+            )
+            change["entity_id"] = entity_id
+            change["stat_key"] = stat_key
             delta: float | None = change.get("delta")
             value: Any = change.get("value")
 
@@ -561,6 +621,13 @@ class ArbitratorEngine:
         if rejection_messages:
             self._queue_correction("; ".join(rejection_messages))
 
+        # Step 7.3 — Engine-ticked temporary stats (heal / clamp / crash).
+        dyn_applied = self._tick_stat_dynamics(
+            save_id, turn_id, all_stats, elapsed_minutes, new_time,
+            stat_events, _pending_events,
+        )
+        applied_changes.extend(dyn_applied)
+
         # Persist the advanced in-game clock — exactly one Timeline row per turn
         # (TICKET-010 / TICKET-019). The description carries the travel note when
         # the player moved, otherwise the plain time advance.
@@ -574,6 +641,68 @@ class ArbitratorEngine:
                 conn.commit()
         except Exception as e:
             logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
+
+        # Step 7.4 — Temporary modifiers (buffs/debuffs that tick with in-game time)
+        applied_modifiers: list[dict[str, Any]] = []
+        for mod in modifier_changes:
+            if not isinstance(mod, dict):
+                continue
+            entity_id = self._resolve_entity_id(
+                mod.get("entity_id", ""), all_stats, entity_meta
+            )
+            stat_key = self._resolve_stat_key(
+                str(mod.get("stat_key", "")), all_stats.get(entity_id, {})
+            )
+            clear = bool(mod.get("clear"))
+            if clear:
+                if not entity_id or not stat_key:
+                    self._queue_correction("Modifier clear missing entity_id or stat_key")
+                    continue
+                removed = self._modifier_processor.clear_modifiers(
+                    save_id, entity_id, stat_key
+                )
+                applied_modifiers.append({
+                    "entity_id": entity_id,
+                    "stat_key": stat_key,
+                    "clear": True,
+                    "removed": removed,
+                })
+                continue
+            try:
+                delta = float(mod.get("delta"))
+            except (TypeError, ValueError):
+                self._queue_correction(
+                    f"Modifier {entity_id}.{stat_key}: delta must be a number"
+                )
+                continue
+            minutes_raw = mod.get("minutes", mod.get("minutes_remaining", 0))
+            try:
+                minutes = int(minutes_raw)
+            except (TypeError, ValueError):
+                minutes = 0
+            if minutes < 1:
+                self._queue_correction(
+                    f"Modifier {entity_id}.{stat_key}: minutes must be >= 1"
+                )
+                continue
+            if defined_stats and stat_key.lower() not in defined_stats:
+                self._queue_correction(
+                    f"Modifier {entity_id}.{stat_key}: unknown stat"
+                )
+                continue
+            try:
+                self._modifier_processor.add_modifier(
+                    save_id, entity_id, stat_key, delta, minutes
+                )
+            except (ValueError, sqlite3.Error) as exc:
+                self._queue_correction(f"Modifier {entity_id}.{stat_key}: {exc}")
+                continue
+            applied_modifiers.append({
+                "entity_id": entity_id,
+                "stat_key": stat_key,
+                "delta": delta,
+                "minutes": minutes,
+            })
 
         # Step 7.5 — Process Inventory Changes
         applied_inventory: list[dict[str, Any]] = []
@@ -615,7 +744,7 @@ class ArbitratorEngine:
                         "stat_key": action.get("stat"),
                         "source_rule": action.get("rule_id")
                     }
-                    
+
                     event_type = "stat_set"
                     if action["type"] == "stat_change":
                         payload["delta"] = action.get("value")
@@ -642,7 +771,7 @@ class ArbitratorEngine:
                 _pending_events.append((save_id, turn_id, "rule_engine_warning", "system",
                     {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."})
                 )
-            
+
             mutated_entities = new_mutations
 
         # Step 9 — Tick modifiers, then snapshot the (post-tick) table so a later
@@ -681,6 +810,7 @@ class ArbitratorEngine:
             applied_changes=applied_changes,
             rejected_changes=rejected_changes,
             inventory_changes=applied_inventory,
+            applied_modifiers=applied_modifiers,
             triggered_rules=triggered_rules,
             rule_chain_warning=rule_chain_warning,
             game_state_tag=game_state_tag,
@@ -688,6 +818,7 @@ class ArbitratorEngine:
             elapsed_minutes=elapsed_minutes,
             scene_pace=scene_pace,
             in_game_time=new_time,
+            lore_hits=lore_book_subset,
         )
 
     # ------------------------------------------------------------------
@@ -727,12 +858,13 @@ class ArbitratorEngine:
 
         Raises:
             LLMConnectionError: If the LLM is unreachable during streaming.
+
         """
         if stream_token_callback is None:
             resp = self._llm.complete(
-                messages, 
-                temperature=temperature, 
-                top_p=top_p, 
+                messages,
+                temperature=temperature,
+                top_p=top_p,
                 stop_sequences=stop_sequences,
                 max_tokens=max_tokens
             )
@@ -742,9 +874,9 @@ class ArbitratorEngine:
             is_json_block = False
             buffer = ""
             for token in self._llm.stream_tokens(
-                messages, 
-                temperature=temperature, 
-                top_p=top_p, 
+                messages,
+                temperature=temperature,
+                top_p=top_p,
                 stop_sequences=stop_sequences,
                 max_tokens=max_tokens
             ):
@@ -786,6 +918,62 @@ class ArbitratorEngine:
 
         return resp
 
+    def _tick_stat_dynamics(
+        self,
+        save_id: str,
+        turn_id: int,
+        all_stats: dict[str, dict[str, str]],
+        elapsed_minutes: int,
+        now_minutes: int,
+        stat_events: list[dict[str, Any]],
+        pending: list,
+    ) -> list[dict[str, Any]]:
+        """Heal, clamp, crash, and peak-clock updates from authored profiles."""
+        from axiom.stat_dynamics import (
+            apply_entity_tick,
+            dynamics_by_key,
+            is_hidden_stat_key,
+        )
+
+        table = dynamics_by_key(self._db_path)
+        if not table:
+            return []
+        applied: list[dict[str, Any]] = []
+        for entity_id, stats in list(all_stats.items()):
+            changes = apply_entity_tick(
+                stats,
+                table,
+                elapsed_minutes=elapsed_minutes,
+                now_minutes=now_minutes,
+                stat_events=stat_events,
+                entity_id=entity_id,
+            )
+            for stat_key, value, reason in changes:
+                payload = {
+                    "entity_id": entity_id,
+                    "stat_key": stat_key,
+                    "value": value,
+                    "source": "dynamics",
+                    "reason": reason,
+                }
+                pending.append((save_id, turn_id, "stat_set", entity_id, payload))
+                self._apply_local_change(entity_id, payload, all_stats)
+                if not is_hidden_stat_key(stat_key):
+                    applied.append({
+                        "entity_id": entity_id,
+                        "stat_key": stat_key,
+                        "value": value,
+                        "reason": reason,
+                    })
+                if reason == "crash":
+                    try:
+                        self._modifier_processor.clear_modifiers(
+                            save_id, entity_id, stat_key
+                        )
+                    except Exception:
+                        logger.debug("dynamics crash clear failed", exc_info=True)
+        return applied
+
     def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
         """Fetch all active entity stats and apply modifier overlays.
 
@@ -797,6 +985,7 @@ class ArbitratorEngine:
 
         Returns:
             Dict mapping entity_id -> effective stats dict.
+
         """
         from axiom.textfmt import fmt_num
         with get_connection(self._db_path) as conn:
@@ -813,20 +1002,46 @@ class ArbitratorEngine:
                 (save_id,),
             ).fetchall()
 
-        base: dict[str, dict[str, str]] = {}
+        from axiom.db_helpers import load_definition_stats
+        base: dict[str, dict[str, str]] = {
+            eid: dict(stats) for eid, stats in load_definition_stats(self._db_path).items()
+        }
         for r in stat_rows:
             base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
 
         effective = {eid: dict(stats) for eid, stats in base.items()}
         for r in mod_rows:
             if r["entity_id"] in effective:
-                current_raw = effective[r["entity_id"]].get(r["stat_key"], "0")
+                stat_key = resolve_stat_key(r["stat_key"], effective[r["entity_id"]])
+                current_raw = effective[r["entity_id"]].get(stat_key, "0")
                 try:
                     current = float(current_raw)
-                    effective[r["entity_id"]][r["stat_key"]] = fmt_num(current + r["delta"])
+                    effective[r["entity_id"]][stat_key] = fmt_num(current + r["delta"])
                 except ValueError:
                     pass
         return effective
+
+    def _load_active_modifiers(self, save_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Active temporary modifiers grouped by entity_id (for the turn prompt)."""
+        try:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute(
+                    """
+                    SELECT entity_id, stat_key, delta, minutes_remaining
+                    FROM Active_Modifiers WHERE save_id = ?;
+                    """,
+                    (save_id,),
+                ).fetchall()
+        except sqlite3.Error:
+            return {}
+        out: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            out.setdefault(r["entity_id"], []).append({
+                "stat_key": r["stat_key"],
+                "delta": r["delta"],
+                "minutes_remaining": r["minutes_remaining"],
+            })
+        return out
 
     def _identify_relevant_entities(
         self,
@@ -901,7 +1116,7 @@ class ArbitratorEngine:
             with get_connection(self._db_path) as conn:
                 rows = conn.execute(
                     """
-                    SELECT e.event_id, e.title, e.description 
+                    SELECT e.event_id, e.title, e.description
                     FROM Scheduled_Events e
                     LEFT JOIN Fired_Scheduled_Events f ON e.event_id = f.event_id AND f.save_id = ?
                     WHERE e.trigger_minute <= ? AND f.event_id IS NULL;
@@ -1132,51 +1347,87 @@ class ArbitratorEngine:
                 hits = []
             seed_ids = [h["entry_id"] for h in hits if h.get("entry_id")]
             if seed_ids:
-                return self._expand_lore(seed_ids, k)
+                return self._expand_lore(seed_ids, k, save_id=save_id, why="semantic")
 
-        return self._fetch_lore_by_keywords(text.lower(), k)
+        return self._fetch_lore_by_keywords(text.lower(), k, save_id=save_id)
 
-    def _load_lore_rows(self) -> list[dict]:
-        """Read the structured Lore_Book table as a list of row dicts."""
+    def _load_lore_rows(self, save_id: str | None = None) -> list[dict]:
+        """Read world Lore_Book plus this save's Session_Lore."""
+        out: list[dict] = []
         try:
             with get_connection(self._db_path) as conn:
                 rows = conn.execute(
                     "SELECT entry_id, category, name, keywords, content FROM Lore_Book;"
                 ).fetchall()
+                for r in rows:
+                    out.append({
+                        "entry_id": r["entry_id"],
+                        "category": r["category"] or "",
+                        "name": (r["name"] or "").strip(),
+                        "keywords": r["keywords"] or "",
+                        "content": r["content"] or "",
+                        "source": "world",
+                    })
+                if save_id:
+                    try:
+                        srows = conn.execute(
+                            "SELECT entry_id, category, name, keywords, content "
+                            "FROM Session_Lore WHERE save_id = ?;",
+                            (save_id,),
+                        ).fetchall()
+                    except sqlite3.Error:
+                        srows = []
+                    for r in srows:
+                        out.append({
+                            "entry_id": r["entry_id"],
+                            "category": r["category"] or "",
+                            "name": (r["name"] or "").strip(),
+                            "keywords": r["keywords"] or "",
+                            "content": r["content"] or "",
+                            "source": "session",
+                        })
         except sqlite3.Error as e:
             logger.error(f"[ARBITRATOR] Error fetching lore book: {e}")
-            return []
-        return [
-            {
-                "entry_id": r["entry_id"],
-                "category": r["category"] or "",
-                "name": (r["name"] or "").strip(),
-                "keywords": r["keywords"] or "",
-                "content": r["content"] or "",
-            }
-            for r in rows
-        ]
+            return out
+        return out
 
     def _sync_lore_embeddings(self, save_id: str) -> None:
         """Embed (idempotently) this save's Lore Book into the vector store."""
         if self._vector_memory is None:
             return
         entries = []
-        for r in self._load_lore_rows():
+        for r in self._load_lore_rows(save_id):
             text = f"{r['name']}\n{r['content']}".strip()
             if text:
                 entries.append({"entry_id": r["entry_id"], "text": text})
         self._vector_memory.sync_lore(save_id, entries)
 
     @staticmethod
-    def _lore_tokens(keywords: str, name: str) -> set[str]:
-        """Content tokens of a lore entry (keywords + name), minus stopwords."""
+    def _lore_tokens(keywords: str, name: str, content: str = "") -> set[str]:
+        """Content tokens of a lore entry (keywords + name + excerpt), minus stopwords."""
         toks = set(re.findall(r"\b\w+\b", (keywords or "").lower())) | set(
             re.findall(r"\b\w+\b", (name or "").lower())
         )
+        if content:
+            body = set(re.findall(r"\b\w+\b", content.lower()))
+            # Cap so a long article does not drown keyword ranking.
+            toks |= set(list(body)[:80])
         return {t for t in toks if t not in _LORE_STOPWORDS}
 
-    def _expand_lore(self, seed_ids: list[str], k: int) -> list[dict]:
+    @staticmethod
+    def _shape_lore(r: dict, why: str) -> dict:
+        return {
+            "entry_id": r.get("entry_id") or "",
+            "category": r["category"],
+            "name": r["name"],
+            "content": r["content"],
+            "keywords": r.get("keywords") or "",
+            "source": r.get("source") or "world",
+            "why": why,
+        }
+
+    def _expand_lore(self, seed_ids: list[str], k: int, *, save_id: str | None = None,
+                     why: str = "semantic") -> list[dict]:
         """Link-expand semantic seeds with a few related lore entries.
 
         Keeps the semantic seeds (up to `k`) first, then appends up to
@@ -1184,14 +1435,11 @@ class ArbitratorEngine:
         **shared keywords** — the cheap, query-time form of Hindsight's link
         expansion (no precomputed graph needed for our small lore tables).
         """
-        rows = self._load_lore_rows()
+        rows = self._load_lore_rows(save_id)
         by_id = {r["entry_id"]: r for r in rows}
         seeds = [by_id[sid] for sid in seed_ids if sid in by_id][:k]
 
-        def _shape(r: dict) -> dict:
-            return {"category": r["category"], "name": r["name"], "content": r["content"]}
-
-        result = [_shape(r) for r in seeds]
+        result = [self._shape_lore(r, why) for r in seeds]
         if not seeds or _LORE_LINK_BUDGET <= 0:
             return result
 
@@ -1199,7 +1447,7 @@ class ArbitratorEngine:
         seed_cats = {r["category"].lower() for r in seeds if r["category"]}
         seed_kw: set[str] = set()
         for r in seeds:
-            seed_kw |= self._lore_tokens(r["keywords"], r["name"])
+            seed_kw |= self._lore_tokens(r["keywords"], r["name"], r.get("content") or "")
 
         linked: list[tuple[int, dict]] = []
         for r in rows:
@@ -1208,33 +1456,25 @@ class ArbitratorEngine:
             score = 0
             if r["category"] and r["category"].lower() in seed_cats:
                 score += 2  # same category is a strong link
-            score += len(self._lore_tokens(r["keywords"], r["name"]) & seed_kw)
+            score += len(self._lore_tokens(r["keywords"], r["name"], r.get("content") or "") & seed_kw)
             if score > 0:
                 linked.append((score, r))
 
         linked.sort(key=lambda s: s[0], reverse=True)
-        result.extend(_shape(r) for _score, r in linked[:_LORE_LINK_BUDGET])
+        result.extend(self._shape_lore(r, "link") for _score, r in linked[:_LORE_LINK_BUDGET])
         return result
 
-    def _fetch_lore_by_keywords(self, text_lower: str, k: int) -> list[dict]:
-        """Deterministic fallback: rank lore by keyword / name overlap.
-
-        Used when semantic retrieval is unavailable. Matches the input's words
-        against each entry's `keywords` + `name` tokens (the previous behaviour).
-        """
+    def _fetch_lore_by_keywords(self, text_lower: str, k: int, *, save_id: str | None = None) -> list[dict]:
+        """Deterministic fallback: rank lore by keyword / name / excerpt overlap."""
         words = {w for w in re.findall(r"\b\w+\b", text_lower) if w not in _LORE_STOPWORDS}
         if not words:
             return []
         scored: list[tuple[int, dict]] = []
-        for r in self._load_lore_rows():
-            tokens = self._lore_tokens(r["keywords"], r["name"])
+        for r in self._load_lore_rows(save_id):
+            tokens = self._lore_tokens(r["keywords"], r["name"], r.get("content") or "")
             score = len(words & tokens)
             if score > 0:
-                scored.append((score, {
-                    "category": r["category"],
-                    "name": r["name"],
-                    "content": r["content"],
-                }))
+                scored.append((score, self._shape_lore(r, "keyword")))
         scored.sort(key=lambda s: s[0], reverse=True)
         return [entry for _score, entry in scored[:k]]
 
@@ -1257,6 +1497,100 @@ class ArbitratorEngine:
             )
         return 0
 
+    def _load_entity_meta(self) -> dict[str, dict[str, str]]:
+        """entity_id → {name, entity_type, entity_role} for alias resolution."""
+        try:
+            with get_connection(self._db_path) as conn:
+                cols = {c[1] for c in conn.execute("PRAGMA table_info(Entities);")}
+                role_sel = "entity_role" if "entity_role" in cols else "entity_type"
+                rows = conn.execute(
+                    f"SELECT entity_id, name, entity_type, {role_sel} AS entity_role "
+                    "FROM Entities WHERE is_active = 1;"
+                ).fetchall()
+            return {
+                r["entity_id"]: {
+                    "name": r["name"] or "",
+                    "entity_type": r["entity_type"] or "",
+                    "entity_role": r["entity_role"] or r["entity_type"] or "",
+                }
+                for r in rows
+            }
+        except sqlite3.Error:
+            return {}
+
+    def _stat_allowed_for_entity(self, entity_id: str, stat_key: str) -> bool:
+        """True if the stat is unlinked (all types) or linked to this entity's type."""
+        try:
+            with get_connection(self._db_path) as conn:
+                if not conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Stat_Type_Links';"
+                ).fetchone():
+                    return True
+                links = [
+                    r[0] for r in conn.execute(
+                        "SELECT type_id FROM Stat_Type_Links WHERE LOWER(stat_id) = LOWER(?);",
+                        (stat_key,),
+                    )
+                ]
+                # Also match by Stat_Definitions.name (display vs id).
+                if not links:
+                    row = conn.execute(
+                        "SELECT stat_id FROM Stat_Definitions WHERE LOWER(name) = LOWER(?);",
+                        (stat_key,),
+                    ).fetchone()
+                    if row:
+                        links = [
+                            r[0] for r in conn.execute(
+                                "SELECT type_id FROM Stat_Type_Links WHERE stat_id = ?;",
+                                (row[0],),
+                            )
+                        ]
+                if not links:
+                    return True
+                etype = conn.execute(
+                    "SELECT entity_type FROM Entities WHERE entity_id = ?;",
+                    (entity_id,),
+                ).fetchone()
+                if not etype:
+                    return True
+                return etype[0] in links
+        except sqlite3.Error:
+            return True
+
+    @staticmethod
+    def _resolve_entity_id(
+        raw: str,
+        all_stats: dict[str, dict[str, str]],
+        meta: dict[str, dict[str, str]],
+    ) -> str:
+        """Map LLM aliases (name, 'player') onto the real entity_id."""
+        if not raw:
+            return raw
+        if raw in all_stats or raw in meta:
+            return raw
+        lower = raw.lower()
+        for eid in list(all_stats) + [k for k in meta if k not in all_stats]:
+            if eid.lower() == lower:
+                return eid
+        for eid, info in meta.items():
+            if (info.get("name") or "").lower() == lower:
+                return eid
+        if lower == "player":
+            players = [
+                eid for eid, info in meta.items()
+                if info.get("entity_role") == "player" or info.get("entity_type") == "player"
+            ]
+            if len(players) == 1:
+                return players[0]
+            if "player" in all_stats or "player" in meta:
+                return "player"
+        return raw
+
+    @staticmethod
+    def _resolve_stat_key(raw: str, entity_stats: dict[str, str]) -> str:
+        """Prefer the entity's authored key (Sample) over a definition id (sample)."""
+        return resolve_stat_key(raw, entity_stats)
+
     def _load_defined_stats(self) -> set[str]:
         """Return the set of defined stat names (lowercased) for this universe.
 
@@ -1265,8 +1599,10 @@ class ArbitratorEngine:
         """
         try:
             with get_connection(self._db_path) as conn:
-                rows = conn.execute("SELECT name FROM Stat_Definitions;").fetchall()
-            return {str(r[0]).lower() for r in rows}
+                rows = conn.execute("SELECT name, stat_id FROM Stat_Definitions;").fetchall()
+            names = {str(r[0]).lower() for r in rows if r[0]}
+            ids = {str(r[1]).lower() for r in rows if r[1]}
+            return names | ids
         except sqlite3.Error:
             return set()
 
@@ -1299,6 +1635,7 @@ class ArbitratorEngine:
 
         Returns:
             (True, "") if valid, or (False, reason_string) if invalid.
+
         """
         if not entity_id:
             return False, "Missing entity_id in state change."
@@ -1312,10 +1649,21 @@ class ArbitratorEngine:
         if stat_key.lower() != "description":
             if stat_key.lower() not in defined_stats:
                 return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
+            if not self._stat_allowed_for_entity(entity_id, stat_key):
+                return False, (
+                    f"Stat '{stat_key}' is not linked to this entity's type."
+                )
 
         # Resource sufficiency rules (prevent stats like HP, Gold, etc. from going below zero)
         entity_stats = all_effective_stats.get(entity_id, {})
-        current_raw = entity_stats.get(stat_key, "0")
+        current_raw = entity_stats.get(stat_key)
+        if current_raw is None:
+            for k, v in entity_stats.items():
+                if k.lower() == stat_key.lower():
+                    current_raw = v
+                    break
+        if current_raw is None:
+            current_raw = "0"
 
         try:
             current_val = float(current_raw)
@@ -1343,7 +1691,7 @@ class ArbitratorEngine:
                     # Allow it but set to 0 instead of rejecting, or just ignore the reduction
                     # Here we silently cap at 0 to ensure the turn proceeds but the hero survives.
                     return True, ""
-                
+
                 return False, (
                     f"{entity_id} does not have enough {stat_key} (current: {current_val:.0f})"
                 )
@@ -1358,6 +1706,7 @@ class ArbitratorEngine:
 
         Args:
             reason: Human-readable description of what failed.
+
         """
         correction = (
             f"[NARRATOR HINT: The previous action failed because {reason}. "
@@ -1370,13 +1719,13 @@ class ArbitratorEngine:
 
     def _apply_local_change(self, entity_id: str, payload: dict, all_stats: dict) -> None:
         """Update a local stats snapshot with a proposed change.
-        
+
         Ensures that within a single turn, subsequent validations or rules
         see the effects of previous changes.
         """
         if entity_id not in all_stats:
             all_stats[entity_id] = {}
-            
+
         stat_key = payload["stat_key"]
         if "delta" in payload:
             current_raw = all_stats[entity_id].get(stat_key, "0")
@@ -1391,20 +1740,42 @@ class ArbitratorEngine:
         else:
             all_stats[entity_id][stat_key] = str(payload["value"])
 
+    def _resolve_inventory_holder(self, change: dict) -> tuple[str, str]:
+        """Normalize holder_kind/holder_id from an LLM inventory change."""
+        meta = self._load_entity_meta()
+        holder_kind = str(change.get("holder_kind") or "").strip().lower()
+        holder_id = str(change.get("holder_id") or "").strip()
+        entity_id = change.get("entity_id")
+        location_id = str(change.get("location_id") or "").strip()
+        container = str(
+            change.get("container_instance_id")
+            or change.get("container")
+            or change.get("container_name")
+            or ""
+        ).strip()
+
+        if holder_kind in ("entity", "location", "instance") and holder_id:
+            if holder_kind == "entity":
+                holder_id = self._resolve_entity_id(holder_id, {}, meta)
+            return holder_kind, holder_id
+        if container:
+            return "instance", container
+        if location_id:
+            return "location", location_id
+        if entity_id:
+            return "entity", self._resolve_entity_id(entity_id, {}, meta)
+        return "entity", self._resolve_entity_id("player", {}, meta)
+
     def _validate_inventory_change(self, save_id: str, change: dict) -> tuple[bool, str]:
         """Verify if an inventory transaction is legal."""
-        entity_id = change.get("entity_id")
         item_id = change.get("item_id")
         action = change.get("action")
 
-        if not entity_id or not item_id or action not in ("add", "remove"):
-            return False, "Malformed inventory change (missing entity_id, item_id, or invalid action)."
+        if not item_id or action not in ("add", "remove", "move"):
+            return False, "Malformed inventory change (missing item_id or invalid action)."
 
-        # `quantity` comes straight from untrusted LLM JSON: it can be missing,
-        # null, a non-numeric / float string, or <= 0. Coerce defensively here so
-        # a bad value rejects the change (→ correction hint) instead of crashing
-        # the whole turn (int(None)/int("two") raise) or later violating the
-        # quantity >= 0 CHECK / silently turning a "remove" into an add.
+        change["item_id"] = _slug_item_id(str(item_id))
+        item_id = change["item_id"]
         try:
             quantity = int(change.get("quantity", 1))
         except (ValueError, TypeError):
@@ -1412,68 +1783,118 @@ class ArbitratorEngine:
         if quantity <= 0:
             return False, "Inventory quantity must be a positive whole number."
 
-        with get_connection(self._db_path) as conn:
-            # 1. Check if item exists in definitions
-            item_exists = conn.execute(
-                "SELECT 1 FROM Item_Definitions WHERE item_id = ?;", (item_id,)
-            ).fetchone()
-            if not item_exists:
-                return False, f"Unknown item: {item_id}"
+        holder_kind, holder_id = self._resolve_inventory_holder(change)
+        change["holder_kind"] = holder_kind
+        change["holder_id"] = holder_id
+        change["entity_id"] = holder_id if holder_kind == "entity" else change.get("entity_id") or holder_id
 
-            # 2. Check if entity exists in this save
-            entity_exists = conn.execute(
-                "SELECT 1 FROM Entities WHERE entity_id = ?;", (entity_id,)
-            ).fetchone()
-            if not entity_exists:
-                return False, f"Unknown entity: {entity_id}"
+        is_container = bool(change.get("is_container"))
+        container_name = str(change.get("container_name") or change.get("container") or "").strip()
+
+        from axiom.inventory import InventoryError, _holder_exists, ensure_item_definition
+
+        with get_connection(self._db_path) as conn:
+            ensure_item_definition(
+                conn, item_id,
+                name=str(change.get("name") or item_id),
+                is_container=is_container,
+            )
+            if container_name and holder_kind != "instance":
+                cid = _slug_item_id(container_name)
+                existing = conn.execute(
+                    "SELECT instance_id FROM Item_Instances "
+                    "WHERE save_id = ? AND item_id = ? AND holder_kind = ? AND holder_id = ? "
+                    "LIMIT 1;",
+                    (save_id, cid, holder_kind, holder_id),
+                ).fetchone()
+                if existing:
+                    change["holder_kind"] = "instance"
+                    change["holder_id"] = existing[0]
+                    holder_kind, holder_id = "instance", existing[0]
+                else:
+                    change["_pending_container"] = {
+                        "item_id": cid, "name": container_name,
+                        "holder_kind": holder_kind, "holder_id": holder_id,
+                    }
+            elif not _holder_exists(conn, holder_kind, holder_id):
+                return False, f"Unknown holder: {holder_kind}:{holder_id}"
 
             if action == "remove":
-                # 3. Check if entity has enough quantity
                 row = conn.execute(
-                    "SELECT quantity FROM Items_Inventory WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
-                    (save_id, entity_id, item_id)
+                    "SELECT SUM(quantity) FROM Item_Instances "
+                    "WHERE save_id = ? AND item_id = ? AND holder_kind = ? AND holder_id = ?;",
+                    (save_id, item_id, holder_kind, holder_id),
                 ).fetchone()
-                current_qty = row["quantity"] if row else 0
+                current_qty = int(row[0] or 0) if row else 0
+                if current_qty == 0:
+                    row = conn.execute(
+                        "SELECT quantity FROM Items_Inventory "
+                        "WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
+                        (save_id, holder_id, item_id),
+                    ).fetchone()
+                    current_qty = int(row[0]) if row else 0
                 if current_qty < quantity:
                     return False, f"Insufficient quantity for {item_id} (has {current_qty}, needs {quantity})."
+            conn.commit()
 
         return True, ""
 
     def _apply_inventory_change(self, save_id: str, turn_id: int, change: dict,
                                  pending_events: list[tuple] | None = None) -> None:
         """Persist an inventory transaction and log the event."""
-        entity_id = change["entity_id"]
-        item_id = change["item_id"]
+        from axiom.inventory import InventoryError, add_item, move_item, remove_item
+
         action = change["action"]
+        item_id = change["item_id"]
         quantity = int(change.get("quantity", 1))
+        holder_kind = change.get("holder_kind") or "entity"
+        holder_id = change.get("holder_id") or change.get("entity_id") or ""
+        target = change.get("entity_id") or holder_id
 
         with get_connection(self._db_path) as conn:
-            if action == "add":
-                conn.execute(
-                    """
-                    INSERT INTO Items_Inventory (save_id, entity_id, item_id, quantity)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(save_id, entity_id, item_id) DO UPDATE SET
-                    quantity = quantity + excluded.quantity;
-                    """,
-                    (save_id, entity_id, item_id, quantity)
-                )
-            elif action == "remove":
-                conn.execute(
-                    """
-                    UPDATE Items_Inventory SET quantity = quantity - ?
-                    WHERE save_id = ? AND entity_id = ? AND item_id = ?;
-                    """,
-                    (quantity, save_id, entity_id, item_id)
-                )
-                # Cleanup zero-quantity items
-                conn.execute(
-                    "DELETE FROM Items_Inventory WHERE quantity <= 0;"
-                )
-            conn.commit()
+            try:
+                pending = change.pop("_pending_container", None)
+                if pending:
+                    inst = add_item(
+                        conn, save_id, pending["item_id"],
+                        quantity=1,
+                        holder_kind=pending["holder_kind"],
+                        holder_id=pending["holder_id"],
+                        name=pending["name"],
+                        is_container=True,
+                    )
+                    holder_kind, holder_id = "instance", inst
+                    change["holder_kind"] = holder_kind
+                    change["holder_id"] = holder_id
+                if action == "add":
+                    add_item(
+                        conn, save_id, item_id,
+                        quantity=quantity,
+                        holder_kind=holder_kind,
+                        holder_id=holder_id,
+                        name=str(change.get("name") or ""),
+                        is_container=bool(change.get("is_container")),
+                    )
+                elif action == "remove":
+                    remove_item(
+                        conn, save_id,
+                        item_id=item_id,
+                        holder_kind=holder_kind,
+                        holder_id=holder_id,
+                        quantity=quantity,
+                    )
+                elif action == "move":
+                    dest_kind = str(change.get("dest_holder_kind") or holder_kind)
+                    dest_id = str(change.get("dest_holder_id") or holder_id)
+                    instance_id = change.get("instance_id")
+                    if instance_id:
+                        move_item(conn, save_id, instance_id, dest_kind, dest_id, quantity=quantity)
+                conn.commit()
+            except InventoryError as exc:
+                logger.warning("[ARBITRATOR] Inventory apply failed: %s", exc)
+                return
 
-        # Log to event source for perfect rewindability
-        event_tuple = (save_id, turn_id, f"inventory_{action}", entity_id, change)
+        event_tuple = (save_id, turn_id, f"inventory_{action}", target, change)
         if pending_events is not None:
             pending_events.append(event_tuple)
         else:
