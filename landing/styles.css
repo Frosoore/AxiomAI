@@ -104,35 +104,6 @@ h2.section-title {
   margin-bottom: 48px;
 }
 
-/* ---------- Alpha / tester banner ---------- */
-.alpha-banner {
-  background:
-    repeating-linear-gradient(45deg, rgba(0,0,0,.10) 0 12px, transparent 12px 24px),
-    linear-gradient(90deg, #c0394f, var(--red));
-  color: #fff7f9;
-  border-bottom: 1px solid rgba(0,0,0,.35);
-}
-.alpha-inner {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 9px 24px;
-}
-.alpha-tag {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: .68rem;
-  font-weight: 600;
-  letter-spacing: .14em;
-  background: rgba(0,0,0,.28);
-  border: 1px solid rgba(255,255,255,.35);
-  border-radius: 6px;
-  padding: 3px 9px;
-}
-.alpha-banner p { font-size: .86rem; line-height: 1.45; }
-.alpha-banner b { color: #fff; }
-@media (max-width: 600px) { .alpha-inner { align-items: flex-start; } .alpha-banner p { font-size: .8rem; } }
-
 /* ---------- Top nav ---------- */
 header.nav {
   position: sticky;

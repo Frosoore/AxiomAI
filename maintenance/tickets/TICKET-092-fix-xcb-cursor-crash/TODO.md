@@ -4,3 +4,5 @@
 - [x] Make the check fail-fast and output clear installation command instructions.
 - [x] Improve [run.sh](file:///home/frosoore/AxiomAI/run.sh) system library warning block to include exact installation commands.
 - [x] Verify using isolated execution.
+- [x] (2026-09-22) Ne pas bloquer le lancement sous Wayland (lib requise seulement par le plugin xcb).
+- [x] (2026-09-22) Validation : close sans test X11 réel, sur décision utilisateur.

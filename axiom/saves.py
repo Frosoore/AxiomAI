@@ -24,6 +24,7 @@ Editable text format, `save_state.toml`::
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from pathlib import Path
@@ -101,8 +102,21 @@ def materialize_state(
     """Materialise a save's state at a given point (by replaying the journal).
 
     Per-entity stats = the universe's base stats (`Entity_Stats`) overlaid
-    with the state replayed up to the point (logical `State_Cache`). Inventory
-    and modifiers are the current state (tables that are not event-sourced).
+    with the state replayed up to the point (logical `State_Cache`).
+
+    Session_Lore and modifiers are reconstructed at the point too (TICKET-095):
+    lore entries are filtered by `origin_turn <= turn_id`, and modifiers are
+    read live from `Active_Modifiers` when `turn_id` is the save's present
+    turn (nothing to reconstruct there), or otherwise from the same
+    `Modifier_Snapshots` table rewind restores from (see
+    `axiom.modifiers.modifiers_at`), read-only. Inventory at a past turn comes
+    from `Inventory_Snapshots` (`axiom.inventory.inventory_at`, the source
+    rewind restores from); a turn played before snapshots existed has none and
+    shows the save's **current** inventory (`historical["inventory"]` False).
+    The returned
+    `historical` dict flags, per facet, whether the value shown is truly the
+    point-in-time state (`True`) or the save's present state (`False`), so
+    callers can warn the user.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
     sourcer = EventSourcer(db_path)
@@ -128,7 +142,22 @@ def materialize_state(
         from axiom.inventory import list_instances
 
         inventory = list_instances(conn, save_id)
-        if not inventory:
+        # TICKET-095: a past turn reads the per-turn inventory snapshot (same
+        # source rewind restores from); the present turn and turns captured
+        # before snapshots existed show the live inventory.
+        inventory_historical = turn_id >= _max_turn(conn, save_id)
+        from_snapshot = False
+        if not inventory_historical:
+            from axiom.inventory import inventory_at
+
+            past = inventory_at(conn, save_id, turn_id)
+            if past is not None:
+                inventory = [
+                    {**it, "entity_id": it["holder_id"]} if it.get("holder_kind") == "entity" else it
+                    for it in past
+                ]
+                inventory_historical = from_snapshot = True
+        if not inventory and not from_snapshot:
             inventory = [
                 {
                     "entity_id": r["entity_id"],
@@ -157,8 +186,9 @@ def materialize_state(
                 }
                 for r in conn.execute(
                     "SELECT entry_id, category, name, keywords, content, origin_turn "
-                    "FROM Session_Lore WHERE save_id = ? ORDER BY name;",
-                    (save_id,),
+                    "FROM Session_Lore WHERE save_id = ? AND origin_turn <= ? "
+                    "ORDER BY name;",
+                    (save_id, turn_id),
                 )
             ]
         except sqlite3.Error:
@@ -180,19 +210,33 @@ def materialize_state(
                 }
         except sqlite3.Error:
             entity_meta = {}
-        modifiers = [
-            {
-                "entity_id": r["entity_id"],
-                "stat_key": r["stat_key"],
-                "delta": r["delta"],
-                "minutes_remaining": r["minutes_remaining"],
-            }
-            for r in conn.execute(
-                "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
-                "WHERE save_id = ? ORDER BY entity_id, stat_key;",
-                (save_id,),
+        # At the save's present turn, Active_Modifiers *is* the point-in-time
+        # state (nothing to reconstruct) — read it live so modifiers added
+        # outside a turn tick (e.g. `apply_correction`, an import, a GM
+        # command) show up immediately, without waiting for the next
+        # `snapshot_modifiers` call. Only a genuinely past turn needs the
+        # snapshot-based reconstruction (TICKET-095).
+        if turn_id >= _max_turn(conn, save_id):
+            modifiers = [
+                {
+                    "entity_id": r["entity_id"],
+                    "stat_key": r["stat_key"],
+                    "delta": r["delta"],
+                    "minutes_remaining": r["minutes_remaining"],
+                }
+                for r in conn.execute(
+                    "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
+                    "WHERE save_id = ? ORDER BY entity_id, stat_key;",
+                    (save_id,),
+                )
+            ]
+        else:
+            from axiom.modifiers import modifiers_at
+
+            modifiers = sorted(
+                modifiers_at(conn, save_id, turn_id),
+                key=lambda m: (m["entity_id"], m["stat_key"]),
             )
-        ]
         in_game_minutes = _in_game_minutes_at(conn, save_id, turn_id)
 
     # Fusion base ⊕ état rejoué (le replay prévaut). Fold incoming keys onto
@@ -217,6 +261,12 @@ def materialize_state(
         "inventory": inventory,
         "session_lore": session_lore,
         "modifiers": modifiers,
+        "historical": {
+            "entities": True,
+            "session_lore": True,
+            "modifiers": True,
+            "inventory": inventory_historical,
+        },
     }
 
 
@@ -362,6 +412,9 @@ def import_save_state(
                     (str(uuid.uuid4()), save_id, m["entity_id"], m["stat_key"],
                      float(m["delta"]), int(m.get("minutes_remaining", 0))),
                 )
+            _snapshot_modifiers_now(conn, save_id, 0)
+            from axiom.inventory import snapshot_inventory
+            snapshot_inventory(conn, save_id, 0)
             conn.execute(
                 "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
                 "VALUES (?, ?, ?, ?);",
@@ -458,6 +511,14 @@ def apply_correction(
                     (str(uuid.uuid4()), save_id, m["entity_id"], m["stat_key"],
                      float(m["delta"]), int(m.get("minutes_remaining", 0))),
                 )
+            if patch.get("modifiers_replace") or "modifiers" in patch:
+                _snapshot_modifiers_now(conn, save_id, turn_id)
+            if patch.get("inventory_replace") or "inventory" in patch:
+                # Inventory is written live, i.e. as the save's present state:
+                # re-capture the present turn so a later rewind to it keeps the
+                # edit (TICKET-095).
+                from axiom.inventory import snapshot_present_inventory
+                snapshot_present_inventory(conn, save_id)
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
         raise SaveError(f"Correction failed (invalid reference?): {exc}") from exc
@@ -539,6 +600,49 @@ def _apply_inventory_row(conn: sqlite3.Connection, save_id: str, it: dict[str, A
             "INSERT OR REPLACE INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
             "VALUES (?, ?, ?, ?);",
             (save_id, holder_id, item_id, qty),
+        )
+
+
+def _snapshot_modifiers_now(conn: sqlite3.Connection, save_id: str, turn_id: int) -> None:
+    """Write a Modifier_Snapshots row for `turn_id` from the current Active_Modifiers.
+
+    `materialize_state`/`axiom.modifiers.modifiers_at` (TICKET-095) reconstruct
+    past modifiers from `Modifier_Snapshots`, same as rewind. Import and
+    correction write `Active_Modifiers` directly (not through
+    `ModifierProcessor.add_modifier`/`snapshot_modifiers`), so without this the
+    edited modifiers would have no snapshot at their turn and look like "no
+    modifiers then" once read back through `materialize_state`. Called on the
+    caller's open transaction, after the Active_Modifiers writes, so it sees
+    them uncommitted.
+    """
+    from axiom.schema import ensure_modifier_snapshots_table
+
+    ensure_modifier_snapshots_table(conn)
+    rows = conn.execute(
+        "SELECT modifier_id, entity_id, stat_key, delta, minutes_remaining "
+        "FROM Active_Modifiers WHERE save_id = ?;",
+        (save_id,),
+    ).fetchall()
+    if rows:
+        state = [
+            {
+                "modifier_id": r[0],
+                "entity_id": r[1],
+                "stat_key": r[2],
+                "delta": r[3],
+                "minutes_remaining": r[4],
+            }
+            for r in rows
+        ]
+        conn.execute(
+            "INSERT OR REPLACE INTO Modifier_Snapshots (save_id, turn_id, state_json) "
+            "VALUES (?, ?, ?);",
+            (save_id, turn_id, json.dumps(state)),
+        )
+    else:
+        conn.execute(
+            "DELETE FROM Modifier_Snapshots WHERE save_id = ? AND turn_id = ?;",
+            (save_id, turn_id),
         )
 
 
@@ -678,6 +782,65 @@ def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *,
 # Fork (découpe du journal à un point)
 # ---------------------------------------------------------------------------
 
+def _fork_item_instances(
+    conn: sqlite3.Connection, src_id: str, new_id: str, turn_id: int
+) -> None:
+    """Copy the nested inventory into a forked save (TICKET-095).
+
+    Uses the source's inventory snapshot at the fork turn when there is one
+    (else the present inventory, as before), and copies the snapshots up to
+    that turn so rewind keeps working inside the fork. Instance ids are
+    regenerated through ONE mapping shared by rows, holders and snapshots, so
+    a container's contents still point at the forked container.
+    """
+    from axiom.inventory import inventory_at, snapshot_inventory
+    from axiom.schema import ensure_inventory_snapshots_table
+
+    id_map: dict[str, str] = {}
+
+    def _new(old: str) -> str:
+        if old not in id_map:
+            id_map[old] = str(uuid.uuid4())
+        return id_map[old]
+
+    def _remap(row: dict[str, Any]) -> dict[str, Any]:
+        out = dict(row)
+        out["instance_id"] = _new(str(row["instance_id"]))
+        if row.get("holder_kind") == "instance":
+            out["holder_id"] = _new(str(row["holder_id"]))
+        return out
+
+    rows = inventory_at(conn, src_id, turn_id)
+    if rows is None:
+        rows = [
+            dict(r) for r in conn.execute(
+                "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
+                "FROM Item_Instances WHERE save_id = ?;",
+                (src_id,),
+            ).fetchall()
+        ]
+    conn.executemany(
+        "INSERT INTO Item_Instances "
+        "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
+        "VALUES (?, ?, ?, ?, ?, ?);",
+        [(m["instance_id"], new_id, m["item_id"], m["quantity"], m["holder_kind"],
+          m["holder_id"]) for m in map(_remap, rows)],
+    )
+
+    ensure_inventory_snapshots_table(conn)
+    for snap in conn.execute(
+        "SELECT turn_id, state_json FROM Inventory_Snapshots "
+        "WHERE save_id = ? AND turn_id <= ?;",
+        (src_id, turn_id),
+    ).fetchall():
+        conn.execute(
+            "INSERT OR REPLACE INTO Inventory_Snapshots (save_id, turn_id, state_json) "
+            "VALUES (?, ?, ?);",
+            (new_id, snap[0], json.dumps([_remap(r) for r in json.loads(snap[1] or "[]")])),
+        )
+    snapshot_inventory(conn, new_id, turn_id)
+
+
 def fork_save(
     db_path: str,
     save_id: str,
@@ -689,8 +852,9 @@ def fork_save(
     """Create a new save = `save_id`'s journal **truncated** at the chosen point.
 
     The full journal up to the point is copied (rewind/audit preserved);
-    current inventory and modifiers are copied as-is. Returns the new
-    save_id.
+    the nested inventory is taken at the fork point when a snapshot exists
+    (TICKET-095, see `_fork_item_instances`); modifiers are copied as-is.
+    Returns the new save_id.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
 
@@ -746,18 +910,7 @@ def fork_save(
             [(new_id, r["entity_id"], r["item_id"], r["quantity"]) for r in inv_rows],
         )
         try:
-            inst_rows = conn.execute(
-                "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
-                "FROM Item_Instances WHERE save_id = ?;",
-                (save_id,),
-            ).fetchall()
-            conn.executemany(
-                "INSERT INTO Item_Instances "
-                "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
-                "VALUES (?, ?, ?, ?, ?, ?);",
-                [(str(uuid.uuid4()), new_id, r["item_id"], r["quantity"],
-                  r["holder_kind"], r["holder_id"]) for r in inst_rows],
-            )
+            _fork_item_instances(conn, save_id, new_id, turn_id)
         except sqlite3.Error:
             pass
         try:

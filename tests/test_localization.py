@@ -90,3 +90,13 @@ class TestCanonicalVerbosity:
         assert canonical_verbosity("n'importe quoi") == DEFAULT_VERBOSITY_LEVEL
         assert canonical_verbosity("") == DEFAULT_VERBOSITY_LEVEL
         assert canonical_verbosity(None) == DEFAULT_VERBOSITY_LEVEL
+        assert DEFAULT_VERBOSITY_LEVEL == "balanced"  # TICKET-096
+
+    def test_inconnu_retombe_sur_le_defaut_fourni(self) -> None:
+        """TICKET-096 : défaut passé par l'appelant, aucune lecture de config."""
+        from unittest.mock import patch
+        from core.localization import canonical_verbosity
+        with patch("axiom.config.load_config", side_effect=AssertionError("no disk read")):
+            assert canonical_verbosity("???", default="short") == "short"
+            assert canonical_verbosity("bavard", default="short") == "talkative"
+            assert canonical_verbosity("???", default="bogus") == "balanced"

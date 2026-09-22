@@ -436,6 +436,13 @@ def _parse_items(src_dir: Path) -> list[tuple]:
 def _populate(conn: sqlite3.Connection, parsed: dict[str, Any]) -> None:
     """Insère toutes les données de définition parsées dans une DB fraîche."""
     conn.execute("PRAGMA foreign_keys=ON;")
+    # Les FK sont vérifiées au COMMIT (comme dans dev.refresh_definition) :
+    # l'ordre d'écriture dans map.toml (ex. un lieu listé avant son parent_id)
+    # devient indifférent. Une référence réellement pendante échoue toujours.
+    # Le PRAGMA doit être posé DANS la transaction : hors transaction, le
+    # COMMIT implicite de sa propre instruction le remet aussitôt à OFF.
+    conn.execute("BEGIN;")
+    conn.execute("PRAGMA defer_foreign_keys=ON;")
 
     conn.executemany(
         "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES (?, ?);",
@@ -580,6 +587,12 @@ def compile_universe(
         # Vide le WAL dans le fichier principal avant la bascule (sinon le .db
         # déplacé serait incomplet et les sidecars -wal/-shm seraient orphelins).
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    except sqlite3.IntegrityError as exc:
+        # Référence pendante dans la source (ex. parent_id inconnu) : erreur de
+        # source, pas un crash — les appelants (library, CLI) gèrent CompileError.
+        conn.close()
+        _remove_db_files(tmp_db)
+        raise CompileError(f"{src_dir.name}: invalid reference in source ({exc})") from exc
     finally:
         conn.close()
 

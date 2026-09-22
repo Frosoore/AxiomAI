@@ -22,14 +22,12 @@
 | TICKET-083| **Croyances : fuite temporelle au rewind** (`created_turn_id = min(tours des sources)` → une croyance survit à un rembobinage avant qu'elle ait été consolidée) | ouvert — QA Hindsight 2 (2026-06-19), sévérité basse-moyenne |
 | TICKET-084| **Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`** (croyances + faits + chunks narratifs cumulés) | ouvert — QA Hindsight 2 (2026-06-19), coût tokens |
 | TICKET-085| **Cache BM25 : `collection.get()` plein corpus tourne encore au cache-hit** (seul le build d'index est caché) | ouvert — QA Hindsight 2 (2026-06-19), micro-opt mineure |
-| TICKET-086| **`fired_turn_id` perdu** à l'extraction/export (`savestore._RUNTIME_COPY`) et au fork (`saves.fork_save`) → rewind ne « dé-tire » plus les events | ✅ corrigé + test de garde (⚠ non commité, 2026-06-21) — `maintenance/qa/qa-fs-univers-saves-2026-06-21/` |
-| TICKET-087| **Cache compilé `universes/Myria/.axiom-cache/` commité bien que gitignoré** + schéma périmé (pré-`fired_turn_id`), jamais reconstruit (hash source inchangé) | ouvert — QA fs 2026-06-21, hygiène repo (sans impact utilisateur : installateur exclut le cache) |
-| TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 |
+| TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 (inventaire + ses snapshots désormais copiés au fork, TICKET-095) |
 | TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models (mémoire living d'une save embarquée peut fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
 | TICKET-090| **`paths` : pas de `get_universes_dir()`**, `UNIVERSES_DIR` figé à l'import (insensible à `AXIOM_DATA_DIR`/`configure`) alors que saves/vector le sont → isolation asymétrique | ouvert — QA fs 2026-06-21, archi/cohérence |
-| TICKET-091| **Flake i18n inter-tests : `test_saves_sorting` casse si une langue fuite** (le `dialog` de `test_diagnostic_dialog` reste `deleteLater()`-é avec son combo de langue connecté → `set_language("ja")` peut se rejouer dans la boucle d'évènements d'un test ultérieur ; `test_saves_sorting` asserte des libellés en dur en anglais) | ✅ corrigé (⚠ non commité, 2026-06-22) — `maintenance/qa/qa-fs-univers-saves-2026-06-21/` |
+| TICKET-099| **Clés Fireworks intégrées expirées (2026-06-30) mais `BUILTIN_KEYS_ENABLED = True`** → un nouvel utilisateur est configuré par défaut sur des clés mortes | ouvert — **décision utilisateur** (couper l'interrupteur ou renouveler le pool) |
 
-Tickets résolus/clos : voir `DONE.md` (001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
+Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
 relancer le job `deploy`). TICKET-054 (i18n) **validé GUI le 2026-06-13**.
 
@@ -351,49 +349,6 @@ sur le corpus lore figé ; négligeable sur petits volumes. À ne faire que si u
 
 ---
 
-## TICKET-086 — `fired_turn_id` perdu à l'extraction/export et au fork ✅
-
-**Découvert le 2026-06-21** (QA système fichiers/univers/saves), **corrigé le même jour**
-(⚠ non commité, `maintenance/qa/qa-fs-univers-saves-2026-06-21/`).
-
-TICKET-075 a ajouté la colonne `fired_turn_id` à `Fired_Scheduled_Events` (pour que le rewind
-« dé-tire » les events tirés après le tour cible : `DELETE … WHERE fired_turn_id > target`). Mais deux
-chemins de copie codaient la liste de colonnes **en dur** sans la suivre → `fired_turn_id` retombait à
-`0` (défaut), donc le rewind ne dé-tirait plus rien (`0 > target` toujours faux) :
-- `axiom/savestore.py::_RUNTIME_COPY` — utilisé par `extract_save` (donc `pack_save`/`.axiomsave`
-  d'une save **embarquée legacy**). Repro confirmée : seed `fired_turn_id=7` → extrait à `0`.
-- `axiom/saves.py::fork_save` — `SELECT event_id` / `INSERT (save_id, event_id)` sans la colonne ;
-  utilisé par `duplicate_save` d'une save embarquée.
-
-**Correctif.** Les deux chemins propagent `fired_turn_id` ; `fork_save` appelle d'abord
-`ensure_fired_event_turn_column` (robuste sur vieille base). **Test de garde anti-dérive** ajouté
-(`tests/test_savestore.py::TestCopyListSchemaCoherence`) : `_DEFINITION_COPY`/`_RUNTIME_COPY` doivent
-matcher exactement le schéma vivant + régression `fired_turn_id` sur `extract_save`. 160 tests verts.
-
-**Priorité :** moyenne — perte de donnée silencieuse cassant TICKET-075 sur les chemins export/fork.
-
----
-
-## TICKET-087 — Cache compilé Myria commité (gitignoré mais tracké) + schéma périmé
-
-**Découvert le 2026-06-21** (QA fs). `universes/Myria/.axiom-cache/universe.db` (+ `cache_hash.txt`)
-sont **suivis par git** alors qu'ils matchent une règle `.gitignore` (un fichier déjà tracké ignore
-le gitignore). Le cache commité date du 2026-06-15, **avant** l'ajout de `fired_turn_id` → schéma
-périmé. Comme `cache_hash.txt` matche la source, `compile_universe` (sans `force`) **ne le reconstruit
-jamais**.
-
-**Impact.** Nul pour l'utilisateur final : `core/bundled_universes.py` exclut `.axiom-cache` à la
-copie (`ignore_patterns`) → recompile propre dans la bibliothèque. N'affecte que le dev qui lance
-depuis le repo (cache stale) et l'hygiène du dépôt (binaire 221 Ko commité contre l'intention).
-
-**Piste.** `git rm --cached universes/Myria/.axiom-cache/universe.db universes/Myria/.axiom-cache/cache_hash.txt`
-(désuivre, l'utilisateur gère git) — le cache se régénère à la première compilation. Vérifier qu'aucun
-autre univers bundlé n'a un cache tracké.
-
-**Priorité :** basse — hygiène repo.
-
----
-
 ## TICKET-088 — `fork_save` ne copie pas la mémoire living ni les snapshots
 
 **Découvert le 2026-06-21** (QA fs, même classe que TICKET-086). `axiom/saves.py::fork_save` copie
@@ -408,6 +363,11 @@ fichier→fichier et gardent tout). Impact réel : legacy + living + duplication
 
 **Piste.** Étendre `fork_save` aux tables manquantes (en gérant leur création paresseuse : `Facts`/
 `Observations`/`Mental_Models` peuvent être absentes d'une vieille base), ou documenter la limite.
+
+**MAJ 2026-09-22 (TICKET-095).** Le fork prend désormais l'inventaire **au tour du fork** (via
+`Inventory_Snapshots`) et copie ces snapshots, avec remappage cohérent des `instance_id` (le contenu
+des sacs pointait avant vers des ids de la save source). Restent non copiés : Facts/Observations/
+Mental_Models, `Snapshots`, `Modifier_Snapshots`.
 
 **Priorité :** basse-moyenne.
 
@@ -443,3 +403,18 @@ bibliothèque doivent passer un `library_dir` explicite (ce qu'ils font aujourd'
 Décider si les univers DOIVENT suivre `data_dir` (cohérence) ou rester volontairement machine-globaux.
 
 **Priorité :** basse — cohérence/archi, pas de bug pour l'app (qui n'override jamais `data_dir`).
+
+---
+
+## TICKET-099 — Clés intégrées expirées toujours proposées
+
+**Découvert le 2026-09-22** (mise à jour du site). `core/builtin_keys.py::BUILTIN_KEYS_ENABLED` vaut
+encore `True`, alors que le pool Fireworks prépayé a expiré le 2026-06-30 (TICKET-062 item 2). Au premier
+lancement, `apply_beta_defaults()` configure donc le backend `fireworks` sur des clés mortes : le premier
+tour d'un nouvel utilisateur échoue au lieu d'afficher « ajoute ta clé dans les Réglages ».
+La bannière du site qui annonçait ces clés a été retirée le 2026-09-22.
+
+**Options.** (a) passer `BUILTIN_KEYS_ENABLED = False` (le commentaire du module prévoit exactement ce
+cas : rien n'est supprimé, réactivable) ; (b) renouveler/recharger le pool.
+**Priorité :** haute pour l'expérience d'un nouvel utilisateur — une ligne à changer une fois décidé.
+

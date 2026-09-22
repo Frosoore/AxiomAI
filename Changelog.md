@@ -458,3 +458,36 @@ The specific scenario from the spec — "click Add Entity, type 'Gojo', click Sa
 ### Tests
 - Fixtures that described a private custom world now use bundled **Myria** names and lore.
 
+
+---
+
+## [QA post-17h59 | 2026-09-22] — Stabilisation after the June–August contributor commits
+
+### Startup & engine
+- `main.py`: wheel guard moved from a Python `QApplication.notify()` override (deadlocked Qt's `QAudioContext` thread at the first `QMediaPlayer` → window never shown) to an application event filter.
+- `axiom/compile.py::_populate`: `BEGIN` + `PRAGMA defer_foreign_keys=ON` (FKs checked at COMMIT) → a location listed before its parent compiles; `IntegrityError` re-raised as `CompileError` (Hub skips the universe instead of a pop-up loop). Same PRAGMA ordering fix in `axiom/dev.py::refresh_definition`.
+- `axiom/saves.py::materialize_state`: Session_Lore filtered by `origin_turn`, modifiers rebuilt from `Modifier_Snapshots` (`axiom/modifiers.py::modifiers_at`), `historical` flags in the result; import/correction write a modifier snapshot.
+- Default narrator verbosity back to `balanced` everywhere; `core/localization.py::canonical_verbosity(value, default=None)` is pure again.
+- `axiom/multiplayer.py` docstring updated (`ActionQueue` kept as public API).
+
+### Web UI
+- `/api/session/canonize/apply` uses only the server-side preview paths (client paths allowed arbitrary deletion).
+- XSS: every `innerHTML` interpolation escaped; `formatMarkdown` escapes first and filters URLs (`safeUrl`).
+- Server: no `Access-Control-Allow-Origin: *`; `_security_guard` (Host, Origin/Referer, JSON Content-Type); path guards use `is_relative_to`.
+- Temporary-stat editor fully translatable (`dyn_*` keys).
+
+### App, i18n, tooling
+- `ui/hub_view.py`: universe export fixed (4-value unpack).
+- i18n: 6 missing keys translated (CI), +24 `dyn_*` keys; all 10 languages at 804/804.
+- `debug/startup_check.py` / `tools/diagnostic.py`: missing `libxcb-cursor0` only blocks when Qt will use xcb (warning under Wayland).
+
+### Site
+- Dev updates: July 2026 entry, August summary + known regressions; expired tester banner removed (pages, blog template, CSS); blog post "Quiet, but stable".
+
+### Tests
+- Compile order / dangling parent / bundled Myria from scratch; web canonize path trust + 8 web security tests; historical `materialize_state`; `canonical_verbosity` default. Suite: 1032 passed.
+
+### Inventory rewind (TICKET-095)
+- New additive table `Inventory_Snapshots` (one JSON capture of `Item_Instances` per turn, written even when empty). `axiom/inventory.py`: `snapshot_inventory`, `snapshot_present_inventory`, `inventory_at`, `rollback_inventory`.
+- Arbitrator captures the previous turn if missing (turn 0, pre-update saves) then end-of-turn; `CheckpointManager.rewind` restores it; `materialize_state` and `fork_save` read it (fork also fixed: nested contents kept their parent id).
+- Manual edits (save editor correction/import, web inventory move) re-capture the present turn. Turns played before the update have no snapshot: rewind leaves the inventory unchanged there.

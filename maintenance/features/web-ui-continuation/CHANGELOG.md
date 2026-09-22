@@ -284,3 +284,12 @@ the only mismatch.
 
 New test: `test_creator_data_map_connections_round_trip` (GET returns locations+connections
 correctly, POST /api/creator/save round-trips an added connection). 24/24 green.
+
+## 2026-09-22 — QA post-17h59 (Claude)
+
+Correctifs sécurité et i18n appliqués au web UI hors de ce dossier (voir
+`maintenance/qa/qa-post-17h59-2026-09-22/` et `maintenance/qa/tickets-092-098-2026-09-22/`) :
+`/api/session/canonize/apply` ne fait plus confiance aux chemins du client ; XSS (échappement de tous
+les rendus `innerHTML` + `safeUrl` dans `formatMarkdown`) ; plus de CORS `*`, garde Host/Origin/
+Content-Type (`_security_guard`), gardes de chemin `is_relative_to` ; verbosité par défaut `balanced` ;
+éditeur de stats temporaires traduisible (`dyn_*`).

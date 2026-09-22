@@ -815,7 +815,7 @@ class SettingsDialog(QDialog):
             language=self._lang_combo.currentData(),
             basic_prompt=self._basic_prompt.toPlainText().strip(),
             negative_prompt=self._negative_prompt.toPlainText().strip(),
-            default_verbosity=self._default_verbosity_combo.currentData() or "talkative",
+            default_verbosity=self._default_verbosity_combo.currentData() or "balanced",
             # Memory settings (Phase 2) — must be read back here or saving the
             # dialog would silently reset them to their defaults.
             memory_mode=self._memory_mode_combo.currentData() or "lite",

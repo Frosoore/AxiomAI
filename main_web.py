@@ -59,6 +59,11 @@ TURN_CANCEL = threading.Event()
 TURN_BUSY = False
 TURN_BUSY_LOCK = threading.Lock()
 
+# Paths of the last canonize preview, kept server-side: /canonize/apply must
+# never trust staged_dir/src_dir/universe_db sent by the client (apply mirrors
+# a tree with orphan purge + rmtree → arbitrary file deletion otherwise).
+LAST_CANONIZE_PREVIEW: dict = {}
+
 # Living-memory buffer (mirrors ui/tabletop_view.py::_fact_pending).
 # Web had no post-turn extraction before — facts only appeared if desktop
 # had distilled them earlier.
@@ -99,17 +104,91 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         # Override to suppress spam in terminal logs
         pass
 
+    # Ports/hosts the local web UI may legitimately be reached on. TICKET-094:
+    # the front is served by this same process (same-origin `fetch('/api/...')`
+    # calls), so it needs no CORS grant -- Access-Control-Allow-Origin was
+    # previously "*", which let ANY page open in the same browser read/mutate
+    # this local API (saves, memory, hardcore-delete...) regardless of origin.
+    _MUTATING_METHODS = ("POST", "PUT", "DELETE", "PATCH")
+    # These POST routes take no meaningful JSON body (front calls them as
+    # `fetch(url, {method: 'POST'})` with no Content-Type/body at all), so the
+    # JSON Content-Type gate below would reject legitimate same-origin calls.
+    _JSON_CT_EXEMPT_PATHS = (
+        "/api/settings/test-connection",
+        "/api/creator/populate/apply",
+    )
+
     def send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
+    def _security_guard(self) -> bool:
+        """Anti DNS-rebinding / anti-CSRF gate, run before any route logic.
+
+        1. `Host` must name this server (127.0.0.1/localhost/[::1] + the real
+           bound port) -- rejects DNS-rebinding attacks that point an
+           attacker-controlled hostname at 127.0.0.1.
+        2. For mutating methods, an `Origin` (or, failing that, `Referer`)
+           header that names a *different* origin is rejected. Absent both
+           headers, the request is allowed through (curl, the test suite, and
+           other non-browser clients don't send them; a same-origin browser
+           fetch always does).
+        3. For mutating `/api/...` requests that are not multipart uploads,
+           the body must be declared `application/json` -- a third-party page
+           cannot set that header on a cross-origin `fetch`/form submission
+           without triggering a CORS preflight, which this server (having no
+           Access-Control-Allow-Origin) will not satisfy.
+        Sends a 403 JSON error and returns False on rejection.
+        """
+        port = self.server.server_port
+        allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        host = self.headers.get("Host", "")
+        if host not in allowed_hosts:
+            self.send_error_json(403, "Invalid Host header")
+            return False
+
+        if self.command not in self._MUTATING_METHODS:
+            return True
+
+        allowed_origins = {
+            f"http://127.0.0.1:{port}", f"http://localhost:{port}", f"http://[::1]:{port}",
+        }
+        origin = self.headers.get("Origin")
+        referer = self.headers.get("Referer")
+        if origin:
+            if origin not in allowed_origins:
+                self.send_error_json(403, "Origin not allowed")
+                return False
+        elif referer:
+            try:
+                parts = urllib.parse.urlsplit(referer)
+                referer_origin = f"{parts.scheme}://{parts.netloc}"
+            except Exception:
+                referer_origin = ""
+            if referer_origin not in allowed_origins:
+                self.send_error_json(403, "Referer not allowed")
+                return False
+        # else: neither header present -> non-browser client, allow through.
+
+        path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/api/") and path not in self._JSON_CT_EXEMPT_PATHS:
+            ctype_base = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+            if ctype_base not in ("application/json", "multipart/form-data"):
+                self.send_error_json(403, "Content-Type must be application/json")
+                return False
+
+        return True
+
     def do_OPTIONS(self):
+        if not self._security_guard():
+            return
         self.send_response(200)
         self.send_cors_headers()
         self.end_headers()
 
     def do_GET(self):
+        if not self._security_guard():
+            return
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path
 
@@ -132,7 +211,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             # Resolve to prevent directory traversal
             try:
                 target_file = target_file.resolve()
-                if target_file.is_file() and str(target_file).startswith(str(ASSETS_BASE_DIR)):
+                if target_file.is_file() and target_file.is_relative_to(ASSETS_BASE_DIR.resolve()):
                     self.serve_file(target_file, "image/png")
                 else:
                     self.send_error_json(404, "Asset not found")
@@ -145,7 +224,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             try:
                 target_file = target_file.resolve()
                 content_type = _AUDIO_CONTENT_TYPES.get(target_file.suffix.lower())
-                if content_type and target_file.is_file() and str(target_file).startswith(str(AUDIO_ASSETS_DIR.resolve())):
+                if content_type and target_file.is_file() and target_file.is_relative_to(AUDIO_ASSETS_DIR.resolve()):
                     self.serve_file(target_file, content_type)
                 else:
                     self.send_error_json(404, "Audio track not found")
@@ -155,6 +234,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             self.send_error_json(404, "Not Found")
 
     def do_POST(self):
+        if not self._security_guard():
+            return
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path
 
@@ -919,7 +1000,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 return
             try:
                 target = Path(uni_path) / rel_path
-                if target.exists() and str(target.resolve()).startswith(str(Path(uni_path).resolve())):
+                if target.exists() and target.resolve().is_relative_to(Path(uni_path).resolve()):
                     content = target.read_text(encoding="utf-8")
                     self.send_json({"content": content})
                 else:
@@ -1460,7 +1541,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "No active session loaded")
                 return
             try:
-                from axiom.inventory import InventoryError, move_item
+                from axiom.inventory import InventoryError, move_item, snapshot_present_inventory
                 from axiom.schema import migrate_schema
                 migrate_schema(ACTIVE_SESSION._db_path)
                 instance_id = str(payload.get("instance_id") or "")
@@ -1474,6 +1555,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                         conn, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
                         quantity=payload.get("quantity"),
                     )
+                    snapshot_present_inventory(conn, ACTIVE_SESSION._save_id)  # TICKET-095
                     conn.commit()
                 self.send_json({"status": "ok"})
             except InventoryError as exc:
@@ -1625,6 +1707,14 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 info = canonize_story(
                     ACTIVE_SESSION._db_path, text, preview=bool(preview), llm=None
                 )
+                LAST_CANONIZE_PREVIEW.clear()
+                if info.get("staged_dir"):
+                    LAST_CANONIZE_PREVIEW.update(
+                        staged_dir=info.get("staged_dir"),
+                        src_dir=info.get("src_dir") or "",
+                        universe_db=info.get("universe_db") or "",
+                        save_db=ACTIVE_SESSION._db_path,
+                    )
                 diffs = info.get("diffs") or []
                 diff_text = "\n\n".join(
                     d.get("diff", "") if isinstance(d, dict) else str(d) for d in diffs
@@ -1674,14 +1764,19 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 except Exception as exc:
                     self.send_error_json(500, str(exc))
                 return
-            staged_dir = payload.get("staged_dir") or ""
-            src_dir = payload.get("src_dir") or ""
-            universe_db = payload.get("universe_db") or ""
-            if not staged_dir or not src_dir or not universe_db:
-                self.send_error_json(400, "Missing selection or staged_dir/src_dir/universe_db")
+            # Paths come ONLY from the server-side preview of this session;
+            # any staged_dir/src_dir/universe_db in the payload is ignored.
+            staged = dict(LAST_CANONIZE_PREVIEW)
+            staged_dir = staged.get("staged_dir") or ""
+            src_dir = staged.get("src_dir") or ""
+            universe_db = staged.get("universe_db") or ""
+            if (not staged_dir or not src_dir or not universe_db
+                    or staged.get("save_db") != ACTIVE_SESSION._db_path):
+                self.send_error_json(400, "Missing selection or no pending canonize preview")
                 return
             try:
                 from axiom.canonize import apply_canonize_preview
+                LAST_CANONIZE_PREVIEW.clear()
                 apply_canonize_preview(
                     staged_dir, src_dir, universe_db, save_db=ACTIVE_SESSION._db_path
                 )
@@ -2044,7 +2139,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 return
             try:
                 target = Path(uni_path) / rel_path
-                if str(target.resolve()).startswith(str(Path(uni_path).resolve())):
+                if target.resolve().is_relative_to(Path(uni_path).resolve()):
                     target.write_text(content, encoding="utf-8")
                     
                     # Hot-compile folder back to db
@@ -2889,7 +2984,7 @@ def resolve_session_verbosity() -> str:
         stored = stored.strip()
         if stored:
             from core.localization import canonical_verbosity
-            return canonical_verbosity(stored)
+            return canonical_verbosity(stored, default=cfg_default)
     except Exception:
         pass
     return cfg_default

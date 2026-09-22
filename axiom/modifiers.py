@@ -360,3 +360,37 @@ def rollback_modifiers(
                     mod["minutes_remaining"],
                 ),
             )
+
+
+def modifiers_at(
+    conn: "sqlite3.Connection", save_id: str, turn_id: int
+) -> list[dict[str, object]]:
+    """Read-only reconstruction of Active_Modifiers as of end-of-turn ``turn_id``.
+
+    Same snapshot lookup as :func:`rollback_modifiers` (TICKET-095: used by
+    ``axiom.saves.materialize_state`` so a past point shows the buffs/debuffs
+    active *then* rather than the save's current ones) but never mutates the
+    database: no DELETE, no rewrite of ``Active_Modifiers``. Looks up the
+    ``Modifier_Snapshots`` row for the exact ``turn_id`` — a row is written
+    every turn the save has active modifiers (see the table's DDL comment in
+    ``axiom.schema``), so absence of a row for that turn means "no modifiers
+    then", exactly as ``rollback_modifiers`` interprets it.
+    """
+    from axiom.schema import ensure_modifier_snapshots_table
+
+    ensure_modifier_snapshots_table(conn)
+    row = conn.execute(
+        "SELECT state_json FROM Modifier_Snapshots WHERE save_id = ? AND turn_id = ?;",
+        (save_id, turn_id),
+    ).fetchone()
+    if not row or not row[0]:
+        return []
+    return [
+        {
+            "entity_id": mod["entity_id"],
+            "stat_key": mod["stat_key"],
+            "delta": mod["delta"],
+            "minutes_remaining": mod["minutes_remaining"],
+        }
+        for mod in json.loads(row[0])
+    ]

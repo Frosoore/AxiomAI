@@ -190,7 +190,7 @@ async function loadConfig() {
     if (univKey) univKey.value = STATE.config.universal_api_key || '';
     const univModel = document.getElementById('setting-universal-model');
     if (univModel) univModel.value = STATE.config.universal_model || '';
-    document.getElementById('setting-default-verbosity').value = STATE.config.default_verbosity || 'talkative';
+    document.getElementById('setting-default-verbosity').value = STATE.config.default_verbosity || 'balanced';
     document.getElementById('setting-fallback-model').value = STATE.config.gemini_fallback_model || '';
     document.getElementById('setting-requests-limit').value = STATE.config.llm_requests_per_minute || 0;
     document.getElementById('setting-extraction-model').value = STATE.config.extraction_model || '';
@@ -385,8 +385,8 @@ function fillPersonasTable() {
   (STATE.personas || []).forEach((p, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" value="${p.name || ''}" data-key="name" data-idx="${idx}"></td>
-      <td><input type="text" value="${p.description || ''}" data-key="description" data-idx="${idx}"></td>
+      <td><input type="text" value="${escapeHtml(p.name || '')}" data-key="name" data-idx="${idx}"></td>
+      <td><input type="text" value="${escapeHtml(p.description || '')}" data-key="description" data-idx="${idx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.querySelector('.btn-table-del').onclick = () => {
@@ -472,9 +472,9 @@ function renderUniverseGrid() {
     const card = document.createElement('div');
     card.className = 'universe-card';
     card.innerHTML = `
-      <h3>${uni.name}</h3>
-      <p class="desc">${uni.description || ''}</p>
-      <div class="path">${uni.path}</div>
+      <h3>${escapeHtml(uni.name)}</h3>
+      <p class="desc">${escapeHtml(uni.description || '')}</p>
+      <div class="path">${escapeHtml(uni.path)}</div>
       <div class="card-saves-list">
         <!-- Saves listed here -->
       </div>
@@ -500,8 +500,8 @@ function renderUniverseGrid() {
         item.className = 'save-item';
         item.innerHTML = `
           <div>
-            <div class="save-name">${save.player_name}</div>
-            <div class="save-meta">${save.difficulty} · Turn ${save.turn_id} · ${new Date(save.last_updated).toLocaleString()}</div>
+            <div class="save-name">${escapeHtml(save.player_name)}</div>
+            <div class="save-meta">${escapeHtml(save.difficulty)} · Turn ${escapeHtml(save.turn_id)} · ${escapeHtml(new Date(save.last_updated).toLocaleString())}</div>
           </div>
           <div class="save-actions">
             <button class="btn-primary btn-sm play-save-btn">▶</button>
@@ -636,8 +636,8 @@ async function loadSetupView(universePath, tab = 'story') {
             const optLabel = document.createElement('label');
             optLabel.className = 'choice-option';
             optLabel.innerHTML = `
-              <input type="${selectType}" name="setup_q_${q.setup_id}" value="${opt}" ${oIdx === 0 ? 'checked' : ''}>
-              <span>${opt}</span>
+              <input type="${selectType}" name="setup_q_${escapeHtml(q.setup_id)}" value="${escapeHtml(opt)}" ${oIdx === 0 ? 'checked' : ''}>
+              <span>${escapeHtml(opt)}</span>
             `;
             choiceGrid.appendChild(optLabel);
           });
@@ -893,8 +893,8 @@ async function refreshTabletopState() {
     box.className = 'entity-box';
     box.innerHTML = `
       <div class="entity-box-header">
-        <span>${name}</span>
-        <span class="type">${etype}</span>
+        <span>${escapeHtml(name)}</span>
+        <span class="type">${escapeHtml(etype)}</span>
       </div>
     `;
     const stats = ent.stats || {};
@@ -917,7 +917,7 @@ async function refreshTabletopState() {
             return `${sign}${d} · ${m.minutes_remaining}m`;
           })
           .join(', ');
-        row.innerHTML = `<span>${k}${hint ? ` <span class="stat-mod-hint">${hint}</span>` : ''}</span><span class="val">${stats[k]}</span>`;
+        row.innerHTML = `<span>${escapeHtml(k)}${hint ? ` <span class="stat-mod-hint">${escapeHtml(hint)}</span>` : ''}</span><span class="val">${escapeHtml(stats[k])}</span>`;
         box.appendChild(row);
       });
     }
@@ -1002,9 +1002,9 @@ async function refreshChroniclerTimeline() {
       box.innerHTML = `
         <div class="entity-box-header">
           <span>Turn ${ev.turn_id}</span>
-          <span class="type">${ev.in_game_time ?? ''}</span>
+          <span class="type">${escapeHtml(ev.in_game_time)}</span>
         </div>
-        <div class="entity-stat-row"><span>${ev.description || ''}</span></div>
+        <div class="entity-stat-row"><span>${escapeHtml(ev.description)}</span></div>
       `;
       container.appendChild(box);
     });
@@ -1040,7 +1040,7 @@ function renderInvNodes(nodes, parent, names) {
     row.title = n.description || '';
     const qty = n.quantity && n.quantity !== 1 ? `x${n.quantity}` : '';
     const bag = n.is_container ? ' ▸' : '';
-    row.innerHTML = `<span style="color:${color}; font-weight:600;">${n.name || n.item_id}${bag}</span><span class="val">${qty}</span>`;
+    row.innerHTML = `<span style="color:${color}; font-weight:600;">${escapeHtml(n.name || n.item_id)}${bag}</span><span class="val">${escapeHtml(qty)}</span>`;
     if (n.instance_id) {
       row.style.cursor = 'pointer';
       row.onclick = async (e) => {
@@ -1096,7 +1096,7 @@ async function refreshInventory() {
       const kind = root.holder_kind === 'location' ? 'at' : (root.holder_kind === 'entity' ? 'on' : '');
       const box = document.createElement('div');
       box.className = 'entity-box';
-      box.innerHTML = `<div class="entity-box-header"><span>${kind} ${title}</span><span class="type">inventory</span></div>`;
+      box.innerHTML = `<div class="entity-box-header"><span>${kind} ${escapeHtml(title)}</span><span class="type">inventory</span></div>`;
       renderInvNodes(root.contents || [], box, names);
       container.appendChild(box);
     });
@@ -1118,8 +1118,8 @@ function renderLoreHits(hits) {
     const row = document.createElement('div');
     row.className = 'lore-hit';
     row.title = h.content || '';
-    row.innerHTML = `<strong>${h.name || '(untitled)'}</strong>
-      <span class="save-meta">${h.source || 'world'} · ${h.why || 'match'}${h.category ? ' · ' + h.category : ''}</span>`;
+    row.innerHTML = `<strong>${escapeHtml(h.name || '(untitled)')}</strong>
+      <span class="save-meta">${escapeHtml(h.source || 'world')} · ${escapeHtml(h.why || 'match')}${h.category ? ' · ' + escapeHtml(h.category) : ''}</span>`;
     box.appendChild(row);
   });
 }
@@ -1804,11 +1804,25 @@ async function switchVariant(turnId, variantIndex) {
   }
 }
 
+// Only http(s), same-origin paths and inline images are allowed as markdown
+// targets; anything else (javascript:, vbscript:, data:text/html...) becomes '#'.
+// `url` is already HTML-escaped by formatMarkdown, so it is attribute-safe.
+function safeUrl(url) {
+  const u = String(url || '').trim();
+  const decoded = u.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+  if (/^(https?:\/\/|\/(?!\/)|data:image\/(png|jpe?g|gif|webp);)/i.test(decoded)) return u;
+  return '#';
+}
+
 function formatMarkdown(text) {
+  // Escape raw HTML first -- text comes from the LLM/DB and must not be able
+  // to inject markup; the markdown-ish substitutions below then reintroduce
+  // only the specific tags we intend (img/a/b/i/br).
+  let html = escapeHtml(text == null ? '' : String(text));
   // Images: ![alt](url)
-  let html = text.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; max-height: 400px; border-radius: var(--border-radius); margin: 8px 0; display: block;">');
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (_m, alt, url) => `<img src="${safeUrl(url)}" alt="${alt}" style="max-width: 100%; max-height: 400px; border-radius: var(--border-radius); margin: 8px 0; display: block;">`);
   // Links: [text](url)
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: var(--blue); text-decoration: underline;">$1</a>');
+  html = html.replace(/\[(.*?)\]\((.*?)\)/g, (_m, label, url) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer" style="color: var(--blue); text-decoration: underline;">${label}</a>`);
   // Bold
   html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   // Italics
@@ -1830,7 +1844,7 @@ async function runLoreSearch(query) {
       try {
         const errData = await res.json();
         if (errData && errData.error) {
-          errMsg += `<br>Error: ${errData.error}`;
+          errMsg += `<br>Error: ${escapeHtml(errData.error)}`;
         }
       } catch (e) {}
       container.innerHTML = `<span class="save-meta" style="color: var(--red); font-size: 13px;">${errMsg}</span>`;
@@ -1843,7 +1857,7 @@ async function runLoreSearch(query) {
       card.className = 'lore-hit-card';
       card.innerHTML = `
         <div class="title" style="margin-bottom: 8px;">
-          <span>${query}</span>
+          <span>${escapeHtml(query)}</span>
           <span class="category">Mini-Dico</span>
         </div>
         <div class="content" style="line-height: 1.5; color: var(--text);">${formatMarkdown(data.answer)}</div>
@@ -1958,7 +1972,8 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function creatorStatSummaryBadge(stat) {
@@ -2064,9 +2079,9 @@ function syncCreatorStatEditorChrome() {
   document.getElementById('edit-stat-lasting-hint').classList.toggle('hidden', temp);
   document.getElementById('edit-stat-events-wrap').classList.toggle('hidden', !temp || kind !== 'buildup');
   const hints = {
-    heal: 'Time pulls this toward resting (a wound closing, vitality returning). No crash tags — healing is not an orgasm switch.',
-    buildup: 'The scene raises it. Pace is how long it can sit at max. Crash tags snap it to resting; extend tags hold the peak.',
-    duration: 'A short overlay that wears off on its own (a dose, a rush).'
+    heal: tr('dyn_hint_heal') || 'Time pulls this toward resting (a wound closing, vitality returning). No crash tags — healing is not an orgasm switch.',
+    buildup: tr('dyn_hint_buildup') || 'The scene raises it. Pace is how long it can sit at max. Crash tags snap it to resting; extend tags hold the peak.',
+    duration: tr('dyn_hint_duration') || 'A short overlay that wears off on its own (a dose, a rush).'
   };
   document.getElementById('edit-stat-kind-hint').textContent = hints[kind] || '';
 }
@@ -2206,7 +2221,7 @@ function creatorTypeCatalog() {
 function creatorAppliesToCell(stat, rIdx) {
   const selected = new Set(stat.applies_to || []);
   const opts = creatorTypeCatalog().map(t =>
-    `<option value="${t.type_id}" ${selected.has(t.type_id) ? 'selected' : ''}>${t.name || t.type_id}</option>`
+    `<option value="${escapeHtml(t.type_id)}" ${selected.has(t.type_id) ? 'selected' : ''}>${escapeHtml(t.name || t.type_id)}</option>`
   ).join('');
   return `<select multiple data-applies="1" data-idx="${rIdx}" title="Empty = all types">${opts}</select>`;
 }
@@ -2240,10 +2255,10 @@ function fillCreatorEntities() {
     const tr = document.createElement('tr');
     if (ent.entity_id === STATE.creatorActiveEntityId) tr.className = 'selected';
     tr.innerHTML = `
-      <td><input type="text" value="${ent.entity_id}" readonly></td>
-      <td><input type="text" value="${ent.entity_type}" readonly></td>
-      <td><input type="text" value="${ent.name}" data-key="name" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${ent.description || ''}" data-key="description" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(ent.entity_id)}" readonly></td>
+      <td><input type="text" value="${escapeHtml(ent.entity_type)}" readonly></td>
+      <td><input type="text" value="${escapeHtml(ent.name)}" data-key="name" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(ent.description || '')}" data-key="description" data-idx="${rIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.onclick = (e) => {
@@ -2286,8 +2301,8 @@ function fillCreatorEntities() {
     row.className = 'form-group';
     const val = activeStats[def.stat_id] || '';
     row.innerHTML = `
-      <label>${def.name} (${def.stat_id}):</label>
-      <input type="text" value="${val}" placeholder="E.g., 50 or friendly" data-stat="${def.stat_id}">
+      <label>${escapeHtml(def.name)} (${escapeHtml(def.stat_id)}):</label>
+      <input type="text" value="${escapeHtml(val)}" placeholder="E.g., 50 or friendly" data-stat="${escapeHtml(def.stat_id)}">
     `;
     row.querySelector('input').onchange = (e) => {
       const sId = e.target.getAttribute('data-stat');
@@ -2342,7 +2357,7 @@ function fillCreatorMap() {
 function renderMapTreeNode(loc, allLocs) {
   const li = document.createElement('li');
   const children = allLocs.filter(l => l.parent_id === loc.location_id);
-  li.innerHTML = `<span>${loc.name} (${loc.scale})</span>`;
+  li.innerHTML = `<span>${escapeHtml(loc.name)} (${escapeHtml(loc.scale)})</span>`;
   li.onclick = (e) => {
     e.stopPropagation();
     STATE.selectedMapNodeId = loc.location_id;
@@ -2371,9 +2386,9 @@ function fillCreatorRules() {
     const tr = document.createElement('tr');
     if (rule.rule_id === STATE.creatorActiveRuleId) tr.className = 'selected';
     tr.innerHTML = `
-      <td><input type="text" value="${rule.rule_id}" readonly></td>
+      <td><input type="text" value="${escapeHtml(rule.rule_id)}" readonly></td>
       <td><input type="number" value="${rule.priority || 0}" data-key="priority" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${rule.target_entity || '*'}" data-key="target_entity" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(rule.target_entity || '*')}" data-key="target_entity" data-idx="${rIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.onclick = (e) => {
@@ -2424,7 +2439,7 @@ function fillCreatorRules() {
           <option value=">" ${cond.operator === '>' ? 'selected' : ''}>&gt;</option>
         </select>
       </td>
-      <td><input type="text" value="${cond.value || ''}" data-key="value" data-idx="${cIdx}"></td>
+      <td><input type="text" value="${escapeHtml(cond.value || '')}" data-key="value" data-idx="${cIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.querySelector('.btn-table-del').onclick = () => {
@@ -2455,7 +2470,7 @@ function fillCreatorRules() {
         </select>
       </td>
       <td>${statSelectHtml(act.stat || '', aIdx)}</td>
-      <td><input type="text" value="${act.value || act.delta || ''}" data-key="value" data-idx="${aIdx}"></td>
+      <td><input type="text" value="${escapeHtml(act.value || act.delta || '')}" data-key="value" data-idx="${aIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.querySelector('.btn-table-del').onclick = () => {
@@ -2492,7 +2507,7 @@ function statSelectHtml(selected, idx) {
   const opts = [`<option value="">—</option>`].concat(stats.map(s => {
     const id = s.stat_id || '';
     const sel = id === selected ? 'selected' : '';
-    return `<option value="${id}" ${sel}>${s.name || id}</option>`;
+    return `<option value="${escapeHtml(id)}" ${sel}>${escapeHtml(s.name || id)}</option>`;
   }));
   return `<select data-key="stat" data-idx="${idx}">${opts.join('')}</select>`;
 }
@@ -2532,10 +2547,10 @@ function fillCreatorEvents() {
   events.forEach((ev, rIdx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" value="${ev.event_id}" readonly></td>
+      <td><input type="text" value="${escapeHtml(ev.event_id)}" readonly></td>
       <td><input type="number" value="${ev.trigger_minute}" data-key="trigger_minute" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${ev.title}" data-key="title" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${ev.description || ''}" data-key="description" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(ev.title)}" data-key="title" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(ev.description || '')}" data-key="description" data-idx="${rIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
     `;
     tr.querySelector('.btn-table-del').onclick = () => {
@@ -2563,8 +2578,8 @@ function fillCreatorSetup() {
   qs.forEach((q, rIdx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" value="${q.setup_id}" readonly></td>
-      <td><input type="text" value="${q.question}" data-key="question" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(q.setup_id)}" readonly></td>
+      <td><input type="text" value="${escapeHtml(q.question)}" data-key="question" data-idx="${rIdx}"></td>
       <td>
         <select data-key="type" data-idx="${rIdx}">
           <option value="text" ${q.type === 'text' ? 'selected' : ''}>text</option>
@@ -2572,7 +2587,7 @@ function fillCreatorSetup() {
           <option value="multi_choice" ${q.type === 'multi_choice' ? 'selected' : ''}>multi_choice</option>
         </select>
       </td>
-      <td><input type="text" value="${q.options ? JSON.stringify(q.options) : ''}" data-key="options" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(q.options ? JSON.stringify(q.options) : '')}" data-key="options" data-idx="${rIdx}"></td>
       <td><input type="number" value="${q.max_selections || 1}" data-key="max_selections" data-idx="${rIdx}"></td>
       <td><input type="number" value="${q.priority || 0}" data-key="priority" data-idx="${rIdx}"></td>
       <td><button class="btn-table-del">&times;</button></td>
@@ -2617,10 +2632,10 @@ function fillCreatorLore() {
   lore.forEach((entry, rIdx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" value="${entry.category || 'General'}" data-key="category" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${entry.name}" data-key="name" data-idx="${rIdx}"></td>
-      <td><input type="text" value="${entry.keywords || ''}" data-key="keywords" data-idx="${rIdx}" class="${entry.keywords ? '' : 'warn-empty'}" placeholder="keywords help recall"></td>
-      <td><input type="text" value="${entry.text || ''}" data-key="text" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(entry.category || 'General')}" data-key="category" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(entry.name)}" data-key="name" data-idx="${rIdx}"></td>
+      <td><input type="text" value="${escapeHtml(entry.keywords || '')}" data-key="keywords" data-idx="${rIdx}" class="${entry.keywords ? '' : 'warn-empty'}" placeholder="keywords help recall"></td>
+      <td><input type="text" value="${escapeHtml(entry.text || '')}" data-key="text" data-idx="${rIdx}"></td>
       <td>
         <button class="btn-secondary btn-sm lore-row-pop" type="button">AI</button>
         <button class="btn-table-del">&times;</button>
@@ -3919,13 +3934,6 @@ function renderMemoryList() {
   });
 }
 
-function escapeHtml(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 async function memoryMutate(path, body) {
   const res = await fetch(path, {
@@ -4199,9 +4207,9 @@ function renderCanonizePicker(data) {
     wrap.innerHTML = `
       <input type="checkbox" id="${id}" data-kind="lore" data-idx="${i}" checked>
       <div>
-        <strong>${entry.name || 'Untitled'}</strong>
-        <span class="save-meta"> ${entry.category || 'General'}${entry.keywords ? ' · ' + entry.keywords : ''}</span>
-        <div class="canon-pick-body">${entry.content || ''}</div>
+        <strong>${escapeHtml(entry.name || 'Untitled')}</strong>
+        <span class="save-meta"> ${escapeHtml(entry.category || 'General')}${entry.keywords ? ' · ' + escapeHtml(entry.keywords) : ''}</span>
+        <div class="canon-pick-body">${escapeHtml(entry.content || '')}</div>
       </div>
     `;
     box.appendChild(wrap);
@@ -4213,9 +4221,9 @@ function renderCanonizePicker(data) {
     wrap.innerHTML = `
       <input type="checkbox" id="${id}" data-kind="entity" data-idx="${i}" checked>
       <div>
-        <strong>${ent.name || 'Unnamed'}</strong>
-        <span class="save-meta"> ${ent.entity_type || 'npc'}</span>
-        <div class="canon-pick-body">${ent.description || ''}</div>
+        <strong>${escapeHtml(ent.name || 'Unnamed')}</strong>
+        <span class="save-meta"> ${escapeHtml(ent.entity_type || 'npc')}</span>
+        <div class="canon-pick-body">${escapeHtml(ent.description || '')}</div>
       </div>
     `;
     box.appendChild(wrap);
@@ -4364,7 +4372,7 @@ function renderSaveEntityList() {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'edit-save-entity-btn' + (STATE.editingSaveEntityId === ent.entity_id ? ' active' : '');
-    row.innerHTML = `<strong>${ent.name || ent.entity_id}</strong><span class="save-meta">${ent.entity_type} · ${ent.entity_role}</span>`;
+    row.innerHTML = `<strong>${escapeHtml(ent.name || ent.entity_id)}</strong><span class="save-meta">${escapeHtml(ent.entity_type)} · ${escapeHtml(ent.entity_role)}</span>`;
     row.onclick = () => {
       STATE.editingSaveEntityId = ent.entity_id;
       renderSaveEntityList();
@@ -4398,7 +4406,7 @@ function renderSaveEntityStats() {
     wrap.className = 'form-group';
     const found = lookupEntityStat(ent.stats, def);
     const val = found.value != null ? found.value : '';
-    wrap.innerHTML = `<label>${def.name || def.stat_id}</label><input type="text" value="${val}">`;
+    wrap.innerHTML = `<label>${escapeHtml(def.name || def.stat_id)}</label><input type="text" value="${escapeHtml(val)}">`;
     wrap.querySelector('input').onchange = (e) => {
       if (!ent.stats) ent.stats = {};
       const writeKey = found.key || def.stat_id;
@@ -4408,7 +4416,7 @@ function renderSaveEntityStats() {
     grid.appendChild(wrap);
   });
   if (!rows.length) {
-    grid.innerHTML = `<span class="save-meta">No stats linked to type ${ent.entity_type}.</span>`;
+    grid.innerHTML = `<span class="save-meta">No stats linked to type ${escapeHtml(ent.entity_type)}.</span>`;
   }
 }
 
@@ -4455,7 +4463,7 @@ function renderSaveModifiers() {
     row.className = 'inv-row';
     const name = (STATE.editingSaveNames || {})[m.entity_id] || m.entity_id;
     const sign = Number(m.delta) >= 0 ? '+' : '';
-    row.innerHTML = `<span>${name} · ${m.stat_key} ${sign}${m.delta}</span><span class="save-meta">${m.minutes_remaining} min</span>`;
+    row.innerHTML = `<span>${escapeHtml(name)} · ${escapeHtml(m.stat_key)} ${sign}${m.delta}</span><span class="save-meta">${m.minutes_remaining} min</span>`;
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'btn-table-del';
@@ -4490,10 +4498,10 @@ function saveInvHolderLabel(it) {
   const names = STATE.editingSaveNames || {};
   if (it.holder_kind === 'instance') {
     const parent = (STATE.editingSaveState.inventory || []).find(x => x.instance_id === it.holder_id);
-    return parent ? `in ${parent.name || parent.item_id}` : `in ${it.holder_id}`;
+    return parent ? `in ${escapeHtml(parent.name || parent.item_id)}` : `in ${escapeHtml(it.holder_id)}`;
   }
-  if (it.holder_kind === 'location') return `at ${names[it.holder_id] || it.holder_id}`;
-  return `on ${names[it.holder_id] || it.holder_id}`;
+  if (it.holder_kind === 'location') return `at ${escapeHtml(names[it.holder_id] || it.holder_id)}`;
+  return `on ${escapeHtml(names[it.holder_id] || it.holder_id)}`;
 }
 
 function renderSaveInventory() {
@@ -4508,7 +4516,7 @@ function renderSaveInventory() {
   items.forEach((it, idx) => {
     const row = document.createElement('div');
     row.className = 'inv-row';
-    const label = `${it.name || it.item_id}${it.is_container ? ' [bag]' : ''}`;
+    const label = `${escapeHtml(it.name || it.item_id)}${it.is_container ? ' [bag]' : ''}`;
     row.innerHTML = `<span>${label}</span><span class="save-meta">${saveInvHolderLabel(it)}</span>
       <input type="number" min="1" value="${it.quantity || 1}" style="width:64px;">
       <button type="button" class="btn-table-del">&times;</button>`;
@@ -4545,11 +4553,11 @@ function renderSaveLore() {
     card.className = 'lore-edit-card';
     const emptyKw = !(entry.keywords || '').trim();
     card.innerHTML = `
-      <div class="form-group"><label>Name</label><input data-k="name" value="${entry.name || ''}"></div>
-      <div class="form-group"><label>Category</label><input data-k="category" value="${entry.category || ''}"></div>
+      <div class="form-group"><label>Name</label><input data-k="name" value="${escapeHtml(entry.name || '')}"></div>
+      <div class="form-group"><label>Category</label><input data-k="category" value="${escapeHtml(entry.category || '')}"></div>
       <div class="form-group"><label>Keywords ${emptyKw ? '<span class="warn-empty-label">(empty — weaker recall)</span>' : ''}</label>
-        <input data-k="keywords" value="${entry.keywords || ''}" class="${emptyKw ? 'warn-empty' : ''}"></div>
-      <div class="form-group"><label>Content</label><textarea data-k="content" rows="3">${entry.content || ''}</textarea></div>
+        <input data-k="keywords" value="${escapeHtml(entry.keywords || '')}" class="${emptyKw ? 'warn-empty' : ''}"></div>
+      <div class="form-group"><label>Content</label><textarea data-k="content" rows="3">${escapeHtml(entry.content || '')}</textarea></div>
       <button type="button" class="btn-table-del">Remove</button>`;
     card.querySelectorAll('input, textarea').forEach(el => {
       el.onchange = () => { entry[el.getAttribute('data-k')] = el.value; };
@@ -5033,7 +5041,7 @@ function updateMultiplayerLobby() {
       const text = STATE.pendingIntents[pid];
 
       const li = document.createElement('li');
-      li.innerHTML = `<strong>${name}:</strong> "${text}" `;
+      li.innerHTML = `<strong>${escapeHtml(name)}:</strong> "${escapeHtml(text)}" `;
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-table-del';
       delBtn.innerHTML = '&times;';

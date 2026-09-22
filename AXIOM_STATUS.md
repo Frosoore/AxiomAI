@@ -34,6 +34,16 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-09-22** · `site` · change: Dev updates for July (quiet month) and a note on August's regressions; removed the expired tester banner; new blog post "Quiet, but stable".
+
+- **2026-09-22** · `engine` · fix: rewinding a game now puts the inventory back as it was at that turn (items gained, lost or moved later are undone; bags keep their contents). Viewing or forking a save at a past turn shows that turn's items too. Turns played before this update can't be restored.
+
+- **2026-09-22** · `web` · fix: the Temporary-stat editor in the web Creator Studio is now fully translated (10 languages). Known bug documented: rewinding a game does not undo inventory changes (TICKET-095).
+
+- **2026-09-22** · `engine`/`web`/`ui` · fix: follow-up tickets. Narrator default back to balanced; web UI escapes LLM text everywhere and the local web server refuses cross-site requests; rewinding a save view now shows the lore and buffs of that turn (inventory still current, needs a schema change); startup no longer blocks Wayland users missing libxcb-cursor.
+
+- **2026-09-22** · `engine`/`ui`/`web` · fix: QA of the post-June commits. Desktop window opens again (wheel guard no longer deadlocks Qt audio), bundled Myria compiles on a fresh install (no more "FOREIGN KEY constraint failed"), CI translations complete, Hub universe export works again, web canonize no longer trusts client paths, first XSS escapes in the web UI. Open follow-ups: TICKET-093→098.
+
 - **2026-08-13** · `ui` · change: Creator Stats table is a summary again (name, type, lasting/temp badge). Edit opens a full panel; crash/extend only show for buildup meters.
 - **2026-08-13** · `engine` · change: Adding a stat classifies it from name + optional note via a fixed form (temporary? kind? fast vs slow). User notes are kept; empty notes may get a short description.
 - **2026-08-13** · `engine` · add: Temporary is a per-stat profile (heal / buildup / duration). Creator checkbox + Infer, or classify on first play. The engine ticks healing and peak/crash; the narrator only reports events.

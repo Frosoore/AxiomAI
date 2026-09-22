@@ -282,6 +282,46 @@ def test_compile_missing_required_field(tmp_path: Path):
         compile_universe(root)
 
 
+_CHILD_BEFORE_PARENT = """
+[[locations]]
+location_id = "smithy"
+name = "Smithy"
+parent_id = "{parent}"
+
+[[locations]]
+location_id = "town"
+name = "Town"
+"""
+
+
+def test_compile_child_location_before_parent(tmp_path: Path):
+    """Un lieu listé avant son parent compile (FK vérifiées au COMMIT)."""
+    root = tmp_path / "order"
+    _write(root / "universe.toml", '[meta]\nname = "X"\n')
+    _write(root / "locations" / "map.toml", _CHILD_BEFORE_PARENT.format(parent="town"))
+    db = compile_universe(root)
+    with closing(sqlite3.connect(str(db))) as conn:
+        rows = dict(conn.execute("SELECT location_id, parent_id FROM Locations;"))
+    assert rows == {"smithy": "town", "town": None}
+
+
+def test_compile_dangling_parent_is_compile_error(tmp_path: Path):
+    """Un parent_id inconnu reste rejeté, en CompileError (pas IntegrityError brute)."""
+    root = tmp_path / "dangling"
+    _write(root / "universe.toml", '[meta]\nname = "X"\n')
+    _write(root / "locations" / "map.toml", _CHILD_BEFORE_PARENT.format(parent="nowhere"))
+    with pytest.raises(CompileError):
+        compile_universe(root)
+    assert not list((root / ".axiom-cache").glob("universe.db*"))
+
+
+def test_compile_bundled_myria_from_scratch(tmp_path: Path):
+    """L'univers livré compile sans cache préexistant (1ᵉʳ lancement)."""
+    myria = Path(__file__).resolve().parent.parent / "universes" / "Myria"
+    db = compile_universe(myria, tmp_path / "myria.db", force=True)
+    assert read_definition(db)["locations"]
+
+
 # ---------------------------------------------------------------------------
 # Cache (hash)
 # ---------------------------------------------------------------------------

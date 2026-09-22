@@ -1,9 +1,14 @@
-"""axiom.multiplayer — sequential turn-resolution queue.
+"""axiom.multiplayer — player actions and a sequential turn-resolution queue.
 
-In multiplayer, player actions are resolved **one at a time** (FIFO) to
-avoid any race on the database. Pure threading, zero Qt — the Qt shell
-(`core/multiplayer_queue.py::ArbitratorWorker`) merely moves `run_loop` onto
-a QThread and translates the callbacks into signals.
+`PlayerAction` is the action payload used by every front-end (GUI tabletop,
+headless callers).
+
+Multiplayer turns are resolved **simultaneously** by
+`axiom.session.Session.take_turn_multiplayer` (every player intent in a single
+tick) — that is what the GUI uses. `ActionQueue` is the older alternative that
+resolves actions **one at a time** (FIFO) on the caller's thread; it is kept as
+public engine API for headless embedders but no longer used by the app (its Qt
+shell `core/multiplayer_queue.py` was removed). Pure threading, zero Qt.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ class PlayerAction:
     history: list["LLMMessage"]
     temperature: float = 0.7
     top_p: float = 1.0
-    verbosity_level: str = "talkative"
+    verbosity_level: str = "balanced"
 
 
 def _noop(*_args) -> None:

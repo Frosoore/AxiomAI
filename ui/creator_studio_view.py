@@ -473,7 +473,7 @@ class CreatorStudioView(QWidget):
         from axiom.config import get_default_verbosity
         fallback = get_default_verbosity()
         stored = (meta.get("llm_verbosity") or "").strip()
-        v = canonical_verbosity(stored or fallback)
+        v = canonical_verbosity(stored, default=fallback)
         idx = self._verbosity_combo.findData(v)
         self._verbosity_combo.setCurrentIndex(
             idx if idx >= 0 else self._verbosity_combo.findData(fallback)

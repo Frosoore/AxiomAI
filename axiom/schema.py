@@ -264,6 +264,20 @@ CREATE TABLE IF NOT EXISTS Modifier_Snapshots (
 );
 """
 
+# Per-turn capture of the nested inventory (Item_Instances), so rewind can put
+# items back as they were (TICKET-095). Written EVERY turn, even when empty:
+# a missing row means "no capture for that turn" (turns played before this
+# table existed) → rewind leaves the inventory untouched, not "empty".
+_DDL_INVENTORY_SNAPSHOTS = """
+CREATE TABLE IF NOT EXISTS Inventory_Snapshots (
+    save_id    TEXT NOT NULL,
+    turn_id    INTEGER NOT NULL,
+    state_json TEXT NOT NULL,
+    PRIMARY KEY (save_id, turn_id),
+    FOREIGN KEY (save_id) REFERENCES Saves(save_id) ON DELETE CASCADE
+);
+"""
+
 _DDL_STAT_DEFINITIONS = """
 CREATE TABLE IF NOT EXISTS Stat_Definitions (
     stat_id     TEXT PRIMARY KEY,
@@ -425,6 +439,7 @@ _ALL_DDL: list[str] = [
     _DDL_MENTAL_MODELS,
     _DDL_SNAPSHOTS,
     _DDL_MODIFIER_SNAPSHOTS,
+    _DDL_INVENTORY_SNAPSHOTS,
     _DDL_TIMELINE,
     _DDL_SCHEDULED_EVENTS,
     _DDL_FIRED_SCHEDULED_EVENTS,
@@ -456,6 +471,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Mental_Models",
     "Snapshots",
     "Modifier_Snapshots",
+    "Inventory_Snapshots",
     "Timeline",
     "Scheduled_Events",
     "Fired_Scheduled_Events",
@@ -539,6 +555,16 @@ def ensure_modifier_snapshots_table(conn: "sqlite3.Connection") -> None:
     caller's transaction so rewind can restore modifiers atomically with the rest.
     """
     conn.execute(_DDL_MODIFIER_SNAPSHOTS)
+
+
+def ensure_inventory_snapshots_table(conn: "sqlite3.Connection") -> None:
+    """Create the Inventory_Snapshots table on an open connection if missing.
+
+    Self-migration for save DBs provisioned before inventory rewind existed
+    (TICKET-095), same pattern as ensure_modifier_snapshots_table. Idempotent;
+    reuses the caller's transaction.
+    """
+    conn.execute(_DDL_INVENTORY_SNAPSHOTS)
 
 
 def ensure_fired_event_turn_column(conn: "sqlite3.Connection") -> None:

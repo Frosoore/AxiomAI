@@ -55,6 +55,19 @@ def check_schema():
         print(f"FAILED: Unexpected error checking schema: {e}")
         return False
 
+def _uses_xcb(qpa: str) -> bool:
+    """True when Qt will load its X11 (xcb) platform plugin.
+
+    Explicit QT_QPA_PLATFORM wins (first entry of a ';' fallback list);
+    otherwise Qt 6 picks wayland in a Wayland session, xcb elsewhere.
+    """
+    if qpa:
+        return qpa.split(";")[0].strip().startswith("xcb")
+    wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or \
+        os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+    return not wayland
+
+
 def check_system_dependencies():
     """Verify system-level libraries required by PySide6 / Qt are present on Linux."""
     if sys.platform.startswith("linux"):
@@ -85,9 +98,16 @@ def check_system_dependencies():
                 except Exception:
                     pass
         
+        if not has_xcb_cursor and not _uses_xcb(qpa):
+            # Wayland session: Qt 6 uses its wayland plugin, xcb-cursor is only
+            # needed by the X11 (xcb) plugin → warn, don't block the launch.
+            print("  WARNING: libxcb-cursor0 is missing (only needed if Qt falls back to X11/xcb).")
+            print("SUCCESS: System GUI libraries verified (Wayland).")
+            return True
+
         if not has_xcb_cursor:
             print("  FAILED: libxcb-cursor0 is missing on your system!")
-            print("  This library is required for the PySide6 GUI to start under X11/Wayland.")
+            print("  This library is required for the PySide6 GUI to start under X11 (xcb).")
             print("  HINT: Please install it using your system package manager:")
             print("    Ubuntu/Debian/Mint: sudo apt update && sudo apt install libxcb-cursor0")
             print("    Fedora/RHEL:        sudo dnf install xcb-cursor")

@@ -1454,3 +1454,167 @@ def test_canonize_apply_save_scope_writes_lore_to_save(web_server):
             db_file.unlink()
 
 
+def test_canonize_apply_ignores_client_paths(web_server, tmp_path):
+    """staged_dir/src_dir/universe_db from the client are never trusted
+    (apply mirrors with orphan purge + rmtree → arbitrary file deletion)."""
+    from unittest.mock import patch
+
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("precious", encoding="utf-8")
+    empty = tmp_path / "empty" / "staged"
+    empty.mkdir(parents=True)
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_canon_paths.db"
+    if db_file.exists():
+        db_file.unlink()
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            _start_lifecycle_session(web_server, db_file, "Canon Paths Universe")
+            with patch("axiom.canonize.apply_canonize_preview") as apply_mock:
+                status, _ = _post_json(f"{web_server}/api/session/canonize/apply", {
+                    "staged_dir": str(empty),
+                    "src_dir": str(victim),
+                    "universe_db": str(tmp_path / "x.db"),
+                })
+            assert status == 400
+            apply_mock.assert_not_called()
+        assert (victim / "keep.txt").exists()
+        assert empty.exists()
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+
+
+# ── TICKET-094: CORS / CSRF / DNS-rebinding / traversal hardening ──
+
+def test_no_cors_header_on_responses(web_server):
+    """The front is same-origin: no Access-Control-Allow-Origin should ever
+    be sent (it used to be '*', letting any page in the browser read the API).
+    """
+    req = urllib.request.urlopen(f"{web_server}/api/translations")
+    assert req.status == 200
+    assert "Access-Control-Allow-Origin" not in req.headers
+
+    req2 = urllib.request.urlopen(f"{web_server}/")
+    assert req2.status == 200
+    assert "Access-Control-Allow-Origin" not in req2.headers
+
+
+def test_post_with_foreign_origin_is_rejected(web_server):
+    """A cross-origin POST (Origin header from another site) must be 403'd,
+    even with a correct Host and a JSON Content-Type -- this is the anti-CSRF
+    check, independent of the Host/DNS-rebinding check."""
+    req = urllib.request.Request(
+        f"{web_server}/api/session/cancel",
+        data=json.dumps({}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Origin": "http://evil.example",
+        },
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "expected HTTPError 403"
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 403
+        data = json.loads(exc.read().decode("utf-8"))
+        assert "error" in data
+
+
+def test_post_with_legitimate_origin_is_accepted(web_server):
+    """A same-origin POST (Origin matches http://127.0.0.1:<port>) must go
+    through normally."""
+    port = urllib.parse.urlsplit(web_server).port
+    req = urllib.request.Request(
+        f"{web_server}/api/session/cancel",
+        data=json.dumps({}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Origin": f"http://127.0.0.1:{port}",
+        },
+        method="POST",
+    )
+    res = urllib.request.urlopen(req)
+    assert res.status == 200
+    data = json.loads(res.read().decode("utf-8"))
+    assert "cancelled" in data
+
+
+def test_post_without_origin_or_referer_is_accepted(web_server):
+    """Non-browser clients (curl, this test suite's own _post_json) send
+    neither Origin nor Referer -- they must still be able to call the API."""
+    status, data = _post_json(f"{web_server}/api/session/cancel", {})
+    assert status == 200
+    assert "cancelled" in data
+
+
+def test_foreign_host_header_is_rejected(web_server):
+    """DNS-rebinding: a request whose Host header does not name this server
+    (127.0.0.1/localhost/[::1] + the real port) must be rejected, even for a
+    plain GET."""
+    req = urllib.request.Request(
+        f"{web_server}/api/translations",
+        headers={"Host": "evil.example"},
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "expected HTTPError 403"
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 403
+
+
+def test_post_without_json_content_type_is_rejected(web_server):
+    """A cross-site form/fetch cannot set Content-Type: application/json
+    without a CORS preflight, so a JSON API route receiving a POST without
+    that header must be rejected (except the whitelisted no-body routes)."""
+    req = urllib.request.Request(
+        f"{web_server}/api/session/cancel",
+        data=json.dumps({}).encode("utf-8"),
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req)
+        assert False, "expected HTTPError 403"
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 403
+
+
+def test_post_test_connection_exempt_from_json_content_type(web_server):
+    """/api/settings/test-connection is called by the front with no body and
+    no Content-Type header at all -- it must stay reachable."""
+    req = urllib.request.Request(
+        f"{web_server}/api/settings/test-connection",
+        method="POST",
+    )
+    res = urllib.request.urlopen(req)
+    assert res.status == 200
+
+
+def test_creator_file_traversal_sibling_prefix_rejected(web_server, tmp_path):
+    """Regression for the `startswith` traversal guard: a sibling directory
+    that merely shares a name prefix (MyWorld vs MyWorld2) used to pass the
+    old `str(target).startswith(str(base))` check because it has no trailing
+    separator. `Path.is_relative_to` must correctly reject it."""
+    my_world = tmp_path / "MyWorld"
+    my_world.mkdir()
+    my_world2 = tmp_path / "MyWorld2"
+    my_world2.mkdir()
+    (my_world2 / "secret.txt").write_text("do not leak", encoding="utf-8")
+
+    url = (
+        f"{web_server}/api/creator/file"
+        f"?universe={urllib.parse.quote(str(my_world))}"
+        f"&rel_path={urllib.parse.quote('../MyWorld2/secret.txt')}"
+    )
+    try:
+        urllib.request.urlopen(url)
+        assert False, "expected HTTPError 404"
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 404
+
+

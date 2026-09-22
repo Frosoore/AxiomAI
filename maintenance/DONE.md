@@ -721,3 +721,60 @@ Items validés et clos :
   028/029/030/031/033 étaient déjà validés le 2026-06-10) → réserve « parcours GUI » levée.
 - **TICKET-050 — fail-fast 429 `limit:0`** : code fait + 38 tests verts ; re-vérif API réelle
   jugée optionnelle, ticket clos.
+
+---
+
+## Lot QA post-17h59 — tickets clos le 2026-09-22
+
+Détails : `maintenance/qa/tickets-092-098-2026-09-22/`.
+
+- **TICKET-093 — XSS web UI** : `escapeHtml` (+ `'`) appliqué à tous les gabarits `innerHTML` qui
+  interpolent du contenu LLM/utilisateur/BDD (Hub, setup, Creator Studio, canonize, éditeur de save,
+  lobby multijoueur…) ; helpers `statSelectHtml`/`saveInvHolderLabel` échappent eux-mêmes ;
+  `formatMarkdown` échappe avant de formater + `safeUrl` (http(s), chemins locaux, images `data:`
+  seulement → plus de `javascript:`). Restent non échappés, volontairement : les chaînes `tr()` statiques.
+- **TICKET-094 — durcissement serveur web** : plus de `Access-Control-Allow-Origin: *` ; garde
+  centralisé `_security_guard` (Host local obligatoire contre le DNS rebinding, Origin/Referer étrangers
+  refusés sur POST, Content-Type JSON/multipart exigé sauf 2 routes sans corps) ; gardes anti-traversée
+  `startswith` → `is_relative_to`. 8 tests. Reste connu : quelques routes acceptent un chemin
+  d'univers absolu du client (`/api/creator/convert`, `/api/universes/delete`) — protégées du CSRF par
+  le garde, mais non confinées à la bibliothèque.
+- **TICKET-096 — verbosité par défaut** : retour à `balanced` partout (constante moteur, config, CLI,
+  signatures moteur/workers, repli UI Qt et web) sur décision utilisateur ; `canonical_verbosity`
+  redevenue pure (`default=` fourni par l'appelant, plus de lecture disque).
+- **TICKET-097 — `axiom/multiplayer.py`** : docstring corrigée (plus de référence au fichier supprimé),
+  `ActionQueue` conservée comme API publique du moteur PyPI (non supprimée : casse d'API + tests) ;
+  note ajoutée dans `ARCHITECTURE.md`.
+- **TICKET-092 — `libxcb-cursor0` absente** (`ffc09e8`, Frosoore) : le contrôle bloquait le lancement
+  même sous Wayland (où Qt n'utilise pas le plugin xcb). Rendu Wayland-aware (`_uses_xcb`) : WARNING
+  sous Wayland, FAIL seulement si Qt chargera xcb ; même logique dans `tools/diagnostic.py`. **Clos sans
+  test X11 sur décision utilisateur** (pas de machine X11 ; on corrigera si un utilisateur X11 remonte
+  un souci).
+- **TICKET-098 — clés i18n des stats temporaires** : tout le bloc « Temporary » de l'éditeur de stat
+  du Creator Studio web est désormais traduisible (case, aide, « How it moves » + 3 options, « Pace » +
+  3 options, valeur de repos, surcharge d'échelle + unités, crash/extend + aides + placeholders, aides
+  par type générées en JS). `dyn_kind`/`dyn_crash` réutilisées (textes EN alignés sur les libellés
+  réels : « How it moves », « Reset when (crash events) ») + 24 clés `dyn_*` créées, ×10 langues
+  (804/804). `temporary`/`dyn_timescale` branchées. Aucune clé orpheline restante.
+- **TICKET-095 — le rewind ne défaisait pas l'inventaire** (bug antérieur à `cb9e56d`) : nouvelle table
+  additive `Inventory_Snapshots(save_id, turn_id, state_json)` (`axiom/schema.py`), une capture de tout
+  l'arbre `Item_Instances` **à chaque tour, même vide** (absence de ligne = tour non capturé, jamais
+  « vide »). `axiom/inventory.py` : `snapshot_inventory`, `snapshot_present_inventory`, `inventory_at`,
+  `rollback_inventory` (ids d'instance conservés → les sacs gardent leur contenu). Branchements :
+  arbitrator (capture du tour précédent avant les changements s'il manque — couvre le tour 0 et les
+  saves existantes — puis capture de fin de tour à l'étape 9), `CheckpointManager.rewind`,
+  `materialize_state` (tour passé lu depuis le snapshot, drapeau `historical.inventory`), `fork_save`
+  (inventaire au tour du fork + snapshots copiés, **fix au passage** : les `instance_id` régénérés
+  cassaient l'imbrication), `import_save_state`/`apply_correction` et déplacement manuel web
+  (re-capture du tour présent), listes de copie `savestore._RUNTIME_COPY`/`package._RUNTIME_TABLES`.
+  Limite assumée : les tours joués avant la mise à jour n'ont pas de snapshot → rewind vers eux =
+  inventaire inchangé (comportement d'avant). 11 tests (`tests/test_inventory_rewind.py` + bout en
+  bout dans `tests/test_arbitrator.py`). Doc : `docs/guides/saves.md`.
+- **TICKET-086 — `fired_turn_id` perdu à l'export/fork** : corrigé + test de garde le 2026-06-21, commité
+  dans `c5afb31` ; restait listé dans PENDING par oubli. Détail :
+  `maintenance/qa/qa-fs-univers-saves-2026-06-21/`.
+- **TICKET-087 — cache compilé Myria commité** : résolu — `universes/Myria/.axiom-cache/` n'est plus
+  suivi par git (`git ls-files` vide) et `universes/Myria/.gitignore` l'exclut (`d491365`).
+- **TICKET-091 — flake i18n `test_saves_sorting`** : corrigé le 2026-06-22, commité dans `1f48c82` ;
+  restait listé dans PENDING par oubli.
+

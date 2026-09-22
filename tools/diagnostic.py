@@ -198,8 +198,17 @@ def _check_environment() -> Section:
                         has_xcb_cursor = False
                 except Exception:
                     pass
-        sec.add("libxcb-cursor0", OK if has_xcb_cursor else FAIL,
-                "present" if has_xcb_cursor else "missing")
+        # Only the X11 (xcb) Qt plugin needs it; in a Wayland session it's a WARN.
+        qpa = os.environ.get("QT_QPA_PLATFORM", "").lower()
+        if qpa:
+            uses_xcb = qpa.split(";")[0].strip().startswith("xcb")
+        else:
+            uses_xcb = not (os.environ.get("WAYLAND_DISPLAY")
+                            or os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland")
+        sec.add("libxcb-cursor0",
+                OK if has_xcb_cursor else (FAIL if uses_xcb else WARN),
+                "present" if has_xcb_cursor else
+                ("missing" if uses_xcb else "missing (only needed under X11)"))
     return sec
 
 

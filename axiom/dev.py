@@ -89,8 +89,10 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
         conn.execute("PRAGMA foreign_keys=ON;")
         # Les FK sont vérifiées au COMMIT : l'ordre des opérations dans la
         # transaction (ex. Locations avec parent_id) devient indifférent.
-        conn.execute("PRAGMA defer_foreign_keys=ON;")
+        # Le PRAGMA doit suivre le BEGIN : hors transaction, le COMMIT implicite
+        # de sa propre instruction le remet aussitôt à OFF (il était sans effet).
         conn.execute("BEGIN;")
+        conn.execute("PRAGMA defer_foreign_keys=ON;")
         try:
             _sync_definition(conn, parsed, amnesty=amnesty)
             conn.commit()

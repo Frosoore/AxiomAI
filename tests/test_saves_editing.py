@@ -433,3 +433,107 @@ def test_diff_puis_correction_applicable(played_save):
     patch = diff_save_states(before, after)
     apply_correction(db, save_id, patch)
     assert materialize_state(db, save_id)["entities"]["player_1"]["Health"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# TICKET-095 : Session_Lore et modifiers matérialisés au tour demandé
+# (l'inventaire, lui, n'a pas d'historique dans le schéma — voir plus bas).
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def save_with_point_in_time_history(universe_db: str) -> tuple[str, str]:
+    """Une save de 4 tours où un modifier apparaît au tour 2 (et dure) et une
+    entrée de lore apparaît au tour 4, pour vérifier que `materialize_state`
+    ne montre que ce qui existait au tour demandé."""
+    from axiom.modifiers import ModifierProcessor
+
+    save_id = create_new_save(universe_db, "Hero", "Normal")
+    es = EventSourcer(universe_db)
+    es.append_events_batch([
+        (save_id, 1, "stat_set", "player_1", {"entity_id": "player_1", "stat_key": "Health", "value": "90"}),
+        (save_id, 2, "stat_set", "player_1", {"entity_id": "player_1", "stat_key": "Health", "value": "80"}),
+        (save_id, 3, "stat_set", "player_1", {"entity_id": "player_1", "stat_key": "Health", "value": "70"}),
+        (save_id, 4, "stat_set", "player_1", {"entity_id": "player_1", "stat_key": "Health", "value": "60"}),
+    ])
+    es.rebuild_state_cache(save_id)
+
+    # Un modifier apparaît au tour 2 et est toujours actif au tour 4 : le
+    # moteur réel snapshote Active_Modifiers à *chaque* tour où il y a des
+    # modifiers actifs (axiom.arbitrator, étape 9) — on reproduit ça ici.
+    mp = ModifierProcessor(universe_db)
+    mp.add_modifier(save_id, "player_1", "Health", -5.0, 999)
+    mp.snapshot_modifiers(save_id, 2)
+    mp.snapshot_modifiers(save_id, 3)
+    mp.snapshot_modifiers(save_id, 4)
+
+    # Une entrée de lore apparaît au tour 4 (ex. découverte tardive).
+    with get_connection(universe_db) as conn:
+        conn.execute(
+            "INSERT INTO Session_Lore "
+            "(entry_id, save_id, category, name, keywords, content, origin_turn) "
+            "VALUES ('lore1', ?, 'place', 'Crypte', 'crypte', 'Une crypte oubliée.', 4);",
+            (save_id,),
+        )
+        # Un objet "ramassé au tour 3" — Items_Inventory n'a pas de turn_id,
+        # ceci illustre l'état présent (non historique) de l'inventaire.
+        conn.execute(
+            "INSERT INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
+            "VALUES (?, 'player_1', 'sword', 1);",
+            (save_id,),
+        )
+        conn.commit()
+
+    return universe_db, save_id
+
+
+def test_materialize_modifiers_absent_before_they_appear(save_with_point_in_time_history):
+    db, save_id = save_with_point_in_time_history
+    state = materialize_state(db, save_id, at_turn=1)
+    assert state["modifiers"] == []
+    assert state["historical"]["modifiers"] is True
+
+
+def test_materialize_modifiers_present_from_their_turn(save_with_point_in_time_history):
+    db, save_id = save_with_point_in_time_history
+    for turn in (2, 3, 4):
+        state = materialize_state(db, save_id, at_turn=turn)
+        assert state["modifiers"] == [
+            {"entity_id": "player_1", "stat_key": "Health", "delta": -5.0, "minutes_remaining": 999}
+        ], f"turn {turn}"
+
+
+def test_materialize_session_lore_absent_before_it_appears(save_with_point_in_time_history):
+    db, save_id = save_with_point_in_time_history
+    for turn in (1, 2, 3):
+        state = materialize_state(db, save_id, at_turn=turn)
+        assert state["session_lore"] == [], f"turn {turn}"
+        assert state["historical"]["session_lore"] is True
+
+
+def test_materialize_session_lore_present_from_its_turn(save_with_point_in_time_history):
+    db, save_id = save_with_point_in_time_history
+    state = materialize_state(db, save_id, at_turn=4)
+    assert [e["entry_id"] for e in state["session_lore"]] == ["lore1"]
+
+
+def test_materialize_inventory_is_not_historical(save_with_point_in_time_history):
+    """Tours sans snapshot d'inventaire (joués avant `Inventory_Snapshots`,
+    TICKET-095) : l'inventaire matérialisé à un tour passé reste l'état présent
+    et `historical.inventory` le signale à False. Au tour présent, l'état live
+    EST l'état du tour → True. (Cas avec snapshots : tests/test_inventory_rewind.py.)"""
+    db, save_id = save_with_point_in_time_history
+    for turn in (1, 2, 3, 4):
+        state = materialize_state(db, save_id, at_turn=turn)
+        assert any(i["item_id"] == "sword" for i in state["inventory"]), f"turn {turn}"
+        assert state["historical"]["inventory"] is (turn == 4), f"turn {turn}"
+
+
+def test_materialize_historical_flags_shape(save_with_point_in_time_history):
+    db, save_id = save_with_point_in_time_history
+    state = materialize_state(db, save_id, at_turn=2)
+    assert state["historical"] == {
+        "entities": True,
+        "session_lore": True,
+        "modifiers": True,
+        "inventory": False,
+    }

@@ -1065,3 +1065,34 @@ class TestInventoryQuantityValidation:
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# TICKET-095 — inventory snapshots through a real turn + rewind
+# ---------------------------------------------------------------------------
+
+class TestInventoryRewindEndToEnd:
+    def test_item_given_by_narrator_is_undone_by_rewind(self, db_path, vm) -> None:
+        from axiom.checkpoint import CheckpointManager
+        from axiom.inventory import inventory_at, list_instances
+        from axiom.schema import get_connection
+
+        response = LLMResponse(
+            narrative_text="The smith hands you a sword.",
+            tool_call={"state_changes": [], "inventory_changes": [
+                {"action": "add", "item_id": "sword", "entity_id": "player1", "quantity": 1}
+            ]},
+            finish_reason="stop",
+        )
+        arb, _ = _make_arbitrator(db_path, vm, response)
+        arb.process_turn("s1", 1, {"player1": "I ask for a sword."}, "sys", [])
+
+        with get_connection(db_path) as conn:
+            assert [i["item_id"] for i in list_instances(conn, "s1")] == ["sword"]
+            assert inventory_at(conn, "s1", 0) == []          # pre-turn state captured
+            assert [i["item_id"] for i in inventory_at(conn, "s1", 1)] == ["sword"]
+
+        CheckpointManager(db_path).rewind("s1", target_turn_id=0)
+
+        with get_connection(db_path) as conn:
+            assert list_instances(conn, "s1") == []

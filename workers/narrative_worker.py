@@ -51,7 +51,7 @@ class NarrativeWorker(QThread):
         intents: dict[str, str] | None = None,  # Multiplayer: {player_id: text}
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity: str = "talkative",
+        verbosity: str = "balanced",
     ) -> None:
         super().__init__()
         self._session = session

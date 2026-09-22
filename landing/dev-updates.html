@@ -19,19 +19,6 @@
         <link rel="stylesheet" href="styles.css" />
     </head>
     <body>
-        <!-- ===================== ALPHA / TESTER BANNER ===================== -->
-        <div class="alpha-banner" role="alert">
-            <div class="wrap alpha-inner">
-                <span class="alpha-tag">EARLY ALPHA</span>
-                <p>
-                    For testers: until <b>June&nbsp;30</b>, free API keys are
-                    built right in, so you can play with zero setup. The quota
-                    is shared across all testers, but there's plenty of margin,
-                    so go wild. Expect rough edges and breaking changes.
-                </p>
-            </div>
-        </div>
-
         <!-- ===================== NAV ===================== -->
         <header class="nav">
             <div class="wrap nav-inner">
@@ -77,7 +64,7 @@
                 <div class="du-meta-bar">
                     <!-- BUILD:meta -->
                 <span class="du-stat">Engine <b>v0.2.0</b></span>
-                <span class="du-stat">Last updated <b>2026-06-22 (1f48c82)</b></span>
+                <span class="du-stat">Last updated <b>2026-08-13 (4967506)</b></span>
         <!-- /BUILD:meta -->
                 </div>
 
@@ -265,6 +252,72 @@
         <script>
             // BUILD:updates-data
             const DEV_UPDATES = [
+            {
+                        "id": "2026-08",
+                        "label": "August 2026",
+                        "summary": "A quiet month on the calendar, but one big drop at the very end: the web UI becomes the daily driver (streaming, cancel, full settings and lobby), and play state is finally editable without a TOML blob: typed stats, session lore that stays on the save, and nested inventory.",
+                        "sections": [
+                                    {
+                                                "title": "Added",
+                                                "kind": "added",
+                                                "items": [
+                                                            "Web Slices 1–4: SSE token stream with real cancel, tabletop chrome, Setup lobby, <code>.axiomsave</code> pack/unpack, Creator depth, hover docs, first-launch tour.",
+                                                            "Structured save editor (entities, nested inventory, session lore, temporary modifiers) with TOML kept as Advanced.",
+                                                            "Temporary is a per-stat checkbox (heal / buildup / duration). Infer or first play classifies them; the engine ticks healing and peak/crash instead of hardcoding stat names.",
+                                                            "Extendable entity types and stat↔type linking (Battery on a robot, not on every human).",
+                                                            "Nested play inventory: purse vs home drawer, no Creator item catalog.",
+                                                            "Session lore that survives a world refresh, plus a “Lore used this turn” list so you can see why a book fired."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Fixed",
+                                                "kind": "fixed",
+                                                "items": [
+                                                            "Tabletop stats overlay authored values with play changes and resolve aliases like <code>player</code> onto the real entity id.",
+                                                            "Save editor entity stats now reload the live values (definition id <code>arousal</code> and authored <code>Arousal</code> are the same field).",
+                                                            "Unknown items are created on pickup (worlds do not need an <code>items/</code> catalog).",
+                                                            "Canonize apply defaults to this save so a new game is not polluted by the last run’s lore."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Changed",
+                                                "kind": "changed",
+                                                "items": [
+                                                            "World lore book stays the template; play-promoted entries live on the save unless you opt into world scope.",
+                                                            "Test fixtures use the bundled Myria universe, not a private custom world."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Known rough edges",
+                                                "kind": "known",
+                                                "items": [
+                                                            "The desktop window could hang forever at startup, and a fresh install failed to compile the bundled Myria universe (<code>FOREIGN KEY constraint failed</code>). Both fixed in September."
+                                                ]
+                                    }
+                        ]
+            },
+            {
+                        "id": "2026-07",
+                        "label": "July 2026",
+                        "summary": "Not a very active month, let's be honest. Summer happened. A first web version of the app showed up, plus a couple of small fixes.",
+                        "sections": [
+                                    {
+                                                "title": "Added",
+                                                "kind": "added",
+                                                "items": [
+                                                            "Alpha web interface (HTML, CSS and JS) you can launch with <code>run.sh --web</code>, as an alternative to the desktop app."
+                                                ]
+                                    },
+                                    {
+                                                "title": "Fixed",
+                                                "kind": "fixed",
+                                                "items": [
+                                                            "Linux: a missing <code>libxcb-cursor0</code> no longer makes the app die silently; the startup check tells you what to install.",
+                                                            "Myria universe cleanup: duplicated faction and lore entries removed."
+                                                ]
+                                    }
+                        ]
+            },
             {
                         "id": "2026-06",
                         "label": "June 2026",

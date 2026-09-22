@@ -19,7 +19,7 @@
 [[update]]
 id = "2026-08"
 label = "August 2026"
-summary = "Web becomes the daily driver (streaming, cancel, full settings and lobby), and play state is finally editable without a TOML blob: typed stats, session lore that stays on the save, and nested inventory."
+summary = "A quiet month on the calendar, but one big drop at the very end: the web UI becomes the daily driver (streaming, cancel, full settings and lobby), and play state is finally editable without a TOML blob: typed stats, session lore that stays on the save, and nested inventory."
 
 [[update.section]]
 title = "Added"
@@ -49,6 +49,33 @@ kind = "changed"
 items = [
     "World lore book stays the template; play-promoted entries live on the save unless you opt into world scope.",
     "Test fixtures use the bundled Myria universe, not a private custom world.",
+]
+
+[[update.section]]
+title = "Known rough edges"
+kind = "known"
+items = [
+    "The desktop window could hang forever at startup, and a fresh install failed to compile the bundled Myria universe (<code>FOREIGN KEY constraint failed</code>). Both fixed in September.",
+]
+
+[[update]]
+id = "2026-07"
+label = "July 2026"
+summary = "Not a very active month, let's be honest. Summer happened. A first web version of the app showed up, plus a couple of small fixes."
+
+[[update.section]]
+title = "Added"
+kind = "added"
+items = [
+    "Alpha web interface (HTML, CSS and JS) you can launch with <code>run.sh --web</code>, as an alternative to the desktop app.",
+]
+
+[[update.section]]
+title = "Fixed"
+kind = "fixed"
+items = [
+    "Linux: a missing <code>libxcb-cursor0</code> no longer makes the app die silently; the startup check tells you what to install.",
+    "Myria universe cleanup: duplicated faction and lore entries removed.",
 ]
 
 [[update]]

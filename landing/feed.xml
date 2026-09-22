@@ -6,7 +6,14 @@
     <atom:link href="https://frosoore.github.io/AxiomAI/feed.xml" rel="self" type="application/rss+xml" />
     <description>News, deep dives and the life of the Axiom AI project.</description>
     <language>en</language>
-    <lastBuildDate>Tue, 23 Jun 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 22 Sep 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>Quiet, but stable</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/quiet-but-stable.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/quiet-but-stable.html</guid>
+      <pubDate>Tue, 22 Sep 2026 00:00:00 +0000</pubDate>
+      <description>Axiom hasn't been very active lately, and it probably won't be for a while. / The good news: the app is in a pretty stable, usable state right now. / We just fixed the bugs that piled up over the summer, so it's a good time to try it.</description>
+    </item>
     <item>
       <title>We asked an AI to tear Axiom apart</title>
       <link>https://frosoore.github.io/AxiomAI/blog/we-asked-an-ai-to-tear-axiom-apart.html</link>

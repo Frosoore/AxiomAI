@@ -188,7 +188,7 @@ class ArbitratorEngine:
         stream_token_callback: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "talkative",
+        verbosity_level: str = "balanced",
         mode: str = "Normal",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
@@ -705,6 +705,16 @@ class ArbitratorEngine:
             })
 
         # Step 7.5 — Process Inventory Changes
+        # TICKET-095: before this turn touches the inventory, make sure the
+        # previous turn has a snapshot (turn 0 of a new game, or the last turn of
+        # a save played before snapshots existed): the current state IS the
+        # end-of-previous-turn state, so rewinding to it can restore the items.
+        if turn_id >= 1:
+            from axiom.inventory import inventory_at, snapshot_inventory
+            with get_connection(self._db_path) as conn:
+                if inventory_at(conn, save_id, turn_id - 1) is None:
+                    snapshot_inventory(conn, save_id, turn_id - 1)
+                    conn.commit()
         applied_inventory: list[dict[str, Any]] = []
         for inv_change in inventory_changes:
             # { "entity_id": str, "item_id": str, "action": "add"|"remove", "quantity": int }
@@ -779,6 +789,12 @@ class ArbitratorEngine:
         # snapshot is a no-op when the save has no active modifiers.
         self._modifier_processor.tick_modifiers(save_id, elapsed_minutes=elapsed_minutes)
         self._modifier_processor.snapshot_modifiers(save_id, turn_id)
+        # Same for the nested inventory (TICKET-095): captured every turn, after
+        # this turn's inventory_changes were applied, so rewind can put items back.
+        from axiom.inventory import snapshot_inventory
+        with get_connection(self._db_path) as conn:
+            snapshot_inventory(conn, save_id, turn_id)
+            conn.commit()
 
         # Step 10 — Embed narrative chunk
         if narrative_text.strip():

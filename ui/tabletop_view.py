@@ -201,7 +201,7 @@ class TabletopView(HardcoreMixin, QWidget):
         
         self._verbosity_slider = doc(QSlider(Qt.Horizontal), "tabletop.verbosity")
         self._verbosity_slider.setRange(0, 2)
-        _v0 = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 2)
+        _v0 = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 1)
         self._verbosity_slider.setValue(_v0)
         self._verbosity_slider.setFixedWidth(70) # Keep slider compact
         self._verbosity_slider.valueChanged.connect(self._on_verbosity_changed)
@@ -453,8 +453,8 @@ class TabletopView(HardcoreMixin, QWidget):
         from axiom.config import get_default_verbosity
         # Universe meta wins when set; otherwise Settings → default_verbosity.
         stored = (meta.get("llm_verbosity") or "").strip()
-        self._llm_verbosity = canonical_verbosity(stored or get_default_verbosity())
-        v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 2)
+        self._llm_verbosity = canonical_verbosity(stored, default=get_default_verbosity())
+        v_idx = {"short": 0, "balanced": 1, "talkative": 2}.get(self._llm_verbosity, 1)
         self._verbosity_slider.setValue(v_idx)
         self._verbosity_status_label.setText(tr(self._llm_verbosity).capitalize())
 

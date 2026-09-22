@@ -303,26 +303,30 @@ def _install_exception_hook() -> None:
     sys.excepthook = _hook
 
 
-def _make_application_class():
-    """Return a QApplication subclass that blocks wheel events on spinboxes
-    and comboboxes unless the user has explicitly clicked into them.
+def _make_wheel_guard():
+    """Return an application-wide event filter that blocks wheel events on
+    spinboxes and comboboxes unless the user has explicitly clicked into them.
 
     Without this, hovering a QSpinBox/QDoubleSpinBox/QComboBox and scrolling
     changes its value instead of scrolling the parent scroll area. The widget
     only accepts wheel input after the user clicks into it.
 
-    Overrides notify() — the earliest interception point in Qt's event
-    dispatch. This runs before any widget-level event() or eventFilter().
+    Installed with ``app.installEventFilter`` — NOT as a ``QApplication.notify``
+    override: a Python ``notify()`` runs for events of EVERY thread, including
+    Qt's internal ones (e.g. the ``QAudioContext`` thread spawned by
+    ``QMediaPlayer``), and deadlocks on the GIL while the main thread is still
+    inside a C++ constructor → the window never opens. An application-level
+    event filter only sees main-thread objects, which is all we need here.
     """
-    from PySide6.QtCore import QEvent
+    from PySide6.QtCore import QEvent, QObject
     from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QComboBox
     from PySide6.QtGui import QWheelEvent
 
     _WHEEL_BLOCKED = (QAbstractSpinBox, QComboBox)
     _clicked: set[int] = set()
 
-    class _App(QApplication):
-        def notify(self, receiver, event):
+    class _WheelGuard(QObject):
+        def eventFilter(self, receiver, event):
             t = event.type()
             if t == QEvent.Type.MouseButtonPress:
                 w = receiver
@@ -352,9 +356,9 @@ def _make_application_class():
             elif t == QEvent.Type.FocusOut:
                 if isinstance(receiver, _WHEEL_BLOCKED):
                     _clicked.discard(id(receiver))
-            return super().notify(receiver, event)
+            return False
 
-    return _App
+    return _WheelGuard()
 
 
 def main() -> None:
@@ -402,8 +406,10 @@ def main() -> None:
     register_builtin_providers()
     apply_beta_defaults()
 
-    _App = _make_application_class()
-    app = _App(sys.argv)
+    app = QApplication(sys.argv)
+    # Keep a reference on the app so the filter isn't garbage-collected.
+    app._wheel_guard = _make_wheel_guard()
+    app.installEventFilter(app._wheel_guard)
     app.setStyle("Fusion")
     app.setApplicationName("Axiom AI")
     app.setApplicationDisplayName("Axiom AI — AI Role Playing Game")

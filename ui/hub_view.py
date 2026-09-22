@@ -366,7 +366,7 @@ class HubView(QWidget):
 
         # Nom de fichier proposé = nom réel de l'univers (pas « universe.axiom »,
         # qui finissait par nommer le dossier d'import « universe »).
-        name, _, _ = read_universe_card_metadata(db_path)
+        name, _, _, _ = read_universe_card_metadata(db_path)
         safe = "".join(c if c.isalnum() or c in "_ -" else "_" for c in name).strip().replace(" ", "_")
         dest_path, _ = QFileDialog.getSaveFileName(
             self,

@@ -173,7 +173,7 @@ class AppConfig:
     negative_prompt: str = ""
     # Global default for narrator length. Factory value matches
     # axiom.prompts.DEFAULT_VERBOSITY_LEVEL; users override in Settings.
-    default_verbosity: str = "talkative"
+    default_verbosity: str = "balanced"
     llm_requests_per_minute: int = 0
     gemini_fallback_model: str = ""
     trim_sentences: bool = True
@@ -335,7 +335,7 @@ def _normalize_verbosity(value: str | None) -> str:
     v = (value or "").strip().lower()
     if v in _VALID_VERBOSITY:
         return v
-    return "talkative"
+    return "balanced"
 
 
 def get_default_verbosity(config: AppConfig | None = None) -> str:

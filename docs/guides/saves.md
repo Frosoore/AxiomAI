@@ -60,13 +60,19 @@ turn-*N* state in a single transaction:
 - temporary **modifiers** (buffs/debuffs): these decay in in-game *minutes* and
   are not event-sourced, so the engine snapshots the modifier table each turn and
   restores the one captured at turn *N*;
+- the nested **inventory** (`Item_Instances`): same idea, one snapshot of the
+  whole tree per turn (`Inventory_Snapshots`), so an item gained, lost or moved
+  after turn *N* goes back to where it was — containers keep their contents.
+  Turns played before inventory snapshots existed have none: rewinding to such
+  a turn leaves the inventory as it is. Viewing or forking a save at a past turn
+  uses the same snapshots;
 - **scheduled events**: any event that *fired* after turn *N* is un-fired, so it
   triggers again once the in-game clock next crosses its minute.
 
 The semantic memory store is rolled back alongside via
 {py:meth}`axiom.memory.VectorMemory.rollback`, which removes every narrative
-chunk from a later turn. Nothing from a later turn leaks back: buffs, world
-events and remembered facts all return to exactly how they stood at turn *N*.
+chunk from a later turn. Nothing from a later turn leaks back: buffs, items,
+world events and remembered facts all return to exactly how they stood at turn *N*.
 
 In **Hardcore** mode, death deletes the save — that is the point of Hardcore.
 

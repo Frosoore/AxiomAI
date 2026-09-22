@@ -129,6 +129,8 @@ logique dans `axiom/`** (patron coquille ci-dessus) plutôt que d'en rajouter da
 Dernier lot porté (B4) : création entité joueur → `axiom/db_helpers.py::create_player_entity`,
 régénération de variante → `axiom/regenerate.py` (+ méthode `Session.regenerate_variant`),
 Mini-Dico → `axiom/mini_dico.py`, file multijoueur → `axiom/multiplayer.py::ActionQueue`.
+(Depuis `4d11fca`, le tour multijoueur de l'app passe par `Session.take_turn_multiplayer` —
+résolution simultanée ; `ActionQueue` reste une API moteur publique, plus utilisée par l'app.)
 `workers/chronicler_worker.py` (coquille morte, jamais instancié — le Chronicler tourne dans
 le moteur depuis le Pilier 5) a été **supprimé** le 2026-06-10 (feu vert utilisateur).
 

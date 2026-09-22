@@ -5,29 +5,21 @@
 > retirer la ligne une fois mergé (pas de réservation périmée).
 
 **Branche courante :** `main`
-**Chantier :** TICKET-062 (préparation bêta) — items 1, 2 et 4 (diagnostic CLI+GUI)
-**VALIDÉS GUI le 2026-06-13** + CI GitHub Actions + fixes TICKET-050/066/068, le tout
-**en attente de commit utilisateur** (rien de bloquant côté code). Restent hors-commit :
-item 3 (check Windows) et item 5 (screens/GIF). TICKET-057 (doc intégrée) rouvert : contenu
-trop succinct, à enrichir.
+**Chantier (2026-09-22) :** QA des commits post-`cb9e56d` (Frosoore / Boss Baby) + tickets 092→098 —
+voir `maintenance/qa/qa-post-17h59-2026-09-22/` et `maintenance/qa/tickets-092-098-2026-09-22/`.
+**En attente de commit utilisateur.** (Réservations de juin retirées : toutes mergées, `2213b4e`…`4d11fca`.)
 
 ## Fichiers / modules que je touche en ce moment
 
 | Fichier / module        | Type de modif        | Depuis (date) | Note pour le pote |
 |-------------------------|----------------------|---------------|-------------------|
-| `universes/Myria/` (nouveau) + `.gitignore` | TICKET-062 : univers par défaut (Universe-as-Code, EN) — **créé, compile OK, en attente de relecture utilisateur + commit** | 2026-06-12 | dossier nouveau, zéro conflit ; gitignore : `universes/` → `universes/*` + `!universes/Myria/` |
-| `core/bundled_universes.py` (nouveau) + `main.py` | TICKET-062 : installation de l'univers embarqué au 1ᵉʳ lancement — fait, VALIDÉ GUI le 2026-06-13, en attente de commit | 2026-06-12 | `main.py` : 4 lignes ajoutées juste avant `QApplication` ; préviens si tu touches la séquence de démarrage |
-| `ui/creator_studio_view.py` | Fix crash Studio « Edit » : `_meta_float` tolérant sur tension/température/top_p — fait, VALIDÉ GUI le 2026-06-13, en attente de commit | 2026-06-12 | + fix données `universes/Myria/universe.toml` (`world_tension_level` 0.6) ; ⚠ TICKET-065 ouvert : clé tension en 2 casses (Chronicler vs Studio/compile) |
-| `axiom/backends/universal.py` + `axiom/config.py` + `core/builtin_keys.py` (nouveau) + `ui/settings_dialog.py` + `workers/model_list_worker.py` (nouveau) + `core/locales/*.toml` | TICKET-062 item 2 : clés bêta Fireworks (rotation multi-clés, registre, sélecteur de modèles avec prix) — fait, VALIDÉ GUI le 2026-06-13, en attente de commit | 2026-06-12 | ⚠ défaut `fireworks_model` changé (`deepseek-v3p1` mort → `gpt-oss-120b`) ; +8 clés i18n ×10 langues (`browse_models`…) ; si tu touches `UniversalClient`, préserve `_send_with_rotation` |
-| `axiom/backends/transport.py` (nouveau) + `gemini.py` + `universal.py` | QA-test-connexion-gemini : transport `IPv4FirstTransport` (IPv4 d'abord, fallback dual-stack, connect timeout 5 s) — fait, VALIDÉ GUI le 2026-06-13, en attente de commit | 2026-06-12 | le « Test Connection » bloquait des minutes (IPv6 cassée + SDK genai sans timeout), maintenant 0,27 s ; si tu touches la construction des clients httpx/genai, préserve ce transport (les deux clients le partagent) |
-| `axiom/backends/universal.py` + `tests/test_reasoning_models.py` (nouveau) | TICKET-066 : modèles de raisonnement (gpt-oss, deepseek-v4, o-series…) — floor `max_tokens=2048`, `reasoning_effort: low` pour gpt-oss, `content` absent toléré dans `complete()` — **VALIDÉ GUI le 2026-06-13** (l'échec du 06-12 était TICKET-068, pas le backend), en attente de commit | 2026-06-12 | le Timekeeper crashait (`KeyError: 'content'`) et la narration sortait vide avec gpt-oss ; si tu touches `_get_payload`, préserve le floor et `_is_reasoning_model` |
-| `axiom/memory.py` + `ui/diagnostic_dialog.py` + `workers/diagnostic_worker.py` (nouveaux) + `ui/main_window.py` + `.github/workflows/tests.yml` (nouveau) | TICKET-068 (embedding `local_files_only`), diagnostic GUI (Aide→Diagnostic), CI GitHub Actions — **VALIDÉS GUI le 2026-06-13**, en attente de commit | 2026-06-13 | `main.py`/`main_window.py` : action menu Aide ajoutée ; CI = 2 lots (contourne segfault TICKET-067) ; si tu touches le chargement de l'embedding, préserve `local_files_only=True` |
-| `run.bat` + `test.bat` + `tools/diagnostic.py` + `run.sh` | TICKET-062 item 3 (audit Windows) : `run.bat` plancher 3.10→3.11, `#`→`REM`/emoji dans les `.bat`, garde-fou UTF-8 stdout du diagnostic CLI, **+ nettoyage code mort `run.sh`** (`check_lib`/`MISSING_LIBS`) — fait, en attente de commit | 2026-06-13 | audit statique only (pas de machine Windows) ; moteur déjà Windows-safe ; reste = **TICKET-069** (test machine réelle) ; détail `maintenance/TICKET-062-windows-support/` |
-| `ui/widgets/entity_editor.py` | fix-entity-category-type : allow changing entity category/type in Creator Studio — **fait, validé, tests passés, en attente de commit** | 2026-06-16 | changing read-only table widget item to QComboBox and syncing it |
-| `ui/widgets/chat_display.py` + `axiom/backends/base.py` + `axiom/image_generator.py` + `ui/tabletop_view.py` | fix-json-leak-and-image-prompt : prevent JSON leak, repair malformed JSON, improve visual prompt style and negative prompts | 2026-06-16 | unclosed JSON fence filtering, regex JSON repair, improved system prompt, rich negative prompts, post-turn refresh |
-| `axiom/session.py` + `axiom/schema.py` + `axiom/prompts.py` + `axiom/arbitrator.py` + `workers/narrative_worker.py` + `ui/tabletop_view.py` + `ui/widgets/chat_display.py` + `ui/setup_view.py` + `core/locales/*.toml` | **Mode Multijoueur simultané (hotseat local)** — **code fait** (`maintenance/Multiplayer/`), en attente tests/commit utilisateur | 2026-06-26 | nouveau mode `Multiplayer` : `take_turn_multiplayer`, migration CHECK Saves (**garde changée `'Companion'`→`'Multiplayer'`** : ⚠ toute future valeur de difficulté doit mettre à jour cette garde sinon les bases ne migrent plus), narration 3ᵉ pers., `_identify_relevant_entities` multi-lieux, accumulation d'intents GUI. ⚠ je touche `schema.py` (CHECK Saves) et la boucle de tour `tabletop_view`/`narrative_worker` — préviens si tu vises ces zones. **`core/multiplayer_queue.py` SUPPRIMÉ** (coquille Qt morte ; `ActionQueue`/`PlayerAction` restent dans `axiom/multiplayer.py`). Bugfix : `_pending_intents` ne survit plus à un changement de save (fuite « intentions fantômes ») |
-
-
+| `main.py` | GUI figé : `notify()` Python → `installEventFilter` (garde molette) | 2026-09-22 | ⚠ ne jamais surcharger `QApplication.notify` en Python (interblocage avec les threads Qt audio) |
+| `axiom/compile.py` + `axiom/dev.py` | FK différées au COMMIT (`BEGIN` puis `PRAGMA defer_foreign_keys`) ; `IntegrityError` → `CompileError` | 2026-09-22 | l'ordre des lieux dans `map.toml` n'a plus d'importance |
+| `axiom/saves.py` + `axiom/modifiers.py` + `axiom/inventory.py` + `axiom/checkpoint.py` + `axiom/arbitrator.py` + `axiom/schema.py` | `materialize_state` historique + **`Inventory_Snapshots`** : le rewind restaure l'inventaire (TICKET-095) | 2026-09-22 | ⚠ nouvelle table dans le schéma des saves ; toute mutation d'inventaire hors tour doit appeler `snapshot_present_inventory` |
+| `axiom/{prompts,config,session,arbitrator,multiplayer}.py` + `axiom/cli/play.py` + `workers/*_worker.py` + `core/localization.py` + `ui/{settings_dialog,tabletop_view,creator_studio_view,hub_view}.py` | verbosité par défaut `balanced` ; `canonical_verbosity(value, default=)` pure ; fix export Hub | 2026-09-22 | passe le défaut config à `canonical_verbosity` si tu l'appelles |
+| `main_web.py` + `web/app.js` + `web/index.html` | sécurité (canonize, CORS/Origin/Host, XSS, chemins) + i18n éditeur de stats temporaires | 2026-09-22 | tout rendu `innerHTML` doit passer par `escapeHtml` ; toute route POST reçoit du JSON |
+| `core/locales/*.toml` | +6 clés manquantes (CI) puis bloc `dyn_*` (24 clés) ×10 | 2026-09-22 | ajouter une clé EN = l'ajouter aux 10 langues, sinon la CI casse |
+| `debug/startup_check.py` + `tools/diagnostic.py` | check `libxcb-cursor` Wayland-aware (TICKET-092) | 2026-09-22 | |
 
 ## Fichiers chauds que je m'apprête à toucher en profondeur (préviens avant)
 

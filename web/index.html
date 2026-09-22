@@ -1086,7 +1086,7 @@
           <button type="button" class="tab-btn active" data-save-tab="entities">Entities</button>
           <button type="button" class="tab-btn" data-save-tab="inventory">Inventory</button>
           <button type="button" class="tab-btn" data-save-tab="lore">Session lore</button>
-          <button type="button" class="tab-btn" data-save-tab="modifiers">Temporary</button>
+          <button type="button" class="tab-btn" data-save-tab="modifiers" data-tr="temporary">Temporary</button>
           <button type="button" class="tab-btn" data-save-tab="toml">Advanced TOML</button>
         </nav>
         <div id="edit-save-panel-entities" class="edit-save-panel">
@@ -1180,40 +1180,40 @@
 
         <fieldset class="stat-temp-box">
           <legend>
-            <label class="chk"><input type="checkbox" id="edit-stat-temporary"> Temporary — this number moves with time, not only when the story says so</label>
+            <label class="chk"><input type="checkbox" id="edit-stat-temporary"> <span data-tr="dyn_temporary_check">Temporary — this number moves with time, not only when the story says so</span></label>
           </legend>
-          <p class="description" id="edit-stat-lasting-hint">Leave unchecked for cash, reputation, location, identity.</p>
+          <p class="description" id="edit-stat-lasting-hint" data-tr="dyn_lasting_hint">Leave unchecked for cash, reputation, location, identity.</p>
           <div id="edit-stat-temp-fields">
             <div class="stat-edit-grid">
               <div class="form-group">
-                <label>How it moves</label>
+                <label data-tr="dyn_kind">How it moves</label>
                 <select id="edit-stat-kind">
-                  <option value="heal">Heal — drifts back (wound, vitality)</option>
-                  <option value="buildup">Buildup — rises in-scene, may snap down</option>
-                  <option value="duration">Duration — short overlay that wears off</option>
+                  <option value="heal" data-tr="dyn_kind_heal">Heal — drifts back (wound, vitality)</option>
+                  <option value="buildup" data-tr="dyn_kind_buildup">Buildup — rises in-scene, may snap down</option>
+                  <option value="duration" data-tr="dyn_kind_duration">Duration — short overlay that wears off</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>Pace</label>
+                <label data-tr="dyn_pace">Pace</label>
                 <select id="edit-stat-pace">
-                  <option value="fast">Fast — minutes to a few hours</option>
-                  <option value="medium">Medium — hours to a day</option>
-                  <option value="slow">Slow — days to weeks</option>
+                  <option value="fast" data-tr="dyn_pace_fast">Fast — minutes to a few hours</option>
+                  <option value="medium" data-tr="dyn_pace_medium">Medium — hours to a day</option>
+                  <option value="slow" data-tr="dyn_pace_slow">Slow — days to weeks</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>Resting value</label>
-                <input type="number" id="edit-stat-resting" placeholder="0 or 100">
-                <span class="save-meta">Where time pulls it: 0 for a problem meter, 100 for a healthy pool.</span>
+                <label data-tr="dyn_resting">Resting value</label>
+                <input type="number" id="edit-stat-resting" placeholder="0 or 100" data-tr-placeholder="dyn_resting_ph">
+                <span class="save-meta" data-tr="dyn_resting_hint">Where time pulls it: 0 for a problem meter, 100 for a healthy pool.</span>
               </div>
               <div class="form-group">
-                <label>Timescale (override)</label>
+                <label><span data-tr="dyn_timescale">Timescale</span> <span data-tr="dyn_override">(override)</span></label>
                 <div class="dyn-scale">
                   <input type="number" id="edit-stat-scale-n" min="1" style="width:80px;">
                   <select id="edit-stat-scale-unit">
-                    <option value="minutes">minutes</option>
-                    <option value="hours">hours</option>
-                    <option value="days">days</option>
+                    <option value="minutes" data-tr="dyn_unit_minutes">minutes</option>
+                    <option value="hours" data-tr="dyn_unit_hours">hours</option>
+                    <option value="days" data-tr="dyn_unit_days">days</option>
                   </select>
                 </div>
               </div>
@@ -1221,14 +1221,14 @@
             <p class="description" id="edit-stat-kind-hint"></p>
             <div id="edit-stat-events-wrap" class="stat-edit-grid hidden">
               <div class="form-group form-span-2">
-                <label>Reset when (crash events)</label>
-                <input type="text" id="edit-stat-crash" placeholder="e.g. orgasm">
-                <span class="save-meta">Story beats that snap this meter to resting. Empty is fine. Only for buildup stats — not wounds or cash.</span>
+                <label data-tr="dyn_crash">Reset when (crash events)</label>
+                <input type="text" id="edit-stat-crash" placeholder="e.g. orgasm" data-tr-placeholder="dyn_crash_ph">
+                <span class="save-meta" data-tr="dyn_crash_hint">Story beats that snap this meter to resting. Empty is fine. Only for buildup stats — not wounds or cash.</span>
               </div>
               <div class="form-group form-span-2">
-                <label>Hold peak when (extend events)</label>
-                <input type="text" id="edit-stat-extend" placeholder="e.g. edging">
-                <span class="save-meta">Beats that keep it at max a bit longer. Leave empty if unused.</span>
+                <label data-tr="dyn_extend">Hold peak when (extend events)</label>
+                <input type="text" id="edit-stat-extend" placeholder="e.g. edging" data-tr-placeholder="dyn_extend_ph">
+                <span class="save-meta" data-tr="dyn_extend_hint">Beats that keep it at max a bit longer. Leave empty if unused.</span>
               </div>
             </div>
           </div>

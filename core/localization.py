@@ -166,7 +166,7 @@ def get_translations_dict() -> dict[str, dict[str, str]]:
 _VERBOSITY_LEVELS = ("short", "balanced", "talkative")
 
 
-def canonical_verbosity(value: str) -> str:
+def canonical_verbosity(value: str, default: str | None = None) -> str:
     """Normalise un niveau de verbosité vers sa valeur canonique.
 
     TICKET-032 : le Creator Studio a historiquement stocké dans `Universe_Meta`
@@ -174,9 +174,11 @@ def canonical_verbosity(value: str) -> str:
     valeur canonique attendue partout ailleurs (`short`/`balanced`/`talkative`).
     Accepte les deux : canonique tel quel, sinon recherche inverse dans toutes
     les langues (migration douce des univers déjà enregistrés). Inconnu →
-    DEFAULT_VERBOSITY_LEVEL (see axiom.prompts).
+    `default` s'il est fourni (ex. `axiom.config.get_default_verbosity()`),
+    sinon DEFAULT_VERBOSITY_LEVEL (axiom.prompts). Fonction pure (TICKET-096) :
+    aucune lecture de config — c'est à l'appelant de passer le défaut utilisateur.
     """
-    from axiom.config import get_default_verbosity
+    from axiom.prompts import DEFAULT_VERBOSITY_LEVEL
 
     v = (value or "").strip().lower()
     if v in _VERBOSITY_LEVELS:
@@ -185,7 +187,7 @@ def canonical_verbosity(value: str) -> str:
         for level in _VERBOSITY_LEVELS:
             if lang_dict.get(level, "").lower() == v:
                 return level
-    return get_default_verbosity()
+    return default if default in _VERBOSITY_LEVELS else DEFAULT_VERBOSITY_LEVEL
 
 
 def compute_coverage(reference: str = "en") -> dict[str, dict[str, list[str]]]:

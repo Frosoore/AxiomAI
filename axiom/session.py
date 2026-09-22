@@ -198,7 +198,7 @@ class Session:
         on_status: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "talkative",
+        verbosity_level: str = "balanced",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
         """Resolve every intent currently in the pool as a single tick."""
@@ -342,7 +342,7 @@ class Session:
         on_hero_decision: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "talkative",
+        verbosity_level: str = "balanced",
         hero_action: str | None = None,
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
@@ -384,7 +384,7 @@ class Session:
         on_status: Callable[[str], None] | None = None,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "talkative",
+        verbosity_level: str = "balanced",
     ) -> ArbitratorResult:
         """Resolve a multiplayer turn: every player intent in a single tick.
 
@@ -447,7 +447,7 @@ class Session:
         user_message: str,
         temperature: float = 0.7,
         top_p: float = 1.0,
-        verbosity_level: str = "talkative",
+        verbosity_level: str = "balanced",
         player_id: str = "player_1",
         on_token: Callable[[str], None] | None = None,
     ) -> str:

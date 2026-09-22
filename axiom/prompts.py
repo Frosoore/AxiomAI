@@ -33,7 +33,7 @@ Older turns are silently dropped to keep context windows manageable.
 A "turn" is one user message + one assistant message, so at most
 2 * HISTORY_TURN_CAP individual messages are included from history."""
 
-DEFAULT_VERBOSITY_LEVEL: str = "talkative"
+DEFAULT_VERBOSITY_LEVEL: str = "balanced"
 """Factory fallback for narrator length ('short' | 'balanced' | 'talkative').
 
 User-facing default lives in ``AppConfig.default_verbosity`` (Settings → LLM).

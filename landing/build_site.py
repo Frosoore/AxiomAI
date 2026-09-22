@@ -243,13 +243,7 @@ def _shell(prefix: str, title: str, desc: str, body: str) -> str:
     """
     p = prefix
     head = _HEAD.format(title=html.escape(title), desc=html.escape(desc), p=p)
-    nav = f"""        <div class="alpha-banner" role="alert">
-            <div class="wrap alpha-inner">
-                <span class="alpha-tag">EARLY ALPHA</span>
-                <p>For testers: until <b>June&nbsp;30</b>, free API keys are built right in, so you can play with zero setup. Expect rough edges and breaking changes.</p>
-            </div>
-        </div>
-        <header class="nav">
+    nav = f"""        <header class="nav">
             <div class="wrap nav-inner">
                 <a class="brand" href="{p}index.html#top"><img src="{p}assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
                 <nav class="nav-links">

@@ -6,6 +6,7 @@ location, or another instance (a purse, a drawer). Max nesting is 5.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import uuid
@@ -449,6 +450,111 @@ def replace_inventory(
             "VALUES (?, ?, ?, ?, ?, ?);",
             (instance_id, save_id, item_id, qty, holder_kind, holder_id),
         )
+
+
+# ---------------------------------------------------------------------------
+# Per-turn snapshots — rewind support (TICKET-095)
+# ---------------------------------------------------------------------------
+
+def _snapshot_rows(conn: sqlite3.Connection, save_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "instance_id": r["instance_id"],
+            "item_id": r["item_id"],
+            "quantity": r["quantity"],
+            "holder_kind": r["holder_kind"],
+            "holder_id": r["holder_id"],
+            "name": r["name"],
+            "is_container": r["is_container"],
+        }
+        for r in list_instances(conn, save_id)
+    ]
+
+
+def snapshot_inventory(conn: sqlite3.Connection, save_id: str, turn_id: int) -> None:
+    """Capture the save's Item_Instances as the end-of-turn state of ``turn_id``.
+
+    Always writes a row, even for an empty inventory: in Inventory_Snapshots a
+    missing row means "not captured" (turns played before TICKET-095), never
+    "empty". Uses the caller's connection/transaction; does not commit.
+    """
+    from axiom.schema import ensure_inventory_snapshots_table
+
+    ensure_inventory_snapshots_table(conn)
+    conn.execute(
+        "INSERT OR REPLACE INTO Inventory_Snapshots (save_id, turn_id, state_json) "
+        "VALUES (?, ?, ?);",
+        (save_id, turn_id, json.dumps(_snapshot_rows(conn, save_id))),
+    )
+
+
+def snapshot_present_inventory(conn: sqlite3.Connection, save_id: str) -> None:
+    """Re-capture the save's present turn after a manual (out-of-turn) edit,
+    so a later rewind to that turn keeps the edit. Does not commit."""
+    row = conn.execute(
+        "SELECT MAX(turn_id) FROM Event_Log WHERE save_id = ?;", (save_id,)
+    ).fetchone()
+    snapshot_inventory(conn, save_id, int(row[0]) if row and row[0] is not None else 0)
+
+
+def inventory_at(
+    conn: sqlite3.Connection, save_id: str, turn_id: int
+) -> list[dict[str, Any]] | None:
+    """Read-only: the captured inventory rows at end of ``turn_id``, or None if
+    that turn was never captured (legacy turn)."""
+    from axiom.schema import ensure_inventory_snapshots_table
+
+    ensure_inventory_snapshots_table(conn)
+    row = conn.execute(
+        "SELECT state_json FROM Inventory_Snapshots WHERE save_id = ? AND turn_id = ?;",
+        (save_id, turn_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row[0] or "[]")
+
+
+def rollback_inventory(conn: sqlite3.Connection, save_id: str, target_turn_id: int) -> bool:
+    """Restore Item_Instances to the snapshot of ``target_turn_id`` (rewind).
+
+    Drops the snapshots of the erased future turns. If the target turn has no
+    snapshot (played before TICKET-095), the inventory is left as is and False
+    is returned — same behaviour as before this feature existed. Instance ids
+    are preserved so containers keep their contents. Runs on the caller's
+    transaction (CheckpointManager.rewind); does not commit.
+    """
+    from axiom.schema import ensure_inventory_snapshots_table
+
+    ensure_inventory_snapshots_table(conn)
+    conn.execute(
+        "DELETE FROM Inventory_Snapshots WHERE save_id = ? AND turn_id > ?;",
+        (save_id, target_turn_id),
+    )
+    rows = inventory_at(conn, save_id, target_turn_id)
+    if rows is None:
+        return False
+    conn.execute("DELETE FROM Item_Instances WHERE save_id = ?;", (save_id,))
+    for it in rows:
+        item_id = str(it.get("item_id") or "")
+        if not item_id or it.get("holder_kind") not in HOLDER_KINDS:
+            continue
+        exists = conn.execute(
+            "SELECT 1 FROM Item_Definitions WHERE item_id = ?;", (item_id,)
+        ).fetchone()
+        if not exists:  # play-emergent definition removed since → recreate it
+            item_id = ensure_item_definition(
+                conn, item_id,
+                name=str(it.get("name") or ""),
+                is_container=bool(it.get("is_container")),
+            )
+        conn.execute(
+            "INSERT INTO Item_Instances "
+            "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
+            "VALUES (?, ?, ?, ?, ?, ?);",
+            (it.get("instance_id") or str(uuid.uuid4()), save_id, item_id,
+             max(1, int(it.get("quantity") or 1)), it["holder_kind"], it["holder_id"]),
+        )
+    return True
 
 
 def format_inventory_prompt(tree: list[dict[str, Any]], names: dict[str, str] | None = None) -> str:

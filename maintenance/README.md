@@ -135,6 +135,8 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `QA-ambiance-images-2026-06-13` | ✅ | QA ambiance sonore + images |
 | `qa-fs-univers-saves-2026-06-21` | ✅ | QA e2e fichiers/univers/saves : fix `fired_turn_id` perdu (extract/fork) + test de garde anti-dérive schéma↔copie ; findings TICKET-087→090 |
 | `fix-help-tooltips-deleted-widget` | ✅ | Fix CI 3.12 : `retranslate_tooltips` robuste aux widgets C++ détruits (`shiboken6.isValid` + purge) |
+| `qa-post-17h59-2026-09-22` | ✅ | QA des 7 commits post-`cb9e56d` : GUI figé (`notify()` → eventFilter), FOREIGN KEY au 1ᵉʳ compile (Myria), CI i18n, export Hub cassé, faille canonize web ; findings → TICKET-093→098 |
+| `tickets-092-098-2026-09-22` | ✅ | Traitement des tickets issus de la QA post-17h59 : XSS + durcissement serveur web, verbosité `balanced`, `materialize_state` historique (sauf inventaire), check xcb Wayland-aware, éditeur de stats temporaires web traduit, **rewind de l'inventaire** (`Inventory_Snapshots`) |
 
 ### audits/
 | Sous-dossier | Statut | Description |
@@ -156,7 +158,7 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `TICKET-050-fail-fast-429` | ✅ | Fail-fast sur 429 |
 | `TICKET-066-reasoning-models` | ✅ (validé GUI) | Modèles de raisonnement (gpt-oss) |
 | `TICKET-068-embedding-offline-stall` | ✅ (validé GUI) | 1ᵉʳ tour figé ~90 s → `local_files_only=True` dans `axiom/memory.py` |
-| `TICKET-092-fix-xcb-cursor-crash` | 🔄 | Empêcher le crash au lancement si libxcb-cursor0 est absente |
+| `TICKET-092-fix-xcb-cursor-crash` | ✅ (clos sans test X11, décision utilisateur) | Empêcher le crash au lancement si libxcb-cursor0 est absente — rendu Wayland-aware le 2026-09-22 |
 
 ### features/
 | Sous-dossier | Statut | Description |
@@ -172,9 +174,12 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `fix-entity-category-type` | ✅ | Fix : modifier type/catégorie d'une entité dans le Creator Studio |
 | `fix-json-fence-streaming` | ✅ | Fix : masquer les blocs d'état JSON ` ```json ` (en plus de `~~~json`) en live |
 | `fix-json-leak-and-image-prompt` | 🔄 en cours | Fix fuite JSON dans le chat + amélioration prompting images (négatifs + refresh) |
+| `feature-universe-description` | ✅ (indexé a posteriori le 2026-09-22) | Description d'univers (compile/decompile, Hub, Studio, i18n ×10) — commit `c326aa1` ; régression export Hub corrigée par `qa-post-17h59` |
+| `web-ui-continuation` | 🔄 (indexé a posteriori le 2026-09-22) | Interface web alpha (`main_web.py` + `web/`) — commits `d491365`/`4967506` ; dette sécurité TICKET-093/094 soldée le 2026-09-22 |
 
 ### site/
 | Sous-dossier | Statut | Description |
 |--------------|--------|-------------|
 | `site-blog` | ✅ | Blog Markdown→HTML + RSS, stylé au thème du site |
 | `site-dev-page-rework` | ✅ | Refonte de la page Dev updates |
+| `site-update-2026-09` | ✅ | Dev updates juillet (+ retouche août), bannière testeurs retirée, billet « Quiet, but stable » |

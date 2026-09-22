@@ -52,6 +52,9 @@ class CheckpointManager:
              from the per-turn snapshot
              (:func:`axiom.modifiers.rollback_modifiers`) — they decay in minutes
              and are not event-sourced, so they cannot be replayed.
+             Same for the nested inventory
+             (:func:`axiom.inventory.rollback_inventory`, TICKET-095) — left
+             untouched if the target turn predates inventory snapshots.
           5. Un-fire scheduled events that fired after the target turn, so they
              can trigger again when the clock re-crosses their minute.
           6. Rebuild ``State_Cache`` from the surviving events.
@@ -127,6 +130,13 @@ class CheckpointManager:
             # per-turn snapshot captured at the target turn (TICKET-074).
             from axiom.modifiers import rollback_modifiers
             rollback_modifiers(conn, save_id, target_turn_id)
+
+            # Nested inventory isn't replayable from Event_Log (manual edits aren't
+            # logged, instance ids aren't stored): restore it from the per-turn
+            # snapshot of the target turn. No snapshot (turn played before
+            # TICKET-095) → inventory left as is.
+            from axiom.inventory import rollback_inventory
+            rollback_inventory(conn, save_id, target_turn_id)
 
             # Scheduled events fired *after* the target turn must be un-fired so
             # they can trigger again once the in-game clock re-crosses their

@@ -54,7 +54,7 @@ def add_play_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument(
         "--verbosity",
-        default="talkative",
+        default="balanced",
         choices=["short", "balanced", "talkative"],
     )
 
@@ -207,7 +207,7 @@ def play_loop(
     err: TextIO | None = None,
     temperature: float = 0.7,
     top_p: float = 1.0,
-    verbosity: str = "talkative",
+    verbosity: str = "balanced",
 ) -> None:
     """Boucle REPL d'une partie. S'arrête sur /quit ou EOF (Ctrl-D).
 
