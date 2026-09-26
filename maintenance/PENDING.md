@@ -23,11 +23,17 @@
 | TICKET-084| **Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`** (croyances + faits + chunks narratifs cumulés) | ouvert — QA Hindsight 2 (2026-06-19), coût tokens |
 | TICKET-085| **Cache BM25 : `collection.get()` plein corpus tourne encore au cache-hit** (seul le build d'index est caché) | ouvert — QA Hindsight 2 (2026-06-19), micro-opt mineure |
 | TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 (inventaire + ses snapshots désormais copiés au fork, TICKET-095) |
-| TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models (mémoire living d'une save embarquée peut fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
+| TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models **+ `Item_Instances`/`Session_Lore`** (données de partie d'une save embarquée peuvent fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
 | TICKET-090| **`paths` : pas de `get_universes_dir()`**, `UNIVERSES_DIR` figé à l'import (insensible à `AXIOM_DATA_DIR`/`configure`) alors que saves/vector le sont → isolation asymétrique | ouvert — QA fs 2026-06-21, archi/cohérence |
 | TICKET-099| **Clés Fireworks intégrées expirées (2026-06-30) mais `BUILTIN_KEYS_ENABLED = True`** → un nouvel utilisateur est configuré par défaut sur des clés mortes | ouvert — **décision utilisateur** (couper l'interrupteur ou renouveler le pool) |
+| TICKET-100| **Rewind web/CLI ne rembobine pas ChromaDB** + ids `uuid4` → rejouer un tour **ajoute un doublon** (le RAG voit le « futur annulé ») | ouvert — arbitrage mods 2026-09-26, **important** |
+| TICKET-101| **Tour échoué ou annulé → `user_input` orphelin + `turn_id` décalé** (2 messages joueur d'affilée au tour suivant) | ouvert — arbitrage mods 2026-09-26, **important**, reproduit |
+| TICKET-102| **Job mémoire living web sans verrou** : un rewind pendant l'appel LLM laisse des faits de tours annulés | ouvert — arbitrage mods 2026-09-26, probable (course) |
+| TICKET-103| **`fork_save --turn` copie `Fired_Scheduled_Events` et `Session_Lore` postérieurs au point de fork** | ouvert — arbitrage mods 2026-09-26, mineur |
+| TICKET-104| **`regenerate.py` : `.replace` d'une consigne absente** → bloc JSON stocké dans les variantes et renvoyé au LLM | ouvert — arbitrage mods 2026-09-26, mineur, reproduit |
+| TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ouvert — arbitrage mods 2026-09-26, mineur |
 
-Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
+Tickets 100→105 : issus du cadrage du système de mods (`Mods/`). Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
 relancer le job `deploy`). TICKET-054 (i18n) **validé GUI le 2026-06-13**.
 
@@ -386,6 +392,11 @@ porter que la définition.
 
 **Priorité :** basse — fuite de données de partie dans un export de définition (cas legacy + living).
 
+**Extension (2026-09-26, arbitrage mods, rang 23).** La liste oublie aussi **`Item_Instances`** et
+**`Session_Lore`** (`axiom/package.py:94-105`). La purge tourne sous `PRAGMA foreign_keys=OFF`
+(`package.py:123`) : pas de cascade depuis `Saves`, ces lignes restent dans l'archive. À traiter avec
+088 ; la vraie correction est le registre unique des données de save (`Mods/DOC.md` §13 phase 0c).
+
 ---
 
 ## TICKET-090 — `paths` : `UNIVERSES_DIR` figé, pas de `get_universes_dir()`
@@ -418,3 +429,95 @@ La bannière du site qui annonçait ces clés a été retirée le 2026-09-22.
 cas : rien n'est supprimé, réactivable) ; (b) renouveler/recharger le pool.
 **Priorité :** haute pour l'expérience d'un nouvel utilisateur — une ligne à changer une fois décidé.
 
+---
+
+> Tickets 100→105 : bugs trouvés par la critique du système de mods (`maintenance/Mods/CRITIQUE.md`)
+> et **confirmés** par l'arbitrage (`maintenance/Mods/ARBITRAGE.md`, rangs 3/6/16/21/22/24).
+> Décision utilisateur D-1 (2026-09-26) : corriger **tout de suite**, en tickets normaux, hors chantier mods.
+
+## TICKET-100 — Rewind web/CLI : ChromaDB jamais rembobinée, doublons au rejeu
+
+**Découvert le 2026-09-23** (critique mods §3.4, confirmé arbitrage rang 3). `Session.rewind`
+(`axiom/session.py:408-437`) n'appelle jamais `VectorMemory.rollback` (`axiom/memory.py:482-501`) ;
+le docstring de `CheckpointManager.rewind` laisse ça « au caller » (`checkpoint.py:62-63`) et aucun
+caller web/CLI ne le fait (`main_web.py:1815`, `main_web.py:1930` — édition de message —,
+`axiom/cli/play.py:185`). Seul le chemin Qt le fait (`ui/tabletop_view.py:1012-1023`, avec backup
+auto via `workers/db_tasks.py:151-178`).
+**Aggravant :** `embed_chunk` identifie chaque chunk par un `uuid4` (`axiom/memory.py:238`) → rejouer
+un tour **ajoute** un second chunk au lieu de remplacer ; le RAG voit le futur annulé **et** le nouveau.
+
+**Piste.** `Session.rewind` appelle `VectorMemory.rollback` (et idéalement le backup auto) → le chemin
+Qt n'a plus à le faire lui-même (un seul rewind). Ids de chunks déterministes (ex. `save:turn:idx`)
+pour que le rejeu écrase. Préfigure le point d'entrée unique de `Mods/DOC.md` §13 phase 0c.
+**Priorité :** haute — touche tous les joueurs web/CLI aujourd'hui.
+
+---
+
+## TICKET-101 — Tour échoué ou annulé : `user_input` orphelin + `turn_id` décalé
+
+**Découvert le 2026-09-23** (critique §3.2), **reproduit en exécution** par l'arbitrage (rang 6) avec un
+faux LLM levant `LLMConnectionError` : après l'échec, `turn_id == 1`, l'`Event_Log` contient
+`(1, 'user_input')` sans narration, `_load_history()` renvoie le message joueur seul.
+**Cause :** `self._turn_id += 1` **avant** `process_turn` (`axiom/session.py:209`) ; l'intent est
+commité avant l'appel LLM (`axiom/arbitrator.py:230-236`) ; l'intent pool est vidé (`session.py:212-213`).
+Même chemin pour `GenerationCancelled` (bouton stop). Au tour suivant, deux messages joueur d'affilée
+partent au LLM. Touche Qt, web et CLI (tous passent par `Session`).
+
+**Piste.** En cas d'échec/annulation : restaurer `_turn_id`, supprimer les events du tour avorté (ou
+ne les commiter qu'après le LLM, via le tampon `_pending_events` déjà présent), remettre l'intent dans
+le pool. Préfigure le tour transactionnel (`Mods/DOC.md` phase 0d).
+**Priorité :** haute.
+
+---
+
+## TICKET-102 — Job mémoire living web sans verrou (course avec le rewind)
+
+**Découvert le 2026-09-23** (critique §3.9, arbitrage rang 16 : **probable**, non reproduit — course).
+Le job living web est un `threading.Thread` daemon (`main_web.py:2751`) qui lit `turn`, appelle le LLM
+(plusieurs secondes) puis écrit Facts/Observations **sans `ACTIVE_SESSION_LOCK`**
+(`main_web.py:2685-2745`). Un rewind pendant ce délai laisse des faits pour des tours annulés, puis des
+doublons au rejeu. (Sans rapport avec TICKET-083, contrairement à ce que disait la critique.)
+
+**Piste.** « Époque » de session : le job capture un compteur incrémenté à chaque rewind/fork/
+chargement et **refuse d'écrire** s'il a changé (`Mods/DOC.md` §10.4). Vérifier aussi le chemin Qt
+(`workers/fact_worker.py`).
+**Priorité :** moyenne.
+
+---
+
+## TICKET-103 — `fork_save --turn` copie des données postérieures au point de fork
+
+**Découvert le 2026-09-23** (critique §3.6, confirmé arbitrage rang 21). `axiom/saves.py:947-957`
+copie tous les `Fired_Scheduled_Events` sans filtrer `fired_turn_id <= turn_id` (la colonne existe
+pour ça, TICKET-075 ; le rewind filtre bien, `checkpoint.py:148-151`). Même défaut pour
+`Session_Lore` (copie sans filtre sur `origin_turn`, `saves.py:920-930`). Accessible via
+`axiom saves fork --turn N` (`axiom/cli/saves_cmd.py:234`) ; `duplicate_save` forke sans point, pas
+d'effet. (Les modifiers copiés « as-is » sont un choix documenté, `saves.py:856`, rattaché à 088.)
+
+**Piste.** Ajouter les deux filtres. **Priorité :** basse.
+
+---
+
+## TICKET-104 — `regenerate.py` : remplacement de consigne sans effet
+
+**Découvert le 2026-09-23** (critique §3.11), **reproduit** par l'arbitrage (rang 22) :
+`build_narrative_prompt` ne contient pas la chaîne `"You MUST end your response with a JSON block"`
+(la consigne réelle est le bloc `~~~json`, `axiom/prompts.py:57`) → le `.replace` de
+`axiom/regenerate.py:73-79` ne fait rien. Le texte régénéré, **JSON compris**, est stocké tel quel
+(`regenerate.py:103`) ; masqué à l'affichage (Qt `ui/widgets/chat_display.py:84`, web
+`web/app.js:1516`) mais **renvoyé au LLM** dans l'historique (`regenerate.py:36`, `Session._load_history`).
+Note : la régénération se fait aussi sans stats, RAG ni lore (`regenerate.py:60-70`).
+
+**Piste.** Cibler la vraie consigne (ou construire le prompt sans le bloc JSON) et retirer tout bloc
+JSON du texte avant `append_variant`. **Priorité :** basse-moyenne.
+
+---
+
+## TICKET-105 — `_pending_correction` non remise à zéro au rewind
+
+**Découvert le 2026-09-23** (critique §3.3, confirmé arbitrage rang 24). L'indice « l'action a échoué »
+vit sur `self._pending_correction` (`axiom/arbitrator.py:152,450,465,1731-1734`). Au rewind,
+`Session.rewind` appelle `invalidate_stats_cache` (`session.py:415`), qui ne le touche pas
+(`arbitrator.py:166-176`) → un indice issu d'un tour annulé peut être injecté une fois.
+
+**Piste.** Remettre à `None` au rewind (et au chargement de save). **Priorité :** basse.

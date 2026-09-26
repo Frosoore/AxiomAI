@@ -49,9 +49,10 @@ dev avant de modifier `axiom/` ou un fichier partagé.**
 | `site/` | Site vitrine / blog / page Dev updates |
 | `collab/` | Coordination du dev parallèle (rulebook + EN_COURS.md par dev) — **reste à la racine** |
 | `Multiplayer/` | Mode multijoueur simultané (hotseat local) — plusieurs entités joueur agissent dans le même tour, résolu en un seul tick |
+| `Mods/` | Système de mods (`.axmod`) — noyau minimal + tout le reste en mods ; vision, critique et arbitrage (pas encore de code) |
 
 Statut global : **tout est ✅ terminé sauf** `features/fix-json-leak-and-image-prompt` (🔄 en cours),
-`Multiplayer/` (🔄 implémentation en cours),
+`Multiplayer/` (🔄 implémentation en cours), `Mods/` (📋 vision validée, pas de code — phase 0 à venir),
 `i18n-doc/TICKET-057-*` (🔄 doc intégrée à enrichir), `hindsight/hindsight-mining` (📋 doc de cadrage,
 sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DONE.md`.
 

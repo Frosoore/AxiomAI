@@ -6,6 +6,11 @@
 
 ---
 
+> **Cap long terme (2026-09-26) : Axiom devient « noyau minimal + mods ».** La vision, les
+> garde-fous contre les dérives et l'ordre des travaux sont dans
+> [`maintenance/Mods/DOC.md`](maintenance/Mods/DOC.md). Ce document-ci décrit l'état **actuel** ;
+> toute refonte du tour, du rewind ou des saves doit aller dans le sens de cette vision.
+
 ## TL;DR (les 5 règles d'or)
 
 1. **La logique de jeu vit dans `axiom/`** (le moteur). Pas dans `ui/`, pas dans `workers/`.
