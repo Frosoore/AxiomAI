@@ -1,0 +1,26 @@
+[mod]
+id = "core.stat_dynamics"
+version = "1.0.0"
+axiom_api = 1
+name = "Dynamique des Stats & Modificateurs"
+description = "Gère l'évolution temporelle, le repos, la saturation et le déclin des statistiques temporaires."
+
+[dependencies]
+
+[ordering]
+after = []
+before = []
+conflicts = []
+provides = ["stat_dynamics"]
+
+[contributes]
+hooks = [
+    "axiom.turn:arbitrate_stats",
+    "axiom.step:after_step"
+]
+slots = []
+patches = []
+
+[storage]
+# Utilise la politique standardisée déclarée au registre du noyau
+modifiers = { policy = "step_keyed_table", table = "Modifier_Snapshots", step_column = "turn_id" }

@@ -63,9 +63,29 @@ class LLMResponse:
                         or None if the LLM produced no tool call.
         finish_reason:  One of "stop", "length", or "error".
     """
-    narrative_text: str
-    tool_call: dict | list | None
-    finish_reason: str
+    narrative_text: str = ""
+    tool_call: dict | list | None = None
+    finish_reason: str = "stop"
+
+    def __init__(
+        self,
+        narrative_text: str = "",
+        tool_call: dict | list | None = None,
+        finish_reason: str = "stop",
+        *,
+        content: str | None = None,
+    ) -> None:
+        self.narrative_text = content if content is not None else narrative_text
+        self.tool_call = tool_call
+        self.finish_reason = finish_reason
+
+    @property
+    def content(self) -> str:
+        return self.narrative_text
+
+    @content.setter
+    def content(self, val: str) -> None:
+        self.narrative_text = val
 
     @staticmethod
     def _trim_incomplete_sentence(text: str) -> str:

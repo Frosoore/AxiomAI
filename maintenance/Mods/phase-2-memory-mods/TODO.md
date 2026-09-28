@@ -1,0 +1,32 @@
+# TODO — Phase 2 : Extraction de axiom.rag et axiom.living_memory
+
+- [x] Extraction du mod officiel `axiom.rag` sous `mods/axiom.rag/`
+  - [x] Manifeste `mod.toml` (ID `axiom.rag`, version `1.0.0`, `axiom_api = 1`, `provides = ["vector_memory"]`, dépendance `axiom.turn`)
+  - [x] Déclaration du hook `axiom.step:after_step`
+  - [x] Déclaration de la contribution de slot `axiom.turn:prompt_sections`
+  - [x] Déclaration de la politique de stockage dans `[storage]` (`vector_store = { policy = "custom" }`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"rag"` (`query`, `embed_chunk`, `rollback`, `get_vector_memory`)
+    - [x] Contribution à `axiom.turn:prompt_sections` (injection des souvenirs pertinents dans le prompt de génération)
+    - [x] Hook `axiom.step:after_step` (vectorisation de la prose narrative via `ctx.write_batch.post_commit_callbacks`)
+    - [x] Enregistrement du rollback custom auprès de `storage_registry` (`register_custom_storage`)
+- [x] Extraction du mod officiel `axiom.living_memory` sous `mods/axiom.living_memory/`
+  - [x] Manifeste `mod.toml` (ID `axiom.living_memory`, version `1.0.0`, `axiom_api = 1`, `provides = ["living_memory"]`, dépendances `axiom.world` et `axiom.turn`)
+  - [x] Déclaration du hook `axiom.step:after_step`
+  - [x] Déclaration de la contribution de slot `axiom.turn:prompt_sections`
+  - [x] Déclaration des politiques de stockage dans `[storage]` (`facts`, `observations`, `mental_models` en `step_keyed_table`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"living_memory"` (`get_facts`, `get_observations`, `get_models`, `extract_now`, `reset`, `record_turn`)
+    - [x] Contribution à `axiom.turn:prompt_sections` (faits récents et profils mentaux des entités sur scène)
+    - [x] Hook `axiom.step:after_step` (accumulation asynchrone sécurisée par garde d'époque `epoch_checker`)
+- [x] Allègement & Découplage du Noyau et des Frontends
+  - [x] Éradication des imports statiques `VectorMemory` et `LivingMemoryAccumulator` dans `axiom/session.py` et `axiom/arbitrator.py`
+  - [x] Résolution gracieuse des services `"rag"` et `"living_memory"` dans `Session` et `ArbitratorEngine`
+  - [x] Découplage de `main_web.py` : endpoints `/api/session/memory*` délégant au service `"living_memory"` avec renvoi gracieux `{ "disabled": true }` en cas d'absence
+  - [x] Écriture des hooks de mémoire dans `post_commit_callbacks` du tour transactionnel
+- [x] Empaquetage `.axmod`
+  - [x] `dist/mods/axiom.rag.axmod`
+  - [x] `dist/mods/axiom.living_memory.axmod`
+- [x] Suite de tests hermétique et d'intégration
+  - [x] `tests/test_memory_mods.py` (5 tests : validation des manifestes, chargement d'archive, rollback RAG, garde d'époque, désactivation indépendante et exécution d'un tour complet avec tous les mods)
+  - [x] 100% au vert sur l'ensemble des suites (41/41 tests passants)

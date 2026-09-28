@@ -381,6 +381,10 @@ def main() -> None:
         return
 
     _install_exception_hook()
+    if "--safe-mode" in sys.argv:
+        from axiom.kernel.loader import set_safe_mode
+        set_safe_mode(True)
+        logger.warning("Safe mode requested via command line: third-party mods disabled.")
     logger.info("Application starting...")
     if is_debug():
         logger.debug("Debug mode enabled — verbose console output active.")
@@ -405,6 +409,10 @@ def main() -> None:
     from core.builtin_keys import apply_beta_defaults, register_builtin_providers
     register_builtin_providers()
     apply_beta_defaults()
+
+    # Initialize global KernelRegistry and bootstrap all enabled mods
+    from axiom.kernel.loader import bootstrap_all_mods
+    bootstrap_all_mods()
 
     app = QApplication(sys.argv)
     # Keep a reference on the app so the filter isn't garbage-collected.

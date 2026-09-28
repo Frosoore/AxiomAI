@@ -1,0 +1,33 @@
+[mod]
+id = "axiom.turn"
+version = "1.0.0"
+axiom_api = 1
+name = "Moteur de Tour & Arbitrage"
+description = "Pipeline séquentiel de narration LLM, validation Arbitrator et boucle de correction."
+
+[dependencies]
+"axiom.world" = ">=1.0.0"
+
+[ordering]
+after = ["axiom.world"]
+before = []
+conflicts = []
+provides = ["turn_pipeline"]
+
+[contributes]
+hooks = [
+    "axiom.kernel:execute_step"
+]
+slots = []
+patches = []
+
+[provides_slots]
+"axiom.turn:prompt_sections" = { rule = "collect" }
+"axiom.turn:output_fields" = { rule = "collect" }
+"axiom.turn:stream_filter" = { rule = "chain" }
+"axiom.turn:final_text_filter" = { rule = "chain" }
+"axiom.turn:llm_backend" = { rule = "exclusive" }
+
+[storage]
+event_log = { policy = "events" }
+timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id" }

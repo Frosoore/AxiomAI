@@ -28,7 +28,7 @@ from axiom.textfmt import fmt_num  # ré-export : formatage de nombres (langue-n
 __all__ = [
     "tr", "fmt_num", "SUPPORTED_LANGUAGES", "canonical_verbosity",
     "format_time", "get_translations_dict", "compute_coverage", "reload_translations",
-    "set_language",
+    "set_language", "set_kernel_registry",
 ]
 
 # Supported languages with their native names
@@ -56,6 +56,14 @@ _TRANSLATIONS_CACHE: dict[str, dict[str, str]] | None = None
 # mtime). La langue ne change qu'au save des réglages → `reload_translations()`
 # (appelé par MainWindow à ce moment) vide ce cache.
 _CURRENT_LANG: str | None = None
+_KERNEL_REGISTRY = None
+
+
+def set_kernel_registry(registry) -> None:
+    """Set the kernel registry used for dynamic mod translations."""
+    global _KERNEL_REGISTRY
+    _KERNEL_REGISTRY = registry
+    reload_translations()
 
 
 def _load_translations() -> dict[str, dict[str, str]]:
@@ -78,6 +86,25 @@ def _load_translations() -> dict[str, dict[str, str]]:
                 logger.error(f"Locale file invalid ({lang}): {exc}")
                 data[lang] = {}
         _TRANSLATIONS_CACHE = data
+
+    # Merge contributions from active registry if available (ARBITRAGE.md & §9)
+    try:
+        from axiom.kernel.registry import get_active_registry
+        reg = _KERNEL_REGISTRY or get_active_registry()
+        if reg is not None and hasattr(reg, "get_slot_contributions"):
+            for contrib in reg.get_slot_contributions("axiom.kernel:locales"):
+                if isinstance(contrib, tuple) and len(contrib) == 2 and isinstance(contrib[0], str) and isinstance(contrib[1], dict):
+                    lang, d = contrib
+                    _TRANSLATIONS_CACHE.setdefault(lang, {}).update(d)
+                elif isinstance(contrib, dict):
+                    for k, v in contrib.items():
+                        if isinstance(v, dict):
+                            _TRANSLATIONS_CACHE.setdefault(k, {}).update(v)
+                        elif isinstance(v, str):
+                            _TRANSLATIONS_CACHE.setdefault("en", {})[k] = v
+    except Exception as exc:
+        logger.error("Failed to merge mod locale contributions: %s", exc)
+
     return _TRANSLATIONS_CACHE
 
 

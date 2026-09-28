@@ -193,6 +193,9 @@ class AppConfig:
     image_gemini_model: str = "gemini-2.5-flash-image"
     image_timeout: int = 180
 
+    # Mod configuration settings: open mapping of mod_id -> settings dict
+    mod_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
+
 
 # OpenAI-compatible cloud text providers selectable in the Cloud settings tab.
 # Gemini keeps its own native client (quota resilience, fallback model); every
@@ -315,6 +318,12 @@ def load_config() -> AppConfig:
             raw["universal_model"] = raw.pop("ollama_model")
         if raw.get("llm_backend") == "ollama":
             raw["llm_backend"] = "universal"
+
+        # Preserve mod_settings (or legacy/alias 'mods' section)
+        if "mods" in raw and "mod_settings" not in raw:
+            raw["mod_settings"] = raw["mods"]
+        if not isinstance(raw.get("mod_settings"), dict):
+            raw.pop("mod_settings", None)
 
         # Only accept known keys — ignore unknown keys gracefully
         known = {f for f in AppConfig.__dataclass_fields__}

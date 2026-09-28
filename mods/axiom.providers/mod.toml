@@ -1,0 +1,21 @@
+[mod]
+id = "axiom.providers"
+version = "1.0.0"
+axiom_api = 1
+name = "Pilotes LLM & Fournisseurs d'IA"
+description = "Pilotes d'inférence pour Google Gemini, Ollama et points de terminaison OpenAI-compatibles."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["llm_providers"]
+
+[contributes]
+slots = [
+    "axiom.turn:llm_backend",
+    "axiom.ui.qt:settings_tab"
+]
+
+[provides_slots]
+"axiom.providers:drivers" = { rule = "collect" }

@@ -1,0 +1,39 @@
+# TODO — Phase 4 : Outillage de création & Créateur de mods par LLM
+
+- [x] Le Générateur d'échafaudage : `axiom mod new` (`axiom/kernel/scaffold.py`)
+  - [x] Support des 3 archétypes : `hook`, `slot`, `data`
+  - [x] Génération de l'arborescence standard : `mod.toml`, `main.py`, `tests/test_<name>.py`, `locales/en.json`
+  - [x] Validation stricte de l'ID namespacé `author.name` et de `axiom_api = 1`
+  - [x] Génération d'un `main.py` fonctionnel prêt à l'emploi
+  - [x] Test unitaire modèle basé sur `ModContext` et `KernelRegistry`
+- [x] La Commande de test unifié : `axiom mod test` (`axiom/kernel/tester.py` & `axiom/cli/mods_cmd.py`)
+  - [x] Validation du manifeste `mod.toml` (SemVer, API, format)
+  - [x] Validation de la syntaxe des hooks et slots déclarés (`namespace:nom`)
+  - [x] Règle D4 : Détection et interdiction des imports directs d'UI (`PyQt6`, `ui`, `main_web`) si le mod ne déclare pas de dépendance UI
+  - [x] Initialisation en bac à sable isolé `init(ctx)` et nettoyage `ctx.cleanup()`
+  - [x] Exécution automatique du runner `pytest` borné en sous-processus sur `tests/`
+  - [x] Support transparent des dossiers décompressés et des archives `.axmod`
+- [x] Le Mode Développement à Chaud : `axiom mod dev` (`axiom/kernel/dev.py`)
+  - [x] Surveillance des timestamps de modification de fichiers (`mtime`) dans le dossier du mod
+  - [x] Dépilage automatique des hooks, slots et patches via `ctx.cleanup()` (Règle D11)
+  - [x] Invalidation des caches d'import via `importlib.invalidate_caches()`
+  - [x] Rechargement du module et ré-exécution de `init(ctx)` avec un contexte neuf
+  - [x] Prédicat d'arrêt `should_stop` pour tests hermétiques
+- [x] Le Créateur de mods par LLM : `axiom/kernel/llm_creator.py`
+  - [x] Modèle de prompt déclaratif avec spécification formelle de `mod.toml`, API `ModContext`, hooks/slots officiels et exemples compacts (Règle D2)
+  - [x] Staging en bac à sable isolé (`~/.cache/AxiomAI/staged_mods/<mod_id>/`)
+  - [x] Calcul de diff textuel unifié lisible par l'humain pour chaque fichier généré
+  - [x] Exécution automatique de `test_mod` dans le bac à sable de staging (Règles §12 & D14)
+  - [x] Structure de rapport `ModGenerationResult`
+  - [x] Fonction `apply_generated_mod` : copie vers `mods/`, compilation optionnelle du `.axmod`, et activation dans `AppConfig`
+- [x] Points d'entrée Utilisateur
+  - [x] Commande CLI `axiom mod new`
+  - [x] Commande CLI `axiom mod test`
+  - [x] Commande CLI `axiom mod dev`
+  - [x] Commande CLI `axiom mod generate` avec affichage du diff coloré et porte de confirmation interactive (`[y/N]`)
+  - [x] Endpoint Web API `GET /api/mods` (liste des mods installés et statuts)
+  - [x] Endpoint Web API `POST /api/mods/generate` (staging en sandbox et renvoi du diff)
+  - [x] Endpoint Web API `POST /api/mods/apply` (installation, packaging et activation)
+- [x] Suite de tests dédiée (`tests/test_mod_creator.py`)
+  - [x] 14 tests couvrant échafaudage, validation structurelle, imports interdits (D4), tests unitaires, archives `.axmod`, hot-reload, génération LLM staged, CLI et Web API
+  - [x] 100% au vert sur l'ensemble des 10 suites de tests du projet (71/71 tests passants)

@@ -1,0 +1,85 @@
+# French translations for Axiom Engine documentation.
+# Copyright (C) 2026, Pinpanicaille and Frosoore
+# This file is distributed under the same license as the Axiom Engine package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Axiom Engine 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-27 18:45+0200\n"
+"PO-Revision-Date: 2026-09-27 18:45+0200\n"
+"Last-Translator: Pinpanicaille and Frosoore\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../guides/mods.md:1
+msgid "The Modding System (`.axmod`)"
+msgstr "Le système de mods (`.axmod`)"
+
+#: ../../guides/mods.md:5
+msgid ""
+"Axiom AI adopts an **extensible micro-kernel architecture** (`axiomai-engine 1.0.0`): "
+"the base engine carries zero hardcoded tabletop RPG business logic. All gameplay mechanics, "
+"narrative orchestration, cognitive memory, AI inference backends, and user interfaces "
+"are packaged as modular **mods** using the `.axmod` archive format."
+msgstr ""
+"Axiom AI adopte une architecture de **micro-noyau modulaire** (`axiomai-engine 1.0.0`) : "
+"le moteur de base n'embarque aucune logique métier JDR en dur, et tout le gameplay, "
+"la narration, la mémoire, les fournisseurs d'IA et les interfaces sont portés par "
+"des **mods** au format `.axmod`."
+
+#: ../../guides/mods.md:11
+msgid "1. Fundamental Vision & Architectural Promises"
+msgstr "1. Vision et Promesses Fondamentales"
+
+#: ../../guides/mods.md:15
+msgid "1. **Versatility without Bloat:** The core (`axiom/`) contains zero RPG business logic, no hardcoded prompts, and no undeclared heavy third-party dependencies."
+msgstr "1. **Versatilité sans obésité :** Le noyau (`axiom/`) ne contient aucune règle métier propre au JDR, aucun prompt en dur, ni aucune dépendance lourde vers des bibliothèques externes non déclarées."
+
+#: ../../guides/mods.md:16
+msgid "2. **Plug and Play, including for an LLM:** Scaffolding (`scaffold`), testing harness (`tester`), live hot-reload (`dev`), and the LLM creator (`llm_creator`) allow generating sandbox-tested and verified extensions with explicit human-readable diffs."
+msgstr "2. **Plug and play, y compris pour un LLM :** L'échafaudage (`scaffold`), le banc d'essai (`tester`), le rechargement à chaud (`dev`) et le créateur LLM (`llm_creator`) permettent de concevoir des extensions testées et vérifiées en bac à sable avec un diff textuel explicite."
+
+#: ../../guides/mods.md:17
+msgid "3. **Reversibility and Simplicity:** All registrations go through `ModContext`; disabling a mod restores the prior state with zero memory leaks or database corruption."
+msgstr "3. **Réversibilité et facilité :** Tout enregistrement passe par `ModContext` ; désactiver un mod restaure l'état antérieur sans résidu de mémoire ni corruption de base de données."
+
+#: ../../guides/mods.md:21
+msgid "2. Mod System Architecture Map"
+msgstr "2. Cartographie du Système Modulaire"
+
+#: ../../guides/mods.md:57
+msgid "3. Directory of the 12 Extracted Official Mods"
+msgstr "3. Répertoire des 12 Mods Officiels Extraits"
+
+#: ../../guides/mods.md:76
+msgid "4. Mod Author Reference Guide"
+msgstr "4. Guide de Référence pour l'Auteur de Mod"
+
+#: ../../guides/mods.md:80
+msgid "A. Via LLM-assisted generation"
+msgstr "A. Génération assistée par LLM"
+
+#: ../../guides/mods.md:87
+msgid "B. Via manual scaffolding & live development"
+msgstr "B. Échafaudage manuel & développement en direct"
+
+#: ../../guides/mods.md:99
+msgid "C. Canonical `main.py` template"
+msgstr "C. Modèle canonique d'un fichier `main.py`"
+
+#: ../../guides/mods.md:126
+msgid "5. Dependencies and Licensing Boundary"
+msgstr "5. Gestion des Dépendances et Licence"
+
+#: ../../guides/mods.md:132
+msgid "6. CLI Mod Management & Store Commands"
+msgstr "6. Commandes CLI pour le Store et la Gestion des Mods"
+
+#: ../../guides/mods.md:155
+msgid "7. Compliance & Robustness Review"
+msgstr "7. Bilan de Conformité et de Robustesse"

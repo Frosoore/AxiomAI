@@ -48,27 +48,33 @@ def test_chat_display_emits_edit_signal_on_link_click(qtbot):
     assert len(signals) == 1
     assert signals[0] == ("user_input", 8)
 
-def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, mocker):
+def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
     from ui.tabletop_view import TabletopView
     from axiom.memory import VectorMemory
 
     # Mock components to avoid heavy side-effects
-    mocker.patch("ui.tabletop_view.TabletopView.reload_llm")
-    mocker.patch("ui.tabletop_view.load_rules_for_session", return_value=[])
+    monkeypatch.setattr("ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
+    monkeypatch.setattr("ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
     
-    view = TabletopView(main_window=mocker.MagicMock())
+    view = TabletopView(main_window=MagicMock())
     qtbot.addWidget(view)
 
     # Setup necessary fields
-    view._vector_memory = mocker.MagicMock(spec=VectorMemory)
+    view._vector_memory = MagicMock(spec=VectorMemory)
     view._vector_memory._disabled = False
     view._save_id = "test_save"
     view._db_path = str(tmp_path / "dummy.db")
-    view._db_worker = mocker.MagicMock()
-    view._arbitrator = mocker.MagicMock()
+    view._db_worker = MagicMock()
+    view._arbitrator = MagicMock()
     
-    # Spy or mock finalization
-    finalize_spy = mocker.spy(view, "_finalize_rewind")
+    # Spy on finalization
+    finalize_called = []
+    orig_finalize = view._finalize_rewind
+    def wrapped_finalize(*args, **kwargs):
+        finalize_called.append((args, kwargs))
+        return orig_finalize(*args, **kwargs)
+    monkeypatch.setattr(view, "_finalize_rewind", wrapped_finalize)
     
     # We trigger the slot directly with a summary dict
     summary = {"rebuilt_to_turn": 5}
@@ -78,27 +84,28 @@ def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, mocker):
     assert view._vector_worker is not None
     
     # Wait for the worker to finish and trigger finalize
-    qtbot.waitUntil(lambda: finalize_spy.call_count == 1, timeout=2000)
+    qtbot.waitUntil(lambda: len(finalize_called) == 1, timeout=2000)
     
     # The worker should be cleaned up
     assert view._vector_worker is None
 
-def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path, mocker):
+def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path, monkeypatch):
+    from unittest.mock import MagicMock
     from ui.tabletop_view import TabletopView
 
     # Mock components to avoid side-effects
-    mocker.patch("ui.tabletop_view.TabletopView.reload_llm")
-    mocker.patch("ui.tabletop_view.load_rules_for_session", return_value=[])
-    mocker.patch("workers.narrative_worker.NarrativeWorker.start")
-    mocker.patch("ui.tabletop_view.Session")
+    monkeypatch.setattr("ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
+    monkeypatch.setattr("ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
+    monkeypatch.setattr("workers.narrative_worker.NarrativeWorker.start", lambda self: None)
+    monkeypatch.setattr("ui.tabletop_view.Session", MagicMock())
     
-    view = TabletopView(main_window=mocker.MagicMock())
+    view = TabletopView(main_window=MagicMock())
     qtbot.addWidget(view)
     
     # Initialize state
     view._turn_id = 0
-    view._chat = mocker.MagicMock()
-    view._db_worker = mocker.MagicMock()
+    view._chat = MagicMock()
+    view._db_worker = MagicMock()
     view._history = []
     view._db_path = str(tmp_path / "dummy.db")
     view._save_id = "test_save"

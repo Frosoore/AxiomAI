@@ -6,55 +6,70 @@
 [![PyPI](https://img.shields.io/pypi/v/axiomai-engine.svg)](https://pypi.org/project/axiomai-engine/)
 [![Documentation](https://img.shields.io/badge/docs-EN%20%7C%20FR-blue.svg)](https://frosoore.github.io/AxiomAI/en/)
 [![Discord](https://img.shields.io/badge/discord-join-5865F2.svg)](https://discord.gg/ttyjqvX3tp)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-**Axiom AI** is a local-first, deterministic sandbox RPG engine that bridges the gap between the narrative freedom of Large Language Models (LLMs) and the strict, mathematical logic of traditional RPGs.
+**Axiom AI** is a local-first, deterministic sandbox RPG platform that bridges the gap between the narrative freedom of Large Language Models (LLMs) and the strict, mathematical logic of traditional tabletop RPGs.
 
-No cloud servers. No data collection. Absolute player sovereignty.
+No cloud servers required. No telemetry or data collection. Absolute player sovereignty.
 
-🌐 **Website:** <https://frosoore.github.io/AxiomAI/> · 💬 **Discord:** <https://discord.gg/ttyjqvX3tp>
-
-The game engine is also a standalone **Python library**: [`pip install axiomai-engine`](https://pypi.org/project/axiomai-engine/). Embed Axiom worlds in your own scripts, bots or web apps, no GUI required (see [The Python Library](#the-python-library-axiomai-engine)). Full guides and API reference: **[documentation site](https://frosoore.github.io/AxiomAI/en/)** (EN/FR).
+🌐 **Website:** <https://frosoore.github.io/AxiomAI/> · 💬 **Discord:** <https://discord.gg/ttyjqvX3tp> · 📚 **Docs:** <https://frosoore.github.io/AxiomAI/en/> (EN / FR)
 
 ---
+
 <table border="0" style="width: 100%;">
   <tr>
     <td align="center" width="33%">
-      <b>Main Menu</b><br>
+      <b>Main Menu (Desktop Qt)</b><br>
       <img src="assets/main_menu.png" alt="Main Menu" style="max-width:100%;">
     </td>
     <td align="center" width="33%">
-      <b>In Game</b><br>
+      <b>In Game (Tabletop)</b><br>
       <img src="assets/in_game.png" alt="In Game" style="max-width:100%;">
     </td>
     <td align="center" width="33%">
       <b>Creator Studio</b><br>
-      <img src="assets/creator.png" alt="Creator" style="max-width:100%;">
+      <img src="assets/creator.png" alt="Creator Studio" style="max-width:100%;">
     </td>
   </tr>
 </table>
 
-## Vision
+---
 
-Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores game rules or character stats. Axiom AI solves this using an **Arbitrator** architecture: every narrative turn is validated against a deterministic SQLite state machine before being committed to the timeline.
+## Three Ways to Play & Build
 
-- **Local-First:** Designed for Linux. Your stories and data never leave your machine.
-- **Event Sourced:** Every action is an immutable event. Rewind the timeline to any previous turn with perfect state reconstruction.
-- **World Simulation:** A background "Chronicler" engine simulates off-screen factions and NPCs, ensuring the world feels alive and independent of the player.
-- **Sandbox Rules:** Define your own entities, stats, and JSON-based logic rules without writing code.
+Axiom AI provides three first-class, fully decoupled interfaces powered by the same underlying headless engine:
+
+1. **Native Desktop GUI (PySide6 / Qt6):** Complete rich experience with sound, dark mode, custom glassmorphic wallpapers, in-game image generation, and the Creator Studio.
+2. **Modern Web Interface (SPA):** Local browser-based interface (`main_web.py`) with responsive Tabletop player view, Studio editor, and Mod Manager.
+3. **Interactive Terminal CLI (`axiom play`):** Lightweight terminal text-adventure for headless servers, SSH sessions, and purist players.
+
+---
+
+## Vision & Core Principles
+
+Traditionally, AI-driven narrative games suffer from "hallucinations" where the language model ignores character sheets, invents contradictory lore, or forgets inventory items. Axiom AI resolves this using a **deterministic Arbitrator architecture**: every narrative turn is validated against a deterministic state machine before being committed to the timeline.
+
+- **Local-First:** Engineered for privacy and local inference. Your universes, saves, embeddings, and stories never leave your machine.
+- **Event Sourcing & Perfect Rewind:** Every action is recorded as an immutable event in SQLite. Rewind any playthrough to any previous turn with bit-for-bit state reconstruction.
+- **World Simulation:** An autonomous **Chronicler** simulates off-screen factions, locations, and NPCs using diegetic in-game minutes, ensuring the world lives independently of the player.
+- **Extensible Micro-Kernel:** The core (`axiomai-engine 1.0.0`) contains zero hardcoded RPG rules. Mechanics, turn pipeline, memory, AI drivers, and UIs are modular **mods** (`.axmod`).
 
 ---
 
 ## Technical Stack
 
-- **Logic & Backend:** Python 3.11+ (Strictly typed)
-- **Engine Library:** [`axiomai-engine`](https://pypi.org/project/axiomai-engine/) on PyPI (headless, zero Qt)
-- **UI Framework:** PySide6 (Qt for Python)
-- **Database:** SQLite (Event Sourcing & State Cache)
-- **Vector Memory:** ChromaDB + Sentence-Transformers (Local RAG)
-- **AI Integration:** 
-  - **Local:** Ollama / Universal OpenAI-compatible API
-  - **Cloud:** Google Gemini (Optional)
-  - **Illustrations:** Stable Diffusion WebUI / ComfyUI APIs (Optional)
+- **Micro-Kernel Engine:** Python 3.11+ strictly typed, pip-installable as [`axiomai-engine`](https://pypi.org/project/axiomai-engine/) (headless, zero GUI dependencies).
+- **Modding Architecture:** `.axmod` packaging, DAG dependency resolution, typed hook/slot buses, transactional write batches, and bytecode patcher.
+- **Desktop Application:** PySide6 (Qt for Python).
+- **Web Application:** Python HTTP/REST API + Vanilla JavaScript Single-Page Application (SPA).
+- **Storage & Event Sourcing:** SQLite (ACID transactions, open schema, versioned migrations).
+- **Cognitive Memory:**
+  - *Vector Memory (RAG):* Local ChromaDB + Sentence-Transformers (`all-MiniLM-L6-v2`) with offline embedding fallback and hybrid BM25 lexical fusion.
+  - *Living Memory:* Structured facts, observations, and entity mental models.
+- **AI Inference:**
+  - *Local:* [Ollama](https://ollama.com) / Universal OpenAI-compatible HTTP endpoints (LM Studio, llama.cpp, vLLM).
+  - *Cloud:* Google Gemini (native SDK, optional).
+  - *Illustrations:* Stable Diffusion WebUI / ComfyUI / Gemini Image generation (optional).
 
 ---
 
@@ -65,69 +80,61 @@ Traditionally, AI-driven games suffer from "hallucinations" where the AI ignores
 | **Linux** | **Python 3.11+** | `sudo apt install python3 python3-pip python3-venv` |
 | | **GUI Libraries** | `sudo apt install libxcb-cursor0` |
 | **Windows** | **Python 3.11+** | [Download from python.org](https://www.python.org/downloads/) |
-| **Optional** | **Ollama** | [Install from ollama.com](https://ollama.com) |
+| **macOS** | **Python 3.11+** | `brew install python` |
+| **Local AI (Recommended)** | **Ollama** | [Install from ollama.com](https://ollama.com) then `ollama pull llama3.2` |
 
 ---
 
 ## Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Frosoore/AxiomAI.git
-   cd AxiomAI
-   ```
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Frosoore/AxiomAI.git
+cd AxiomAI
+```
 
-2. **Launch the application:**
+### 2. Choose Your Interface to Launch
 
-   **Linux / macOS:**
-   ```bash
-   bash run.sh
-   ```
+#### Option A: Native Desktop GUI
+```bash
+# Linux / macOS
+bash run.sh
 
-   **Windows:**
-   Double-click `run.bat` or run it via CMD/PowerShell.
+# Windows
+run.bat
+```
+*(The first run automatically initializes a virtual environment, installs dependencies, and prepares local embedding models).*
 
-   *Note: The first launch will automatically create a virtual environment, install dependencies, and download required embedding models. This may take a few minutes.*
+#### Option B: Modern Web Interface (SPA)
+```bash
+python main_web.py
+# Open http://localhost:8000 in your browser
+```
 
-3. **Configure your AI:**
-   - Open **File → Settings**.
-   - **Local (Recommended):** Set up Ollama with `ollama pull llama3.2`.
-   - **Cloud:** Enter your Gemini API key.
+#### Option C: Interactive Terminal CLI
+```bash
+# Run directly with the virtualenv:
+.venv/bin/axiom play universes/StarterWorld.axiom
+```
 
-### Diagnostic / Troubleshooting
+### 3. Configure Your AI Backend
+- In the desktop application: **File → Settings → Cloud / Local AI**.
+- In the Web interface: Navigate to the **Settings** tab.
+- Set up **Ollama** (default `http://localhost:11434`, model `llama3.2`) or enter your **Google Gemini API Key**.
 
-If something doesn't work, run the built-in self-diagnostic. It checks your
-Python version, dependencies, configuration, data directories and whether the
-AI backend actually answers. It can optionally run the full test suite,
-listing **which** tests failed (with the reason and a full log file) plus any
-warnings.
-
-It is available three ways. All three share the same checks:
-
-- **From the app:** **Help → Diagnostic**.
-- **Standalone, graphical window:**
-  ```bash
-  python -m tools.diagnostic --gui
-  ```
-- **Standalone, text report** (handy to paste into a bug report):
-  ```bash
-  python -m tools.diagnostic           # fast health checks
-  python -m tools.diagnostic --tests   # + the full test suite (slower)
-  python -m tools.diagnostic --offline # skip the network/backend check
-  ```
-
-> No need to activate anything first: if you run it with the bare system Python,
-> the diagnostic automatically switches to the project's `.venv` (created by
-> `run.sh`/`run.bat`) so it sees the real dependencies. Pass `--no-venv` to
-> diagnose the current interpreter as-is. The report is shown in the app's
-> language; the graphical window also has a language dropdown to switch it on the
-> fly (handy to grab an English copy for a bug report).
+### 4. Built-in Self-Diagnostic & Health Check
+If you experience any issues, run the built-in diagnostic tool:
+```bash
+python -m tools.diagnostic           # Fast system and backend check
+python -m tools.diagnostic --gui     # Interactive graphical diagnostic
+python -m tools.diagnostic --tests   # Run complete test verification
+```
 
 ---
 
 ## The Python Library (`axiomai-engine`)
 
-The entire game engine ships as a standalone, GUI-free Python package. This repository is both the engine and its showcase application. Use it to drive Axiom worlds from scripts, notebooks, Discord bots, web servers…
+The game engine is available as a standalone, GUI-free library on PyPI:
 
 ```bash
 pip install axiomai-engine
@@ -135,118 +142,221 @@ pip install axiomai-engine
 
 ```python
 import axiom
-axiom.help()   # built-in quick-start guide (API, modules, CLI)
-
 from axiom.config import load_config, build_llm_from_config
 from axiom.db_helpers import create_new_save
 
+# 1. Connect configured AI backend
 llm = build_llm_from_config(load_config())
-save_id = create_new_save("MyUniverse.db", "Alice", "Normal")
 
+# 2. Create or open a session
+save_id = create_new_save("MyUniverse.db", hero_name="Alice", difficulty="Normal")
 session = axiom.Session("MyUniverse.db", save_id, llm=llm)
-result = session.take_turn("I open the tavern door.")
+
+# 3. Play a narrative turn with deterministic arbitration
+result = session.take_turn("I examine the glowing runes carved into the archway.")
 print(result.narrative_text)
 ```
 
-It also installs the `axiom` command (a full terminal frontend):
+### Full CLI Command Reference (`axiom`)
+
+The engine provides a complete CLI tool suite (`axiom` or `python -m axiom.cli`):
 
 ```bash
-axiom play <universe>      # text-adventure in your terminal
-axiom compile / decompile  # universe source tree <-> .db cache
-axiom pack / import        # .axiom archives
-axiom populate             # AI-assisted universe authoring
-axiom save-*               # inspect, edit, fork, export saves
-axiom dev                  # hot-reload a universe while you edit it
+# === PLAYING ===
+axiom play <universe.db>               # Interactive terminal text-adventure
+axiom play <universe.db> --safe-mode   # Play with third-party mods disabled
+
+# === UNIVERSE-AS-CODE ===
+axiom compile <source_dir>/ [-o out.db]# Compile plain text (TOML/MD) into .db cache
+axiom decompile <universe.db> <dir>    # Decompile .db universe into versionable text
+axiom dev <source_dir>/                # Live hot-reload watcher during universe authoring
+axiom pack <source_dir>/ -o world.axiom# Pack source tree into portable .axiom archive
+axiom unpack world.axiom -d <dir>      # Unpack archive into source tree
+
+# === SAVES MANAGEMENT ===
+axiom save-list <universe.db>          # List all playthroughs and metadata
+axiom save-inspect <universe.db> <id>  # Inspect turn events and state cache
+axiom save-edit <universe.db> <id>     # Edit save metadata or character sheet
+axiom save-pack <universe.db> <id>     # Export save into portable .axiomsave file
+axiom save-unpack <save.axiomsave> <db># Import portable save into a universe
+
+# === AI-ASSISTED UNIVERSE POPULATION ===
+axiom populate <source_dir>/           # Generate lore, entities, and rules with an LLM
+
+# === MODS MANAGEMENT & STORE ===
+axiom mods list                        # List installed mods, activation status, and API
+axiom mods enable <mod_id>             # Enable a mod in user configuration
+axiom mods disable <mod_id>            # Disable a mod in user configuration
+axiom mods search <query> [--tag <tag>]# Search the remote/local mod Store index
+axiom mods install <mod_id>            # Download & verify SHA-256 integrity of mod
+axiom mods update                      # Update installed mods to latest store version
+axiom mods patches                     # Inspect declared bytecode and function patches
+
+# === MOD AUTHORING & TESTING ===
+axiom mod new <mod_id> [--type {hook,slot,data}] # Scaffold standard mod structure
+axiom mod dev <mod_dir>/               # Live hot-reloading development loop for mods
+axiom mod test <mod_path_or_axmod>     # Run structural checks, D4 UI rule & unit tests
+axiom mod validate <mod_path>          # Statically validate mod.toml and patch targets
+axiom mod pack <mod_dir>/              # Package mod into distributable .axmod archive
+axiom mod generate "<instruction>"     # Generate complete mod via LLM with sandbox diff
 ```
 
-Package name is `axiomai-engine`; import name is simply `axiom`. The engine never depends on Qt.
+---
 
-📚 **Documentation: <https://frosoore.github.io/AxiomAI/en/>**. Quickstart, guides (Universe-as-Code, CLI, saves, populate, LLM backends, images) and full API reference, in English and French.
+## Extensible Micro-Kernel & Modding System (`.axmod`)
 
-## Key Features
+> **EN:** Axiom AI features an extensible micro-kernel (`axiomai-engine 1.0.0`). The core contains zero hardcoded tabletop RPG rules, no hardcoded prompts, and no undeclared heavy dependencies. Gameplay mechanics, world entities, turn arbitration, memory, inference providers, and user interfaces are packaged as modular **mods** (`.axmod`).
+>
+> **FR :** Axiom AI repose sur un micro-noyau extensible (`axiomai-engine 1.0.0`). Le cœur ne contient aucune règle métier JDR en dur, aucun prompt figé et aucune dépendance lourde non déclarée. Les mécaniques de jeu, entités du monde, arbitrage de tour, mémoire, fournisseurs d'IA et interfaces sont packagés sous forme de **mods** modulaires (`.axmod`).
+
+### System Topology / Cartographie du Système
+
+```
+                     ┌──────────────────────────────────────────────┐
+                     │          Store Distant / Index JSON           │
+                     │         (axiom mods search / install)        │
+                     └──────────────────────┬───────────────────────┘
+                                            │ Hash SHA-256
+                                            ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                             ÉCOSYSTÈME DE MODS (.axmod)                          │
+├──────────────────────┬─────────────────────────────┬─────────────────────────────┤
+│   MODÈLE DE MONDE    │     PIPELINE DE TOUR        │          MÉMOIRE            │
+│     axiom.world      │        axiom.turn           │    axiom.rag (ChromaDB)     │
+│   (Stats, Entités)   │   (Fabric API du moteur)    │ axiom.living_memory (Faits) │
+├──────────────────────┼─────────────────────────────┼─────────────────────────────┤
+│  MÉCANIQUES DE JEU   │     FOURNISSEURS & ART      │         INTERFACES          │
+│      axiom.time      │       axiom.providers       │        axiom.ui.web         │
+│   axiom.inventory    │     axiom.illustrations     │        axiom.ui.qt          │
+│  core.stat_dynamics  │    (Gemini, Ollama, SD)     │         axiom.cli           │
+└───────────┬──────────┴──────────────┬──────────────┴──────────────┬──────────────┘
+            │ Hooks                   │ Slots (Collect, Chain, Excl)│ Patches (@patchable)
+            ▼                         ▼                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            MICRO-NOYAU (axiomai-engine 1.0.0)                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│ • Chargeur & Résolveur DAG (Topologie, Conflits, Ordre utilisateur)              │
+│ • Registre Central (Hooks, Slots typés, Services inter-mods)                     │
+│ • Bus d'Exécution & Gel de Pas (step_patch_freeze, KernelStepContext)            │
+│ • Persistance Transactionnelle (TurnWriteBatch, Époques de Session)              │
+│ • Registre de Sauvegarde Déclaratif (EVENTS, STEP_KEYED, VERSIONED_KV, CUSTOM)   │
+│ • CLI & Mode Sans Échec (--safe-mode natif sans UI)                              │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The 12 Official Extracted Mods / Les 12 Mods Officiels Extraits
+
+| Mod ID | Role & Responsibility / Rôle & Responsabilité | Key Anchor Points / Points d'ancrage | Persistence / Persistance |
+| --- | --- | --- | --- |
+| **`axiom.world`** | Entities, base stats, RulesEngine, locations / Entités, stats, règles et lieux | Hooks `gather_context`, `arbitrate_mutations` ; Slot `entity_types` | `versioned_kv` |
+| **`axiom.turn`** | Narrative pipeline & tool-calls / Pipeline narratif & tool-calls | Hook `execute_step` ; Slots `prompt_sections`, `output_fields`, `llm_backend` | `events` (`Event_Log`) |
+| **`core.stat_dynamics`** | Passive stat evolution, fatigue decay / Décroissance des jauges | Hooks `arbitrate_stats`, `after_step` | `step_keyed_table` (`Modifier_Snapshots`) |
+| **`axiom.time`** | Diegetic clock & Chronicler / Horloge causale & Chronicler | Hook `after_step` ; Service `time` ; Slot `output_fields` | `step_keyed_table` (`Timeline`, `Scheduled_Events`) |
+| **`axiom.inventory`** | Nested container item tree / Arborescence de conteneurs | Service `inventory` ; Slot `output_fields` (`inventory_changes`) | `step_keyed_table` (`Inventory_Snapshots`) |
+| **`axiom.rag`** | Local semantic memory (ChromaDB) / Mémoire vectorielle locale | Hook `after_step` ; Slot `prompt_sections` ; Service `rag` | `custom` (vector rollback) |
+| **`axiom.living_memory`** | Symbolic facts & mental models / Faits symboliques & modèles mentaux | Hook `after_step` ; Service `living_memory` | `step_keyed_table` (`Facts`, `Observations`) |
+| **`axiom.providers`** | Inference drivers (Gemini, Ollama, OpenAI) / Pilotes d'inférence LLM | Slot `axiom.turn:llm_backend` ; Slot ouvert `axiom.providers:drivers` | Stateless / Aucune |
+| **`axiom.illustrations`** | Scene illustrations (SD/ComfyUI) / Génération d'images par tour | Hook `after_step` ; Service `illustrations` | `custom` (PNG cleanup on rewind) |
+| **`axiom.ui.web`** | Web SPA & local HTTP server / Serveur HTTP & interface Web SPA | Service `web_ui` ; Slots ouverts `side_panel`, `settings_tab` | Aucune |
+| **`axiom.ui.qt`** | Native desktop GUI (PySide6) / Interface graphique native PySide6 | Service `qt_ui` ; Slots ouverts `sidebar_widget`, `settings_tab` | Aucune |
+| **`axiom.cli`** | Interactive terminal game / Jeu textuel dans le terminal (`axiom play`) | Service `cli_play` | Aucune |
+
+### Mod Authoring & Tooling / Création de Mods
+
+```bash
+# 1. LLM Generation with sandbox staging & color diff / Génération LLM avec diff
+axiom mod generate "Add a thirst mechanic that increases when traveling through the desert"
+
+# 2. Manual scaffolding & live hot-reload / Échafaudage manuel & rechargement à chaud
+axiom mod new myauthor.myfeature --type slot
+axiom mod dev mods/myauthor.myfeature/
+
+# 3. Test and pack archive / Tests unifiés et packaging
+axiom mod test mods/myauthor.myfeature/
+axiom mod pack mods/myauthor.myfeature/
+
+# 4. Search & install from Store / Recherche et installation depuis le Store
+axiom mods search "lockpicking"
+axiom mods install community.lockpicking
+```
+
+### Canonical `main.py` Template / Modèle Canonique `main.py`
+
+```python
+from axiom.kernel.context import ModContext
+
+def init(ctx: ModContext) -> None:
+    # 1. Contribute to turn prompt / Injecter dans le prompt
+    def inject_prompt(step_ctx):
+        return ("system", 50, "Special rule: The player is thirsty.")
+    ctx.contribute_slot("axiom.turn:prompt_sections", inject_prompt)
+
+    # 2. Intercept LLM outputs / Traitement des sorties LLM
+    def handle_output(data, turn_ctx):
+        turn_ctx.write_batch.stage_event("thirst_update", {"value": 10})
+    ctx.contribute_slot("axiom.turn:output_fields", {"thirst_level": handle_output})
+
+    # 3. Reversible patch if needed / Patch chirurgical réversible (D11)
+    def patch_calc(orig_fn, *args, **kwargs):
+        res = orig_fn(*args, **kwargs)
+        return res * 1.5
+    ctx.patch("axiom.world:calculate_stamina", "around", patch_calc)
+```
+
+### Compliance & Robustness Guarantees / Garanties de Robustesse
+
+- **100% Green Test Suite:** 1,135 tests passing cleanly across the entire codebase.
+- **Golden Step Harness:** Strict zero-diff on 10 consecutive turns, rewind to $T-2$, timeline fork, and `.axiomsave` bit-for-bit reimport.
+- **Headless PyPI Purity:** Zero leak from `axiomai-engine 1.0.0` towards `ui/`, `workers/`, `web/`, or `mods/`.
+- **Fail-Safe Startup:** Native `--safe-mode` flag available across all interfaces to neutralize faulty third-party mods immediately.
+
+Full guides available: **[English Guide](docs/guides/mods.en.md)** | **[Guide en Français](docs/guides/mods.md)** | **[Architecture Synthesis](maintenance/Mods/SYNTHESIS_ARCHITECTURE.en.md)**.
+
+---
+
+## Key Engine Features
 
 - **Dual-Agent Architecture:** An *Arbitrator* (deterministic rule-enforcer) and a *Chronicler* (macro-world simulator) work together to keep the story grounded.
-- **Event Sourcing:** Every game event is logged. Rewind any session to any previous turn with perfect state reconstruction.
-- **Universe-as-Code:** A universe is a plain-text source tree (TOML/Markdown) you can read, edit, version with git and share; the SQLite `.db` is just a compiled cache. Hot reload (`axiom dev`) applies source edits to a running world without touching ongoing games.
-- **Portable Worlds & Saves:** Export/import whole universes as `.axiom` archives and individual playthroughs as `.axiomsave` files. Saves live in their own files: duplicate, fork, rename, hand-edit or share them freely.
+- **Event Sourcing & Rewind:** Every game event is logged. Rewind any session to any previous turn with perfect state reconstruction.
+- **Universe-as-Code:** A universe is a plain-text source tree (TOML/Markdown) you can read, edit, version with git, and share; the SQLite `.db` is just a compiled cache. Hot reload (`axiom dev`) applies source edits to a running world without touching ongoing games.
+- **Portable Worlds & Saves:** Export/import whole universes as `.axiom` archives and individual playthroughs as `.axiomsave` files. Saves live in their own files: duplicate, fork, rename, hand-edit, or share them freely.
 - **Game Modes:** *Normal*, *Hardcore* (character death triggers permanent file deletion and memory wipe) and *Companion* (an AI-driven Hero plays alongside you, with its own decision model and enriched narrative context).
 - **Causal Time:** A *Timekeeper* model estimates how much in-game time each action takes; the world clock, custom calendars and the Chronicler's "World Turns" all run on in-game minutes. Long journeys make the world move on without you.
-- **AI Illustrations (optional):** Each turn can be illustrated via a local Stable Diffusion WebUI or ComfyUI backend; images follow their save through duplication, export and rewind.
+- **AI Illustrations (optional):** Each turn can be illustrated via a local Stable Diffusion WebUI or ComfyUI backend; images follow their save through duplication, export, and rewind.
 - **Spreadsheet Studio:** Powerful universe creator with bulk-editing, keyboard navigation, a Files tab over the source tree, and AI-assisted population: targeted generation with a diff preview before anything is written, plus in-game "canonization" of story events into universe lore.
-- **Vector Memory (RAG):** Local semantic search via ChromaDB for infinite lore and narrative consistency.
+- **Hybrid Memory (RAG + Living Memory):** Local semantic search via ChromaDB + Sentence-Transformers combined with lexical BM25 and structured facts/observations for deep, long-term consistency.
 - **Resilient Free-Tier Usage:** Automatic retry with countdown on LLM quota errors (429), request-rate throttling, fallback model, and cancellable generations. Large AI population jobs resume where they stopped.
 - **Architecture Optimized:**
-    - **Headless Engine:** All game logic lives in the `axiom` package (zero Qt): the GUI, the terminal CLI and your own scripts drive the exact same code.
-    - **Lazy-Loading:** Heavy AI libraries (ChromaDB, Transformers) only load when needed, saving RAM on startup.
-    - **Snapshots:** 20-turn snapshots for near-instant state reconstruction in long campaigns.
-    - **Context Pruning:** Heuristic entity filtering to support small local models (7B/8B) without context overflow.
+  - *Headless Micro-Kernel:* All game logic lives in the `axiom` package (zero Qt): the GUI, the Web SPA, the terminal CLI, and your own scripts drive the exact same code.
+  - *Lazy-Loading:* Heavy AI libraries (ChromaDB, Transformers) only load when needed, saving RAM on startup.
+  - *Snapshots:* Periodic snapshots for near-instant state reconstruction in long campaigns.
+  - *Context Pruning:* Heuristic entity filtering to support small local models (7B/8B) without context overflow.
 
 ---
 
-## Architecture Overview
+## Community & Contributing
 
-- **The Arbitrator:** The deterministic firewall. It parses LLM tool-calls, validates them against current stats, and enforces rules.
-- **The Chronicler:** A background agent that performs "World Turns" to update the macro-state of the universe, paced in in-game minutes.
-- **The Timekeeper:** A lightweight model that estimates the in-game duration of each action, driving the world clock and the Chronicler.
-- **Mini-Dico:** A secondary, RAG-powered chat for lore lookups that is strictly siloed from the main narrative to prevent context contamination.
-- **Snapshot System:** Efficient state recovery using periodic snapshots of the event stream.
-- **Lazy I/O:** All database and AI operations run in dedicated QThread workers to keep the UI responsive at all times.
-
-Contributing code? The engine/app split and "where does my code go" rules live in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
----
-
-## Community & feature requests
-
-- 💬 **Discord:** <https://discord.gg/ttyjqvX3tp> for questions, feedback, and chatting about the project.
-- 💡 **Request a feature** (new or an improvement) straight from the
-  [website](https://frosoore.github.io/AxiomAI/#request) (it opens a prefilled GitHub issue), or
-  open one directly in the [issue tracker](https://github.com/Frosoore/AxiomAI/issues). We genuinely
-  add other people's ideas: if you've dreamed of something no tool has built, tell us.
-
-> **Roadmap & honesty note.** Axiom is an **early alpha** (not a beta yet). Some features are solid, some are rough or
-> actively being reworked (the time/turn system in particular). The website's
-> [Features](https://frosoore.github.io/AxiomAI/#features) and
-> [Roadmap](https://frosoore.github.io/AxiomAI/#roadmap) sections spell out exactly what works today
-> versus what's planned. We keep the two deliberately separate.
-
-## Project history
-
-- **[`AXIOM_STATUS.md`](AXIOM_STATUS.md)**: a plain-language running log of what we do, fix, implement
-  and break. **It is updated on every commit** (by whoever commits, human or AI). It complements the
-  machine-formatted [`Changelog.md`](Changelog.md).
-- **[Dev updates](https://frosoore.github.io/AxiomAI/dev-updates.html)**: once a month, a report on
-  the state of the codebase versus the previous month, with a month picker. Source:
-  `landing/dev-updates.html`.
-
-## The landing page (`landing/`)
-
-The project website lives in [`landing/`](landing/) (a static page matching the app's visual
-identity). It is published to GitHub Pages at the site root by the `docs` workflow, alongside the
-documentation at `/en/` and `/fr/`. To preview it locally, open `landing/index.html` in a browser.
-
-## Contributing
-
-We welcome contributions! Whether it's bug fixes, new UI features, or lore templates.
-
-1. Fork the project.
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3. Run tests to ensure no regressions: `bash test.sh`.
-4. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-5. Push to the branch (`git push origin feature/AmazingFeature`).
-6. Open a Pull Request.
+- 💬 **Discord:** Join the community at <https://discord.gg/ttyjqvX3tp> for discussions, universe sharing, and mod development.
+- 💡 **Request a Feature:** Open an issue directly in the [issue tracker](https://github.com/Frosoore/AxiomAI/issues) or suggest it on our [website](https://frosoore.github.io/AxiomAI/#request).
+- 🤝 **Contributing:** Contributions (bug fixes, new mods, UI enhancements, documentation) are welcome!
+  1. Fork the repository.
+  2. Create a feature branch: `git checkout -b feature/MyFeature`.
+  3. Ensure all tests pass: `bash test.sh` or `.venv/bin/pytest tests/`.
+  4. Commit and push your changes.
+  5. Open a Pull Request.
 
 ---
 
-## License
+## License & Third-Party Mods
 
-Distributed under the GNU Affero General Public License v3.0 (or later). See `LICENSE` for the full text.
+Distributed under the **GNU Affero General Public License v3.0 (or later)**. See `LICENSE` for details.
 
-**Attribution required:** as an additional term under AGPLv3 section 7(b), any redistribution
-(original or modified, source or binary) must preserve the `NOTICE` file and credit the original
-project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore."*
+- **Attribution Notice:** Under AGPLv3 section 7(b), any redistribution must preserve the `NOTICE` file and credit the original project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore."*
+- **Third-Party Mods Extensibility:** Under Section 7(b), independent third-party mods created using the public API (`ModContext`, hooks, slots, declarative schemas, and `.axmod` packaging) are recognized as separate works and may be distributed under licenses of the author's choice (MIT, Apache 2.0, proprietary, etc.). See [`docs/licensing_mods.md`](docs/licensing_mods.md) for the legal specification.
+
+---
 
 ## Acknowledgments
 
 - Built for the Linux community and AI roleplaying enthusiasts.
-- Inspired by the flexibility of tabletop RPGs and the power of local inference.
+- Inspired by the tabletop RPG tradition, Fabric/Forge modular architectures, and the sovereign power of local AI inference.

@@ -145,15 +145,16 @@ class TestCreateUniverseDb:
                     ("e1", "monster", "Goblin"),
                 )
 
-    def test_saves_difficulty_constraint(self, tmp_db: str) -> None:
-        """Saves.difficulty must reject values outside Normal/Hardcore."""
+    def test_saves_difficulty_accepts_custom_modes(self, tmp_db: str) -> None:
+        """Saves.difficulty is unconstrained to support custom game modes/mods (Phase 0e)."""
         create_universe_db(tmp_db)
         with sqlite3.connect(tmp_db) as conn:
-            with pytest.raises(sqlite3.IntegrityError):
-                conn.execute(
-                    "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES (?, ?, ?, ?);",
-                    ("s1", "Hero", "Easy", "2026-01-01T00:00:00"),
-                )
+            conn.execute(
+                "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES (?, ?, ?, ?);",
+                ("s1", "Hero", "CustomModDifficulty", "2026-01-01T00:00:00"),
+            )
+            row = conn.execute("SELECT difficulty FROM Saves WHERE save_id = 's1';").fetchone()
+            assert row[0] == "CustomModDifficulty"
 
     def test_foreign_keys_enforced(self, tmp_db: str) -> None:
         """Entity_Stats must reject inserts referencing non-existent entity_id."""
@@ -165,3 +166,40 @@ class TestCreateUniverseDb:
                     "INSERT INTO Entity_Stats VALUES (?, ?, ?);",
                     ("ghost_entity", "HP", "100"),
                 )
+
+
+class TestModMigrations:
+    """Test suite for Mod_Schema_Versions and apply_mod_migrations (Phase 0e)."""
+
+    def test_apply_mod_migrations_sequential(self, tmp_db: str) -> None:
+        from axiom.schema import apply_mod_migrations
+
+        create_universe_db(tmp_db)
+
+        def m0_to_1(conn: sqlite3.Connection) -> None:
+            conn.execute("CREATE TABLE Test_Hunger (entity_id TEXT PRIMARY KEY, hunger_level REAL);")
+
+        def m1_to_2(conn: sqlite3.Connection) -> None:
+            conn.execute("ALTER TABLE Test_Hunger ADD COLUMN max_hunger REAL DEFAULT 100.0;")
+
+        migrations = {0: m0_to_1, 1: m1_to_2}
+        apply_mod_migrations(tmp_db, "comm.hunger", 2, migrations)
+
+        with sqlite3.connect(tmp_db) as conn:
+            row = conn.execute("SELECT schema_version, installed_at FROM Mod_Schema_Versions WHERE mod_id = 'comm.hunger';").fetchone()
+            assert row is not None
+            assert row[0] == 2
+            assert "T" in row[1]  # ISO timestamp
+
+            cols = {c[1] for c in conn.execute("PRAGMA table_info(Test_Hunger);").fetchall()}
+            assert cols == {"entity_id", "hunger_level", "max_hunger"}
+
+        # Running again with same target_version is a no-op
+        apply_mod_migrations(tmp_db, "comm.hunger", 2, migrations)
+
+    def test_apply_mod_migrations_missing_step_raises(self, tmp_db: str) -> None:
+        from axiom.schema import apply_mod_migrations
+
+        create_universe_db(tmp_db)
+        with pytest.raises(ValueError, match="Missing migration step 0 -> 1"):
+            apply_mod_migrations(tmp_db, "comm.broken", 2, {})

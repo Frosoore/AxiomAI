@@ -1,0 +1,33 @@
+# TODO — Phase 2 : Extraction de axiom.world et axiom.turn
+
+- [x] Extraction du mod officiel `axiom.world` sous `mods/axiom.world/`
+  - [x] Manifeste `mod.toml` (ID `axiom.world`, version `1.0.0`, `axiom_api = 1`, `provides = ["world_model"]`)
+  - [x] Déclaration des hooks : `axiom.step:gather_context`, `axiom.step:arbitrate_mutations`
+  - [x] Déclaration des slots fournis (`provides_slots`) : `axiom.world:entity_types` (collect), `axiom.world:custom_rules` (collect)
+  - [x] Déclaration des politiques de persistance dans `[storage]` (`entities`, `entity_stats`, `rules`, `locations` en `versioned_kv`)
+  - [x] Logique dans `main.py` : injection du contexte de monde (`on_gather_context`), cascades du `RulesEngine` et validation mathématique des deltas (`on_arbitrate_mutations`)
+- [x] Extraction du mod officiel `axiom.turn` sous `mods/axiom.turn/`
+  - [x] Manifeste `mod.toml` (ID `axiom.turn`, version `1.0.0`, `axiom_api = 1`, hook `axiom.kernel:execute_step`)
+  - [x] Déclaration des slots fournis (`provides_slots`) :
+    - `axiom.turn:prompt_sections` (collect)
+    - `axiom.turn:output_fields` (collect)
+    - `axiom.turn:stream_filter` (chain)
+    - `axiom.turn:final_text_filter` (chain)
+    - `axiom.turn:llm_backend` (exclusive)
+  - [x] Orchestration du tour dans `main.py` : pipeline en 6 étapes modulaires via `TurnContext`
+  - [x] Filtrage de streaming et texte final via les slots `stream_filter` et `final_text_filter`
+  - [x] Routage dynamique des champs de sortie via `output_fields`
+- [x] Découplage du Noyau (`axiom/session.py`, `axiom/arbitrator.py`, `axiom/kernel/`)
+  - [x] `KernelStepContext` et `NoTurnPipelineInstalledError` dans `axiom/kernel/step_context.py`
+  - [x] `KernelRegistry` : gestion des slots en chaîne (`apply_slot_chain`), extraction de contributions (`get_slot_contributions`), propagation de `GenerationCancelled`
+  - [x] Support de `[provides_slots]` dans `ModManifest` et auto-déclaration au chargement
+  - [x] Suppression de l'instanciation en dur de `ArbitratorEngine` dans `Session.__init__`
+  - [x] Délégation du tour dans `Session.take_turn` / `resolve_tick` via `axiom.kernel:execute_step`
+  - [x] Levée immédiate de `NoTurnPipelineInstalledError` si aucun mod de pipeline n'est actif
+  - [x] Découplage des étapes 1 et 5 de `ArbitratorEngine` via les hooks `axiom.step:gather_context` et `axiom.step:arbitrate_mutations`
+- [x] Packaging `.axmod`
+  - [x] `dist/mods/axiom.world.axmod`
+  - [x] `dist/mods/axiom.turn.axmod`
+- [x] Suite de tests hermétique et d'intégration
+  - [x] `tests/test_world_turn_mods.py` : validation du chargement (répertoire + .axmod), contribution tierce à `prompt_sections`, levée de `NoTurnPipelineInstalledError`, filtres de slot, routage `output_fields`, mutations bout-en-bout
+  - [x] Non-régression totale sur le banc Golden Step (`test_golden_step.py`, `test_kernel_loader.py`, `test_stat_dynamics_mod.py`)

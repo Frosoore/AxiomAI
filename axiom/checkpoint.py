@@ -74,87 +74,15 @@ class CheckpointManager:
         Raises:
             sqlite3.Error: On any database failure.
         """
+        from axiom.storage_registry import execute_rewind
+
         with get_connection(self._db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) FROM Event_Log
-                WHERE save_id = ? AND turn_id > ?;
-                """,
-                (save_id, target_turn_id),
-            ).fetchone()
-            deleted_count: int = row[0]
-
-            conn.execute(
-                """
-                DELETE FROM Event_Log
-                WHERE save_id = ? AND turn_id > ?;
-                """,
-                (save_id, target_turn_id),
-            )
-            
-            # Clean up snapshots and timeline entries for future turns
-            conn.execute(
-                "DELETE FROM Snapshots WHERE save_id = ? AND turn_id > ?;",
-                (save_id, target_turn_id)
-            )
-            conn.execute(
-                "DELETE FROM Timeline WHERE save_id = ? AND turn_id > ?;",
-                (save_id, target_turn_id)
-            )
-
-            # Living-mode structured facts are turn-tagged → drop the future ones
-            # in this same transaction so events and derived facts roll back
-            # atomically. ensure_ first: older save DBs may predate the table.
-            from axiom.schema import ensure_facts_table
-            ensure_facts_table(conn)
-            conn.execute(
-                "DELETE FROM Facts WHERE save_id = ? AND turn_id > ?;",
-                (save_id, target_turn_id)
-            )
-
-            # Living-mode beliefs (Phase 3) derive from several turns, so they
-            # cannot just be deleted by turn_id: drop those created after the
-            # target and recompute the survivors from their sources at turns
-            # <= target — in this same transaction as the facts they build on.
-            from axiom.observations import rollback_observations
-            rollback_observations(conn, save_id, target_turn_id)
-
-            # Mental models (§7.8) are summaries distilled from beliefs: drop those
-            # created after the target and flag the survivors stale so the next
-            # refresh regenerates them from the rewound beliefs (same transaction).
-            from axiom.mental_models import rollback_mental_models
-            rollback_mental_models(conn, save_id, target_turn_id)
-
-            # Temporary modifiers (buffs/debuffs) decay in minutes and aren't
-            # event-sourced, so they can't be replayed: restore them from the
-            # per-turn snapshot captured at the target turn (TICKET-074).
-            from axiom.modifiers import rollback_modifiers
-            rollback_modifiers(conn, save_id, target_turn_id)
-
-            # Nested inventory isn't replayable from Event_Log (manual edits aren't
-            # logged, instance ids aren't stored): restore it from the per-turn
-            # snapshot of the target turn. No snapshot (turn played before
-            # TICKET-095) → inventory left as is.
-            from axiom.inventory import rollback_inventory
-            rollback_inventory(conn, save_id, target_turn_id)
-
-            # Scheduled events fired *after* the target turn must be un-fired so
-            # they can trigger again once the in-game clock re-crosses their
-            # minute (TICKET-075). Keyed by the turn they fired on; legacy rows
-            # (fired_turn_id default 0) stay fired. ensure_ first: older save DBs
-            # predate the column.
-            from axiom.schema import ensure_fired_event_turn_column
-            ensure_fired_event_turn_column(conn)
-            conn.execute(
-                "DELETE FROM Fired_Scheduled_Events WHERE save_id = ? AND fired_turn_id > ?;",
-                (save_id, target_turn_id),
-            )
-
+            summary = execute_rewind(conn, save_id, target_turn_id)
             conn.commit()
 
         self._event_sourcer.rebuild_state_cache(save_id, up_to_turn_id=target_turn_id)
 
-        return {"deleted_events": deleted_count, "rebuilt_to_turn": target_turn_id}
+        return summary
 
     def list_checkpoints(self, save_id: str) -> list[int]:
         """Return the distinct turn IDs present in Event_Log for a save, ascending.

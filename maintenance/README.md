@@ -52,8 +52,9 @@ dev avant de modifier `axiom/` ou un fichier partagé.**
 | `Mods/` | Système de mods (`.axmod`) — noyau minimal + tout le reste en mods ; vision, critique et arbitrage (pas encore de code) |
 
 Statut global : **tout est ✅ terminé sauf** `features/fix-json-leak-and-image-prompt` (🔄 en cours),
-`Multiplayer/` (🔄 implémentation en cours), `Mods/` (📋 vision validée, pas de code — phase 0 à venir),
+`Multiplayer/` (🔄 implémentation en cours), `Mods/` (📋 vision validée — phases 0a à 5 terminées ✅),
 `i18n-doc/TICKET-057-*` (🔄 doc intégrée à enrichir), `hindsight/hindsight-mining` (📋 doc de cadrage,
+
 sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DONE.md`.
 
 ## Étapes (index condensé)
@@ -184,3 +185,23 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `site-blog` | ✅ | Blog Markdown→HTML + RSS, stylé au thème du site |
 | `site-dev-page-rework` | ✅ | Refonte de la page Dev updates |
 | `site-update-2026-09` | ✅ | Dev updates juillet (+ retouche août), bannière testeurs retirée, billet « Quiet, but stable » |
+
+### Mods/
+| Sous-dossier | Statut | Description |
+|--------------|--------|-------------|
+| `phase-0a-golden-harness` | ✅ | Harnais « Golden Step » déterministe hermétique, `ScriptedLLMBackend` et `SessionStateCanonicalizer` |
+| `phase-0b-fin-de-tour` | ✅ | Unification fin de tour et assainissement UI (`take_turn`, `resolve_tick`, `_post_turn_pipeline`) |
+| `phase-0c-storage-registry` | ✅ | Registre unique de persistance (`axiom/storage_registry.py`), éradication des listes manuelles |
+| `phase-0d-tour-transactionnel` | ✅ | Tour transactionnel (`TurnWriteBatch`) et époques de session (`SessionEpochManager`) |
+| `phase-0e-schema-ouvert-config` | ✅ | Schéma ouvert SQLite (`Mod_Schema_Versions`, suppression contrainte `difficulty`) et config extensible (`mod_settings`) |
+| `phase-0f-decoupage-tour` | ✅ | Découpage modulaire du Tour (`TurnContext`, pipeline en 6 étapes de `ArbitratorEngine.process_turn`) |
+| `phase-1-kernel-loader` | ✅ | Le Cœur du Chargeur de Mods (`axiom/kernel`) : manifestes, résolveur DAG, registre & isolation, ModContext |
+| `phase-2-first-mod` | ✅ | Extraction du premier mod officiel (`core.stat_dynamics`), packaging `.axmod` (`axiom mod pack`), découplage moteur |
+| `phase-2-world-turn` | ✅ | Extraction des mods `axiom.world` et `axiom.turn`, pipeline Fabric API, slots d'extension et découplage noyau (`Session`) |
+| `phase-2-time-inventory` | ✅ | Extraction des mods `axiom.time` et `axiom.inventory`, gestion de Timeline, calendrier, conteneurs et Chronicler |
+| `phase-2-memory-mods` | ✅ | Extraction des mods `axiom.rag` et `axiom.living_memory`, sous-système cognitif et persistance déclarative |
+| `phase-2-providers-illustrations` | ✅ | Extraction des mods `axiom.providers` et `axiom.illustrations`, slot `axiom.providers:drivers`, hooks Universe-as-Code |
+| `phase-2-ui-mods` | ✅ | Extraction des interfaces (`axiom.ui.web`, `axiom.ui.qt`, `axiom.cli`), i18n, aide & CLI safe-mode |
+| `phase-3-patching` | ✅ | Système de patches outillés (`@patchable`, `__code__` swapping, sentinelle `ShortCircuit`, gel step §6.2.3, CLI) |
+| `phase-4-mod-creator` | ✅ | Outillage de création (`axiom mod new`), testeur unifié (`axiom mod test`), hot-reload (`axiom mod dev`) & créateur LLM (`axiom mod generate`, Web API) |
+| `phase-5-store-and-distribution` | ✅ | Store distant, intégrité SHA-256 (`axiom/kernel/store.py`), dépendances Python légères (D-7), licence AGPLv3 frontière mods (D-9, §14), PyPI headless micro-kernel 1.0.0 (D-8) |

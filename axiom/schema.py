@@ -125,10 +125,18 @@ _DDL_SAVES = """
 CREATE TABLE IF NOT EXISTS Saves (
     save_id        TEXT PRIMARY KEY,
     player_name    TEXT NOT NULL,
-    difficulty     TEXT NOT NULL CHECK(difficulty IN ('Normal', 'Hardcore', 'Companion', 'Multiplayer')),
+    difficulty     TEXT NOT NULL,
     last_updated   TEXT NOT NULL,
     player_persona TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL DEFAULT ''
+);
+"""
+
+_DDL_MOD_SCHEMA_VERSIONS = """
+CREATE TABLE IF NOT EXISTS Mod_Schema_Versions (
+    mod_id TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL,
+    installed_at TEXT NOT NULL
 );
 """
 
@@ -449,6 +457,7 @@ _ALL_DDL: list[str] = [
     _DDL_STORY_SETUP,
     _DDL_LOCATIONS,
     _DDL_LOCATION_CONNECTIONS,
+    _DDL_MOD_SCHEMA_VERSIONS,
 ]
 
 # Canonical set of table names produced by create_universe_db
@@ -481,6 +490,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Story_Setup",
     "Locations",
     "Location_Connections",
+    "Mod_Schema_Versions",
 })
 
 
@@ -1118,6 +1128,8 @@ def migrate_schema(db_path: str) -> None:
     migrate_session_lore_table(db_path)
     migrate_inventory_tables(db_path)
     migrate_indexes(db_path)
+    migrate_saves_difficulty_constraint(db_path)
+    migrate_mod_schema_versions_table(db_path)
 
 
 def migrate_story_setup_table(db_path: str) -> None:
@@ -1200,7 +1212,7 @@ def migrate_location_tables(db_path: str) -> None:
 
 
 def migrate_saves_difficulty_constraint(db_path: str) -> None:
-    """Migrate the Saves table to update the difficulty CHECK constraint.
+    """Migrate the Saves table to remove the restrictive difficulty CHECK constraint.
     
     To avoid breaking foreign keys in child tables, we MUST NOT rename the 
     original table to something else (like Saves_Old), because child tables
@@ -1215,11 +1227,9 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
         if not row:
             return
         
-        sql = row[0]
-        if "'Multiplayer'" in sql:
-            # Already updated (constraint already lists the latest difficulty).
-            # NB: we key on the NEWEST value so that DBs created before a given
-            # difficulty was added (e.g. 'Companion'-only DBs) still re-migrate.
+        sql = row[0] or ""
+        if "CHECK" not in sql or "difficulty IN" not in sql:
+            # Already unconstrained
             return
             
         conn.execute("PRAGMA foreign_keys=OFF;")
@@ -1227,7 +1237,6 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             conn.execute("BEGIN TRANSACTION;")
             
             # 1. Create temporary table with NEW schema
-            # We replace 'CREATE TABLE IF NOT EXISTS Saves' with 'CREATE TABLE Saves_Temp'
             new_ddl = _DDL_SAVES.replace("CREATE TABLE IF NOT EXISTS Saves", "CREATE TABLE Saves_Temp")
             conn.execute(new_ddl)
             
@@ -1251,12 +1260,63 @@ def migrate_saves_difficulty_constraint(db_path: str) -> None:
             conn.execute("ALTER TABLE Saves_Temp RENAME TO Saves;")
             
             conn.execute("COMMIT;")
-            logger.debug("[SCHEMA] Saves table successfully migrated to support 'Multiplayer' mode.")
+            logger.debug("[SCHEMA] Saves table successfully migrated to unconstrained difficulty mode.")
         except Exception as e:
             conn.execute("ROLLBACK;")
             logger.error(f"[SCHEMA] Saves constraint migration failed: {e}")
         finally:
             conn.execute("PRAGMA foreign_keys=ON;")
+
+
+def migrate_mod_schema_versions_table(db_path: str) -> None:
+    """Create Mod_Schema_Versions table if it does not exist."""
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(_DDL_MOD_SCHEMA_VERSIONS)
+        conn.commit()
+
+
+def apply_mod_migrations(
+    db_path: str,
+    mod_id: str,
+    target_version: int,
+    migrations: dict[int, Callable[[sqlite3.Connection], None]],
+) -> None:
+    """Execute sequential, transactional schema migrations for a mod.
+
+    Args:
+        db_path: Path to SQLite database file.
+        mod_id: Unique identifier of the mod (e.g. 'comm.hunger').
+        target_version: Target schema version to reach.
+        migrations: Mapping from version N to a callable that executes changes to N+1.
+    """
+    from datetime import datetime, timezone
+
+    with get_connection(db_path) as conn:
+        conn.execute(_DDL_MOD_SCHEMA_VERSIONS)
+        row = conn.execute(
+            "SELECT schema_version FROM Mod_Schema_Versions WHERE mod_id = ?;",
+            (mod_id,),
+        ).fetchone()
+        current_version = row[0] if row is not None else 0
+
+        if current_version >= target_version:
+            return
+
+        for ver in range(current_version, target_version):
+            if ver not in migrations:
+                raise ValueError(
+                    f"Missing migration step {ver} -> {ver + 1} for mod '{mod_id}' (target: {target_version})"
+                )
+            migration_fn = migrations[ver]
+            with conn:
+                migration_fn(conn)
+                now_iso = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    "INSERT INTO Mod_Schema_Versions (mod_id, schema_version, installed_at) "
+                    "VALUES (?, ?, ?) "
+                    "ON CONFLICT(mod_id) DO UPDATE SET schema_version = excluded.schema_version, installed_at = excluded.installed_at;",
+                    (mod_id, ver + 1, now_iso),
+                )
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -1276,7 +1336,17 @@ class _ClosingConnection(sqlite3.Connection):
     closing eagerly is always correct here.
     """
 
+    def __enter__(self):
+        self._enter_depth = getattr(self, "_enter_depth", 0) + 1
+        if self._enter_depth == 1:
+            super().__enter__()
+        return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
+        depth = getattr(self, "_enter_depth", 1) - 1
+        self._enter_depth = depth
+        if depth > 0:
+            return False
         try:
             super().__exit__(exc_type, exc_val, exc_tb)  # commit or rollback
         finally:

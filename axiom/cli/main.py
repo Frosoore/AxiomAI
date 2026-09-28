@@ -38,6 +38,8 @@ from axiom.cli.saves_cmd import (
     run_save_show,
     run_save_unpack,
 )
+from axiom.cli.mods_cmd import add_mod_arguments
+from axiom.cli.test import add_test_arguments, run_test
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Enable debug mode (verbose console output, full log verbosity).",
+    )
+    parser.add_argument(
+        "--safe-mode",
+        action="store_true",
+        default=False,
+        help="Start with all third-party mods disabled (recovery mode).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -122,6 +130,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_save_unpack_arguments(save_unpack)
     save_unpack.set_defaults(func=run_save_unpack)
 
+    test_cmd = sub.add_parser("test", help="Test harness and golden step runner.")
+    add_test_arguments(test_cmd)
+    test_cmd.set_defaults(func=run_test)
+
+    mod_cmd = sub.add_parser("mod", help="Mod management commands (list, enable, disable, pack).")
+    add_mod_arguments(mod_cmd)
+
+    mods_cmd = sub.add_parser("mods", help="Mod management commands (alias).")
+    add_mod_arguments(mods_cmd)
+
     return parser
 
 
@@ -133,4 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.debug:
         enable_debug_mode()
+    if getattr(args, "safe_mode", False):
+        from axiom.kernel.loader import set_safe_mode
+        set_safe_mode(True)
     return args.func(args)
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

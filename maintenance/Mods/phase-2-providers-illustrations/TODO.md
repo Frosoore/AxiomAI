@@ -1,0 +1,33 @@
+# TODO — Phase 2 : Extraction de axiom.providers, axiom.illustrations & Hooks Universe-as-Code
+
+- [x] Extraction du mod officiel `axiom.providers` sous `mods/axiom.providers/`
+  - [x] Manifeste `mod.toml` (ID `axiom.providers`, version `1.0.0`, `axiom_api = 1`, dépendance `axiom.turn >= 1.0.0`, `provides = ["llm_providers"]`)
+  - [x] Déclaration de la contribution au slot `axiom.turn:llm_backend`
+  - [x] Déclaration du slot ouvert `axiom.providers:drivers` (`rule = "collect"`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"providers"` (`register_driver`, `get_driver`, `list_drivers`, `get_backend`)
+    - [x] Enregistrement des pilotes de base (Google Gemini, Ollama/Universal OpenAI-compatible)
+    - [x] Résolution dynamique du backend selon `AppConfig.llm_backend`
+    - [x] Contribution au slot exclusif `axiom.turn:llm_backend` (fourniture du backend actif ou de sa fabrique)
+- [x] Extraction du mod officiel `axiom.illustrations` sous `mods/axiom.illustrations/`
+  - [x] Manifeste `mod.toml` (ID `axiom.illustrations`, version `1.0.0`, `axiom_api = 1`, `provides = ["illustrations"]`)
+  - [x] Déclaration du hook `axiom.step:after_step`
+  - [x] Déclaration de la politique de stockage dans `[storage]` (`assets = { policy = "custom" }`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"illustrations"` (`generate_scene_art`, `get_turn_illustration`, `truncate_assets`)
+    - [x] Hook `axiom.step:after_step` déclenchant la génération d'illustration via `post_commit_callbacks`
+    - [x] Nettoyage sur rewind : enregistrement de la politique `assets` dans le `storage_registry` avec `rewind_callback` supprimant les images orphelines
+- [x] Allègement du Noyau (`axiom/session.py`)
+  - [x] Retrait de la génération d'images hardcodée dans `Session.resolve_tick`
+  - [x] Rendre l'argument `llm` optionnel dans `Session.__init__`, avec repli sur le slot `axiom.turn:llm_backend` ou le service `"providers"`
+- [x] Hooks de cycle de vie Universe-as-Code (§11)
+  - [x] `axiom/compile.py` : invocation du hook `axiom.universe:compile` avec `compile_context`
+  - [x] `axiom/decompile.py` : invocation du hook `axiom.universe:decompile` avec `decompile_context`
+  - [x] `axiom/dev.py` : invocation du hook `axiom.universe:refresh_definition` avec `refresh_context`
+- [x] Empaquetage `.axmod`
+  - [x] `dist/mods/axiom.providers.axmod`
+  - [x] `dist/mods/axiom.illustrations.axmod`
+  - [x] `dist/mods/axiom.turn.axmod` (mise à jour)
+- [x] Suite de tests hermétique et d'intégration
+  - [x] `tests/test_providers_illustrations_mods.py` (5 tests : validation des manifestes, ajout d'un driver custom via slot ouvert, génération/troncature d'illustrations sur rewind, extension Universe-as-Code via compile/decompile, exécution d'un tour complet autonome)
+  - [x] 100% au vert sur l'ensemble des suites (46/46 tests passants)

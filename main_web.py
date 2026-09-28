@@ -64,14 +64,6 @@ TURN_BUSY_LOCK = threading.Lock()
 # a tree with orphan purge + rmtree → arbitrary file deletion otherwise).
 LAST_CANONIZE_PREVIEW: dict = {}
 
-# Living-memory buffer (mirrors ui/tabletop_view.py::_fact_pending).
-# Web had no post-turn extraction before — facts only appeared if desktop
-# had distilled them earlier.
-_FACT_PENDING: list[str] = []
-_FACT_TURN_COUNTER: int = 0
-_FACT_WORKER_LOCK = threading.Lock()
-_FACT_WORKER_BUSY: bool = False
-
 # Define static directories
 PROJECT_ROOT = Path(__file__).resolve().parent
 WEB_DIR = PROJECT_ROOT / "web"
@@ -348,6 +340,9 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
     def _handle_memory_fact_mutation(self, payload: dict) -> None:
         if not self._require_active_session():
             return
+        if ACTIVE_SESSION._kernel_registry and not ACTIVE_SESSION._kernel_registry.get_service("living_memory"):
+            self.send_json({"status": "disabled", "disabled": True, "error": "Living memory mod not loaded", "memory": build_memory_snapshot()})
+            return
         action = (payload.get("action") or "").strip().lower()
         db = ACTIVE_SESSION._db_path
         sid = ACTIVE_SESSION._save_id
@@ -405,6 +400,9 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
     def _handle_memory_belief_mutation(self, payload: dict) -> None:
         if not self._require_active_session():
             return
+        if ACTIVE_SESSION._kernel_registry and not ACTIVE_SESSION._kernel_registry.get_service("living_memory"):
+            self.send_json({"status": "disabled", "disabled": True, "error": "Living memory mod not loaded", "memory": build_memory_snapshot()})
+            return
         action = (payload.get("action") or "").strip().lower()
         db = ACTIVE_SESSION._db_path
         sid = ACTIVE_SESSION._save_id
@@ -441,6 +439,9 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
 
     def _handle_memory_model_mutation(self, payload: dict) -> None:
         if not self._require_active_session():
+            return
+        if ACTIVE_SESSION._kernel_registry and not ACTIVE_SESSION._kernel_registry.get_service("living_memory"):
+            self.send_json({"status": "disabled", "disabled": True, "error": "Living memory mod not loaded", "memory": build_memory_snapshot()})
             return
         action = (payload.get("action") or "").strip().lower()
         db = ACTIVE_SESSION._db_path
@@ -499,7 +500,69 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_error_json(500, str(exc))
 
+        elif path == "/api/mods":
+            try:
+                from axiom.cli.mods_cmd import discover_installed_mods
+                from axiom.kernel.loader import is_mod_enabled
+                cfg = load_config()
+                installed = discover_installed_mods()
+                res = []
+                for manifest, m_path in installed:
+                    res.append({
+                        "id": manifest.id,
+                        "version": manifest.version,
+                        "name": manifest.name,
+                        "description": manifest.description,
+                        "enabled": is_mod_enabled(manifest.id, cfg),
+                        "path": str(m_path),
+                        "axiom_api": manifest.axiom_api,
+                    })
+                self.send_json(res)
+            except Exception as exc:
+                self.send_error_json(500, str(exc))
+
+        elif path == "/api/store/search":
+            try:
+                from axiom.kernel.store import search_store
+                from axiom.cli.mods_cmd import discover_installed_mods
+                params = urllib.parse.parse_qs(query_str)
+                query = params.get("q", [""])[0]
+                repo = params.get("repo", [None])[0]
+                results = search_store(query, repo_url=repo)
+
+                installed = {m.id: m.version for m, _ in discover_installed_mods()}
+                items = []
+                for e in results:
+                    is_inst = e.id in installed
+                    has_update = False
+                    if is_inst:
+                        try:
+                            from packaging.version import Version
+                            has_update = Version(e.version) > Version(installed[e.id])
+                        except Exception:
+                            has_update = e.version != installed[e.id]
+                    items.append({
+                        "id": e.id,
+                        "version": e.version,
+                        "name": e.name,
+                        "description": e.description,
+                        "author": e.author,
+                        "download_url": e.download_url,
+                        "sha256": e.sha256,
+                        "dependencies": e.dependencies,
+                        "python_requires": e.python_requires,
+                        "provides": e.provides,
+                        "installed": is_inst,
+                        "installed_version": installed.get(e.id),
+                        "has_update": has_update,
+                    })
+                self.send_json(items)
+            except Exception as exc:
+                self.send_error_json(500, str(exc))
+
         elif path == "/api/personas":
+
+
             try:
                 # load_config() ensures GLOBAL_DB_FILE is provisioned (lazy
                 # create_global_db), same as every Qt entry point that touches personas.
@@ -722,10 +785,14 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "No active session loaded")
                 return
             try:
-                from axiom.inventory import load_inventory_tree
-                from axiom.schema import migrate_schema
-                migrate_schema(ACTIVE_SESSION._db_path)
-                tree = load_inventory_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
+                inv_service = ACTIVE_SESSION.kernel_registry.get_service("inventory") if getattr(ACTIVE_SESSION, "kernel_registry", None) else None
+                if inv_service and hasattr(inv_service, "load_tree"):
+                    tree = inv_service.load_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
+                else:
+                    from axiom.inventory import load_inventory_tree
+                    from axiom.schema import migrate_schema
+                    migrate_schema(ACTIVE_SESSION._db_path)
+                    tree = load_inventory_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
                 names = {}
                 with get_connection(ACTIVE_SESSION._db_path) as conn:
                     for r in conn.execute("SELECT entity_id, name FROM Entities;"):
@@ -1366,52 +1433,14 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 db_path = db_path / ".axiom-cache" / "universe.db"
 
             try:
-                # Mirror ui/setup_view.py: new games are separate save DBs under
-                # ~/AxiomAI/saves/<universe>/, not rows inside the universe db.
                 info = create_save(
-                    str(db_path), player_name, difficulty, player_persona=player_persona
+                    str(db_path),
+                    player_name,
+                    difficulty,
+                    player_persona=player_persona,
+                    setup_answers=answers,
                 )
-                save_id = info["save_id"]
-                save_db = info["db_path"]
-
-                with get_connection(save_db) as conn:
-                    # Log setup answers (audit trail; not read back by the engine).
-                    for q_id, ans in answers.items():
-                        conn.execute(
-                            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) VALUES (?, 0, 'setup_answer', ?, ?);",
-                            (save_id, q_id, json.dumps({"answer": ans}))
-                        )
-
-                    # Write the turn-0 opening narrative (first_message variant with
-                    # @tag substitution from setup answers), mirroring
-                    # ui/tabletop_view.py::_show_first_message. Without this, new
-                    # web saves started on a blank chat: history has no turn 0.
-                    row = conn.execute(
-                        "SELECT value FROM Universe_Meta WHERE key='first_message';"
-                    ).fetchone()
-                    first_message = row["value"] if row else ""
-                    if first_message:
-                        variants = [
-                            v.strip() for v in
-                            re.split(r"\s*---VARIANT---\s*", first_message, flags=re.IGNORECASE)
-                            if v.strip()
-                        ]
-                        if not variants:
-                            variants = [first_message.strip()]
-                        if answers:
-                            for i, v in enumerate(variants):
-                                for key, val in answers.items():
-                                    v = re.sub(rf"@{re.escape(str(key))}", str(val), v, flags=re.IGNORECASE)
-                                variants[i] = v
-                        event_payload = {"active": 0, "variants": variants}
-                        conn.execute(
-                            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) VALUES (?, 0, 'narrative_text', 'world', ?);",
-                            (save_id, json.dumps(event_payload))
-                        )
-
-                    conn.commit()
-
-                self.send_json({"status": "success", "save_id": save_id, "db_path": save_db})
+                self.send_json({"status": "success", "save_id": info["save_id"], "db_path": info["db_path"]})
             except Exception as exc:
                 self.send_error_json(500, str(exc))
 
@@ -1540,28 +1569,34 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             if not ACTIVE_SESSION:
                 self.send_error_json(400, "No active session loaded")
                 return
+            instance_id = payload.get("instance_id")
+            dest_kind = payload.get("dest_kind")
+            dest_id = payload.get("dest_id")
+            if not instance_id or not dest_kind or not dest_id:
+                self.send_error_json(400, "Missing required parameters")
+                return
             try:
-                from axiom.inventory import InventoryError, move_item, snapshot_present_inventory
-                from axiom.schema import migrate_schema
-                migrate_schema(ACTIVE_SESSION._db_path)
-                instance_id = str(payload.get("instance_id") or "")
-                dest_kind = str(payload.get("dest_holder_kind") or "")
-                dest_id = str(payload.get("dest_holder_id") or "")
-                if not instance_id or not dest_kind or not dest_id:
-                    self.send_error_json(400, "Missing instance_id or destination")
-                    return
-                with get_connection(ACTIVE_SESSION._db_path) as conn:
-                    move_item(
-                        conn, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
-                        quantity=payload.get("quantity"),
+                inv_service = ACTIVE_SESSION.kernel_registry.get_service("inventory") if getattr(ACTIVE_SESSION, "kernel_registry", None) else None
+                if inv_service and hasattr(inv_service, "move"):
+                    inv_service.move(
+                        ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
+                        quantity=payload.get("quantity") or 1,
                     )
-                    snapshot_present_inventory(conn, ACTIVE_SESSION._save_id)  # TICKET-095
-                    conn.commit()
+                else:
+                    from axiom.inventory import InventoryError, move_item, snapshot_present_inventory
+                    from axiom.schema import migrate_schema
+                    migrate_schema(ACTIVE_SESSION._db_path)
+                    with get_connection(ACTIVE_SESSION._db_path) as conn:
+                        move_item(
+                            conn, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
+                            quantity=payload.get("quantity"),
+                        )
+                        snapshot_present_inventory(conn, ACTIVE_SESSION._save_id)  # TICKET-095
+                        conn.commit()
                 self.send_json({"status": "ok"})
-            except InventoryError as exc:
-                self.send_error_json(422, str(exc))
             except Exception as exc:
                 self.send_error_json(500, str(exc))
+
 
         elif path == "/api/session/start":
             uni_path = payload.get("universe_path", "")
@@ -1614,11 +1649,19 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                         _turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
                         _after = _lft(play_db, save_id)
                         if _interval > 0 and (_turn - _after) >= _interval:
-                            _spawn_living_memory_job(_cfg, force_catchup=True)
+                            from axiom.living_memory import get_living_memory_accumulator
+                            get_living_memory_accumulator().spawn_distillation(
+                                play_db, save_id, _turn, cfg=_cfg, llm=llm, force_catchup=True
+                            )
                 except Exception:
                     logger.exception("Living-memory session catch-up failed to start")
 
-                self.send_json(build_session_snapshot())
+                snapshot = ACTIVE_SESSION.get_state_snapshot()
+                if hasattr(ACTIVE_SESSION, "_kernel_registry") and ACTIVE_SESSION._kernel_registry:
+                    panels = ACTIVE_SESSION._kernel_registry.get_slot_contributions("axiom.ui.web:side_panel")
+                    if panels:
+                        snapshot["side_panels"] = panels
+                self.send_json(snapshot)
             except Exception as exc:
                 self.send_error_json(500, str(exc))
 
@@ -2301,8 +2344,70 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 return
             self._export_universe_file(uni_path)
 
+        elif path == "/api/mods/generate":
+            prompt = payload.get("prompt", "").strip()
+            if not prompt:
+                self.send_error_json(400, "Missing 'prompt' in request payload")
+                return
+            try:
+                from axiom.kernel.llm_creator import generate_mod
+                result = generate_mod(prompt)
+                self.send_json({
+                    "status": "success",
+                    "mod_id": result.mod_id,
+                    "staged_dir": str(result.staged_dir),
+                    "tests_passed": result.tests_passed,
+                    "file_diffs": result.file_diffs,
+                    "error_report": result.error_report,
+                    "manifest": {
+                        "id": result.manifest.id,
+                        "version": result.manifest.version,
+                        "name": result.manifest.name,
+                        "description": result.manifest.description,
+                        "author": result.manifest.author,
+                    },
+                })
+            except Exception as exc:
+                self.send_error_json(500, f"Mod generation failed: {exc}")
+
+        elif path == "/api/mods/apply":
+            staged_dir = payload.get("staged_dir", "").strip()
+            if not staged_dir:
+                self.send_error_json(400, "Missing 'staged_dir' in request payload")
+                return
+            try:
+                from axiom.kernel.llm_creator import apply_generated_mod
+                installed_path, axmod_path = apply_generated_mod(staged_dir)
+                self.send_json({
+                    "status": "success",
+                    "installed_path": str(installed_path),
+                    "axmod_path": str(axmod_path) if axmod_path else None,
+                })
+            except Exception as exc:
+                self.send_error_json(500, f"Failed to apply generated mod: {exc}")
+
+        elif path == "/api/store/install":
+            mod_id = payload.get("mod_id", "").strip()
+            version = payload.get("version")
+            repo = payload.get("repo")
+            if not mod_id:
+                self.send_error_json(400, "Missing 'mod_id' in request payload")
+                return
+            try:
+                from axiom.kernel.store import install_mod_from_store
+                installed_path = install_mod_from_store(mod_id, version=version, repo_url=repo, enable=True)
+                self.send_json({
+                    "status": "success",
+                    "mod_id": mod_id,
+                    "installed_path": str(installed_path),
+                })
+            except Exception as exc:
+                self.send_error_json(500, f"Store installation failed: {exc}")
+
         else:
             self.send_error_json(404, "Not Found")
+
+
 
     def _stream_session_turn(self, *, player_input: str, intents) -> None:
         """SSE turn: status / token / done / error / cancelled events."""
@@ -2461,13 +2566,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             self.send_error_json(500, str(exc))
 
 def get_time_system(db_path: str):
-    """Build a TimeSystem from a universe's Universe_Meta.calendar_config.
-
-    Session has no time system of its own: CalendarConfig/TimeSystem are
-    presentation-side helpers built by ui/tabletop_view.py::_on_meta_loaded
-    from the compiled universe's calendar. Mirrored here so /api/session/*
-    can format in-game time the same way the Qt app does.
-    """
+    """Build or retrieve TimeSystem / time service from a universe's Universe_Meta.calendar_config."""
+    if ACTIVE_SESSION and getattr(ACTIVE_SESSION, "kernel_registry", None):
+        time_svc = ACTIVE_SESSION.kernel_registry.get_service("time")
+        if time_svc:
+            return time_svc
     from axiom.time_system import TimeSystem, CalendarConfig
     try:
         with get_connection(db_path) as conn:
@@ -2482,326 +2585,37 @@ def get_time_system(db_path: str):
 
 def reset_living_memory_buffer() -> None:
     """Clear the pending narrative buffer (e.g. on new session / hardcore wipe)."""
-    global _FACT_PENDING, _FACT_TURN_COUNTER
-    with _FACT_WORKER_LOCK:
-        _FACT_PENDING = []
-        _FACT_TURN_COUNTER = 0
+    if ACTIVE_SESSION and ACTIVE_SESSION._kernel_registry:
+        lm_svc = ACTIVE_SESSION._kernel_registry.get_service("living_memory")
+        if lm_svc:
+            lm_svc.reset()
+            return
+    try:
+        from axiom.living_memory import get_living_memory_accumulator
+        get_living_memory_accumulator().reset()
+    except Exception:
+        pass
 
 
 def schedule_living_memory_after_turn(narrative_text: str) -> None:
-    """Buffer turn prose; kick background distillation every N turns (living mode).
-
-    The interval counter is session-local, but we also fire when the **save** is
-    behind: if ``current_turn - last_fact_turn >= interval``, catch up from
-    Event_Log. That way a restart/re-open of a turn-9 save does not require five
-    *more* live turns before the first automatic extract.
+    """No-op kept for backward compatibility.
+    Living memory accumulation is handled directly by Session._post_turn_pipeline.
     """
-    global _FACT_PENDING, _FACT_TURN_COUNTER
-    from axiom.config import load_config, memory_mode_is_living
-    from axiom.living_memory import last_fact_turn
-
-    text = (narrative_text or "").strip()
-    if not text or ACTIVE_SESSION is None:
-        return
-    cfg = load_config()
-    if not memory_mode_is_living(cfg):
-        return
-    interval = int(getattr(cfg, "memory_fact_interval", 0) or 0)
-    with _FACT_WORKER_LOCK:
-        _FACT_PENDING.append(text)
-        _FACT_TURN_COUNTER += 1
-        counter_hit = interval > 0 and _FACT_TURN_COUNTER >= interval
-
-    if counter_hit:
-        # force_catchup=True: drain Event_Log since last_fact_turn, not only
-        # the RAM buffer (which is wiped on every server restart / session load).
-        _spawn_living_memory_job(cfg, force_catchup=True)
+    pass
 
 
 def run_living_memory_extract_now(*, force_catchup: bool = False) -> dict:
-    """Synchronous extract for the Memory UI button (or API).
-
-    When the in-memory buffer is empty (typical after playing many web turns
-    without distillation), rebuilds a narrative slice from Event_Log since the
-    last fact turn so catch-up is possible. If narrative is already distilled
-    but beliefs are empty, runs consolidation on stored facts.
-    """
-    from axiom.config import (
-        build_llm_from_config,
-        load_config,
-        memory_beliefs_active,
-        memory_mental_models_active,
-        memory_mode_is_living,
-    )
-    from axiom.living_memory import (
-        consolidate_facts_to_beliefs,
-        distil_turns_to_memory,
-        last_fact_turn,
-        recent_narratives_since,
-    )
-    from axiom.observations import get_observations
-
+    """Synchronous extract for the Memory UI button (or API)."""
     if ACTIVE_SESSION is None:
         return {"status": "error", "error": "No active session", "facts_stored": 0}
-
-    cfg = load_config()
-    if not memory_mode_is_living(cfg):
-        return {
-            "status": "skipped",
-            "error": "Living memory is off (Settings → Memory mode).",
-            "facts_stored": 0,
-            "memory": build_memory_snapshot(),
-        }
-
-    db = ACTIVE_SESSION._db_path
-    sid = ACTIVE_SESSION._save_id
-    turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
-
-    global _FACT_PENDING, _FACT_TURN_COUNTER
-    with _FACT_WORKER_LOCK:
-        pending = list(_FACT_PENDING)
-        _FACT_PENDING = []
-        _FACT_TURN_COUNTER = 0
-
-    # Prefer durable Event_Log catch-up (per-turn) over a single glued blob.
-    turn_pairs: list[tuple[int, str]] = []
-    if force_catchup:
-        after = last_fact_turn(db, sid)
-        turn_pairs = recent_narratives_since(
-            db, sid, after_turn_id=after, up_to_turn_id=turn
-        )
-        # Cap: one click should not distill a 100-turn novel at once.
-        turn_pairs = turn_pairs[-8:]
-    if not turn_pairs and pending:
-        # RAM buffer only (no turn ids) — treat as a single synthetic slice.
-        turn_pairs = [(turn, "\n\n".join(pending))]
-
-    from axiom.config import resolve_memory_fact_model
-    override = resolve_memory_fact_model(cfg)
-    try:
-        llm = build_llm_from_config(cfg, model_override=override)
-    except Exception as exc:
-        return {
-            "status": "error",
-            "error": f"Could not build memory LLM: {exc}",
-            "facts_stored": 0,
-        }
-
-    try:
-        if turn_pairs:
-            result = distil_turns_to_memory(
-                llm,
-                db,
-                sid,
-                turn_pairs,
-                consolidate_beliefs=memory_beliefs_active(cfg),
-                refresh_mental_models=memory_mental_models_active(cfg),
-                raise_on_error=True,
-                max_turns=8,
-            )
-        elif force_catchup and memory_beliefs_active(cfg):
-            # Narrative already fact-distilled; still try beliefs/profiles.
-            existing_beliefs = get_observations(db, sid, max_turn_id=turn)
-            if existing_beliefs:
-                return {
-                    "status": "ok",
-                    "facts_stored": 0,
-                    "beliefs_touched": 0,
-                    "models_refreshed": 0,
-                    "message": "Nothing new to distil (facts and beliefs already up to date).",
-                    "memory": build_memory_snapshot(),
-                }
-            result = consolidate_facts_to_beliefs(
-                llm,
-                db,
-                sid,
-                turn,
-                refresh_mental_models=memory_mental_models_active(cfg),
-                raise_on_error=True,
-            )
-        else:
-            return {
-                "status": "ok",
-                "facts_stored": 0,
-                "message": "Nothing new to distil.",
-                "memory": build_memory_snapshot(),
-            }
-    except Exception as exc:
-        logger.exception("Living memory extract failed")
-        return {
-            "status": "error",
-            "error": f"Memory extract failed: {exc}",
-            "facts_stored": 0,
-            "memory": build_memory_snapshot(),
-        }
-
-    if isinstance(result, dict):
-        n_facts = int(result.get("facts_stored", 0) or 0)
-        n_beliefs = int(result.get("beliefs_touched", 0) or 0)
-        n_models = int(result.get("models_refreshed", 0) or 0)
-    else:
-        n_facts, n_beliefs, n_models = int(result or 0), 0, 0
-
-    parts = []
-    if n_facts:
-        parts.append(f"{n_facts} fact(s)")
-    if n_beliefs:
-        parts.append(f"{n_beliefs} belief update(s)")
-    if n_models:
-        parts.append(f"{n_models} profile(s)")
-    if parts:
-        message = "Stored " + ", ".join(parts) + "."
-    else:
-        message = (
-            "Model returned no new facts/beliefs for this slice "
-            "(try more turns, or check extraction model)."
-        )
-    return {
-        "status": "ok",
-        "facts_stored": n_facts,
-        "beliefs_touched": n_beliefs,
-        "models_refreshed": n_models,
-        "message": message,
-        "memory": build_memory_snapshot(),
-    }
-
-
-def _spawn_living_memory_job(cfg, *, force_catchup: bool) -> None:
-    """Fire-and-forget background distillation (does not block /api/session/turn)."""
-    global _FACT_WORKER_BUSY, _FACT_PENDING, _FACT_TURN_COUNTER
-
-    with _FACT_WORKER_LOCK:
-        if _FACT_WORKER_BUSY:
-            # Keep the counter so the next free turn can still trigger; do not
-            # wipe progress while a job is already running.
-            return
-        pending = list(_FACT_PENDING)
-        _FACT_PENDING = []
-        _FACT_TURN_COUNTER = 0
-        _FACT_WORKER_BUSY = True
-
-    def _job() -> None:
-        global _FACT_WORKER_BUSY
-        try:
-            if ACTIVE_SESSION is None:
-                return
-            from axiom.config import (
-                build_llm_from_config,
-                memory_beliefs_active,
-                memory_mental_models_active,
-            )
-            from axiom.living_memory import (
-                distil_narrative_to_memory,
-                last_fact_turn,
-                recent_narratives_since,
-            )
-
-            db = ACTIVE_SESSION._db_path
-            sid = ACTIVE_SESSION._save_id
-            turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
-
-            # Prefer per-turn Event_Log catch-up (survives restarts; avoids
-            # one giant prompt that reasoning models empty-out on).
-            turn_pairs: list[tuple[int, str]] = []
-            try:
-                after = last_fact_turn(db, sid)
-                pairs = recent_narratives_since(
-                    db, sid, after_turn_id=after, up_to_turn_id=turn
-                )
-                # Auto job: small window so it finishes between turns.
-                turn_pairs = pairs[-6:]
-            except Exception:
-                logger.exception("Living-memory Event_Log catch-up failed")
-
-            if not turn_pairs and pending:
-                turn_pairs = [(turn, "\n\n".join(pending))]
-
-            if not turn_pairs:
-                return
-            from axiom.config import resolve_memory_fact_model
-            override = resolve_memory_fact_model(cfg)
-            try:
-                llm = build_llm_from_config(cfg, model_override=override)
-            except Exception:
-                logger.exception("Living-memory LLM build failed")
-                return
-            from axiom.living_memory import distil_turns_to_memory
-
-            result = distil_turns_to_memory(
-                llm,
-                db,
-                sid,
-                turn_pairs,
-                consolidate_beliefs=memory_beliefs_active(cfg),
-                refresh_mental_models=memory_mental_models_active(cfg),
-                max_turns=6,
-            )
-            logger.info(
-                "Living-memory job done: facts=%s beliefs=%s models=%s",
-                result.get("facts_stored"),
-                result.get("beliefs_touched"),
-                result.get("models_refreshed"),
-            )
-        except Exception:
-            logger.exception("Background living-memory job failed")
-        finally:
-            with _FACT_WORKER_LOCK:
-                _FACT_WORKER_BUSY = False
-
-    threading.Thread(target=_job, daemon=True).start()
+    return ACTIVE_SESSION.run_living_memory_extract_now(force_catchup=force_catchup)
 
 
 def build_memory_snapshot() -> dict:
     """Facts + beliefs + mental models for the active session (web Memory UI)."""
     if ACTIVE_SESSION is None:
         raise RuntimeError("No active session")
-    db = ACTIVE_SESSION._db_path
-    sid = ACTIVE_SESSION._save_id
-    turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
-
-    from axiom.facts import get_facts
-    from axiom.mental_models import get_mental_models
-    from axiom.observations import get_observations
-
-    facts = get_facts(db, sid, max_turn_id=turn)
-    beliefs = get_observations(db, sid, max_turn_id=turn)
-    models = get_mental_models(db, sid, max_turn_id=turn)
-
-    return {
-        "turn_id": turn,
-        "facts": [
-            {
-                "fact_id": f.fact_id,
-                "turn_id": f.turn_id,
-                "fact_type": f.fact_type,
-                "statement": f.statement,
-                "entities": list(f.entities or []),
-                "who": f.who or "",
-            }
-            for f in facts
-        ],
-        "beliefs": [
-            {
-                "observation_id": o.observation_id,
-                "subject": o.subject or "",
-                "statement": o.statement,
-                "proof_count": o.proof_count,
-                "updated_turn_id": o.updated_turn_id,
-                "trend": o.trend(turn),
-            }
-            for o in beliefs
-        ],
-        "mental_models": [
-            {
-                "model_id": m.model_id,
-                "subject": m.subject or "",
-                "summary": m.summary,
-                "updated_turn_id": m.updated_turn_id,
-                "stale": m.stale,
-            }
-            for m in models
-        ],
-    }
+    return ACTIVE_SESSION.get_memory_snapshot()
 
 
 def _resolve_universe_db_path(uni_path: str | None) -> str | None:
@@ -2819,24 +2633,10 @@ def _resolve_universe_db_path(uni_path: str | None) -> str | None:
 
 
 def resolve_player_entity_id(session=None) -> str:
-    """Real player entity id (never assume the literal key 'player').
-
-    Myria-style universes use a named entity (e.g. ysolde_brask), not the
-    literal key 'player'. Location chips and take_turn intents must target that id.
-    """
+    """Real player entity id (never assume the literal key 'player')."""
     sess = session or ACTIVE_SESSION
-    if sess is None:
-        return "player"
-    try:
-        with get_connection(sess._db_path) as conn:
-            row = conn.execute(
-                "SELECT entity_id FROM Entities "
-                "WHERE COALESCE(entity_role, entity_type) = 'player' AND is_active = 1 LIMIT 1;"
-            ).fetchone()
-        if row and row["entity_id"]:
-            return row["entity_id"]
-    except Exception:
-        logger.warning("Could not resolve player entity id", exc_info=True)
+    if sess is not None and hasattr(sess, "resolve_player_entity_id"):
+        return sess.resolve_player_entity_id()
     return "player"
 
 
@@ -2932,22 +2732,7 @@ def execute_session_turn(
                     on_status=on_status,
                 )
 
-        snapshot = build_session_snapshot()
-        snapshot["narrative_text"] = res.narrative_text
-        snapshot["image_path"] = res.image_path.name if res.image_path else None
-        snapshot["game_state_tag"] = getattr(res, "game_state_tag", "exploration")
-        snapshot["hardcore_death"] = (
-            ACTIVE_SESSION._mode == "Hardcore" and is_player_death_triggered(res)
-        )
-        rejected = getattr(res, "rejected_changes", None) or []
-        snapshot["rejected_changes"] = rejected
-        snapshot["inventory_changes"] = getattr(res, "inventory_changes", None) or []
-        snapshot["lore_hits"] = getattr(res, "lore_hits", None) or []
-        try:
-            ACTIVE_SESSION._last_lore_hits = snapshot["lore_hits"]
-        except Exception:
-            pass
-        schedule_living_memory_after_turn(getattr(res, "narrative_text", "") or "")
+        snapshot = ACTIVE_SESSION.get_state_snapshot(include_history=True, last_result=res)
         return snapshot, None, None
     except GenerationCancelled as exc:
         return None, 409, str(exc) or "Generation cancelled by user."
@@ -2967,161 +2752,24 @@ def execute_session_turn(
 
 
 def resolve_session_verbosity() -> str:
-    """Narrator verbosity for web turns: universe meta if set, else Settings.
-
-    Mirrors the desktop tabletop: a stored ``llm_verbosity`` on the active
-    universe wins; otherwise ``AppConfig.default_verbosity`` from settings.
-    """
-    cfg_default = get_default_verbosity()
-    if ACTIVE_SESSION is None:
-        return cfg_default
-    try:
-        with get_connection(ACTIVE_SESSION._db_path) as conn:
-            row = conn.execute(
-                "SELECT value FROM Universe_Meta WHERE key='llm_verbosity';"
-            ).fetchone()
-        stored = (row["value"] if row else "") or ""
-        stored = stored.strip()
-        if stored:
-            from core.localization import canonical_verbosity
-            return canonical_verbosity(stored, default=cfg_default)
-    except Exception:
-        pass
-    return cfg_default
+    """Narrator verbosity for web turns: universe meta if set, else Settings."""
+    if ACTIVE_SESSION is not None and hasattr(ACTIVE_SESSION, "resolve_verbosity"):
+        return ACTIVE_SESSION.resolve_verbosity()
+    from axiom.config import get_default_verbosity
+    return get_default_verbosity()
 
 
 def build_session_snapshot(include_history: bool = True) -> dict:
-    """Common response payload shared by every /api/session/* endpoint that
-    hands the client a fresh view of the active session (start, turn, rewind,
-    variant switch, edit, regenerate): stats, location, travel options,
-    formatted time, and (optionally) the full chat history.
-    """
-    from axiom.db_helpers import load_active_entities, load_definition_stats
-
-    stats = ACTIVE_SESSION.current_stats()
-    base = load_definition_stats(ACTIVE_SESSION._db_path)
-    for eid, base_stats in base.items():
-        merged = dict(base_stats)
-        merged.update(stats.get(eid, {}))
-        stats[eid] = merged
-    modifiers: list[dict] = []
-    try:
-        from axiom.events import resolve_stat_key
-        from axiom.textfmt import fmt_num
-        with get_connection(ACTIVE_SESSION._db_path) as conn:
-            for r in conn.execute(
-                "SELECT entity_id, stat_key, delta, minutes_remaining "
-                "FROM Active_Modifiers WHERE save_id = ? "
-                "ORDER BY entity_id, stat_key;",
-                (ACTIVE_SESSION._save_id,),
-            ):
-                modifiers.append({
-                    "entity_id": r["entity_id"],
-                    "stat_key": r["stat_key"],
-                    "delta": r["delta"],
-                    "minutes_remaining": r["minutes_remaining"],
-                })
-        for mod in modifiers:
-            eid = mod["entity_id"]
-            if eid not in stats:
-                continue
-            key = resolve_stat_key(mod["stat_key"], stats[eid])
-            try:
-                current = float(stats[eid].get(key, "0"))
-                stats[eid][key] = fmt_num(current + float(mod["delta"]))
-            except (TypeError, ValueError):
-                continue
-    except Exception:
-        modifiers = []
-    player_entity_id = resolve_player_entity_id(ACTIVE_SESSION)
-    player_stats = stats.get(player_entity_id) or stats.get("player") or {}
-    player_loc = player_stats.get("Location", "")
-    entities_meta = {e["entity_id"]: e for e in load_active_entities(ACTIVE_SESSION._db_path)}
-    entity_list = []
-    for eid, estats in stats.items():
-        meta = entities_meta.get(eid, {})
-        entity_list.append({
-            "entity_id": eid,
-            "name": meta.get("name") or eid,
-            "entity_type": meta.get("entity_type") or "",
-            "stats": estats,
-        })
-    entity_list.sort(key=lambda e: (0 if e["entity_id"] == player_entity_id else 1, e["name"]))
-
-    neighbors = []
-    if player_loc:
-        from axiom.db_helpers import get_spatial_context
-        spatial = get_spatial_context(ACTIVE_SESSION._db_path, player_loc)
-        if spatial and "connections" in spatial:
-            for n in spatial["connections"]:
-                neighbors.append({
-                    "location_id": n["location_id"],
-                    "name": n["name"],
-                    "distance_km": n["distance_km"]
-                })
-
-    time_val = get_current_time(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
-    from core.localization import format_time
-    time_formatted = format_time(get_time_system(ACTIVE_SESSION._db_path), time_val)
-
-    result = {
-        "turn_id": ACTIVE_SESSION.turn_id,
-        "current_stats": stats,
-        "entities": entity_list,
-        "player_entity_id": player_entity_id,
-        "verbosity": resolve_session_verbosity(),
-        "current_location": player_loc,
-        "spatial_neighbors": neighbors,
-        "time_formatted": time_formatted,
-        "lore_hits": getattr(ACTIVE_SESSION, "_last_lore_hits", []) or [],
-        "modifiers": modifiers,
-    }
-    if include_history:
-        # Raw turn_id-tagged events (mirrors workers/db_tasks.py::LoadSessionHistoryTask)
-        # rather than Session._load_history()'s role/content pairs: the client
-        # needs turn_id (+ variant metadata) per message to drive edit/
-        # regenerate/variant-nav controls, exactly like the Qt chat display.
-        with get_connection(ACTIVE_SESSION._db_path) as conn:
-            rows = conn.execute(
-                "SELECT turn_id, event_type, payload FROM Event_Log "
-                "WHERE save_id = ? AND event_type IN ('user_input', 'narrative_text', 'hero_intent') "
-                "ORDER BY event_id ASC;",
-                (ACTIVE_SESSION._save_id,)
-            ).fetchall()
-        result["history"] = [
-            {"turn_id": r["turn_id"], "event_type": r["event_type"], "payload": json.loads(r["payload"])}
-            for r in rows
-        ]
-        result["universe_name"] = ACTIVE_SESSION.universe.name
-        result["player_name"] = player_name_from_save(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
-        result["difficulty"] = ACTIVE_SESSION._mode
-        result["save_id"] = ACTIVE_SESSION._save_id
-        if ACTIVE_SESSION._mode == "Multiplayer":
-            try:
-                with get_connection(ACTIVE_SESSION._db_path) as conn:
-                    player_rows = conn.execute(
-                        "SELECT entity_id, name FROM Entities WHERE COALESCE(entity_role, entity_type) = 'player';"
-                    ).fetchall()
-                result["players"] = [{"entity_id": r["entity_id"], "name": r["name"]} for r in player_rows]
-            except Exception:
-                result["players"] = [{"entity_id": "player", "name": result["player_name"]}]
-    return result
+    """Common response payload shared by every /api/session/* endpoint."""
+    if ACTIVE_SESSION is None:
+        raise RuntimeError("No active session loaded")
+    return ACTIVE_SESSION.get_state_snapshot(include_history=include_history)
 
 
 def is_player_death_triggered(result) -> bool:
-    """Scan an ArbitratorResult's triggered rules for a Player_Death event.
-
-    Mirrors ui/tabletop_hardcore.py::HardcoreMixin._check_for_player_death's
-    detection (the deletion decision itself also needs the save's difficulty,
-    checked separately -- Hardcore only).
-    """
-    triggered = getattr(result, "triggered_rules", None) or []
-    return any(
-        isinstance(action, dict)
-        and action.get("type") == "trigger_event"
-        and "player_death" in str(action.get("event", "")).lower()
-        for action in triggered
-    )
+    """Scan an ArbitratorResult's triggered rules for a Player_Death event."""
+    from axiom.session import is_player_death_triggered as _death_check
+    return _death_check(result)
 
 
 def perform_hardcore_deletion(db_path: str, save_id: str) -> bool:
@@ -3193,10 +2841,13 @@ def run_server(port=8000):
         server.shutdown()
 
 if __name__ == "__main__":
+    if "--safe-mode" in sys.argv:
+        from axiom.kernel.loader import set_safe_mode
+        set_safe_mode(True)
+        print("Axiom AI Safe Mode active: third-party mods disabled.")
     port = 8000
-    if len(sys.argv) > 1:
-        try:
-            port = int(sys.argv[1])
-        except ValueError:
-            pass
+    for arg in sys.argv[1:]:
+        if arg.isdigit():
+            port = int(arg)
+            break
     run_server(port)

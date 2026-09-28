@@ -1,0 +1,23 @@
+[mod]
+id = "axiom.rag"
+version = "1.0.0"
+axiom_api = 1
+name = "Mémoire Vectorielle (RAG)"
+description = "Indexation et recherche sémantique par embeddings vectoriels dans ChromaDB."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["vector_memory"]
+
+[contributes]
+hooks = [
+    "axiom.step:after_step"
+]
+slots = [
+    "axiom.turn:prompt_sections"
+]
+
+[storage]
+vector_store = { policy = "custom" }

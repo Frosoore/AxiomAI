@@ -1,0 +1,13 @@
+[mod]
+id = "community.survival"
+version = "0.1.0"
+axiom_api = 1
+name = "Survival"
+description = "Survival extension mod for Axiom AI."
+author = "Axiom Community"
+
+[contributes]
+hooks = [
+    "axiom.turn:gather_context",
+    "axiom.turn:after_step"
+]

@@ -1,0 +1,33 @@
+# TODO — Phase 5: Store, Dependencies, Licensing & Distribution
+
+- [x] Remote Store Protocol Specification (`axiom/kernel/store.py`)
+  - [x] Data model `StoreModEntry` (id, version, axiom_api, sha256, download_url, python_requires, dependencies, tags)
+  - [x] Streaming SHA-256 calculation (`calculate_sha256`) in 64 KB chunks
+  - [x] Index fetching (`fetch_store_index`) supporting HTTP/HTTPS URLs and local filesystem paths
+  - [x] Case-insensitive full-text search and tag filtering (`search_store`)
+  - [x] Secure download and integrity verification (`install_mod_from_store`) raising `ModIntegrityError` on hash mismatch
+  - [x] Specification publisher (`publish_mod_to_store_spec`) for `.axmod` archives
+  - [x] Official reference catalog generated at `dist/mods/store_index.json`
+- [x] Declarative Lightweight Python Dependencies (Rule D-7)
+  - [x] Manifest table `[python].requires = [...]` in `mod.toml`
+  - [x] Static verification module `axiom/kernel/dependencies.py` via `importlib.metadata` and `packaging.specifiers`
+  - [x] Graceful skip and informative warning in loader (`axiom/kernel/loader.py`) without blocking or crashing
+- [x] Legal Boundary and Mod Licensing (Rule D-9 & §14)
+  - [x] Reference document `docs/licensing_mods.md`
+  - [x] Permissive Section 7(b) AGPLv3 boundary for third-party mods using public APIs
+  - [x] Monkeypatching reciprocity requirements clarified
+  - [x] Updated legal `NOTICE` file with Section 7(b) extensibility terms
+- [x] Headless PyPI Packaging (`axiomai-engine`) (Rule D-8)
+  - [x] Engine version bumped to `1.0.0` in `axiom/__init__.py`
+  - [x] Export script `export_engine.py` sanitization: exclusion of `mods/`, `web/`, `ui/`, `workers/`, `universes/`
+  - [x] Forbidden import regular expressions updated with `mods` and `web`
+  - [x] Headless check passes cleanly (`check_headless`)
+- [x] CLI Subcommands (`axiom/cli/mods_cmd.py`)
+  - [x] `axiom mods search [query] [--tag <tag>] [--index <url>]`
+  - [x] `axiom mods install <mod_id> [--index <url>] [--dir <path>]`
+  - [x] `axiom mods update [--index <url>]`
+- [x] Web API Endpoints (`main_web.py`)
+  - [x] `GET /api/store/search`
+  - [x] `POST /api/store/install`
+- [x] Dedicated Test Suite (`tests/test_mod_store_and_packaging.py`)
+  - [x] 9/9 tests passing (100% green)

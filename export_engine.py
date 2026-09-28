@@ -44,25 +44,26 @@ DEFAULT_DEST = REPO_ROOT / "dist" / "axiomai-engine"
 
 _VERSION_RE = re.compile(r'^__version__\s*=\s*"(\d+)\.(\d+)\.(\d+)"[ \t]*$', re.MULTILINE)
 
-# Imports interdits dans le moteur (= dépendances vers l'app Qt ou le reste du repo).
+# Imports interdits dans le moteur (= dépendances vers l'app Qt, l'interface web ou les mods de jeu).
 _FORBIDDEN_IMPORT_RE = re.compile(
-    r"^\s*(?:from|import)\s+(PySide6|PyQt[456]?|ui|workers|core|database)\b",
+    r"^\s*(?:from|import)\s+(PySide6|PyQt[456]?|ui|workers|core|database|mods|web)\b",
     re.MULTILINE,
 )
 
 _README_TEMPLATE = """\
 # axiomai-engine
 
-LLM-driven narrative game engine, **headless** (no GUI required).
+Modular, headless LLM-driven narrative game engine (zero GUI dependency).
 
-- Persistent SQLite universes, versionable as a plain-text tree ("Universe-as-Code")
-- LLM-arbitrated narration (Gemini, Ollama, or any OpenAI-compatible endpoint)
-- Event sourcing: every turn is replayable, in-game time can be *rewound* (`rewind`)
-- Long-term vector memory (ChromaDB + sentence-transformers)
-- Game modes: Normal, Hardcore (permadeath), Companion (AI co-piloted hero)
-- Full CLI: `axiom play`, `axiom compile`, `axiom populate`, `axiom save-*` …
+- **Modular Micro-Kernel**: Extensible via community and official `.axmod` mods (`axiom.kernel`)
+- **Persistent SQLite Universes**: Versionable as a plain-text tree ("Universe-as-Code")
+- **Pluggable AI Backends**: LLM-arbitrated narration (Gemini, Ollama, OpenAI-compatible)
+- **Deterministic Event Sourcing**: Every turn is replayable, in-game time can be rewound (`rewind`)
+- **Decentralized Mod Store**: Cryptographic SHA-256 verification, dynamic hooks and extension slots
+- **Full Headless CLI**: `axiom play`, `axiom compile`, `axiom mod *`, `axiom save-*` …
 
 ## Installation
+
 
 ```bash
 pip install axiomai-engine

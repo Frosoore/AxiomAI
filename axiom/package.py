@@ -89,22 +89,6 @@ def pack_universe(src_dir: str | Path, output_path: str | Path) -> Path:
     return output_path
 
 
-# Tables runtime purgées du cache embarqué dans une archive (l'ordre respecte
-# les FK : enfants d'abord, Saves en dernier).
-_RUNTIME_TABLES = (
-    "Fired_Scheduled_Events",
-    "Active_Modifiers",
-    "Items_Inventory",
-    "Timeline",
-    "Snapshots",
-    "Modifier_Snapshots",
-    "Inventory_Snapshots",
-    "State_Cache",
-    "Event_Log",
-    "Saves",
-)
-
-
 def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
     """Copie du cache compilé sans aucune donnée runtime (définition seule).
 
@@ -113,6 +97,7 @@ def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
     """
     import shutil
     from contextlib import closing
+    from axiom.storage_registry import get_runtime_tables
 
     clean = tmp_dir / CACHE_DB_NAME
     shutil.copyfile(cache_db, clean)
@@ -122,7 +107,7 @@ def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
 
     with closing(sqlite3.connect(str(clean))) as conn:
         conn.execute("PRAGMA foreign_keys=OFF;")
-        for table in _RUNTIME_TABLES:
+        for table in get_runtime_tables():
             row = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (table,)
             ).fetchone()

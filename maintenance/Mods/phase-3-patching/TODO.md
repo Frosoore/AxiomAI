@@ -1,0 +1,27 @@
+# TODO — Phase 3 : Le Système de Patches Outillés
+
+- [x] Moteur de Trampolines & Gestionnaire de Patches (`axiom/kernel/patcher.py`)
+  - [x] Enum `PatchType` (`BEFORE`, `AFTER`, `AROUND`)
+  - [x] Structure `PatchRecord` (mod_id, target_name, patch_type, handler, priority)
+  - [x] Sentinelle `ShortCircuit` pour court-circuiter l'exécution depuis un patch `BEFORE`
+  - [x] Décorateur `@patchable(target_name)` créant un trampoline stable et immuable
+  - [x] Mécanisme de secours par substitution de bytecode (`__code__` swapping) pour les fonctions non décorées
+  - [x] Préservation stricte de l'identité des objets fonctions en mémoire (`id(func)` inchangé pour les imports `from module import func`)
+  - [x] Gel par Step (§6.2.3) : verrou `_execution_locked` et context manager `step_patch_freeze()` levant `PatchingDuringStepError` en cas de mutation dynamique pendant un tour
+- [x] Intégration dans `ModContext` (`axiom/kernel/context.py`)
+  - [x] Méthode `ctx.patch(target, patch_type, handler, priority=100)`
+  - [x] Dépilement automatique et restauration complète des fonctions lors de `ctx.cleanup()` (Règle D11)
+- [x] Intégration dans le Pipeline de Tour (`mods/axiom.turn/main.py`)
+  - [x] Verrouillage du patch stack via `step_patch_freeze()` pendant `on_execute_step`
+  - [x] Repackaging de `dist/mods/axiom.turn.axmod`
+- [x] Commandes CLI dans le Noyau (`axiom/cli/mods_cmd.py`)
+  - [x] `axiom mods patches` : affichage du tableau des patches actifs ou déclarés (Règle D13)
+  - [x] `axiom mod validate <path>` : validation statique de manifestes et résolution des cibles de patches déclarées
+- [x] Suite de tests dédiée (`tests/test_patching_system.py`)
+  - [x] Test des 3 modes `BEFORE`, `AFTER`, `AROUND` avec `ShortCircuit`
+  - [x] Test du swapping de bytecode préservant les références importées
+  - [x] Test de la réversibilité absolue via `ctx.cleanup()` sans résidu
+  - [x] Test de l'empilement ordonné multi-mods selon la priorité
+  - [x] Test de la levée de `PatchingDuringStepError` en cas de patch au milieu d'un tour
+  - [x] Test des commandes CLI `patches` et `validate`
+  - [x] 100% au vert sur l'ensemble des suites (57/57 tests passants)

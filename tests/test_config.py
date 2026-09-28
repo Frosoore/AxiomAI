@@ -143,6 +143,27 @@ class TestSaveConfig:
         loaded = load_config()
         assert loaded.universal_model == "llama3.2"
 
+    def test_mod_settings_round_trip_and_preservation(self, config_dir) -> None:
+        """mod_settings open dictionary is serialized, saved, and loaded without truncation."""
+        custom_mod_data = {
+            "comm.hunger": {"decay_rate": 1.5, "enabled": True, "nested": {"param": [1, 2, 3]}},
+            "core.weather": {"current": "stormy"},
+        }
+        cfg = AppConfig(mod_settings=custom_mod_data)
+        save_config(cfg)
+        loaded = load_config()
+        assert loaded.mod_settings == custom_mod_data
+
+    def test_legacy_mods_alias_mapped_to_mod_settings(self, config_dir) -> None:
+        """A settings.json containing 'mods' section maps seamlessly into mod_settings."""
+        _, config_file = config_dir
+        raw = {
+            "mods": {"comm.test": {"active": True}}
+        }
+        config_file.write_text(json.dumps(raw))
+        loaded = load_config()
+        assert loaded.mod_settings == {"comm.test": {"active": True}}
+
 
 # ---------------------------------------------------------------------------
 # build_llm_from_config

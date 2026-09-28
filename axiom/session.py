@@ -28,7 +28,6 @@ from axiom.backends.base import LLMBackend, LLMMessage
 from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
 from axiom.logger import logger
-from axiom.memory import VectorMemory
 from axiom.prompts import HISTORY_TURN_CAP
 from axiom.universe import Universe
 from axiom.db_helpers import (
@@ -64,6 +63,24 @@ def _emit(callback: Callable[[str], None] | None, message: str) -> None:
         callback(message)
 
 
+def is_player_death_triggered(result: Any) -> bool:
+    """Scan an ArbitratorResult's triggered rules for a Player_Death event."""
+    triggered = getattr(result, "triggered_rules", None) or []
+    for item in triggered:
+        if isinstance(item, dict):
+            if item.get("type") == "trigger_event" and "player_death" in str(item.get("event", "")).lower():
+                return True
+            if item.get("action_type") == "player_death":
+                return True
+            for action in item.get("actions", []):
+                if isinstance(action, dict):
+                    if action.get("type") == "trigger_event" and "player_death" in str(action.get("event", "")).lower():
+                        return True
+                    if action.get("action_type") == "player_death":
+                        return True
+    return False
+
+
 class Session:
     """High-level wrapper to play one save of a universe.
 
@@ -87,12 +104,13 @@ class Session:
         universe_path: str | Path,
         save_id: str,
         *,
-        llm: LLMBackend,
-        vector_memory: VectorMemory | None = None,
+        llm: LLMBackend | None = None,
+        vector_memory: Any | None = None,
         data_dir: str | Path | None = None,
         mode: str = "Normal",
         hero_llm: LLMBackend | None = None,
         time_llm: LLMBackend | None = None,
+        kernel_registry: Any | None = None,
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
@@ -100,7 +118,6 @@ class Session:
             from axiom.schema import migrate_schema
             migrate_schema(self._db_path)
         except Exception:
-            from axiom.logger import logger
             logger.exception(
                 "Schema migrate failed opening %s; session continues", self._db_path
             )
@@ -109,7 +126,7 @@ class Session:
         # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
         # mirroring how the Companion hero backend is resolved. Falls back to the
         # main narration backend if config/backend construction fails (TICKET-016).
-        self._time_llm = time_llm if time_llm else self._resolve_time_llm(llm)
+        self._time_llm = time_llm if time_llm else (self._resolve_time_llm(llm) if llm else None)
         self._mode = mode
         self._hero_llm = hero_llm
         self._entities: list[dict] | None = None
@@ -132,25 +149,88 @@ class Session:
             data_root = paths._data_root()
         self._data_root = data_root
 
+        if kernel_registry is None:
+            from axiom.kernel import KernelRegistry
+            kernel_registry = KernelRegistry()
+            from axiom.kernel.loader import load_mod
+            from axiom.config import load_config
+            cfg = load_config()
+            mods_dir = Path("mods")
+            if mods_dir.is_dir():
+                for mod_name in [
+                    "axiom.world",
+                    "axiom.turn",
+                    "core.stat_dynamics",
+                    "axiom.time",
+                    "axiom.inventory",
+                    "axiom.rag",
+                    "axiom.living_memory",
+                    "axiom.providers",
+                    "axiom.illustrations",
+                    "axiom.ui.web",
+                    "axiom.ui.qt",
+                    "axiom.cli",
+                ]:
+                    p = mods_dir / mod_name
+                    if p.is_dir():
+                        try:
+                            load_mod(p, kernel_registry, config=cfg)
+                        except Exception:
+                            logger.debug("Auto-load of mod '%s' skipped", mod_name, exc_info=True)
+        self._kernel_registry = kernel_registry
+
+        if self._llm is None and self._kernel_registry is not None:
+            backend_slot = self._kernel_registry.get_slot("axiom.turn:llm_backend")
+            if callable(backend_slot):
+                try:
+                    self._llm = backend_slot()
+                except Exception:
+                    self._llm = None
+            elif backend_slot is not None:
+                self._llm = backend_slot
+            if self._llm is None:
+                prov_svc = self._kernel_registry.get_service("providers")
+                if prov_svc is not None and hasattr(prov_svc, "get_backend"):
+                    try:
+                        self._llm = prov_svc.get_backend()
+                    except Exception:
+                        self._llm = None
+
+        if self._time_llm is None and self._llm is not None:
+            self._time_llm = self._resolve_time_llm(self._llm)
+
         if vector_memory is None:
-            # Optional cross-encoder reranker, opt-in via config (default OFF).
-            # Self-disables to a no-op if its model can't load; config failure
-            # must never break session construction.
-            reranker = None
-            try:
-                from axiom.config import load_config
-                if load_config().memory_reranker_enabled:
-                    from axiom.retrieval import CrossEncoderReranker
-                    reranker = CrossEncoderReranker()
-            except Exception:
+            if self._kernel_registry is not None:
+                rag_svc = self._kernel_registry.get_service("rag")
+                if rag_svc is not None and hasattr(rag_svc, "get_vector_memory"):
+                    try:
+                        vector_memory = rag_svc.get_vector_memory(save_id, base_dir=vector_base)
+                    except TypeError:
+                        try:
+                            vector_memory = rag_svc.get_vector_memory(save_id)
+                        except Exception:
+                            vector_memory = None
+                    except Exception:
+                        vector_memory = None
+            if vector_memory is None:
                 reranker = None
-            vector_memory = VectorMemory(
-                persist_dir=str(vector_base / save_id), reranker=reranker
-            )
+                try:
+                    from axiom.config import load_config
+                    if load_config().memory_reranker_enabled:
+                        from axiom.retrieval import CrossEncoderReranker
+                        reranker = CrossEncoderReranker()
+                except Exception:
+                    reranker = None
+                try:
+                    from axiom.memory import VectorMemory
+                    vector_memory = VectorMemory(
+                        persist_dir=str(vector_base / save_id), reranker=reranker
+                    )
+                except Exception:
+                    vector_memory = None
         self._vector_memory = vector_memory
 
-        rules = load_rules_for_session(self._db_path)
-        self._arbitrator = ArbitratorEngine(self._db_path, rules)
+        self._arbitrator: Any | None = None
         try:
             from axiom.stat_dynamics import ensure_stat_dynamics
             ensure_stat_dynamics(self._db_path, llm)
@@ -161,6 +241,17 @@ class Session:
         self._turn_id = get_max_turn_id(self._db_path, save_id)
         self._intent_pool: dict[str, str] = {}
         self._entity_names: dict[str, str] | None = None
+        self._last_lore_hits: list[dict] = []
+        self._last_game_state_tag: str = "exploration"
+        self._living_memory = None
+        if self._kernel_registry is None:
+            try:
+                from axiom.living_memory import get_living_memory_accumulator
+                self._living_memory = get_living_memory_accumulator()
+            except Exception:
+                self._living_memory = None
+        from axiom.epoch import get_session_epoch_manager
+        self._epoch_manager = get_session_epoch_manager(save_id)
 
     @staticmethod
     def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
@@ -183,9 +274,29 @@ class Session:
     # ------------------------------------------------------------------
 
     @property
+    def epoch(self) -> int:
+        """Current epoch number for the session."""
+        return self._epoch_manager.current
+
+    @epoch.setter
+    def epoch(self, val: int) -> None:
+        self._epoch_manager.set_epoch(val)
+
+    @property
     def turn_id(self) -> int:
         """Number of the last played turn (0 if the game has not started)."""
         return self._turn_id
+
+    @property
+    def kernel_registry(self) -> Any | None:
+        """Central registry for mod hooks and slots."""
+        return self._kernel_registry
+
+    @kernel_registry.setter
+    def kernel_registry(self, reg: Any | None) -> None:
+        self._kernel_registry = reg
+        if hasattr(self, "_arbitrator") and self._arbitrator is not None:
+            self._arbitrator.kernel_registry = reg
 
     def submit_intent(self, entity_id: str, intent_text: str) -> None:
         """Submit an action intent to the pool for the current turn."""
@@ -202,55 +313,60 @@ class Session:
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
         """Resolve every intent currently in the pool as a single tick."""
-        self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
+        if self._arbitrator is not None:
+            self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
-        history = self._load_history()
-        
-        self._turn_id += 1
-        
-        # Capture the current pool and clear it for the next turn
+
+        # Capture current pool and step turn_id
+        old_turn_id = self._turn_id
         intents = dict(self._intent_pool)
         self._intent_pool.clear()
+        self._turn_id += 1
 
-        result = self._arbitrator.process_turn(
-            save_id=self._save_id,
-            turn_id=self._turn_id,
-            intents=intents,
-            universe_system_prompt=self._system_prompt,
-            history=history,
-            stream_token_callback=on_token,
-            temperature=temperature,
-            top_p=top_p,
-            verbosity_level=verbosity_level,
-            mode=self._mode,
-            hero_entity_id=hero_entity_id,
-        )
-        
-        from axiom.db_helpers import get_current_time
-        from axiom.config import load_config
-        from axiom.chronicler import ChroniclerEngine
-        cfg = load_config()
+        try:
+            if not self.kernel_registry or not self.kernel_registry.has_hook("axiom.kernel:execute_step"):
+                from axiom.kernel import NoTurnPipelineInstalledError
+                raise NoTurnPipelineInstalledError(
+                    "No turn pipeline installed. Ensure 'axiom.turn' mod is loaded."
+                )
 
-        current_time = get_current_time(self._db_path, self._save_id)
-        previous_time = max(0, current_time - result.elapsed_minutes)
-        chronicler = ChroniclerEngine(
-            llm=self._llm,
-            event_sourcer=self._events,
-            db_path=self._db_path,
-            trigger_interval=cfg.chronicler_minutes_interval,
-        )
-        if chronicler.should_trigger(current_time, previous_time):
-            _emit(on_status, "Simulating off-screen world...")
-            chronicler.run(self._save_id, self._turn_id)
-            # Le Chronicler appose des events `chronicler_update` ; on rematérialise
-            # State_Cache pour que ses changements de monde prennent effet (TICKET-006).
-            self._events.rebuild_state_cache(self._save_id)
-            self._arbitrator.invalidate_stats_cache()
+            from axiom.kernel import KernelStepContext
+            step_context = KernelStepContext(
+                save_id=self._save_id,
+                step=self._turn_id,
+                input=" ".join(intents.values()),
+                db_path=self._db_path,
+                epoch=self.epoch,
+                llm=self._llm,
+                time_llm=self._time_llm,
+                vector_memory=self._vector_memory,
+                stream_token_callback=on_token,
+                temperature=temperature,
+                top_p=top_p,
+                verbosity_level=verbosity_level,
+                mode=self._mode,
+                hero_entity_id=hero_entity_id,
+                intents=intents,
+                auto_commit=False,
+                session=self,
+            )
+            self.kernel_registry.execute_hook("axiom.kernel:execute_step", step_context)
+            result = step_context.result
+            if result is None:
+                raise RuntimeError("Turn pipeline mod returned no result.")
+        except Exception:
+            self._turn_id = old_turn_id
+            self._intent_pool.update(intents)
+            raise
 
-        # Periodic snapshot so rebuild_state_cache / rewind start from a recent
-        # state instead of replaying from turn 0 (no per-turn snapshot existed
-        # before — take_snapshot_async was never wired). Best-effort: a failed
-        # snapshot must never break a turn.
+        # Atomic commit of all turn mutations in a single SQLite transaction
+        if getattr(result, "batch", None) is not None:
+            from axiom.schema import get_connection
+            with get_connection(self._db_path) as conn:
+                result.batch.commit_all(conn, self._save_id, self._turn_id)
+
+
+        # Periodic snapshot
         if self._turn_id > 0 and self._turn_id % _SNAPSHOT_INTERVAL_TURNS == 0:
             try:
                 self._events.take_snapshot(self._save_id, self._turn_id)
@@ -258,76 +374,8 @@ class Session:
                 from axiom import logger
                 logger.warning(f"Periodic snapshot failed at turn {self._turn_id}: {snap_err}")
 
-        # Contextual image generation
-        if cfg.image_generation_enabled:
-            _emit(on_status, IMAGE_GEN_STATUS)
-            try:
-                from axiom.image_generator import ImageGenerator
-                img_gen = ImageGenerator(cfg, llm=self._llm)
-                
-                # Retrieve player location and contextual descriptions.
-                # The real player entity id is name-derived (TICKET-043): resolve
-                # it from this tick's intents like the Arbitrator does, never
-                # assume a literal "player" id.
-                player_entity_id = next(
-                    (aid for aid in intents if aid != hero_entity_id), "player"
-                )
-                entities = self._get_entities()
-                all_stats = self._read_state_cache()
-                player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
-                
-                spatial_ctx = None
-                if player_loc:
-                    from axiom.db_helpers import get_spatial_context
-                    spatial_ctx = get_spatial_context(self._db_path, player_loc)
-                
-                location_desc = ""
-                if player_loc and spatial_ctx:
-                    location_desc = spatial_ctx.get("description", "")
-                    
-                character_desc_list = []
-                for e in entities:
-                    eid = e["entity_id"]
-                    if eid == player_entity_id:
-                        continue
-                    entity_loc = all_stats.get(eid, {}).get("Location", "")
-                    if entity_loc and entity_loc.lower() == player_loc.lower():
-                        name = e.get("name", eid)
-                        desc = e.get("description", "")
-                        if desc:
-                            character_desc_list.append(f"{name}: {desc}")
-                character_desc = "\n".join(character_desc_list)
-                
-                # Generate visual prompt from context
-                visual_prompt = img_gen.generate_prompt(
-                    narrative_text=result.narrative_text,
-                    location_desc=location_desc,
-                    character_desc=character_desc,
-                    game_state_tag=result.game_state_tag,
-                )
-                
-                # Generate and save the image
-                assets_dir = self._data_root / "assets" / self._save_id
-                filename = f"turn_{self._turn_id}.png"
-                image_path = img_gen.generate_image(visual_prompt, assets_dir, filename)
-                result.image_path = image_path
-            except Exception as img_err:
-                from axiom import logger
-                logger.warning(f"Contextual image generation failed: {img_err}")
-
-        # Update last_updated in Saves table to current UTC time
-        try:
-            from datetime import datetime, timezone
-            from axiom.schema import get_connection
-            now_utc = datetime.now(timezone.utc).isoformat()
-            with get_connection(self._db_path) as conn:
-                conn.execute(
-                    "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
-                    (now_utc, self._save_id)
-                )
-                conn.commit()
-        except Exception as db_err:
-            logger.warning(f"Failed to update last_updated for save {self._save_id}: {db_err}")
+        # Centralized post-turn pipeline (metadata, living memory, ambiance)
+        self._post_turn_pipeline(result)
 
         _emit(on_status, "Ready.")
         return result
@@ -411,8 +459,10 @@ class Session:
         Invalidates the Arbitrator's stats cache and resynchronises `turn_id`.
         Returns the summary provided by `CheckpointManager.rewind`.
         """
+        self._epoch_manager.bump()
         summary = self._checkpoints.rewind(self._save_id, target_turn_id)
-        self._arbitrator.invalidate_stats_cache()
+        if self._arbitrator is not None:
+            self._arbitrator.invalidate_stats_cache()
         self._entity_names = None
         self._turn_id = get_max_turn_id(self._db_path, self._save_id)
         # Les illustrations des tours annulés ne doivent pas réapparaître si on
@@ -435,6 +485,33 @@ class Session:
             logger.warning(f"Failed to update last_updated on rewind for save {self._save_id}: {db_err}")
 
         return summary
+
+    def load(self, save_id: str) -> None:
+        """Switch session to a different save, incrementing session epoch."""
+        self._epoch_manager.bump()
+        self._save_id = save_id
+        from axiom.epoch import get_session_epoch_manager
+        self._epoch_manager = get_session_epoch_manager(self._save_id)
+        self._epoch_manager.bump()
+        self._turn_id = get_max_turn_id(self._db_path, save_id)
+        if self._arbitrator is not None:
+            self._arbitrator.invalidate_stats_cache()
+        self._entity_names = None
+        self._intent_pool.clear()
+
+    def fork(self, player_name: str | None = None, at_turn: int | None = None, **kwargs) -> str:
+        """Fork save at current or specified turn, incrementing session epoch."""
+        self._epoch_manager.bump()
+        from axiom.saves import fork_save
+        target_turn = at_turn if at_turn is not None else self._turn_id
+        name = player_name or kwargs.pop("new_save_name", None)
+        return fork_save(
+            self._db_path,
+            self._save_id,
+            at_turn=target_turn,
+            player_name=name,
+            **kwargs,
+        )
 
     def list_checkpoints(self) -> list[int]:
         """List the turns for which a checkpoint (snapshot) exists."""
@@ -524,6 +601,319 @@ class Session:
         """
         self._events.rebuild_state_cache(self._save_id)
         return self._read_state_cache()
+
+    def _post_turn_pipeline(self, result: ArbitratorResult) -> None:
+        """Centralized post-turn pipeline for all frontends (GUI, Web, CLI).
+
+        1. Mise à jour de l'historique et des métadonnées (last_updated, last_lore_hits, game_state_tag).
+        2. Déclenchement conditionnel de la living memory (si activée dans AppConfig).
+        3. Émission des métadonnées d'ambiance et de tag.
+        """
+        # 1. Mise à jour de l'historique et des métadonnées
+        self._last_lore_hits = getattr(result, "lore_hits", None) or []
+        self._last_game_state_tag = getattr(result, "game_state_tag", None) or "exploration"
+
+        try:
+            from datetime import datetime, timezone
+            from axiom.schema import get_connection
+            now_utc = datetime.now(timezone.utc).isoformat()
+            with get_connection(self._db_path) as conn:
+                conn.execute(
+                    "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
+                    (now_utc, self._save_id),
+                )
+                conn.commit()
+        except Exception as db_err:
+            logger.warning(f"Failed to update last_updated for save {self._save_id}: {db_err}")
+
+        # 2. Déclenchement conditionnel de la living memory (si activée dans AppConfig)
+        try:
+            lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
+            if lm_svc is None and self._living_memory is not None:
+                narrative = getattr(result, "narrative_text", "") or ""
+                self._living_memory.record_turn(
+                    self._db_path,
+                    self._save_id,
+                    self._turn_id,
+                    narrative,
+                    llm=self._llm,
+                    epoch=self.epoch,
+                    epoch_checker=lambda: self.epoch,
+                )
+        except Exception as lm_err:
+            logger.warning(f"Living memory accumulation failed: {lm_err}")
+
+        # 3. Émission des métadonnées d'ambiance et de tag
+        if hasattr(result, "game_state_tag") and not result.game_state_tag:
+            result.game_state_tag = self._last_game_state_tag
+
+    def resolve_player_entity_id(self) -> str:
+        """Resolve the primary player entity ID for this session."""
+        try:
+            from axiom.schema import get_connection
+            with get_connection(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT entity_id FROM Entities "
+                    "WHERE COALESCE(entity_role, entity_type) = 'player' AND is_active = 1 LIMIT 1;"
+                ).fetchone()
+                if row and row[0]:
+                    return str(row[0])
+        except Exception:
+            logger.warning("Could not resolve player entity id", exc_info=True)
+        return "player"
+
+    def resolve_verbosity(self) -> str:
+        """Narrator verbosity for this session: universe meta if set, else Settings."""
+        from axiom.config import get_default_verbosity
+        cfg_default = get_default_verbosity()
+        try:
+            from axiom.schema import get_connection
+            with get_connection(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT value FROM Universe_Meta WHERE key = 'llm_verbosity';"
+                ).fetchone()
+                if row and row[0]:
+                    val = str(row[0]).strip().lower()
+                    if val in ("short", "balanced", "talkative"):
+                        return val
+        except Exception:
+            pass
+        return cfg_default
+
+    def get_state_snapshot(
+        self,
+        include_history: bool = True,
+        last_result: ArbitratorResult | None = None,
+    ) -> dict[str, Any]:
+        """Serialize full session state for presentation layers (Web, GUI, CLI)."""
+        import json
+        from axiom.db_helpers import load_active_entities, load_definition_stats, get_current_time
+        from axiom.schema import get_connection
+        from axiom.events import resolve_stat_key
+        from axiom.textfmt import fmt_num
+
+        stats = self.current_stats()
+        base = load_definition_stats(self._db_path)
+        for eid, base_stats in base.items():
+            merged = dict(base_stats)
+            merged.update(stats.get(eid, {}))
+            stats[eid] = merged
+
+        modifiers: list[dict] = []
+        try:
+            with get_connection(self._db_path) as conn:
+                for r in conn.execute(
+                    "SELECT entity_id, stat_key, delta, minutes_remaining "
+                    "FROM Active_Modifiers WHERE save_id = ? "
+                    "ORDER BY entity_id, stat_key;",
+                    (self._save_id,),
+                ):
+                    modifiers.append({
+                        "entity_id": r["entity_id"],
+                        "stat_key": r["stat_key"],
+                        "delta": r["delta"],
+                        "minutes_remaining": r["minutes_remaining"],
+                    })
+            for mod in modifiers:
+                eid = mod["entity_id"]
+                if eid not in stats:
+                    continue
+                key = resolve_stat_key(mod["stat_key"], stats[eid])
+                try:
+                    current = float(stats[eid].get(key, "0"))
+                    stats[eid][key] = fmt_num(current + float(mod["delta"]))
+                except (TypeError, ValueError):
+                    continue
+        except Exception:
+            modifiers = []
+
+        player_entity_id = self.resolve_player_entity_id()
+        player_stats = stats.get(player_entity_id) or stats.get("player") or {}
+        player_loc = player_stats.get("Location", "")
+
+        entities_meta = {e["entity_id"]: e for e in load_active_entities(self._db_path)}
+        entity_list = []
+        for eid, estats in stats.items():
+            meta = entities_meta.get(eid, {})
+            entity_list.append({
+                "entity_id": eid,
+                "name": meta.get("name") or eid,
+                "entity_type": meta.get("entity_type") or "",
+                "stats": estats,
+            })
+        entity_list.sort(key=lambda e: (0 if e["entity_id"] == player_entity_id else 1, e["name"]))
+
+        neighbors = []
+        if player_loc:
+            from axiom.db_helpers import get_spatial_context
+            spatial = get_spatial_context(self._db_path, player_loc)
+            if spatial and "connections" in spatial:
+                for n in spatial["connections"]:
+                    neighbors.append({
+                        "location_id": n["location_id"],
+                        "name": n["name"],
+                        "distance_km": n["distance_km"],
+                    })
+
+        time_service = self.kernel_registry.get_service("time") if self.kernel_registry else None
+        if time_service and hasattr(time_service, "format_time"):
+            time_val = getattr(time_service, "get_current_time", lambda db, s: 0)(self._db_path, self._save_id)
+            time_formatted = time_service.format_time(self._db_path, time_val)
+        else:
+            from axiom.db_helpers import get_current_time
+            time_val = get_current_time(self._db_path, self._save_id)
+            time_formatted = str(time_val)
+
+        snapshot: dict[str, Any] = {
+            "turn_id": self._turn_id,
+            "current_stats": stats,
+            "entities": entity_list,
+            "player_entity_id": player_entity_id,
+            "verbosity": self.resolve_verbosity(),
+            "current_location": player_loc,
+            "spatial_neighbors": neighbors,
+            "time_formatted": time_formatted,
+            "lore_hits": getattr(self, "_last_lore_hits", []) or [],
+            "modifiers": modifiers,
+        }
+
+        if last_result is not None:
+            snapshot["narrative_text"] = getattr(last_result, "narrative_text", "")
+            snapshot["image_path"] = last_result.image_path.name if getattr(last_result, "image_path", None) else None
+            snapshot["game_state_tag"] = getattr(last_result, "game_state_tag", "exploration")
+            snapshot["hardcore_death"] = (
+                self._mode == "Hardcore" and is_player_death_triggered(last_result)
+            )
+            snapshot["rejected_changes"] = getattr(last_result, "rejected_changes", None) or []
+            snapshot["inventory_changes"] = getattr(last_result, "inventory_changes", None) or []
+            snapshot["lore_hits"] = getattr(last_result, "lore_hits", None) or []
+
+        if include_history:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute(
+                    "SELECT turn_id, event_type, payload FROM Event_Log "
+                    "WHERE save_id = ? AND event_type IN ('user_input', 'narrative_text', 'hero_intent') "
+                    "ORDER BY event_id ASC;",
+                    (self._save_id,),
+                ).fetchall()
+            snapshot["history"] = [
+                {
+                    "turn_id": r["turn_id"],
+                    "event_type": r["event_type"],
+                    "payload": json.loads(r["payload"]) if isinstance(r["payload"], str) else r["payload"],
+                }
+                for r in rows
+            ]
+            snapshot["universe_name"] = self.universe.name
+            player_name = ""
+            with get_connection(self._db_path) as conn:
+                row = conn.execute("SELECT player_name FROM Saves WHERE save_id = ?;", (self._save_id,)).fetchone()
+                if row:
+                    player_name = row[0]
+            snapshot["player_name"] = player_name
+            snapshot["difficulty"] = self._mode
+            snapshot["save_id"] = self._save_id
+            if self._mode == "Multiplayer":
+                try:
+                    with get_connection(self._db_path) as conn:
+                        player_rows = conn.execute(
+                            "SELECT entity_id, name FROM Entities WHERE COALESCE(entity_role, entity_type) = 'player';"
+                        ).fetchall()
+                    snapshot["players"] = [{"entity_id": r["entity_id"], "name": r["name"]} for r in player_rows]
+                except Exception:
+                    snapshot["players"] = [{"entity_id": "player", "name": player_name}]
+
+        return snapshot
+
+    def get_memory_snapshot(self) -> dict[str, Any]:
+        """Facts + beliefs + mental models for this session."""
+        lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
+        if lm_svc is not None:
+            facts = lm_svc.get_facts(self._db_path, self._save_id, max_turn_id=self._turn_id)
+            beliefs = lm_svc.get_observations(self._db_path, self._save_id, max_turn_id=self._turn_id)
+            models = lm_svc.get_models(self._db_path, self._save_id, max_turn_id=self._turn_id)
+        elif self._kernel_registry is not None:
+            return {
+                "disabled": True,
+                "turn_id": self._turn_id,
+                "facts": [],
+                "beliefs": [],
+                "mental_models": [],
+            }
+        else:
+            from axiom.facts import get_facts
+            from axiom.mental_models import get_mental_models
+            from axiom.observations import get_observations
+
+            facts = get_facts(self._db_path, self._save_id, max_turn_id=self._turn_id)
+            beliefs = get_observations(self._db_path, self._save_id, max_turn_id=self._turn_id)
+            models = get_mental_models(self._db_path, self._save_id, max_turn_id=self._turn_id)
+
+        return {
+            "turn_id": self._turn_id,
+            "facts": [
+                {
+                    "fact_id": f.fact_id,
+                    "turn_id": f.turn_id,
+                    "fact_type": f.fact_type,
+                    "statement": f.statement,
+                    "entities": list(f.entities or []),
+                    "who": f.who or "",
+                }
+                for f in facts
+            ],
+            "beliefs": [
+                {
+                    "observation_id": o.observation_id,
+                    "subject": o.subject or "",
+                    "statement": o.statement,
+                    "proof_count": o.proof_count,
+                    "updated_turn_id": o.updated_turn_id,
+                    "trend": o.trend(self._turn_id) if hasattr(o, "trend") else "stable",
+                }
+                for o in beliefs
+            ],
+            "mental_models": [
+                {
+                    "model_id": m.model_id,
+                    "subject": m.subject or "",
+                    "summary": m.summary,
+                    "updated_turn_id": m.updated_turn_id,
+                    "stale": getattr(m, "stale", 0),
+                }
+                for m in models
+            ],
+        }
+
+    def run_living_memory_extract_now(self, *, force_catchup: bool = False) -> dict[str, Any]:
+        """Run synchronous living memory extraction for this session."""
+        lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
+        if lm_svc is not None:
+            res = lm_svc.extract_now(
+                self._db_path,
+                self._save_id,
+                self._turn_id,
+                llm=self._llm,
+                force_catchup=force_catchup,
+            )
+            res["memory"] = self.get_memory_snapshot()
+            return res
+        if self._living_memory is not None:
+            res = self._living_memory.run_extract_now(
+                self._db_path,
+                self._save_id,
+                self._turn_id,
+                force_catchup=force_catchup,
+                llm=self._llm,
+            )
+            res["memory"] = self.get_memory_snapshot()
+            return res
+        return {
+            "status": "disabled",
+            "disabled": True,
+            "facts_stored": 0,
+            "memory": self.get_memory_snapshot(),
+        }
 
     # ------------------------------------------------------------------
     # Interne
@@ -746,6 +1136,14 @@ class Session:
         if self._vector_memory:
             rag_res = self._vector_memory.query(self._save_id, hero_ent.get("name", "Hero"), k=2)
             rag_chunks = [r["text"] for r in rag_res if r.get("chunk_type") != "lore"]
+        elif self._kernel_registry:
+            rag_svc = self._kernel_registry.get_service("rag")
+            if rag_svc is not None:
+                try:
+                    rag_res = rag_svc.query(self._save_id, hero_ent.get("name", "Hero"), k=2)
+                    rag_chunks = [r["text"] for r in rag_res if r.get("chunk_type") != "lore"]
+                except Exception:
+                    pass
 
         # Map intents to names for readability in the hero prompt
         named_intents = {}

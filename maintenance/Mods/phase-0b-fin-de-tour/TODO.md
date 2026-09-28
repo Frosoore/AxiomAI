@@ -1,0 +1,26 @@
+# TODO — Phase 0b : Unification de la fin de tour et assainissement des UIs
+
+- [x] Créer le composant headless `LivingMemoryAccumulator` sous `axiom/` (`axiom/living_memory.py`)
+  - [x] Encapsuler l'accumulation de prose de narration par save
+  - [x] Gérer le compteur d'intervalle `cfg.memory_fact_interval`
+  - [x] Déclencher l'extraction asynchrone / thread de distillation de manière headless
+- [x] Centraliser l'initialisation du Tour 0 dans `axiom.savestore.create_save`
+  - [x] Accepter `setup_answers: dict[str, Any] | None = None`
+  - [x] Parser `first_message` depuis `Universe_Meta`, splitter les variantes (`---VARIANT---`)
+  - [x] Effectuer la substitution insensible à la casse des tags `@key`
+  - [x] Insérer atomiquement `narrative_text` au tour 0 (et consigner `setup_answer`)
+- [x] Centraliser le pipeline post-narration dans `Session.take_turn` (`axiom/session.py`)
+  - [x] Implémenter `_post_turn_pipeline(self, result: ArbitratorResult) -> None`
+  - [x] Mettre à jour `last_updated`, `last_lore_hits`, tags d'ambiance et de jeu
+  - [x] Déclencher conditionnellement la living memory via l'accumulateur headless
+  - [x] Fournir les méthodes `get_state_snapshot()` et `resolve_verbosity()` directement sur `Session`
+- [x] Assainir `main_web.py`
+  - [x] Supprimer `_FACT_PENDING`, `_FACT_TURN_COUNTER`, `_FACT_WORKER_LOCK`, `_FACT_WORKER_BUSY`, `_spawn_living_memory_job`, `schedule_living_memory_after_turn`
+  - [x] Réduire `/api/saves/create` à l'appel de `create_save`
+  - [x] Réduire `/api/session/start` et `/api/session/turn` à des appels directs de méthodes de `Session`
+  - [x] Déléguer `build_session_snapshot()`, `resolve_session_verbosity()`, `run_living_memory_extract_now()` à `Session`
+- [x] Assainir les UIs Qt (`ui/setup_view.py`, `ui/tabletop_view.py` et `workers/narrative_worker.py`)
+  - [x] Passer `setup_answers` à `create_save` dans `ui/setup_view.py`
+  - [x] Éviter la duplication de distillation post-tour dans `ui/tabletop_view.py`
+  - [x] Vérifier la propreté headless du moteur (zéro import Qt/core/ui dans `axiom/`)
+- [x] Validation complète pytest : `tests/test_golden_step.py`, `tests/test_engine_headless.py`, `tests/test_web_server.py` (50 passed, 0 failed)

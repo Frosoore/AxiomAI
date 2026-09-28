@@ -1,0 +1,24 @@
+[mod]
+id = "axiom.illustrations"
+version = "1.0.0"
+axiom_api = 1
+name = "Générateur d'Illustrations IA"
+description = "Génération d'images de scène via API Stable Diffusion WebUI ou ComfyUI."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["image_generation"]
+
+[contributes]
+hooks = [
+    "axiom.step:after_step"
+]
+slots = [
+    "axiom.turn:prompt_sections",
+    "axiom.ui.qt:settings_tab"
+]
+
+[storage]
+assets = { policy = "custom" }

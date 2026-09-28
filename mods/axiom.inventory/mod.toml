@@ -1,0 +1,27 @@
+[mod]
+id = "axiom.inventory"
+version = "1.0.0"
+axiom_api = 1
+name = "Inventaire Imbriqué Émergent"
+description = "Gestion de l'arbre d'objets et conteneurs (profondeur max 5) et snapshots d'inventaire."
+
+[dependencies]
+"axiom.world" = ">=1.0.0"
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+after = ["axiom.world"]
+provides = ["inventory_system"]
+
+[contributes]
+slots = [
+    "axiom.turn:output_fields",
+    "axiom.turn:prompt_sections",
+    "axiom.ui.qt:sidebar_widget"
+]
+
+[provides_slots]
+"axiom.inventory:actions" = { rule = "collect" }
+
+[storage]
+item_instances = { policy = "step_keyed_table", table = "Inventory_Snapshots", step_column = "turn_id" }

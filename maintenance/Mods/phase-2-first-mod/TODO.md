@@ -1,0 +1,22 @@
+# TODO — Phase 2 : Extraction du premier mod officiel (core.stat_dynamics)
+
+- [x] Structure du package du mod sous `mods/core.stat_dynamics/`
+  - [x] Manifeste déclaratif `mod.toml` (ID `core.stat_dynamics`, version `1.0.0`, `axiom_api = 1`, hooks, storage)
+  - [x] Point d'entrée standard `main.py` avec `init(ctx: ModContext)`
+  - [x] Suite de tests in-tree `mods/core.stat_dynamics/tests/test_stat_dynamics_mod.py`
+- [x] Implémentation des hooks dans le mod
+  - [x] `axiom.turn:arbitrate_stats` : calcul de la dynamique (heal, buildup, crash), deltas dans `write_batch`
+  - [x] `axiom.step:after_step` : décrément des minutes sur `Active_Modifiers`, purge des expirés, snapshot
+- [x] Découplage côté Moteur
+  - [x] Remplacement des appels directs à `stat_dynamics` par `self.kernel_registry.execute_hook("axiom.turn:arbitrate_stats", ctx)`
+  - [x] Découplage de `step_6_stage_mutations` via `axiom.step:after_step`
+  - [x] Pureté du noyau : aucun import statique de `stat_dynamics` au niveau module
+  - [x] Règle D11 (Réversibilité totale) : si le mod est désactivé, le noyau ne tente plus de faire décroître les modificateurs et n'échoue pas
+- [x] Utilitaire d'empaquetage `.axmod`
+  - [x] Implémentation de `pack_mod` dans `axiom/cli/mods_cmd.py`
+  - [x] Commande CLI `axiom mod pack <dir> [-o <out>]`
+  - [x] Archivage vers `dist/mods/core.stat_dynamics-1.0.0.axmod`
+- [x] Suite de tests dédiée
+  - [x] `tests/test_stat_dynamics_mod.py` (7 tests unitaires et d'intégration validés)
+- [x] Non-régression globale
+  - [x] `tests/test_golden_step.py`, `tests/test_kernel_loader.py`, `tests/test_stat_dynamics_mod.py` 100% verts

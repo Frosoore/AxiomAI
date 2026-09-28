@@ -546,6 +546,7 @@ def compile_universe(
     src_dir: str | Path,
     output_db: str | Path | None = None,
     force: bool = False,
+    kernel_registry: Any | None = None,
 ) -> Path:
     """Compile a source tree into a runtime SQLite database.
 
@@ -554,6 +555,7 @@ def compile_universe(
         output_db: Path of the `.db` to produce. Defaults to
                    `<src_dir>/.axiom-cache/universe.db`.
         force:     Recompile even if the source hash is unchanged.
+        kernel_registry: Optional KernelRegistry to invoke mod compile hooks.
 
     Returns:
         The path of the compiled `.db`.
@@ -584,6 +586,22 @@ def compile_universe(
     conn = sqlite3.connect(str(tmp_db))
     try:
         _populate(conn, parsed)
+        if kernel_registry is not None:
+            uni_toml_path = src_dir / "universe.toml"
+            universe_toml: dict[str, Any] = {}
+            if uni_toml_path.is_file():
+                try:
+                    with open(uni_toml_path, "rb") as f:
+                        universe_toml = tomllib.load(f)
+                except Exception:
+                    pass
+            compile_context = {
+                "src_tree": src_dir,
+                "conn": conn,
+                "universe_toml": universe_toml,
+            }
+            kernel_registry.execute_hook("axiom.universe:compile", compile_context)
+            conn.commit()
         # Vide le WAL dans le fichier principal avant la bascule (sinon le .db
         # déplacé serait incomplet et les sidecars -wal/-shm seraient orphelins).
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")

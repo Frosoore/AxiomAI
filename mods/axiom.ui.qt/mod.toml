@@ -1,0 +1,16 @@
+[mod]
+id = "axiom.ui.qt"
+version = "1.0.0"
+axiom_api = 1
+name = "Interface Bureau Qt"
+description = "Interface graphique native PySide6 (Tabletop, Creator Studio, Hub, Dialogues de réglages)."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["user_interface"]
+
+[provides_slots]
+"axiom.ui.qt:sidebar_widget" = { rule = "collect" }
+"axiom.ui.qt:settings_tab" = { rule = "collect" }

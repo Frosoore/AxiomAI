@@ -1,0 +1,33 @@
+# TODO — Phase 2 : Extraction de axiom.time et axiom.inventory
+
+- [x] Extraction du mod officiel `axiom.time` sous `mods/axiom.time/`
+  - [x] Manifeste `mod.toml` (ID `axiom.time`, version `1.0.0`, `axiom_api = 1`, `provides = ["time_system"]`, dépendances `axiom.world` et `axiom.turn`)
+  - [x] Déclaration du hook `axiom.step:after_step`
+  - [x] Déclaration des contributions de slots : `axiom.turn:output_fields`, `axiom.turn:prompt_sections`
+  - [x] Déclaration des politiques de persistance dans `[storage]` (`timeline` et `events` en `step_keyed_table`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"time"` (`format_time`, `get_current_time`, `get_calendar`)
+    - [x] Contribution à `axiom.turn:output_fields` (`time_elapsed_minutes`, `elapsed_minutes`)
+    - [x] Contribution à `axiom.turn:prompt_sections` (horodatage diégétique dynamique)
+    - [x] Hook `axiom.step:after_step` (enregistrement dans `Timeline`, déclenchement des `Scheduled_Events`, simulation `ChroniclerEngine`)
+- [x] Extraction du mod officiel `axiom.inventory` sous `mods/axiom.inventory/`
+  - [x] Manifeste `mod.toml` (ID `axiom.inventory`, version `1.0.0`, `axiom_api = 1`, `provides = ["inventory_system"]`, dépendances `axiom.world` et `axiom.turn`)
+  - [x] Déclaration des contributions de slots : `axiom.turn:output_fields`, `axiom.turn:prompt_sections`
+  - [x] Déclaration du slot fourni `axiom.inventory:actions` (collect)
+  - [x] Déclaration de persistance dans `[storage]` (`item_instances` sur `Inventory_Snapshots`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"inventory"` (`load_tree`, `move`, `add`, `format_prompt`)
+    - [x] Contribution à `axiom.turn:output_fields` (`inventory_changes` avec validation et transfert de conteneurs `container_id`)
+    - [x] Contribution à `axiom.turn:prompt_sections` (résumé imbriqué d'équipement)
+- [x] Allègement du Moteur
+  - [x] Suppression de l'import et de l'exécution directe de `ChroniclerEngine` dans `Session.resolve_tick`
+  - [x] Découplage de l'accès au temps dans `Session` (`time_formatted` via service noyau `"time"`)
+  - [x] Découplage de `ArbitratorEngine` : prompt d'inventaire, arbitrage d'inventaire et écriture de `Timeline` conditionnés à l'absence de registre (legacy fallback)
+  - [x] Découplage de l'UI Web (`main_web.py`) via les services `"inventory"` et `"time"` du registre
+  - [x] Détection plus fine des requêtes Timekeeper dans `ScriptedLLMBackend`
+- [x] Empaquetage `.axmod`
+  - [x] `dist/mods/axiom.time.axmod`
+  - [x] `dist/mods/axiom.inventory.axmod`
+- [x] Suite de tests hermétique et d'intégration
+  - [x] `tests/test_time_inventory_mods.py` (5 tests validant manifestes, archive, écriture Timeline, déplacement dans un conteneur, réversibilité D11 et Scheduled_Events)
+  - [x] Non-régression totale (29/29 tests passants sur la suite coeur + 36/36 avec l'ensemble des mods)

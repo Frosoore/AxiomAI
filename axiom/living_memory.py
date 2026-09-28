@@ -7,6 +7,10 @@ failures: returns how many facts were stored (0 is normal).
 
 from __future__ import annotations
 
+import json
+import threading
+from typing import Any
+
 from axiom.backends.base import LLMBackend
 from axiom.consolidate import consolidate
 from axiom.factextract import extract_facts
@@ -30,6 +34,8 @@ def distil_narrative_to_memory(
     consolidate_beliefs: bool = False,
     refresh_mental_models: bool = False,
     raise_on_error: bool = False,
+    epoch: int | None = None,
+    epoch_checker: Callable[[], int] | None = None,
 ) -> dict[str, int]:
     """Extract facts from ``narrative_text`` and optionally consolidate beliefs.
 
@@ -55,6 +61,18 @@ def distil_narrative_to_memory(
         )
         if not facts:
             return empty
+
+        if epoch is not None and epoch_checker is not None:
+            curr_epoch = epoch_checker()
+            if epoch != curr_epoch:
+                from axiom.logger import logger
+                logger.warning(
+                    "Époque de session périmée (%d vs %d). Écriture ignorée.",
+                    epoch,
+                    curr_epoch,
+                )
+                return empty
+
         new_ids = insert_facts(db_path, save_id, turn_id, facts)
         stored_count = len(new_ids)
         beliefs_touched = 0
@@ -68,6 +86,8 @@ def distil_narrative_to_memory(
                 facts,
                 refresh_mental_models=refresh_mental_models,
                 raise_on_error=raise_on_error,
+                epoch=epoch,
+                epoch_checker=epoch_checker,
             )
         return {
             "facts_stored": stored_count,
@@ -93,6 +113,8 @@ def distil_turns_to_memory(
     refresh_mental_models: bool = False,
     raise_on_error: bool = False,
     max_turns: int = 8,
+    epoch: int | None = None,
+    epoch_checker: Callable[[], int] | None = None,
 ) -> dict[str, int]:
     """Extract facts **one turn at a time** then optionally consolidate once.
 
@@ -126,6 +148,8 @@ def distil_turns_to_memory(
                 consolidate_beliefs=False,
                 refresh_mental_models=False,
                 raise_on_error=raise_on_error,
+                epoch=epoch,
+                epoch_checker=epoch_checker,
             )
             totals["facts_stored"] += int(result.get("facts_stored", 0) or 0)
             last_turn = int(tid)
@@ -150,6 +174,8 @@ def distil_turns_to_memory(
                 recent,
                 refresh_mental_models=refresh_mental_models,
                 raise_on_error=raise_on_error,
+                epoch=epoch,
+                epoch_checker=epoch_checker,
             )
             totals["beliefs_touched"] = b
             totals["models_refreshed"] = m
@@ -206,6 +232,8 @@ def _run_consolidation(
     *,
     refresh_mental_models: bool,
     raise_on_error: bool = False,
+    epoch: int | None = None,
+    epoch_checker: Callable[[], int] | None = None,
 ) -> tuple[int, int]:
     """Belief consolidation + optional mental-model refresh.
 
@@ -233,6 +261,18 @@ def _run_consolidation(
             for f in stored
             if f.fact_id is not None
         }
+
+        if epoch is not None and epoch_checker is not None:
+            curr_epoch = epoch_checker()
+            if epoch != curr_epoch:
+                from axiom.logger import logger
+                logger.warning(
+                    "Époque de session périmée (%d vs %d). Écriture ignorée.",
+                    epoch,
+                    curr_epoch,
+                )
+                return 0, 0
+
         counts = apply_consolidation(
             db_path, save_id, turn_id, actions, fact_turn_map
         )
@@ -244,7 +284,8 @@ def _run_consolidation(
         models_refreshed = 0
         if refresh_mental_models:
             models_refreshed = _refresh_models(
-                llm, db_path, save_id, turn_id, actions, mission
+                llm, db_path, save_id, turn_id, actions, mission,
+                epoch=epoch, epoch_checker=epoch_checker,
             )
         return beliefs_touched, models_refreshed
     except Exception:
@@ -253,7 +294,7 @@ def _run_consolidation(
         return 0, 0
 
 
-def _refresh_models(llm, db_path, save_id, turn_id, actions, mission) -> int:
+def _refresh_models(llm, db_path, save_id, turn_id, actions, mission, *, epoch: int | None = None, epoch_checker: Callable[[], int] | None = None) -> int:
     """Refresh mental models for affected subjects. Returns how many written."""
     try:
         from axiom.mental_models import stale_subjects, upsert_mental_model
@@ -274,6 +315,18 @@ def _refresh_models(llm, db_path, save_id, turn_id, actions, mission) -> int:
             summary = reflect(llm, subj, beliefs, mission=mission)
             if not summary:
                 continue
+
+            if epoch is not None and epoch_checker is not None:
+                curr_epoch = epoch_checker()
+                if epoch != curr_epoch:
+                    from axiom.logger import logger
+                    logger.warning(
+                        "Époque de session périmée (%d vs %d). Écriture ignorée.",
+                        epoch,
+                        curr_epoch,
+                    )
+                    return written
+
             src = [o.observation_id for o in beliefs if o.observation_id is not None]
             upsert_mental_model(
                 db_path, save_id, subj, summary, turn_id, sources=src
@@ -350,3 +403,308 @@ def last_fact_turn(db_path: str, save_id: str) -> int:
     if row is None or row["m"] is None:
         return 0
     return int(row["m"])
+
+
+class LivingMemoryAccumulator:
+    """Headless accumulator and background distillation scheduler for living memory.
+
+    Encapsulates the in-memory turn prose buffer, turn counter, and background
+    distillation thread so all frontends (Web, GUI, CLI) share a single headless
+    component without ad-hoc global buffers.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pending: dict[str, list[str]] = {}
+        self._counters: dict[str, int] = {}
+        self._busy: set[str] = set()
+
+    def reset(self, save_id: str | None = None) -> None:
+        """Clear pending buffer and turn counter (for a save or all saves)."""
+        with self._lock:
+            if save_id is not None:
+                self._pending.pop(save_id, None)
+                self._counters.pop(save_id, None)
+            else:
+                self._pending.clear()
+                self._counters.clear()
+
+    def record_turn(
+        self,
+        db_path: str,
+        save_id: str,
+        turn_id: int,
+        narrative_text: str,
+        *,
+        cfg: Any = None,
+        llm: LLMBackend | None = None,
+        force_async: bool = True,
+        epoch: int | None = None,
+        epoch_checker: Callable[[], int] | None = None,
+    ) -> bool:
+        """Buffer turn prose; schedule distillation every N turns (living mode)."""
+        text = (narrative_text or "").strip()
+        if not text:
+            return False
+
+        if cfg is None:
+            from axiom.config import load_config
+            cfg = load_config()
+
+        from axiom.config import memory_mode_is_living
+        if not memory_mode_is_living(cfg):
+            return False
+
+        interval = int(getattr(cfg, "memory_fact_interval", 0) or 0)
+        with self._lock:
+            self._pending.setdefault(save_id, []).append(text)
+            self._counters[save_id] = self._counters.get(save_id, 0) + 1
+            counter_hit = interval > 0 and self._counters[save_id] >= interval
+
+        if counter_hit:
+            self.spawn_distillation(
+                db_path,
+                save_id,
+                turn_id,
+                cfg=cfg,
+                llm=llm,
+                force_catchup=True,
+                run_async=force_async,
+                epoch=epoch,
+                epoch_checker=epoch_checker,
+            )
+            return True
+        return False
+
+    def spawn_distillation(
+        self,
+        db_path: str,
+        save_id: str,
+        turn_id: int,
+        *,
+        cfg: Any = None,
+        llm: LLMBackend | None = None,
+        force_catchup: bool = True,
+        run_async: bool = True,
+        epoch: int | None = None,
+        epoch_checker: Callable[[], int] | None = None,
+    ) -> Any:
+        """Fire background distillation job (does not block the turn)."""
+        from axiom.epoch import get_session_epoch_manager
+        mgr = get_session_epoch_manager(save_id)
+        captured_epoch = epoch if epoch is not None else mgr.current
+        if epoch_checker is None:
+            epoch_checker = lambda: mgr.current
+
+        with self._lock:
+            if save_id in self._busy:
+                return None
+            pending = list(self._pending.get(save_id, []))
+            self._pending[save_id] = []
+            self._counters[save_id] = 0
+            self._busy.add(save_id)
+
+        def _job() -> dict:
+            try:
+                from axiom.logger import logger
+                if captured_epoch is not None and epoch_checker is not None:
+                    curr_epoch = epoch_checker()
+                    if captured_epoch != curr_epoch:
+                        logger.warning(
+                            "Époque de session périmée (%d vs %d). Écriture ignorée.",
+                            captured_epoch,
+                            curr_epoch,
+                        )
+                        return {"status": "stale_epoch", "facts_stored": 0}
+
+                nonlocal cfg, llm
+                if cfg is None:
+                    from axiom.config import load_config
+                    cfg = load_config()
+                if llm is None:
+                    from axiom.config import build_llm_from_config, resolve_memory_fact_model
+                    override = resolve_memory_fact_model(cfg)
+                    llm = build_llm_from_config(cfg, model_override=override)
+
+                from axiom.config import memory_beliefs_active, memory_mental_models_active
+                turn_pairs: list[tuple[int, str]] = []
+                if force_catchup:
+                    try:
+                        after = last_fact_turn(db_path, save_id)
+                        pairs = recent_narratives_since(
+                            db_path, save_id, after_turn_id=after, up_to_turn_id=turn_id
+                        )
+                        turn_pairs = pairs[-6:]
+                    except Exception:
+                        from axiom.logger import logger
+                        logger.exception("Living-memory Event_Log catch-up failed")
+
+                if not turn_pairs and pending:
+                    turn_pairs = [(turn_id, "\n\n".join(pending))]
+
+                if not turn_pairs:
+                    return {"status": "ok", "facts_stored": 0}
+
+                result = distil_turns_to_memory(
+                    llm,
+                    db_path,
+                    save_id,
+                    turn_pairs,
+                    consolidate_beliefs=memory_beliefs_active(cfg),
+                    refresh_mental_models=memory_mental_models_active(cfg),
+                    max_turns=6,
+                    epoch=captured_epoch,
+                    epoch_checker=epoch_checker,
+                )
+                from axiom.logger import logger
+                logger.info(
+                    "Living-memory job done for save %s: facts=%s beliefs=%s models=%s",
+                    save_id,
+                    result.get("facts_stored"),
+                    result.get("beliefs_touched"),
+                    result.get("models_refreshed"),
+                )
+                return result
+            except Exception:
+                from axiom.logger import logger
+                logger.exception("Background living-memory job failed for save %s", save_id)
+                return {"status": "error", "facts_stored": 0}
+            finally:
+                with self._lock:
+                    self._busy.discard(save_id)
+
+        if run_async:
+            thread = threading.Thread(target=_job, daemon=True)
+            thread.start()
+            return thread
+        return _job()
+
+    def run_extract_now(
+        self,
+        db_path: str,
+        save_id: str,
+        turn_id: int,
+        *,
+        cfg: Any = None,
+        llm: LLMBackend | None = None,
+        force_catchup: bool = False,
+    ) -> dict:
+        """Run synchronous extract now for UI / API endpoints."""
+        with self._lock:
+            pending = list(self._pending.get(save_id, []))
+            self._pending[save_id] = []
+            self._counters[save_id] = 0
+
+        if cfg is None:
+            from axiom.config import load_config
+            cfg = load_config()
+
+        from axiom.config import (
+            memory_beliefs_active,
+            memory_mental_models_active,
+            memory_mode_is_living,
+            resolve_memory_fact_model,
+            build_llm_from_config,
+        )
+        if not memory_mode_is_living(cfg):
+            return {
+                "status": "skipped",
+                "error": "Living memory is off (Settings → Memory mode).",
+                "facts_stored": 0,
+            }
+
+        turn_pairs: list[tuple[int, str]] = []
+        if force_catchup:
+            after = last_fact_turn(db_path, save_id)
+            turn_pairs = recent_narratives_since(
+                db_path, save_id, after_turn_id=after, up_to_turn_id=turn_id
+            )
+            turn_pairs = turn_pairs[-8:]
+        if not turn_pairs and pending:
+            turn_pairs = [(turn_id, "\n\n".join(pending))]
+
+        override = resolve_memory_fact_model(cfg)
+        if llm is None:
+            try:
+                llm = build_llm_from_config(cfg, model_override=override)
+            except Exception as exc:
+                return {
+                    "status": "error",
+                    "error": f"Could not build memory LLM: {exc}",
+                    "facts_stored": 0,
+                }
+
+        from axiom.observations import get_observations
+        if turn_pairs:
+            result = distil_turns_to_memory(
+                llm,
+                db_path,
+                save_id,
+                turn_pairs,
+                consolidate_beliefs=memory_beliefs_active(cfg),
+                refresh_mental_models=memory_mental_models_active(cfg),
+                raise_on_error=True,
+                max_turns=8,
+            )
+        elif force_catchup and memory_beliefs_active(cfg):
+            existing_beliefs = get_observations(db_path, save_id, max_turn_id=turn_id)
+            if existing_beliefs:
+                return {
+                    "status": "ok",
+                    "facts_stored": 0,
+                    "beliefs_touched": 0,
+                    "models_refreshed": 0,
+                    "message": "Nothing new to distil (facts and beliefs already up to date).",
+                }
+            result = consolidate_facts_to_beliefs(
+                llm,
+                db_path,
+                save_id,
+                turn_id,
+                refresh_mental_models=memory_mental_models_active(cfg),
+                raise_on_error=True,
+            )
+        else:
+            return {
+                "status": "ok",
+                "facts_stored": 0,
+                "message": "Nothing new to distil.",
+            }
+
+        if isinstance(result, dict):
+            n_facts = int(result.get("facts_stored", 0) or 0)
+            n_beliefs = int(result.get("beliefs_touched", 0) or 0)
+            n_models = int(result.get("models_refreshed", 0) or 0)
+        else:
+            n_facts, n_beliefs, n_models = int(result or 0), 0, 0
+
+        parts = []
+        if n_facts:
+            parts.append(f"{n_facts} fact(s)")
+        if n_beliefs:
+            parts.append(f"{n_beliefs} belief update(s)")
+        if n_models:
+            parts.append(f"{n_models} profile(s)")
+        message = (
+            ("Stored " + ", ".join(parts) + ".")
+            if parts
+            else "Model returned no new facts/beliefs for this slice (try more turns, or check extraction model)."
+        )
+        return {
+            "status": "ok",
+            "facts_stored": n_facts,
+            "beliefs_touched": n_beliefs,
+            "models_refreshed": n_models,
+            "message": message,
+        }
+
+
+_DEFAULT_ACCUMULATOR: LivingMemoryAccumulator | None = None
+
+
+def get_living_memory_accumulator() -> LivingMemoryAccumulator:
+    """Return the process-wide default LivingMemoryAccumulator instance."""
+    global _DEFAULT_ACCUMULATOR
+    if _DEFAULT_ACCUMULATOR is None:
+        _DEFAULT_ACCUMULATOR = LivingMemoryAccumulator()
+    return _DEFAULT_ACCUMULATOR

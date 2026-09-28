@@ -1,0 +1,18 @@
+[mod]
+id = "axiom.ui.web"
+version = "1.0.0"
+axiom_api = 1
+name = "Interface Web SPA"
+description = "Serveur HTTP local et application Web monopage (Tabletop, Creator Studio, Gestionnaire de mods)."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["user_interface"]
+
+[provides_slots]
+# Slots d'extension spécifiques à l'UI Web
+"axiom.ui.web:side_panel" = { rule = "collect" }
+"axiom.ui.web:settings_tab" = { rule = "collect" }
+"axiom.ui.web:action_button" = { rule = "collect" }

@@ -331,12 +331,17 @@ class _UniqueNames:
 # API publique
 # ---------------------------------------------------------------------------
 
-def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
+def decompile_universe(
+    db_path: str | Path,
+    output_dir: str | Path,
+    kernel_registry: Any | None = None,
+) -> Path:
     """Decompile a `.db` universe into a text source tree.
 
     Args:
         db_path:    Path of the universe `.db` to read.
         output_dir: Destination folder (created if missing).
+        kernel_registry: Optional KernelRegistry to invoke mod decompile hooks.
 
     Returns:
         The path of the generated source folder.
@@ -481,4 +486,14 @@ def decompile_universe(db_path: str | Path, output_dir: str | Path) -> Path:
 
     # .gitignore : le cache compilé n'est jamais versionné.
     (out / ".gitignore").write_text(f"{CACHE_DIRNAME}/\n", encoding="utf-8")
+
+    if kernel_registry is not None:
+        import sqlite3
+        with sqlite3.connect(str(db_path)) as db_conn:
+            decompile_context = {
+                "db_conn": db_conn,
+                "target_dir": out,
+            }
+            kernel_registry.execute_hook("axiom.universe:decompile", decompile_context)
+
     return out

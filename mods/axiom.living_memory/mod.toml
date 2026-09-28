@@ -1,0 +1,28 @@
+[mod]
+id = "axiom.living_memory"
+version = "1.0.0"
+axiom_api = 1
+name = "Mémoire Vivante"
+description = "Distillation symbolique des faits, croyances et modèles mentaux des entités."
+
+[dependencies]
+"axiom.world" = ">=1.0.0"
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+after = ["axiom.world"]
+provides = ["living_memory"]
+
+[contributes]
+hooks = [
+    "axiom.step:after_step"
+]
+slots = [
+    "axiom.turn:prompt_sections",
+    "axiom.ui.qt:settings_tab"
+]
+
+[storage]
+facts = { policy = "step_keyed_table", step_column = "turn_id" }
+observations = { policy = "step_keyed_table", step_column = "updated_turn_id" }
+mental_models = { policy = "step_keyed_table", step_column = "updated_turn_id" }

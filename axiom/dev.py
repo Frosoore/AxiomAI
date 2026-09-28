@@ -46,7 +46,11 @@ from axiom.compile import (
 # Refresh in-place de la définition
 # ---------------------------------------------------------------------------
 
-def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -> Path:
+def refresh_definition(
+    src_dir: str | Path,
+    db_path: str | Path | None = None,
+    kernel_registry: Any | None = None,
+) -> Path:
     """Recompile the universe definition into an existing `.db`, in place.
 
     Runtime/save tables are not touched. When the `.db` does not exist yet,
@@ -55,6 +59,7 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
     Args:
         src_dir: Universe source folder (contains universe.toml).
         db_path: Target `.db`. Defaults to `<src_dir>/.axiom-cache/universe.db`.
+        kernel_registry: Optional KernelRegistry to invoke mod definition hooks.
 
     Returns:
         The path of the refreshed `.db`.
@@ -70,7 +75,7 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
     db_path = Path(db_path)
 
     if not db_path.exists():
-        return compile_universe(src_dir, db_path, force=True)
+        return compile_universe(src_dir, db_path, force=True, kernel_registry=kernel_registry)
 
     parsed = _parse_tree(src_dir)  # lève CompileError avant d'ouvrir la DB
 
@@ -95,6 +100,22 @@ def refresh_definition(src_dir: str | Path, db_path: str | Path | None = None) -
         conn.execute("PRAGMA defer_foreign_keys=ON;")
         try:
             _sync_definition(conn, parsed, amnesty=amnesty)
+            if kernel_registry is not None:
+                import tomllib
+                uni_toml_path = src_dir / "universe.toml"
+                universe_toml: dict[str, Any] = {}
+                if uni_toml_path.is_file():
+                    try:
+                        with open(uni_toml_path, "rb") as f:
+                            universe_toml = tomllib.load(f)
+                    except Exception:
+                        pass
+                refresh_context = {
+                    "src_tree": src_dir,
+                    "conn": conn,
+                    "universe_toml": universe_toml,
+                }
+                kernel_registry.execute_hook("axiom.universe:refresh_definition", refresh_context)
             conn.commit()
         except BaseException:
             conn.rollback()

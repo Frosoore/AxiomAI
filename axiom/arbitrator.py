@@ -31,9 +31,11 @@ import json
 import re
 import sqlite3
 from typing import Any
+import uuid
 
 from axiom.logger import logger
 from axiom.rules import RulesEngine
+from axiom.turn_batch import TurnWriteBatch
 
 
 def _slug_item_id(raw: str) -> str:
@@ -47,7 +49,6 @@ from axiom.db_helpers import (
     get_time_of_day_context,
 )
 from axiom.events import EventSourcer, resolve_stat_key
-from axiom.memory import VectorMemory
 from axiom.modifiers import ModifierProcessor
 from axiom.prompts import (
     HISTORY_TURN_CAP,
@@ -83,8 +84,84 @@ _FOCUS_SCENE_CHARACTER_CAP: int = 5
 
 
 # ---------------------------------------------------------------------------
-# Result type
+# Result & Context types
 # ---------------------------------------------------------------------------
+
+@dataclass
+class TurnContext:
+    """Carries intermediate execution state across the 6 modular turn steps."""
+
+    save_id: str
+    step_id: int
+    user_input: str
+    player_entity_id: str
+    verbosity: str
+
+    # Données enrichies au fil des étapes
+    spatial_context: dict[str, Any] = field(default_factory=dict)
+    retrieved_memory: list[dict[str, Any]] = field(default_factory=list)
+    relevant_stats: dict[str, Any] = field(default_factory=dict)
+    prompt_messages: list[dict[str, str]] = field(default_factory=list)
+    raw_llm_response: str = ""
+    parsed_tool_call: dict[str, Any] = field(default_factory=dict)
+
+    # Staging des mutations (cf. TurnWriteBatch de la phase 0d)
+    write_batch: TurnWriteBatch = field(default_factory=TurnWriteBatch)
+    rejected_changes: list[str] = field(default_factory=list)
+    triggered_rules: list[dict[str, Any]] = field(default_factory=list)
+
+    # Paramètres d'exécution & contexte de tour
+    intents: dict[str, str] = field(default_factory=dict)
+    history: list[LLMMessage] = field(default_factory=list)
+    universe_system_prompt: str = ""
+    mode: str = "Normal"
+    hero_entity_id: str | None = None
+    temperature: float = 0.7
+    top_p: float = 1.0
+    auto_commit: bool = True
+
+    # État intermédiaire transporté entre les étapes
+    combined_intents_text: str = ""
+    all_stats: dict[str, dict[str, str]] = field(default_factory=dict)
+    id_to_name: dict[str, str] = field(default_factory=dict)
+    id_to_type: dict[str, str] = field(default_factory=dict)
+    player_persona: str = ""
+    rag_chunks: list[str] = field(default_factory=list)
+    lore_book_subset: list[dict[str, Any]] = field(default_factory=list)
+    triggered_events: list[dict[str, Any]] = field(default_factory=list)
+    time_ctx: str = ""
+    total_mins: int = 0
+    local_character_names: list[str] = field(default_factory=list)
+    narrative_text: str = ""
+    game_state_tag: str = "exploration"
+    scene_pace: str = "deliberate"
+    elapsed_minutes: int = 1
+    new_time: int = 0
+    travel_note: str | None = None
+    applied_changes: list[dict[str, Any]] = field(default_factory=list)
+    rejected_changes_detailed: list[dict[str, Any]] = field(default_factory=list)
+    inventory_changes: list[dict[str, Any]] = field(default_factory=list)
+    applied_modifiers: list[dict[str, Any]] = field(default_factory=list)
+    rule_chain_warning: bool = False
+    stat_events: list[dict[str, Any]] = field(default_factory=list)
+    session_lore_changes: list[dict[str, Any]] = field(default_factory=list)
+    raw_state_changes: list[dict[str, Any]] = field(default_factory=list)
+    raw_inventory_changes: list[dict[str, Any]] = field(default_factory=list)
+    raw_modifier_changes: list[dict[str, Any]] = field(default_factory=list)
+    db_path: str = ""
+
+    @property
+    def turn_id(self) -> int:
+        return self.step_id
+
+    @turn_id.setter
+    def turn_id(self, val: int) -> None:
+        self.step_id = val
+
+    @property
+    def in_game_minutes_elapsed(self) -> int:
+        return self.elapsed_minutes
+
 
 @dataclass
 class ArbitratorResult:
@@ -121,6 +198,7 @@ class ArbitratorResult:
     #: to the Timeline. Lets the GUI refresh its clock without a main-thread DB
     #: read (see ui/tabletop_view._on_turn_complete).
     in_game_time: int = 0
+    batch: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -140,15 +218,17 @@ class ArbitratorEngine:
         self,
         db_path: str,
         rules_list: list[dict],
+        kernel_registry: Any | None = None,
     ) -> None:
         self._db_path = db_path
         self._rules_engine = RulesEngine(rules_list)
         self._event_sourcer = EventSourcer(db_path)
         self._modifier_processor = ModifierProcessor(db_path)
+        self.kernel_registry = kernel_registry
 
         # Dependencies to be injected via configure()
         self._llm: LLMBackend | None = None
-        self._vector_memory: VectorMemory | None = None
+        self._vector_memory: Any | None = None
         self._pending_correction: str | None = None
         self._mode: str = "Normal"
         self._hero_entity_id: str | None = None
@@ -157,7 +237,7 @@ class ArbitratorEngine:
         # fresh engine) so semantic lore retrieval stays in sync with the source.
         self._lore_synced: set[str] = set()
 
-    def configure(self, llm: LLMBackend, vector_memory: VectorMemory, time_llm: LLMBackend | None = None) -> None:
+    def configure(self, llm: LLMBackend, vector_memory: Any | None = None, time_llm: LLMBackend | None = None) -> None:
         """Inject runtime dependencies before process_turn."""
         self._llm = llm
         self._vector_memory = vector_memory
@@ -191,103 +271,110 @@ class ArbitratorEngine:
         verbosity_level: str = "balanced",
         mode: str = "Normal",
         hero_entity_id: str | None = None,
+        auto_commit: bool = True,
     ) -> ArbitratorResult:
-        """Execute one full ArbitratorEngine turn and return the result.
-
-        Args:
-            save_id:                 The active save identifier.
-            turn_id:                 The current turn number (monotonically increasing).
-            intents:                 Dict mapping actor entity_id to their intent text.
-            universe_system_prompt:  The universe's foundational system prompt.
-            history:                 Prior conversation turns for context.
-            stream_token_callback:   Optional callable invoked with each streaming
-                                     token as it arrives from the LLM.
-            temperature:             Sampling temperature (0.0 to 1.0).
-            top_p:                   Nucleus sampling parameter (0.0 to 1.0).
-            verbosity_level:         'short', 'balanced', or 'talkative'.
-            mode:                    Game mode ('Normal', 'Hardcore', 'Companion').
-            hero_entity_id:          Optional ID of the AI Hero entity.
-
-        Returns:
-            ArbitratorResult containing narrative text and all change outcomes.
-
-        Raises:
-            LLMConnectionError: If the LLM backend is unreachable.
-
-        """
-        self._mode = mode
-        self._hero_entity_id = hero_entity_id
-
-        # Determine the primary player ID for legacy events and UI fallback
+        """Execute one full ArbitratorEngine turn through 6 modular pipeline steps."""
         player_entity_id = next((aid for aid in intents if aid != hero_entity_id), "player") if intents else "player"
+        combined_text = " ".join(intents.values()) if intents else ""
+        ctx = TurnContext(
+            save_id=save_id,
+            step_id=turn_id,
+            user_input=combined_text,
+            player_entity_id=player_entity_id,
+            verbosity=verbosity_level,
+            intents=dict(intents),
+            history=history,
+            universe_system_prompt=universe_system_prompt,
+            mode=mode,
+            hero_entity_id=hero_entity_id,
+            temperature=temperature,
+            top_p=top_p,
+            auto_commit=auto_commit,
+            db_path=self._db_path,
+        )
+
+        self.step_1_gather_context(ctx)
+        self.step_2_build_prompt(ctx)
+        self.step_3_execute_inference(ctx, stream_cb=stream_token_callback)
+        self.step_4_parse_response(ctx)
+        self.step_5_arbitrate_rules(ctx)
+        self.step_6_stage_mutations(ctx)
+
+        res = ArbitratorResult(
+            narrative_text=ctx.narrative_text,
+            applied_changes=ctx.applied_changes,
+            rejected_changes=ctx.rejected_changes_detailed,
+            inventory_changes=ctx.inventory_changes,
+            applied_modifiers=ctx.applied_modifiers,
+            triggered_rules=ctx.triggered_rules,
+            rule_chain_warning=ctx.rule_chain_warning,
+            game_state_tag=ctx.game_state_tag,
+            player_entity_id=ctx.player_entity_id,
+            elapsed_minutes=ctx.elapsed_minutes,
+            scene_pace=ctx.scene_pace,
+            in_game_time=ctx.new_time,
+            lore_hits=ctx.lore_book_subset,
+            image_path=getattr(ctx, "image_path", None),
+            batch=ctx.write_batch,
+        )
+        ctx.result = res
+        return res
+
+
+    def step_1_gather_context(self, ctx: TurnContext) -> None:
+        """Step 1: Récupération des stats, RAG/mémoire vectorielle, voisins spatiaux et entités pertinentes."""
+        self._mode = ctx.mode
+        self._hero_entity_id = ctx.hero_entity_id
+
+        player_entity_id = next((aid for aid in ctx.intents if aid != ctx.hero_entity_id), "player") if ctx.intents else "player"
         self._player_entity_id = player_entity_id
-        # All actors who submitted an intent this turn (multiplayer: several human
-        # players, possibly in different locations). Used by _fetch_relevant_entities
-        # so the context covers everyone's surroundings, not just the primary player.
-        self._active_actor_ids = list(intents.keys()) if intents else [player_entity_id]
+        ctx.player_entity_id = player_entity_id
+        self._active_actor_ids = list(ctx.intents.keys()) if ctx.intents else [player_entity_id]
 
-        # Step 0 — Log intents
-        _pending_events: list[tuple] = []
-        for actor_id, intent_text in intents.items():
-            # For backward compatibility with existing tests, the primary player gets 'user_input'
-            event_type = "hero_intent" if actor_id == hero_entity_id else "user_input"
-            self._event_sourcer.append_event(
-                save_id, turn_id, event_type, actor_id,
+        _pending_events = ctx.write_batch.events
+        for actor_id, intent_text in ctx.intents.items():
+            event_type = "hero_intent" if actor_id == ctx.hero_entity_id else "user_input"
+            _pending_events.append((
+                ctx.save_id, ctx.turn_id, event_type, actor_id,
                 {"text": intent_text}
-            )
+            ))
 
-        combined_intents_text = " ".join(intents.values()) if intents else ""
+        ctx.combined_intents_text = " ".join(ctx.intents.values()) if ctx.intents else ctx.user_input
+        ctx.all_stats = self._fetch_effective_stats(ctx.save_id)
 
-        # Step 1 — Fetch and overlay stats for all active entities
-        all_stats = self._fetch_effective_stats(save_id)
-
-        # Step 2 — RAG retrieval (Narrative Memories + Lore Book)
-        # We query for both prior narrative chunks and structured lore
-        # Point 2: Pass current_turn_id for Time-Weighted search
-        # Mission: Exclude turns that are already in the conversation history (HISTORY_TURN_CAP)
-        # NB: imported locally so tests can patch `axiom.config.load_config`.
         from axiom.config import load_config
         cfg = load_config()
 
-        # Calculate the oldest turn ID still in the history window
-        max_turn_id = max(0, turn_id - HISTORY_TURN_CAP)
+        max_turn_id = max(0, ctx.turn_id - HISTORY_TURN_CAP)
 
-        # Resolve entity names/types and the player persona up front, in a single
-        # connection. id_to_name/id_to_type feed both the focus terms just below
-        # (scene-aware retrieval) and the prompt further down; the persona feeds
-        # the prompt. Read *here* — before the RAG query — so on-scene character
-        # names can bias retrieval (TICKET-073) without adding a round-trip.
         player_persona = ""
         with get_connection(self._db_path) as conn:
             name_rows = conn.execute("SELECT entity_id, name, entity_type FROM Entities").fetchall()
             id_to_name = {r["entity_id"]: r["name"] for r in name_rows}
             id_to_type = {r["entity_id"]: r["entity_type"] for r in name_rows}
-            # The player's ID is often "player", but might have a real name.
-            # If not explicitly named, default to "Player" to give it a proper noun.
             if "player" not in id_to_name:
                 id_to_name["player"] = "Player"
             try:
                 row = conn.execute(
                     "SELECT player_persona FROM Saves WHERE save_id = ?;",
-                    (save_id,),
+                    (ctx.save_id,),
                 ).fetchone()
                 if row and row["player_persona"]:
                     player_persona = row["player_persona"]
             except sqlite3.Error:
                 pass
 
-        # Focus the retrieval on the current scene so memories about the here-and-
-        # now surface more readily (a small additive boost in VectorMemory.query):
-        # the player's location plus the names of the characters sharing it. The
-        # on-scene set is read from the unfiltered all_stats (location match) and
-        # the names from the map just resolved; capped to keep the focus set small.
-        player_loc = all_stats.get(player_entity_id, {}).get("Location", "")
+        ctx.id_to_name = id_to_name
+        ctx.id_to_type = id_to_type
+        ctx.player_persona = player_persona
+
+        player_loc = ctx.all_stats.get(player_entity_id, {}).get("Location", "")
         focus_terms: list[str] | None = None
         if player_loc:
             terms = [player_loc]
             loc_lower = str(player_loc).lower()
-            for eid, stats in all_stats.items():
-                if len(terms) > _FOCUS_SCENE_CHARACTER_CAP:  # 1 location + N names
+            for eid, stats in ctx.all_stats.items():
+                if len(terms) > _FOCUS_SCENE_CHARACTER_CAP:
                     break
                 if eid == player_entity_id:
                     continue
@@ -298,54 +385,147 @@ class ArbitratorEngine:
                     terms.append(name)
             focus_terms = terms
 
-        rag_results = self._vector_memory.query(
-            save_id,
-            combined_intents_text,
-            k=cfg.rag_chunk_count,
-            current_turn_id=turn_id,
-            max_turn_id=max_turn_id,
-            focus_terms=focus_terms,
-            exclude_chunk_type="lore",  # lore has its own retrieval (TICKET-072)
-        )
-        rag_chunks = [r["text"] for r in rag_results if r.get("chunk_type") != "lore"]
+        rag_results = []
+        if self._vector_memory is not None:
+            try:
+                rag_results = self._vector_memory.query(
+                    ctx.save_id,
+                    ctx.combined_intents_text,
+                    k=cfg.rag_chunk_count,
+                    current_turn_id=ctx.turn_id,
+                    max_turn_id=max_turn_id,
+                    focus_terms=focus_terms,
+                    exclude_chunk_type="lore",
+                )
+            except Exception as exc:
+                logger.debug("vector_memory query failed: %s", exc)
+                rag_results = []
+        elif self.kernel_registry:
+            rag_svc = self.kernel_registry.get_service("rag")
+            if rag_svc is not None:
+                try:
+                    rag_results = rag_svc.query(
+                        ctx.save_id,
+                        ctx.combined_intents_text,
+                        k=cfg.rag_chunk_count,
+                        current_turn_id=ctx.turn_id,
+                        max_turn_id=max_turn_id,
+                        focus_terms=focus_terms,
+                        exclude_chunk_type="lore",
+                    )
+                except TypeError:
+                    try:
+                        rag_results = rag_svc.query(ctx.save_id, ctx.combined_intents_text, k=cfg.rag_chunk_count)
+                    except Exception:
+                        rag_results = []
+                except Exception as exc:
+                    logger.debug("Kernel rag service query error: %s", exc)
+                    rag_results = []
 
-        # Step 3 — Relevant Context Filtering (Context Optimization)
-        # Only send stats for entities that are "active" in the current context
-        # to save tokens and reduce LLM confusion.
+        ctx.rag_chunks = [
+            r["text"] if isinstance(r, dict) and "text" in r else str(r)
+            for r in rag_results
+            if not (isinstance(r, dict) and r.get("chunk_type") == "lore")
+        ]
+        ctx.retrieved_memory = rag_results
+
         relevant_entity_ids = self._identify_relevant_entities(
-            save_id, combined_intents_text, history, rag_chunks, all_stats
+            ctx.save_id, ctx.combined_intents_text, ctx.history, ctx.rag_chunks, ctx.all_stats
         )
         logger.debug(f"[ARBITRATOR] Identified {len(relevant_entity_ids)} relevant entities: {sorted(list(relevant_entity_ids))}")
 
-        # Always include the actors that submitted intents
-        for actor_id in intents:
+        for actor_id in ctx.intents:
             relevant_entity_ids.add(actor_id)
-        if not intents:
+        if not ctx.intents:
             relevant_entity_ids.add("player")
 
-        filtered_stats = {
-            eid: stats for eid, stats in all_stats.items()
+        ctx.relevant_stats = {
+            eid: stats for eid, stats in ctx.all_stats.items()
             if eid in relevant_entity_ids
         }
-        # id_to_name / id_to_type / player_persona were resolved before the RAG
-        # query above (so on-scene names could bias retrieval — TICKET-073).
 
-        # Step 4 — Build prompt (with pending correction)
-        active_modifiers = self._load_active_modifiers(save_id)
-        from axiom.stat_dynamics import (
-            dynamics_by_key,
-            format_dynamics_prompt,
-            lookup_dynamics,
-            peak_hold_note,
+        ctx.total_mins = get_current_time(self._db_path, ctx.save_id)
+        ctx.time_ctx = get_time_of_day_context(ctx.total_mins)
+
+        player_loc_id = ctx.relevant_stats.get(player_entity_id, {}).get("Location")
+        if player_loc_id:
+            ctx.spatial_context = get_spatial_context(self._db_path, player_loc_id) or {}
+
+        ctx.triggered_events = self._fetch_triggered_events(ctx.save_id, ctx.total_mins)
+
+        ctx.local_character_names = []
+        if player_loc:
+            for eid, stats in ctx.relevant_stats.items():
+                loc = stats.get("Location")
+                if loc and str(loc).lower() == str(player_loc).lower():
+                    name = id_to_name.get(eid, eid)
+                    if name.lower() == "player":
+                        name = "Player"
+                    ctx.local_character_names.append(name)
+
+        ctx.lore_book_subset = self._fetch_relevant_lore(ctx.save_id, ctx.combined_intents_text)
+
+        from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
+        if memory_mode_is_living(cfg):
+            fact_lines = self._fetch_relevant_facts(
+                ctx.save_id,
+                max_turn_id=ctx.turn_id,
+                on_scene=ctx.local_character_names,
+                limit=cfg.rag_chunk_count,
+            )
+            prefix: list[str] = []
+            if memory_mental_models_active(cfg):
+                model_lines = self._fetch_relevant_mental_models(
+                    ctx.save_id,
+                    max_turn_id=ctx.turn_id,
+                    on_scene=ctx.local_character_names,
+                    limit=min(cfg.rag_chunk_count, 4),
+                )
+                prefix += [f"Profile: {s}" for s in model_lines]
+            if memory_beliefs_active(cfg):
+                belief_lines = self._fetch_relevant_beliefs(
+                    ctx.save_id,
+                    max_turn_id=ctx.turn_id,
+                    on_scene=ctx.local_character_names,
+                    limit=cfg.rag_chunk_count,
+                )
+                prefix += [f"Belief: {s}" for s in belief_lines]
+            prefix += [f"Known fact: {s}" for s in fact_lines]
+            if prefix:
+                ctx.rag_chunks = prefix + ctx.rag_chunks
+
+        if self.kernel_registry:
+            self.kernel_registry.execute_hook("axiom.step:gather_context", ctx)
+
+    def step_2_build_prompt(self, ctx: TurnContext) -> None:
+        """Step 2: Assemblage des sections de prompt (lore, persona, consignes, état du monde)."""
+        active_modifiers = self._load_active_modifiers(ctx.save_id)
+        dyn_table = {}
+        dyn_prompt = ""
+        has_stat_dyn = (
+            self.kernel_registry is None
+            or (hasattr(self.kernel_registry, "has_hook") and self.kernel_registry.has_hook("axiom.turn:arbitrate_stats"))
         )
-        dyn_table = dynamics_by_key(self._db_path)
-        now_minutes = get_current_time(self._db_path, save_id)
+        if has_stat_dyn:
+            try:
+                from axiom.stat_dynamics import (
+                    dynamics_by_key,
+                    format_dynamics_prompt,
+                    lookup_dynamics,
+                    peak_hold_note,
+                )
+                dyn_table = dynamics_by_key(self._db_path)
+                dyn_prompt = format_dynamics_prompt(self._db_path)
+            except Exception:
+                pass
+
+        now_minutes = ctx.total_mins
         entity_block = format_entity_stats_block(
             [
                 {
                     "entity_id": eid,
-                    "name": id_to_name.get(eid, eid),
-                    "entity_type": id_to_type.get(eid, "unknown"),
+                    "name": ctx.id_to_name.get(eid, eid),
+                    "entity_type": ctx.id_to_type.get(eid, "unknown"),
                     "stats": stats,
                     "modifiers": active_modifiers.get(eid, []),
                     "dyn_notes": {
@@ -354,171 +534,124 @@ class ArbitratorEngine:
                             (key, lookup_dynamics(key, dyn_table))
                             for key in stats
                         )
-                        if dyn and peak_hold_note(stats, k, dyn, now_minutes)
-                    },
+                        if dyn and "peak_hold_note" in locals() and peak_hold_note(stats, k, dyn, now_minutes)
+                    } if dyn_table else {},
                 }
-                for eid, stats in filtered_stats.items()
+                for eid, stats in ctx.relevant_stats.items()
             ]
         )
-        dyn_prompt = format_dynamics_prompt(self._db_path)
         if dyn_prompt:
             entity_block = f"{entity_block}\n\n{dyn_prompt}"
 
-        # Fetch actual Lore Book entries if available (subset matching the query)
-        lore_book_subset = self._fetch_relevant_lore(save_id, combined_intents_text)
+        if self.kernel_registry is None:
+            try:
+                from axiom.inventory import format_inventory_prompt, load_inventory_tree
+                inv_tree = load_inventory_tree(self._db_path, ctx.save_id)
+                inv_text = format_inventory_prompt(inv_tree, ctx.id_to_name)
+                if inv_text and inv_text != "(empty)":
+                    entity_block = f"{entity_block}\n\nINVENTORY (nested: on person / in containers / at locations)\n{inv_text}"
+            except Exception:
+                pass
 
-        try:
-            from axiom.inventory import format_inventory_prompt, load_inventory_tree
-            inv_tree = load_inventory_tree(self._db_path, save_id)
-            inv_text = format_inventory_prompt(inv_tree, id_to_name)
-            if inv_text and inv_text != "(empty)":
-                entity_block = f"{entity_block}\n\nINVENTORY (nested: on person / in containers / at locations)\n{inv_text}"
-        except Exception:
-            pass
+        named_intents = {ctx.id_to_name.get(eid, eid): intent for eid, intent in (ctx.intents or {}).items()}
+        hero_name_str = ctx.id_to_name.get(ctx.hero_entity_id, ctx.hero_entity_id) if ctx.hero_entity_id else None
 
-        # Get current time context
-        total_mins = get_current_time(self._db_path, save_id)
-        time_ctx = get_time_of_day_context(total_mins)
+        from axiom.config import load_config
+        cfg = load_config()
 
-        # Spatial Context (Approach A: Hierarchical Breadcrumbs + Neighbors)
-        spatial_ctx = None
-        player_loc_id = filtered_stats.get(player_entity_id, {}).get("Location")
-        if player_loc_id:
-            spatial_ctx = get_spatial_context(self._db_path, player_loc_id)
-
-        # Phase 12.1: Fetch triggered scheduled events
-        triggered_events = self._fetch_triggered_events(save_id, total_mins)
-
-        # Map intents to names
-        named_intents = {id_to_name.get(eid, eid): intent for eid, intent in (intents or {}).items()}
-        hero_name_str = id_to_name.get(hero_entity_id, hero_entity_id) if hero_entity_id else None
-
-        # Collect local character names for Group Awareness
-        local_character_names = []
-        player_loc = filtered_stats.get(player_entity_id, {}).get("Location")
-        if player_loc:
-            for eid, stats in filtered_stats.items():
-                loc = stats.get("Location")
-                if loc and str(loc).lower() == str(player_loc).lower():
-                    # Map the entity ID to name
-                    name = id_to_name.get(eid, eid)
-                    if name.lower() == "player":
-                        name = "Player"
-                    local_character_names.append(name)
-
-        # Living memory mode: surface distilled long-term facts (those about the
-        # characters on scene, then the most recent ones) as extra [MEMORY] lines.
-        # Lite mode never calls this, so the deterministic path is unchanged.
-        from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
-        if memory_mode_is_living(cfg):
-            fact_lines = self._fetch_relevant_facts(
-                save_id,
-                max_turn_id=turn_id,
-                on_scene=local_character_names,
-                limit=cfg.rag_chunk_count,
-            )
-            # Hierarchy of recall (most synthetic first): mental models, then
-            # beliefs, then facts, then the raw narrative chunks. Each upper layer
-            # is opt-in (Phase 3 beliefs, §7.8 mental models).
-            prefix: list[str] = []
-            if memory_mental_models_active(cfg):
-                model_lines = self._fetch_relevant_mental_models(
-                    save_id,
-                    max_turn_id=turn_id,
-                    on_scene=local_character_names,
-                    limit=min(cfg.rag_chunk_count, 4),
-                )
-                prefix += [f"Profile: {s}" for s in model_lines]
-            if memory_beliefs_active(cfg):
-                belief_lines = self._fetch_relevant_beliefs(
-                    save_id,
-                    max_turn_id=turn_id,
-                    on_scene=local_character_names,
-                    limit=cfg.rag_chunk_count,
-                )
-                prefix += [f"Belief: {s}" for s in belief_lines]
-            prefix += [f"Known fact: {s}" for s in fact_lines]
-            if prefix:
-                rag_chunks = prefix + rag_chunks
-
-        messages = build_narrative_prompt(
-            universe_system_prompt=universe_system_prompt,
+        ctx.prompt_messages = build_narrative_prompt(
+            universe_system_prompt=ctx.universe_system_prompt,
             entity_stats_block=entity_block,
-            rag_chunks=rag_chunks,
-            history=history,
+            rag_chunks=ctx.rag_chunks if self.kernel_registry is None else [],
+            history=ctx.history,
             intents=named_intents,
             pending_correction=self._pending_correction,
-            player_persona=player_persona,
-            lore_book=lore_book_subset,
-            verbosity_level=verbosity_level,
-            current_time_str=time_ctx,
-            scheduled_events=triggered_events,
-            spatial_context=spatial_ctx,
+            player_persona=ctx.player_persona,
+            lore_book=ctx.lore_book_subset,
+            verbosity_level=ctx.verbosity,
+            current_time_str=ctx.time_ctx,
+            scheduled_events=ctx.triggered_events,
+            spatial_context=ctx.spatial_context if ctx.spatial_context else None,
             mode=self._mode,
             hero_entity_id=hero_name_str,
-            local_character_names=local_character_names,
+            local_character_names=ctx.local_character_names,
             basic_prompt=getattr(cfg, "basic_prompt", ""),
             negative_prompt=getattr(cfg, "negative_prompt", ""),
         )
 
-        # Step 4 — Clear pending correction immediately after prompt is built
         self._pending_correction = None
 
-        # Step 5 — Call LLM (streaming or non-streaming based on callback)
-        # Phase 11: Dynamic stop sequences to prevent impersonation
+    def step_3_execute_inference(
+        self,
+        ctx: TurnContext,
+        stream_cb: Callable[[str], None] | None = None,
+        cancel_event: Any = None,
+    ) -> None:
+        """Step 3: Appel LLM avec support du streaming token par token et interception de l'annulation."""
         stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>"]
-        for actor_id in intents:
+        for actor_id in ctx.intents:
             stops.extend([f"\n{actor_id}:", f"\n[{actor_id}]"])
 
-        # Mapping verbosity to max_tokens to prevent runaway generation
         verbosity_to_tokens = {
             "short": 150,
             "balanced": 400,
-            "talkative": 1024
+            "talkative": 1024,
         }
-        max_tokens = verbosity_to_tokens.get(verbosity_level.lower(), 1024)
+        max_tokens = verbosity_to_tokens.get(ctx.verbosity.lower(), 1024)
+
+        if cancel_event is not None and getattr(self._llm, "cancel_event", None) is None:
+            self._llm.cancel_event = cancel_event
 
         llm_response = self._call_llm(
-            messages,
-            stream_token_callback,
-            temperature,
-            top_p,
+            ctx.prompt_messages,
+            stream_cb,
+            ctx.temperature,
+            ctx.top_p,
             stop_sequences=stops,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
-        narrative_text: str = llm_response.narrative_text
+        ctx.raw_llm_response = llm_response.narrative_text
+        ctx.narrative_text = llm_response.narrative_text
+        ctx.parsed_tool_call = llm_response.tool_call if isinstance(llm_response.tool_call, dict) else {}
 
-        # Step 6 — Parse tool call
-        state_changes: list[dict[str, Any]] = []
-        inventory_changes: list[dict[str, Any]] = []
-        modifier_changes: list[dict[str, Any]] = []
-        stat_events: list[dict[str, Any]] = []
-        game_state_tag: str = "exploration"
-        scene_pace: str = "deliberate"
-        if llm_response.tool_call:
-            state_changes = llm_response.tool_call.get("state_changes", [])
-            inventory_changes = llm_response.tool_call.get("inventory_changes", [])
-            modifier_changes = llm_response.tool_call.get("modifiers", []) or []
-            stat_events = llm_response.tool_call.get("stat_events", []) or []
-            if not isinstance(state_changes, list):
-                state_changes = []
-            if not isinstance(inventory_changes, list):
-                inventory_changes = []
-            if not isinstance(modifier_changes, list):
-                modifier_changes = []
-            if not isinstance(stat_events, list):
-                stat_events = []
-            game_state_tag = str(llm_response.tool_call.get("game_state_tag", "exploration")).strip().lower()
-            scene_pace = str(llm_response.tool_call.get("scene_pace", "deliberate")).strip().lower()
+    def step_4_parse_response(self, ctx: TurnContext) -> None:
+        """Step 4: Extraction de la narration et parsing résilient du JSON."""
+        tool_call = ctx.parsed_tool_call or {}
+        if isinstance(tool_call, dict):
+            ctx.raw_state_changes = tool_call.get("state_changes", []) or []
+            ctx.raw_inventory_changes = tool_call.get("inventory_changes", []) or []
+            ctx.raw_modifier_changes = tool_call.get("modifiers", []) or []
+            ctx.stat_events = tool_call.get("stat_events", []) or []
+            ctx.session_lore_changes = (
+                tool_call.get("session_lore")
+                or tool_call.get("lore")
+                or []
+            )
+            if not isinstance(ctx.raw_state_changes, list):
+                ctx.raw_state_changes = []
+            if not isinstance(ctx.raw_inventory_changes, list):
+                ctx.raw_inventory_changes = []
+            if not isinstance(ctx.raw_modifier_changes, list):
+                ctx.raw_modifier_changes = []
+            if not isinstance(ctx.stat_events, list):
+                ctx.stat_events = []
+            if not isinstance(ctx.session_lore_changes, list):
+                ctx.session_lore_changes = []
+            ctx.game_state_tag = str(tool_call.get("game_state_tag", "exploration")).strip().lower()
+            ctx.scene_pace = str(tool_call.get("scene_pace", "deliberate")).strip().lower()
 
-        # Deduce elapsed in-game minutes. By default a dedicated "Timekeeper" LLM
-        # call parses the action + narrative to estimate the time that passed.
-        # This second call can be disabled (cfg.timekeeper_enabled = False) to save
-        # an LLM round-trip per turn, in which case the time is derived from the
-        # scene pace alone — cheaper but coarser. See Pilier 5 / TICKET-015.
+        from axiom.config import load_config
+        cfg = load_config()
+
         elapsed_minutes: int | None = None
-        if cfg.timekeeper_enabled:
-            prompt = build_timekeeper_prompt(combined_intents_text, narrative_text)
+        if "elapsed_minutes" in tool_call:
+            try:
+                elapsed_minutes = int(tool_call["elapsed_minutes"])
+            except (ValueError, TypeError):
+                elapsed_minutes = None
+
+        if elapsed_minutes is None and cfg.timekeeper_enabled:
+            prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
             try:
                 time_llm = getattr(self, "_time_llm", self._llm)
                 tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
@@ -536,8 +669,6 @@ class ArbitratorEngine:
             except Exception as e:
                 logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
 
-        # Fallback based on scene pace. Also the primary path when the Timekeeper
-        # is disabled or could not produce a value.
         if elapsed_minutes is None:
             pace_defaults = {
                 "combat": 2,
@@ -547,125 +678,96 @@ class ArbitratorEngine:
                 "travel": 60,
                 "deliberate": 15,
                 "montage": 60,
-                "tension": 10
+                "tension": 10,
             }
-            elapsed_minutes = pace_defaults.get(scene_pace, 15)
+            elapsed_minutes = pace_defaults.get(ctx.scene_pace, 15)
 
-        # In-game clock after this turn. Persisted to Timeline once, after the
-        # state-change loop below, so a travelling turn produces a single timeline
-        # row (with the travel note) instead of two (TICKET-019).
-        new_time = total_mins + elapsed_minutes
-        travel_note: str | None = None
+        ctx.elapsed_minutes = elapsed_minutes
+        ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
 
-        # Step 7 — Validate and apply each state change
-        applied_changes: list[dict[str, Any]] = []
-        rejected_changes: list[dict[str, Any]] = []
-        rejection_messages: list[str] = []
-
-        # Load the set of defined stat names ONCE per turn (lowercased) instead
-        # of re-querying Stat_Definitions for every single change (was an N+1).
-        defined_stats = self._load_defined_stats() if (state_changes or modifier_changes) else set()
-
+    def step_5_arbitrate_rules(self, ctx: TurnContext) -> None:
+        """Step 5: Validation mathématique des deltas de stats, cohérence des inventaires, déclenchement des règles du RulesEngine."""
+        _pending_events = ctx.write_batch.events
+        defined_stats = self._load_defined_stats() if (ctx.raw_state_changes or ctx.raw_modifier_changes) else set()
         entity_meta = self._load_entity_meta()
-        for change in state_changes:
-            entity_id: str = self._resolve_entity_id(
-                change.get("entity_id", ""), all_stats, entity_meta
-            )
-            stat_key: str = self._resolve_stat_key(
-                change.get("stat_key", ""), all_stats.get(entity_id, {})
-            )
-            change["entity_id"] = entity_id
-            change["stat_key"] = stat_key
-            delta: float | None = change.get("delta")
-            value: Any = change.get("value")
 
-            valid, reason = self._validate_change(
-                entity_id, stat_key, delta, value, all_stats, defined_stats
-            )
+        if self.kernel_registry and self.kernel_registry.has_hook("axiom.step:arbitrate_mutations"):
+            self.kernel_registry.execute_hook("axiom.step:arbitrate_mutations", ctx)
+        else:
+            rejection_messages: list[str] = []
+            for change in ctx.raw_state_changes:
+                entity_id: str = self._resolve_entity_id(
+                    change.get("entity_id", ""), ctx.all_stats, entity_meta
+                )
+                stat_key: str = self._resolve_stat_key(
+                    change.get("stat_key", ""), ctx.all_stats.get(entity_id, {})
+                )
+                change["entity_id"] = entity_id
+                change["stat_key"] = stat_key
+                delta: float | None = change.get("delta")
+                value: Any = change.get("value")
 
-            if valid:
-                payload: dict[str, Any] = {"entity_id": entity_id, "stat_key": stat_key}
-                if delta is not None:
-                    payload["delta"] = delta
-                    event_type = "stat_change"
+                valid, reason = self._validate_change(
+                    entity_id, stat_key, delta, value, ctx.all_stats, defined_stats
+                )
+
+                if valid:
+                    payload: dict[str, Any] = {"entity_id": entity_id, "stat_key": stat_key}
+                    if delta is not None:
+                        payload["delta"] = delta
+                        event_type = "stat_change"
+                    else:
+                        payload["value"] = value
+                        event_type = "stat_set"
+
+                    if entity_id == ctx.player_entity_id and stat_key == "Location" and value:
+                        old_loc = ctx.all_stats.get(entity_id, {}).get("Location")
+                        if old_loc and old_loc != value:
+                            travel_dist = self._get_travel_distance(old_loc, value)
+                            if travel_dist > 0:
+                                ctx.travel_note = f"Traveled to {value} ({travel_dist} km)"
+
+                    _pending_events.append((ctx.save_id, ctx.turn_id, event_type, entity_id, payload))
+                    ctx.write_batch.stat_changes.append(change)
+                    self._apply_local_change(entity_id, payload, ctx.all_stats)
+                    ctx.applied_changes.append(change)
                 else:
-                    payload["value"] = value
-                    event_type = "stat_set"
+                    rejected = dict(change)
+                    rejected["reason"] = reason
+                    ctx.rejected_changes_detailed.append(rejected)
+                    msg = f"{entity_id}.{stat_key}: {reason}"
+                    ctx.rejected_changes.append(msg)
+                    rejection_messages.append(msg)
 
-                # Special Case: Location Change -> annotate the timeline row with
-                # the distance traveled. The actual in-game time cost is already
-                # captured in elapsed_minutes (the LLM/Timekeeper accounts for the
-                # mode of transport via the narrative); here we only enrich the
-                # single timeline entry written after this loop (TICKET-019).
-                if entity_id == player_entity_id and stat_key == "Location" and value:
-                    old_loc = all_stats.get(entity_id, {}).get("Location")
-                    if old_loc and old_loc != value:
-                        travel_dist = self._get_travel_distance(old_loc, value)
-                        if travel_dist > 0:
-                            travel_note = f"Traveled to {value} ({travel_dist} km)"
+            if rejection_messages:
+                self._queue_correction("; ".join(rejection_messages))
 
-                _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
-                # Update local snapshot for downstream Rules evaluation
-                self._apply_local_change(entity_id, payload, all_stats)
+        if self.kernel_registry:
+            self.kernel_registry.execute_hook("axiom.turn:arbitrate_stats", ctx)
 
-                applied_changes.append(change)
-            else:
-                rejected = dict(change)
-                rejected["reason"] = reason
-                rejected_changes.append(rejected)
-                rejection_messages.append(
-                    f"{entity_id}.{stat_key}: {reason}"
-                )
-
-        # Queue a combined correction if any changes were rejected
-        if rejection_messages:
-            self._queue_correction("; ".join(rejection_messages))
-
-        # Step 7.3 — Engine-ticked temporary stats (heal / clamp / crash).
-        dyn_applied = self._tick_stat_dynamics(
-            save_id, turn_id, all_stats, elapsed_minutes, new_time,
-            stat_events, _pending_events,
-        )
-        applied_changes.extend(dyn_applied)
-
-        # Persist the advanced in-game clock — exactly one Timeline row per turn
-        # (TICKET-010 / TICKET-019). The description carries the travel note when
-        # the player moved, otherwise the plain time advance.
-        timeline_desc = travel_note or f"Turn advanced by {elapsed_minutes} mins"
-        try:
-            with get_connection(self._db_path) as conn:
-                conn.execute(
-                    "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
-                    (save_id, turn_id, new_time, timeline_desc)
-                )
-                conn.commit()
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Failed to persist new time: {e}")
-
-        # Step 7.4 — Temporary modifiers (buffs/debuffs that tick with in-game time)
-        applied_modifiers: list[dict[str, Any]] = []
-        for mod in modifier_changes:
+        for mod in ctx.raw_modifier_changes:
             if not isinstance(mod, dict):
                 continue
             entity_id = self._resolve_entity_id(
-                mod.get("entity_id", ""), all_stats, entity_meta
+                mod.get("entity_id", ""), ctx.all_stats, entity_meta
             )
             stat_key = self._resolve_stat_key(
-                str(mod.get("stat_key", "")), all_stats.get(entity_id, {})
+                str(mod.get("stat_key", "")), ctx.all_stats.get(entity_id, {})
             )
             clear = bool(mod.get("clear"))
             if clear:
                 if not entity_id or not stat_key:
                     self._queue_correction("Modifier clear missing entity_id or stat_key")
                     continue
-                removed = self._modifier_processor.clear_modifiers(
-                    save_id, entity_id, stat_key
-                )
-                applied_modifiers.append({
+                ctx.write_batch.modifier_mutations.append({
+                    "type": "clear",
+                    "entity_id": entity_id,
+                    "stat_key": stat_key,
+                })
+                ctx.applied_modifiers.append({
                     "entity_id": entity_id,
                     "stat_key": stat_key,
                     "clear": True,
-                    "removed": removed,
                 })
                 continue
             try:
@@ -690,152 +792,127 @@ class ArbitratorEngine:
                     f"Modifier {entity_id}.{stat_key}: unknown stat"
                 )
                 continue
-            try:
-                self._modifier_processor.add_modifier(
-                    save_id, entity_id, stat_key, delta, minutes
-                )
-            except (ValueError, sqlite3.Error) as exc:
-                self._queue_correction(f"Modifier {entity_id}.{stat_key}: {exc}")
-                continue
-            applied_modifiers.append({
+            ctx.write_batch.modifier_mutations.append({
+                "type": "add",
+                "entity_id": entity_id,
+                "stat_key": stat_key,
+                "delta": delta,
+                "minutes": minutes,
+            })
+            ctx.applied_modifiers.append({
                 "entity_id": entity_id,
                 "stat_key": stat_key,
                 "delta": delta,
                 "minutes": minutes,
             })
 
-        # Step 7.5 — Process Inventory Changes
-        # TICKET-095: before this turn touches the inventory, make sure the
-        # previous turn has a snapshot (turn 0 of a new game, or the last turn of
-        # a save played before snapshots existed): the current state IS the
-        # end-of-previous-turn state, so rewinding to it can restore the items.
-        if turn_id >= 1:
-            from axiom.inventory import inventory_at, snapshot_inventory
-            with get_connection(self._db_path) as conn:
-                if inventory_at(conn, save_id, turn_id - 1) is None:
-                    snapshot_inventory(conn, save_id, turn_id - 1)
-                    conn.commit()
-        applied_inventory: list[dict[str, Any]] = []
-        for inv_change in inventory_changes:
-            # { "entity_id": str, "item_id": str, "action": "add"|"remove", "quantity": int }
-            valid, reason = self._validate_inventory_change(save_id, inv_change)
-            if valid:
-                self._apply_inventory_change(save_id, turn_id, inv_change, _pending_events)
-                applied_inventory.append(inv_change)
-            else:
-                self._queue_correction(f"Inventory: {reason}")
+        if self.kernel_registry is None:
+            for inv_change in ctx.raw_inventory_changes:
+                valid, reason = self._validate_inventory_change(ctx.save_id, inv_change)
+                if valid:
+                    ctx.write_batch.inventory_mutations.append(dict(inv_change))
+                    action = inv_change["action"]
+                    target = inv_change.get("entity_id") or inv_change.get("holder_id")
+                    _pending_events.append((ctx.save_id, ctx.turn_id, f"inventory_{action}", target, inv_change))
+                    ctx.inventory_changes.append(inv_change)
+                else:
+                    self._queue_correction(f"Inventory: {reason}")
 
-        # Step 8 — Run Rules Engine (Persistent & Chained)
-        # Point 4: Rule actions now generate persistent events and update stats
-        triggered_rules: list[dict[str, Any]] = []
-        _seen_rule_signatures: set[str] = set()
-        mutated_entities = {c.get("entity_id") for c in applied_changes if c.get("entity_id")}
-        rule_chain_warning = False
+        if ctx.session_lore_changes:
+            for entry in ctx.session_lore_changes:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("name", "")).strip()
+                if not name:
+                    continue
+                entry_id = str(uuid.uuid4())
+                category = str(entry.get("category", "General")) or "General"
+                keywords = str(entry.get("keywords", "")).strip()
+                content = str(entry.get("content", "")).strip()
+                ctx.write_batch.lore_entries.append((
+                    entry_id, ctx.save_id, category, name, keywords, content, ctx.turn_id
+                ))
 
-        # We keep evaluating while new rules trigger (chaining)
-        # Max 5 iterations to prevent infinite loops from poorly defined rules
-        for i in range(5):
-            new_mutations = set()
-            for entity_id in list(mutated_entities):
-                stats = all_stats.get(entity_id, {})
-                triggered_actions = self._rules_engine.evaluate(entity_id, stats)
+        if not (self.kernel_registry and self.kernel_registry.has_hook("axiom.step:arbitrate_mutations")):
+            triggered_rules: list[dict[str, Any]] = []
+            _seen_rule_signatures: set[str] = set()
+            mutated_entities = {c.get("entity_id") for c in ctx.applied_changes if c.get("entity_id")}
+            rule_chain_warning = False
 
-                for action in triggered_actions:
-                    # Check if this rule already triggered for this entity this turn
-                    # to prevent trivial infinite loops
-                    action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
-                    if action_id in _seen_rule_signatures:
-                        continue
-                    _seen_rule_signatures.add(action_id)
+            for i in range(5):
+                new_mutations = set()
+                for entity_id in list(mutated_entities):
+                    stats = ctx.all_stats.get(entity_id, {})
+                    triggered_actions = self._rules_engine.evaluate(entity_id, stats)
 
-                    # 1. Map rule action to a persistent event
-                    payload: dict[str, Any] = {
-                        "entity_id": entity_id,
-                        "stat_key": action.get("stat"),
-                        "source_rule": action.get("rule_id")
-                    }
+                    for action in triggered_actions:
+                        action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
+                        if action_id in _seen_rule_signatures:
+                            continue
+                        _seen_rule_signatures.add(action_id)
 
-                    event_type = "stat_set"
-                    if action["type"] == "stat_change":
-                        payload["delta"] = action.get("value")
-                        event_type = "stat_change"
-                    else:
-                        payload["value"] = action.get("value")
+                        payload: dict[str, Any] = {
+                            "entity_id": entity_id,
+                            "stat_key": action.get("stat"),
+                            "source_rule": action.get("rule_id")
+                        }
 
-                    _pending_events.append((save_id, turn_id, event_type, entity_id, payload))
+                        event_type = "stat_set"
+                        if action["type"] == "stat_change":
+                            payload["delta"] = action.get("value")
+                            event_type = "stat_change"
+                        else:
+                            payload["value"] = action.get("value")
 
-                    # 1b. Also record the trigger itself for tracking/history
-                    _pending_events.append((save_id, turn_id, "rule_trigger", entity_id, action))
+                        _pending_events.append((ctx.save_id, ctx.turn_id, event_type, entity_id, payload))
+                        _pending_events.append((ctx.save_id, ctx.turn_id, "rule_trigger", entity_id, action))
+                        self._apply_local_change(entity_id, payload, ctx.all_stats)
 
-                    # 2. Update local stats for chaining/consistency
-                    self._apply_local_change(entity_id, payload, all_stats)
+                        triggered_rules.append(action)
+                        new_mutations.add(entity_id)
 
-                    triggered_rules.append(action)
-                    new_mutations.add(entity_id)
+                if not new_mutations:
+                    break
 
-            if not new_mutations:
-                break
+                if i == 4:
+                    rule_chain_warning = True
+                    _pending_events.append((ctx.save_id, ctx.turn_id, "rule_engine_warning", "system",
+                        {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."})
+                    )
 
-            if i == 4: # Reached limit
-                rule_chain_warning = True
-                _pending_events.append((save_id, turn_id, "rule_engine_warning", "system",
-                    {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."})
+                mutated_entities = new_mutations
+
+            ctx.triggered_rules = triggered_rules
+            ctx.rule_chain_warning = rule_chain_warning
+
+    def step_6_stage_mutations(self, ctx: TurnContext) -> None:
+        """Step 6: Remplissage de ctx.write_batch avec les événements narratifs, les snapshots et les modificateurs."""
+        _pending_events = ctx.write_batch.events
+        if self.kernel_registry:
+            self.kernel_registry.execute_hook("axiom.step:after_step", ctx)
+        else:
+            timeline_desc = ctx.travel_note or f"Turn advanced by {ctx.elapsed_minutes} mins"
+            ctx.write_batch.timeline_entries.append((ctx.save_id, ctx.turn_id, ctx.new_time, timeline_desc))
+            ctx.write_batch.modifier_mutations.append({"type": "tick", "elapsed_minutes": ctx.elapsed_minutes})
+            ctx.write_batch.modifier_mutations.append({"type": "snapshot", "turn_id": ctx.turn_id})
+
+        if not self.kernel_registry and self._vector_memory is not None:
+            if ctx.narrative_text.strip():
+                ctx.write_batch.post_commit_callbacks.append(
+                    lambda: self._vector_memory.embed_chunk(ctx.save_id, ctx.turn_id, ctx.narrative_text)
                 )
 
-            mutated_entities = new_mutations
-
-        # Step 9 — Tick modifiers, then snapshot the (post-tick) table so a later
-        # rewind to this turn can restore the buffs/debuffs (TICKET-074). The
-        # snapshot is a no-op when the save has no active modifiers.
-        self._modifier_processor.tick_modifiers(save_id, elapsed_minutes=elapsed_minutes)
-        self._modifier_processor.snapshot_modifiers(save_id, turn_id)
-        # Same for the nested inventory (TICKET-095): captured every turn, after
-        # this turn's inventory_changes were applied, so rewind can put items back.
-        from axiom.inventory import snapshot_inventory
-        with get_connection(self._db_path) as conn:
-            snapshot_inventory(conn, save_id, turn_id)
-            conn.commit()
-
-        # Step 10 — Embed narrative chunk
-        if narrative_text.strip():
-            self._vector_memory.embed_chunk(save_id, turn_id, narrative_text)
-
-        # Step 11 — Log narrative event (Multiverse-compatible)
-        text_to_log = combined_intents_text if not narrative_text.strip() else narrative_text
+        text_to_log = ctx.combined_intents_text if not ctx.narrative_text.strip() else ctx.narrative_text
         _pending_events.append((
-            save_id, turn_id, "narrative_text", "system",
+            ctx.save_id, ctx.turn_id, "narrative_text", "system",
             {"active": 0, "variants": [text_to_log]},
         ))
 
-        # Flush all deferred events in a single transaction
-        self._event_sourcer.append_events_batch(_pending_events)
+        ctx.write_batch.fired_scheduled_events.extend([ev["event_id"] for ev in ctx.triggered_events])
 
-        # Keep the materialised State_Cache in sync with this turn's changes so
-        # DB reads (sidebar load tasks, next turn's stat fetch) don't show stats
-        # frozen at session load. This is also what lets the next turn re-read
-        # fresh effective stats without any in-memory cache. (TICKET-002)
-        self._event_sourcer.update_state_cache(save_id, _pending_events)
-
-        # Phase 12.1: Mark scheduled events as fired (tagged with this turn so a
-        # later rewind past it can un-fire them — TICKET-075).
-        for ev in triggered_events:
-            self._mark_event_as_fired(save_id, ev["event_id"], turn_id)
-
-        return ArbitratorResult(
-            narrative_text=narrative_text,
-            applied_changes=applied_changes,
-            rejected_changes=rejected_changes,
-            inventory_changes=applied_inventory,
-            applied_modifiers=applied_modifiers,
-            triggered_rules=triggered_rules,
-            rule_chain_warning=rule_chain_warning,
-            game_state_tag=game_state_tag,
-            player_entity_id=player_entity_id,
-            elapsed_minutes=elapsed_minutes,
-            scene_pace=scene_pace,
-            in_game_time=new_time,
-            lore_hits=lore_book_subset,
-        )
+        if ctx.auto_commit:
+            with get_connection(self._db_path) as conn:
+                ctx.write_batch.commit_all(conn, ctx.save_id, ctx.turn_id)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -1661,8 +1738,8 @@ class ArbitratorEngine:
             return False, f"Unknown entity: {entity_id}"
 
         # Stat Restriction Rule: Only allow stats defined in Stat_Definitions (case-insensitive)
-        # Plus the special 'Description' stat which is allowed for all entities.
-        if stat_key.lower() != "description":
+        # Plus the special 'Description' and 'Location' stats which are allowed for entities.
+        if stat_key.lower() not in ("description", "location"):
             if stat_key.lower() not in defined_stats:
                 return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
             if not self._stat_allowed_for_entity(entity_id, stat_key):
@@ -1765,6 +1842,7 @@ class ArbitratorEngine:
         location_id = str(change.get("location_id") or "").strip()
         container = str(
             change.get("container_instance_id")
+            or change.get("container_id")
             or change.get("container")
             or change.get("container_name")
             or ""
@@ -1805,7 +1883,12 @@ class ArbitratorEngine:
         change["entity_id"] = holder_id if holder_kind == "entity" else change.get("entity_id") or holder_id
 
         is_container = bool(change.get("is_container"))
-        container_name = str(change.get("container_name") or change.get("container") or "").strip()
+        container_name = str(
+            change.get("container_name")
+            or change.get("container_id")
+            or change.get("container")
+            or ""
+        ).strip()
 
         from axiom.inventory import InventoryError, _holder_exists, ensure_item_definition
 

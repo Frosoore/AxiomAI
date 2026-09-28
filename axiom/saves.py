@@ -874,87 +874,10 @@ def fork_save(
         src["player_persona"] or "",
     )
 
+    from axiom.storage_registry import execute_fork
+
     with get_connection(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        # Copie des events jusqu'au point (event_id régénéré).
-        ev_rows = conn.execute(
-            "SELECT turn_id, event_type, target_entity, payload FROM Event_Log "
-            "WHERE save_id = ? AND turn_id <= ? ORDER BY event_id ASC;",
-            (save_id, turn_id),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
-            "VALUES (?, ?, ?, ?, ?);",
-            [(new_id, r["turn_id"], r["event_type"], r["target_entity"], r["payload"])
-             for r in ev_rows],
-        )
-        # Timeline jusqu'au point.
-        tl_rows = conn.execute(
-            "SELECT turn_id, in_game_time, description FROM Timeline "
-            "WHERE save_id = ? AND turn_id <= ? ORDER BY turn_id ASC;",
-            (save_id, turn_id),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
-            "VALUES (?, ?, ?, ?);",
-            [(new_id, r["turn_id"], r["in_game_time"], r["description"]) for r in tl_rows],
-        )
-        # Inventaire & modifiers courants (non event-sourcés → copie de l'état présent).
-        inv_rows = conn.execute(
-            "SELECT entity_id, item_id, quantity FROM Items_Inventory WHERE save_id = ?;",
-            (save_id,),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
-            "VALUES (?, ?, ?, ?);",
-            [(new_id, r["entity_id"], r["item_id"], r["quantity"]) for r in inv_rows],
-        )
-        try:
-            _fork_item_instances(conn, save_id, new_id, turn_id)
-        except sqlite3.Error:
-            pass
-        try:
-            lore_rows = conn.execute(
-                "SELECT category, name, keywords, content, origin_turn "
-                "FROM Session_Lore WHERE save_id = ?;",
-                (save_id,),
-            ).fetchall()
-            conn.executemany(
-                "INSERT INTO Session_Lore "
-                "(entry_id, save_id, category, name, keywords, content, origin_turn) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?);",
-                [(str(uuid.uuid4()), new_id, r["category"], r["name"], r["keywords"],
-                  r["content"], r["origin_turn"]) for r in lore_rows],
-            )
-        except sqlite3.Error:
-            pass
-        mod_rows = conn.execute(
-            "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
-            "WHERE save_id = ?;",
-            (save_id,),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO Active_Modifiers "
-            "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
-            "VALUES (?, ?, ?, ?, ?, ?);",
-            [(str(uuid.uuid4()), new_id, r["entity_id"], r["stat_key"], r["delta"],
-              r["minutes_remaining"]) for r in mod_rows],
-        )
-        # Sans cette copie, les événements planifiés déjà déclenchés se
-        # redéclencheraient dans la save forkée. `fired_turn_id` (TICKET-075) doit
-        # voyager pour que le rewind « dé-tire » correctement après un fork ;
-        # ensure_ d'abord car une save embarquée ancienne peut précéder la colonne.
-        from axiom.schema import ensure_fired_event_turn_column
-        ensure_fired_event_turn_column(conn)
-        fired_rows = conn.execute(
-            "SELECT event_id, fired_turn_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
-            (save_id,),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) "
-            "VALUES (?, ?, ?);",
-            [(new_id, r["event_id"], r["fired_turn_id"]) for r in fired_rows],
-        )
+        execute_fork(conn, save_id, new_id, turn_id)
         conn.commit()
 
     sourcer = EventSourcer(db_path)

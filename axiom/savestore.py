@@ -25,33 +25,23 @@ Zero Qt dependency: pure engine.
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 import uuid
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 from axiom.compile import hash_directory
 from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.library import universe_root_for
 from axiom.schema import create_universe_db
 
-# Tables de définition copiées de l'univers vers chaque save db (colonnes
-# explicites = schéma courant ; l'univers source est migré avant copie).
-_DEFINITION_COPY: list[tuple[str, tuple[str, ...]]] = [
-    ("Universe_Meta", ("key", "value")),
-    ("Entity_Types", ("type_id", "name", "role", "description", "is_builtin")),
-    ("Stat_Definitions", ("stat_id", "name", "description", "value_type", "parameters")),
-    ("Stat_Type_Links", ("stat_id", "type_id")),
-    ("Entities", ("entity_id", "entity_type", "entity_role", "name", "description", "is_active", "origin")),
-    ("Entity_Stats", ("entity_id", "stat_key", "stat_value")),
-    ("Rules", ("rule_id", "priority", "conditions", "actions", "target_entity")),
-    ("Lore_Book", ("entry_id", "category", "name", "keywords", "content")),
-    ("Scheduled_Events", ("event_id", "trigger_minute", "title", "description")),
-    ("Item_Definitions", ("item_id", "name", "description", "category", "weight", "rarity", "is_container", "capacity")),
-    ("Story_Setup", ("setup_id", "question", "type", "options", "max_selections", "priority")),
-    ("Locations", ("location_id", "name", "scale", "parent_id", "description", "x", "y")),
-    ("Location_Connections", ("source_id", "target_id", "distance_km")),
-]
+from axiom.storage_registry import get_definition_copy_specs, get_runtime_copy_specs
+
+# Tables de définition copiées de l'univers vers chaque save db (dérivées du registre central).
+_DEFINITION_COPY: list[tuple[str, tuple[str, ...]]] = get_definition_copy_specs()
 
 _DDL_SAVE_META = """
 CREATE TABLE IF NOT EXISTS Save_Meta (
@@ -182,12 +172,16 @@ def create_save(
     player_name: str,
     difficulty: str,
     player_persona: str = "",
+    setup_answers: dict[str, Any] | None = None,
 ) -> dict:
     """Create a new game in its own `saves/<universe>/save_<uuid>.db` database.
 
     The universe definition is copied into the save db (self-contained). The
     link to the universe (db + optional source) is recorded in `Save_Meta` for
     resynchronisation on open.
+
+    Turn 0 setup answers and opening narrative (first_message with @tag substitution)
+    are written atomically to Event_Log.
 
     Returns:
         A dict with keys save_id and db_path — db_path is the database to
@@ -198,6 +192,43 @@ def create_save(
 
     container = new_save_container(universe_db)
     actual_id = _create_row(str(container), player_name, difficulty, player_persona)
+
+    # Initialize Turn 0 atomically in the container before finalizing
+    with sqlite3.connect(str(container)) as conn:
+        conn.row_factory = sqlite3.Row
+        answers = setup_answers or {}
+        for q_id, ans in answers.items():
+            conn.execute(
+                "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
+                "VALUES (?, 0, 'setup_answer', ?, ?);",
+                (actual_id, str(q_id), json.dumps({"answer": ans}))
+            )
+
+        row = conn.execute(
+            "SELECT value FROM Universe_Meta WHERE key = 'first_message';"
+        ).fetchone()
+        first_message = str(row["value"] if row and row["value"] else "").strip()
+        if first_message:
+            variants = [
+                v.strip() for v in
+                re.split(r"\s*---VARIANT---\s*", first_message, flags=re.IGNORECASE)
+                if v.strip()
+            ]
+            if not variants:
+                variants = [first_message]
+            if answers:
+                for i, v in enumerate(variants):
+                    for key, val in answers.items():
+                        v = re.sub(rf"@{re.escape(str(key))}", str(val), v, flags=re.IGNORECASE)
+                    variants[i] = v
+            event_payload = {"active": 0, "variants": variants}
+            conn.execute(
+                "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
+                "VALUES (?, 0, 'narrative_text', 'world', ?);",
+                (actual_id, json.dumps(event_payload))
+            )
+        conn.commit()
+
     final_db = finalize_save_container(container, actual_id)
     return {"save_id": actual_id, "db_path": str(final_db)}
 
@@ -466,31 +497,8 @@ def refresh_save_definition(save_db: str | Path) -> bool:
 # Export / import d'une save (.axiomsave) — §7.6 « les deux exportables »
 # ---------------------------------------------------------------------------
 
-# Tables runtime copiées lors de l'extraction d'une save embarquée (legacy).
-_RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = [
-    ("Saves", ("save_id", "player_name", "difficulty", "last_updated", "player_persona", "created_at")),
-    ("Event_Log", ("event_id", "save_id", "turn_id", "event_type", "target_entity", "payload")),
-    ("State_Cache", ("save_id", "entity_id", "stat_key", "stat_value")),
-    ("Snapshots", ("save_id", "turn_id", "state_json")),
-    ("Modifier_Snapshots", ("save_id", "turn_id", "state_json")),
-    ("Inventory_Snapshots", ("save_id", "turn_id", "state_json")),
-    ("Timeline", ("event_id", "save_id", "turn_id", "in_game_time", "description")),
-    ("Fired_Scheduled_Events", ("save_id", "event_id", "fired_turn_id")),
-    ("Items_Inventory", ("save_id", "entity_id", "item_id", "quantity")),
-    ("Item_Instances", ("instance_id", "save_id", "item_id", "quantity", "holder_kind", "holder_id")),
-    ("Session_Lore", ("entry_id", "save_id", "category", "name", "keywords", "content", "origin_turn")),
-    ("Active_Modifiers", ("modifier_id", "save_id", "entity_id", "stat_key", "delta", "minutes_remaining")),
-    # Living-mode memory (Phase 2 facts, Phase 3 beliefs) travels with the save.
-    # These tables are created lazily, so a save that never used living mode may
-    # not have them in the source DB — the copy loop skips absent source tables.
-    ("Facts", ("fact_id", "save_id", "turn_id", "fact_type", "who", "what",
-               "fact_when", "fact_where", "why", "entities", "statement")),
-    ("Observations", ("observation_id", "save_id", "subject", "statement",
-                      "proof_count", "sources", "history", "created_turn_id",
-                      "updated_turn_id", "stale")),
-    ("Mental_Models", ("model_id", "save_id", "subject", "summary", "sources",
-                       "created_turn_id", "updated_turn_id", "stale")),
-]
+# Tables runtime copiées lors de l'extraction d'une save embarquée (legacy), dérivées du registre central.
+_RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = get_runtime_copy_specs()
 
 _MANIFEST_NAME = "manifest.toml"
 _ARCHIVE_DB_NAME = "save.db"

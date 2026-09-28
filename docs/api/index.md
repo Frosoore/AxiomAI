@@ -12,6 +12,7 @@ directly from `axiom`. Everything else supports them.
 :maxdepth: 2
 
 core
+kernel
 config
 universe-as-code
 saves

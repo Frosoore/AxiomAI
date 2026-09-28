@@ -1096,3 +1096,67 @@ class TestInventoryRewindEndToEnd:
 
         with get_connection(db_path) as conn:
             assert list_instances(conn, "s1") == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 0f — Modular pipeline tests
+# ---------------------------------------------------------------------------
+
+class TestTurnContextModularPipeline:
+    def test_six_steps_execute_individually(self, db_path, vm) -> None:
+        from axiom.arbitrator import TurnContext
+
+        response = LLMResponse(
+            narrative_text="A shadowy figure steps forward.",
+            tool_call={
+                "state_changes": [{"entity_id": "player1", "stat_key": "HP", "delta": -5}],
+                "game_state_tag": "tension",
+                "scene_pace": "conversation",
+            },
+            finish_reason="stop",
+        )
+        arb, _ = _make_arbitrator(db_path, vm, response)
+
+        ctx = TurnContext(
+            save_id="s1",
+            step_id=1,
+            user_input="Hello there",
+            player_entity_id="player1",
+            verbosity="balanced",
+            intents={"player1": "Hello there"},
+            history=[],
+            universe_system_prompt="You are the Narrator.",
+            auto_commit=True,
+        )
+
+        # Step 1
+        arb.step_1_gather_context(ctx)
+        assert ctx.player_entity_id == "player1"
+        assert len(ctx.all_stats) > 0
+        assert len(ctx.write_batch.events) == 1
+
+        # Step 2
+        arb.step_2_build_prompt(ctx)
+        assert len(ctx.prompt_messages) > 0
+
+        # Step 3
+        arb.step_3_execute_inference(ctx)
+        assert ctx.narrative_text == "A shadowy figure steps forward."
+        assert isinstance(ctx.parsed_tool_call, dict)
+
+        # Step 4
+        arb.step_4_parse_response(ctx)
+        assert ctx.game_state_tag == "tension"
+        assert len(ctx.raw_state_changes) == 1
+        assert ctx.elapsed_minutes > 0
+
+        # Step 5
+        arb.step_5_arbitrate_rules(ctx)
+        assert len(ctx.applied_changes) == 1
+        assert ctx.applied_changes[0]["delta"] == -5
+        assert len(ctx.write_batch.stat_changes) == 1
+
+        # Step 6
+        arb.step_6_stage_mutations(ctx)
+        assert len(ctx.write_batch.timeline_entries) == 1
+        assert len(ctx.write_batch.modifier_mutations) >= 2

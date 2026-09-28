@@ -1,0 +1,39 @@
+# TODO — Phase 2 : Extraction des Interfaces Utilisateurs (axiom.ui.web, axiom.ui.qt, axiom.cli) & Extensions transversales
+
+- [x] Extraction du mod officiel `axiom.ui.web` sous `mods/axiom.ui.web/`
+  - [x] Manifeste `mod.toml` (ID `axiom.ui.web`, version `1.0.0`, `axiom_api = 1`, dépendance `axiom.turn >= 1.0.0`, `provides = ["user_interface"]`)
+  - [x] Déclaration des slots d'extension web :
+    - `axiom.ui.web:side_panel` (`rule = "collect"`)
+    - `axiom.ui.web:settings_tab` (`rule = "collect"`)
+    - `axiom.ui.web:action_button` (`rule = "collect"`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"web_ui"` (`start_server`, `stop_server`, `get_side_panels`, `get_settings_tabs`, `get_action_buttons`, `enrich_session_snapshot`)
+    - [x] Intégration `/api/session/start` dans `main_web.py` pour injecter dynamiquement `side_panels`
+- [x] Extraction du mod officiel `axiom.ui.qt` sous `mods/axiom.ui.qt/`
+  - [x] Manifeste `mod.toml` (ID `axiom.ui.qt`, version `1.0.0`, `axiom_api = 1`, dépendance `axiom.turn >= 1.0.0`, `provides = ["user_interface"]`)
+  - [x] Déclaration des slots d'extension Qt :
+    - `axiom.ui.qt:sidebar_widget` (`rule = "collect"`)
+    - `axiom.ui.qt:settings_tab` (`rule = "collect"`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"qt_ui"` (`launch_gui`, `get_sidebar_widgets`, `get_settings_tabs`)
+- [x] Extraction du mod officiel `axiom.cli` sous `mods/axiom.cli/`
+  - [x] Manifeste `mod.toml` (ID `axiom.cli`, version `1.0.0`, `axiom_api = 1`, dépendance `axiom.turn >= 1.0.0`, `provides = ["user_interface"]`)
+  - [x] Logique dans `main.py` :
+    - [x] Service public `"cli_play"` (`run_play`, `play_loop`)
+- [x] Slots Transversaux d'Internationalisation et d'Aide dans le Noyau
+  - [x] `axiom/kernel/registry.py` : déclaration des slots normalisés `axiom.kernel:locales` et `axiom.kernel:help_entries` (`rule = "collect"`)
+  - [x] `core/localization.py` : fusion automatique des dictionnaires de langues contribués via `axiom.kernel:locales` par-dessus les fichiers statiques
+  - [x] `ui/help_system.py` : résolution dynamique des fiches d'aide et tooltips contribués via `axiom.kernel:help_entries`
+- [x] Commandes CLI Fondamentales dans le Noyau & Mode Sans Échec
+  - [x] `axiom mods list` : découverte et affichage des mods installés, versions, compatibilité d'API et statut activé/désactivé
+  - [x] `axiom mods enable <mod_id>` : activation persistante dans `settings.json` (`mod_settings`)
+  - [x] `axiom mods disable <mod_id>` : désactivation persistante
+  - [x] Flag global `--safe-mode` sur les points d'entrée (`axiom`, `main.py`, `main_web.py`)
+  - [x] `axiom/kernel/loader.py` : filtrage et rejet automatique des mods tiers en mode sans échec
+- [x] Empaquetage `.axmod`
+  - [x] `dist/mods/axiom.ui.web.axmod`
+  - [x] `dist/mods/axiom.ui.qt.axmod`
+  - [x] `dist/mods/axiom.cli.axmod`
+- [x] Suite de tests hermétique et d'intégration
+  - [x] `tests/test_ui_mods_and_cli.py` (5 tests : validation des manifestes et archives, extension de side_panel, injection i18n locales, fiches d'aide dynamiques, commandes CLI et isolation safe-mode)
+  - [x] 100% au vert sur l'ensemble des suites (51/51 tests passants)

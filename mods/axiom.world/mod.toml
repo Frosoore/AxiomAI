@@ -1,0 +1,32 @@
+[mod]
+id = "axiom.world"
+version = "1.0.0"
+axiom_api = 1
+name = "Modèle de Monde JDR"
+description = "Entités, statistiques, types d'entités, règles du RulesEngine et cartographie spatiale."
+
+[dependencies]
+
+[ordering]
+after = []
+before = []
+conflicts = []
+provides = ["world_model"]
+
+[contributes]
+hooks = [
+    "axiom.step:gather_context",
+    "axiom.step:arbitrate_mutations"
+]
+slots = []
+patches = []
+
+[provides_slots]
+"axiom.world:entity_types" = { rule = "collect" }
+"axiom.world:custom_rules" = { rule = "collect" }
+
+[storage]
+entities = { policy = "versioned_kv" }
+entity_stats = { policy = "versioned_kv" }
+rules = { policy = "versioned_kv" }
+locations = { policy = "versioned_kv" }

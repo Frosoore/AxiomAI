@@ -1,0 +1,41 @@
+# TODO — Phase 5 : Store, Dépendances, Licence & Distribution
+
+- [x] Spécification du Protocole du Store Distant (`axiom/kernel/store.py`)
+  - [x] Définition du modèle de données `StoreModEntry` (id, version, axiom_api, sha256, download_url, python_requires, dependencies, tags)
+  - [x] Implémentation de `calculate_sha256` avec streaming par blocs de 64 Ko
+  - [x] Implémentation de `fetch_store_index` (support des URLs HTTP et fichiers locaux)
+  - [x] Implémentation de `search_store` avec recherche insensible à la casse et filtrage par tags
+  - [x] Implémentation de `install_mod_from_store` avec téléchargement sécurisé, validation stricte du hash SHA-256 (`ModIntegrityError`) et décompression atomique dans `target_dir`
+  - [x] Implémentation de `publish_mod_to_store_spec` pour générer automatiquement l'entrée d'index d'une archive `.axmod`
+  - [x] Génération du catalogue de référence sous `dist/mods/store_index.json`
+- [x] Gestion déclarative des dépendances Python légères (Règle D-7)
+  - [x] Extension du manifeste `mod.toml` avec le bloc `[python].requires = [...]`
+  - [x] Module `axiom/kernel/dependencies.py` : vérification statique `check_python_requirement` et `check_mod_python_dependencies` via `importlib.metadata` et `packaging.specifiers`
+  - [x] Intégration dans le chargeur `axiom/kernel/loader.py` : skip gracieux et journalisation d'un avertissement sans bloquer ni crasher le moteur
+- [x] Formalisation juridique et licence des mods (Règle D-9 & §14)
+  - [x] Rédaction du document de référence `docs/licensing_mods.md`
+  - [x] Définition de la frontière étanche entre le micro-noyau AGPLv3 et les mods tiers utilisant l'API publique
+  - [x] Précision des conditions d'application de l'AGPLv3 pour le monkeypatching interne non standard
+  - [x] Mise à jour du fichier légal `NOTICE` avec la clause explicite d'extensibilité §7(b)
+- [x] Packaging PyPI et assainissement headless (`axiomai-engine`) (Règle D-8)
+  - [x] Bumping formel de la version du moteur à `1.0.0` dans `axiom/__init__.py`
+  - [x] Mise à jour du script d'export `export_engine.py` : exclusion de `mods/`, `web/`, `ui/`, `workers/` et `universes/`
+  - [x] Ajout de `mods` et `web` dans les contrôles d'imports interdits `_FORBIDDEN_IMPORT_RE`
+  - [x] Vérification du build propre et du contrôle d'étanchéité headless (`check_headless`)
+- [x] Commandes CLI (`axiom/cli/mods_cmd.py`)
+  - [x] Commande `axiom mods search [query] [--tag <tag>] [--index <url>]`
+  - [x] Commande `axiom mods install <mod_id> [--index <url>] [--dir <path>]`
+  - [x] Commande `axiom mods update [--index <url>]`
+- [x] Endpoints API Web (`main_web.py`)
+  - [x] `GET /api/store/search`
+  - [x] `POST /api/store/install`
+- [x] Suite de tests dédiée (`tests/test_mod_store_and_packaging.py`)
+  - [x] Test de lecture et recherche dans le store index
+  - [x] Test de vérification de l'intégrité SHA-256 lors de l'installation
+  - [x] Test de rejet immédiat (`ModIntegrityError`) en cas de fichier altéré
+  - [x] Test de vérification statique des dépendances Python
+  - [x] Test du chargeur ignorant gracieusement un mod avec dépendances Python manquantes
+  - [x] Test de pureté headless du package PyPI exporté (`export_engine.py`)
+  - [x] Test des commandes CLI `search`, `install`, `update`
+  - [x] Test des endpoints Web API `/api/store/search` et `/api/store/install`
+  - [x] 100% de succès sur la suite complète de 96 tests du projet

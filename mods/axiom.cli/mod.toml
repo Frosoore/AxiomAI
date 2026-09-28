@@ -1,0 +1,12 @@
+[mod]
+id = "axiom.cli"
+version = "1.0.0"
+axiom_api = 1
+name = "Interface Terminal CLI"
+description = "Expérience de jeu textuelle interactive dans le terminal."
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+provides = ["user_interface"]

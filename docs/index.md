@@ -43,6 +43,11 @@ print(result.narrative_text)
 - **Optional scene illustration** — generate an image per turn via Stable
   Diffusion WebUI, ComfyUI or the Gemini image API.
 
+- **Modular Micro-Kernel & Modding System (`.axmod`)** — the core carries
+  zero hardcoded RPG rules. World mechanics, turn pipeline, memory systems,
+  AI providers and UIs are modular mods. Build, test, hot-reload, or generate
+  mods with an LLM. See the [Modding guide](guides/mods.md).
+
 ## Where to start
 
 - **New here?** Follow the [Quickstart](quickstart.md): install the engine,
@@ -51,6 +56,8 @@ print(result.narrative_text)
 - **Building a universe?** Read the
   [Universe-as-Code format](guides/universe-format.md) and the
   [CLI guide](guides/cli.md).
+- **Developing mods?** Check out the
+  [Modding guide](guides/mods.md).
 - **Integrating the engine?** Head to the [API reference](api/index.md),
   generated from the source docstrings.
 
@@ -65,6 +72,7 @@ quickstart
 :maxdepth: 2
 :caption: Guides
 
+guides/mods
 guides/universe-format
 guides/cli
 guides/saves

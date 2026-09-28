@@ -1,0 +1,33 @@
+# CHANGELOG — Phase 2 : Extraction de axiom.time et axiom.inventory
+
+## 2026-09-27
+- Extraction du mod officiel `axiom.time` dans `mods/axiom.time/` :
+  - Manifeste `mod.toml` avec déclaration du hook `axiom.step:after_step`, des slots `axiom.turn:output_fields` et `axiom.turn:prompt_sections`, et de la politique de stockage `step_keyed_table` sur `Timeline` et `Scheduled_Events`.
+  - Implémentation du point d'entrée `main.py` :
+    - Enregistrement du service `"time"` (`format_time`, `get_current_time`, `get_calendar`).
+    - Routage de `time_elapsed_minutes` via `output_fields`.
+    - Injection dynamique de la date/heure dans le prompt système via `prompt_sections`.
+    - Hook `axiom.step:after_step` pour l'enregistrement dans `Timeline`, la détection de `Scheduled_Events` et la planification de `ChroniclerEngine` dans `post_commit_callbacks`.
+- Extraction du mod officiel `axiom.inventory` dans `mods/axiom.inventory/` :
+  - Manifeste `mod.toml` avec déclaration des slots `axiom.turn:output_fields`, `axiom.turn:prompt_sections`, du slot fourni `axiom.inventory:actions`, et de la persistance `step_keyed_table` sur `Inventory_Snapshots`.
+  - Implémentation du point d'entrée `main.py` :
+    - Enregistrement du service `"inventory"` (`load_tree`, `format_prompt`, `move`, `add`).
+    - Routage de `inventory_changes` via `output_fields` avec validation et support des conteneurs cibles (`container_id`).
+    - Injection dynamique de l'arborescence d'équipement dans `prompt_sections`.
+- Allègement et découplage du Noyau :
+  - `KernelRegistry` et `ModContext` supportent désormais l'enregistrement, la consultation et le nettoyage automatique de services (`register_service`, `get_service`, `unregister_service`).
+  - `Session.resolve_tick` ne contient plus d'import ni d'appel direct à `ChroniclerEngine` (délégué à `axiom.time`).
+  - `Session._get_snapshot_data` interroge le service `"time"` du registre pour le formatage de la date en jeu.
+  - `ArbitratorEngine` délègue le prompt et l'arbitrage d'inventaire aux slots de `axiom.turn` dès qu'un registre est présent.
+  - `main_web.py` utilise les services `"inventory"` et `"time"` exposés par le registre du noyau.
+  - Amélioration de `ScriptedLLMBackend` pour cibler fidèlement les invites du Timekeeper sans faux-positifs.
+- Packaging `.axmod` :
+  - `dist/mods/axiom.time.axmod`
+  - `dist/mods/axiom.inventory.axmod`
+- Création de la suite d'acceptation `tests/test_time_inventory_mods.py` (5/5 tests passants) :
+  - Manifestes, chargement dossier et archive `.axmod`.
+  - Passage du temps et écriture `Timeline`.
+  - Déplacement d'objets dans un sac (`container_id`).
+  - Réversibilité unitaire (Règle D11) : le moteur ignore `inventory_changes` sans faille si `axiom.inventory` est désactivé.
+  - Déclenchement automatique de `Scheduled_Events` sur écoulement du temps.
+- Validation intégrale sans régression : 29 tests passants sur la suite coeur, 36 tests passants avec tous les mods.
