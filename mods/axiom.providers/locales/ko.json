@@ -1,0 +1,4 @@
+{
+  "title": "LLM 드라이버 및 AI 제공자",
+  "description": "Google Gemini, Ollama 및 OpenAI 호환 엔드포인트를 위한 추론 드라이버."
+}

@@ -1,0 +1,4 @@
+{
+  "title": "Emergent Nested Inventory",
+  "description": "Item hierarchy, nested container management (max depth 5), and inventory rewind snapshots."
+}

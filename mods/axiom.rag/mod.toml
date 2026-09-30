@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Mémoire Vectorielle (RAG)"
 description = "Indexation et recherche sémantique par embeddings vectoriels dans ChromaDB."
+author = "Vanilla"
 
 [dependencies]
 "axiom.turn" = ">=1.0.0"

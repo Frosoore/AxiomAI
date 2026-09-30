@@ -1,0 +1,4 @@
+{
+  "title": "Motore di Turno e Arbitraggio",
+  "description": "Pipeline sequenziale di narrazione LLM, convalida dell'Arbitro e ciclo di correzione."
+}

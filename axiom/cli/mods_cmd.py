@@ -291,7 +291,7 @@ def run_mod_list(args: argparse.Namespace) -> int:
         enabled = is_mod_enabled(manifest.id, cfg)
         status = "enabled" if enabled else "disabled"
         api_compat = "v1 (OK)" if manifest.axiom_api == 1 else f"v{manifest.axiom_api} (!)"
-        print(f"{manifest.id:<28} {manifest.version:<10} {status:<10} {api_compat:<8} {manifest.name}")
+        print(f"{manifest.id:<28} {manifest.version:<10} {status:<10} {api_compat:<8} {manifest.localized_name()}")
     return 0
 
 

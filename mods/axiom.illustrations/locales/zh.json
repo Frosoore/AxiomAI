@@ -1,0 +1,4 @@
+{
+  "title": "AI 插图生成器",
+  "description": "通过 Stable Diffusion WebUI 或 ComfyUI API 生成回合场景图像。"
+}

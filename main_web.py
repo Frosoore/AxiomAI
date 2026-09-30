@@ -511,8 +511,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     res.append({
                         "id": manifest.id,
                         "version": manifest.version,
-                        "name": manifest.name,
-                        "description": manifest.description,
+                        "name": manifest.localized_name(),
+                        "description": manifest.localized_description(),
                         "enabled": is_mod_enabled(manifest.id, cfg),
                         "path": str(m_path),
                         "axiom_api": manifest.axiom_api,

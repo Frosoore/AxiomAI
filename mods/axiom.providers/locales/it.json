@@ -1,0 +1,4 @@
+{
+  "title": "Driver LLM e Provider IA",
+  "description": "Driver di inferenza per Google Gemini, Ollama ed endpoint compatibili con OpenAI."
+}

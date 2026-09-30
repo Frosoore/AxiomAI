@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Pilotes LLM & Fournisseurs d'IA"
 description = "Pilotes d'inférence pour Google Gemini, Ollama et points de terminaison OpenAI-compatibles."
+author = "Vanilla"
 
 [dependencies]
 "axiom.turn" = ">=1.0.0"

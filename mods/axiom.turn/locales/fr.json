@@ -1,0 +1,4 @@
+{
+  "title": "Moteur de Tour & Arbitrage",
+  "description": "Pipeline séquentiel de narration LLM, validation Arbitrator et boucle de correction."
+}

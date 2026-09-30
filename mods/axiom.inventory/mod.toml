@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Inventaire Imbriqué Émergent"
 description = "Gestion de l'arbre d'objets et conteneurs (profondeur max 5) et snapshots d'inventaire."
+author = "Vanilla"
 
 [dependencies]
 "axiom.world" = ">=1.0.0"

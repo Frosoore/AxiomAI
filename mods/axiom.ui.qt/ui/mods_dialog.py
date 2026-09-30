@@ -312,12 +312,15 @@ class ModsDialog(QDialog):
 
             cat_label, cat_icon = categorize_mod(manifest)
 
+            mod_title = manifest.localized_name()
+            mod_desc = manifest.localized_description()
+
             # Match search query
             matches_query = (
                 not query
                 or query in manifest.id.lower()
-                or query in manifest.name.lower()
-                or query in manifest.description.lower()
+                or query in mod_title.lower()
+                or query in mod_desc.lower()
                 or query in cat_label.lower()
             )
             if not matches_query:
@@ -330,7 +333,7 @@ class ModsDialog(QDialog):
                 continue
 
             status_symbol = "✔" if enabled else "✖"
-            item_text = f"{status_symbol} {manifest.name} (v{manifest.version})\n   [{cat_icon} {cat_label}] {manifest.id}"
+            item_text = f"{status_symbol} {mod_title} (v{manifest.version})\n   [{cat_icon} {cat_label}] {manifest.id}"
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, (manifest, path))
 
@@ -388,9 +391,11 @@ class ModsDialog(QDialog):
     def _render_mod_details(self, manifest: ModManifest, path: Path) -> None:
         enabled = is_mod_enabled(manifest.id, self._cfg)
         cat_label, cat_icon = categorize_mod(manifest)
+        mod_title = manifest.localized_name()
+        mod_desc = manifest.localized_description()
 
         # Title
-        self._title_lbl.setText(f"{cat_icon} {manifest.name}")
+        self._title_lbl.setText(f"{cat_icon} {mod_title}")
 
         # Toggle button
         if enabled:
@@ -413,7 +418,7 @@ class ModsDialog(QDialog):
             self._badge_status.setStyleSheet("background: #3b282d; color: #f38ba8; padding: 3px 8px; border-radius: 4px; font-weight: bold;")
 
         # Description
-        desc_text = manifest.description.strip() if manifest.description else "Aucune description fournie."
+        desc_text = mod_desc.strip() if mod_desc else tr("mods_no_description")
         self._desc_lbl.setText(desc_text)
 
         # What This Mod Modifies (Detailed breakdown)
@@ -421,52 +426,54 @@ class ModsDialog(QDialog):
 
         # 1. Catégorie & Provides
         provides_str = ", ".join(manifest.ordering.provides) if manifest.ordering.provides else "—"
-        changes_html.append(f"<b>Catégorie fonctionnelle :</b> {cat_icon} {cat_label}")
-        changes_html.append(f"<b>Systèmes fournis (<code>provides</code>) :</b> <code>{provides_str}</code>")
+        changes_html.append(f"<b>{tr('mods_meta_category')} :</b> {cat_icon} {cat_label}")
+        changes_html.append(f"<b>{tr('mods_meta_provides')} :</b> <code>{provides_str}</code>")
 
         # 2. Hooks
         if manifest.contributes.hooks:
             hooks_formatted = "<br>&nbsp;&nbsp;• ".join(f"<code>{h}</code>" for h in manifest.contributes.hooks)
-            changes_html.append(f"<b>Événements écoutés (Hooks abonnés) :</b><br>&nbsp;&nbsp;• {hooks_formatted}")
+            changes_html.append(f"<b>{tr('mods_meta_hooks_subscribed')} :</b><br>&nbsp;&nbsp;• {hooks_formatted}")
         else:
-            changes_html.append("<b>Événements écoutés (Hooks) :</b> <i>Aucun</i>")
+            changes_html.append(f"<b>{tr('mods_meta_hooks')} :</b> <i>{tr('mods_meta_none')}</i>")
 
         # 3. Slots
         if manifest.contributes.slots:
             slots_formatted = "<br>&nbsp;&nbsp;• ".join(f"<code>{s}</code>" for s in manifest.contributes.slots)
-            changes_html.append(f"<b>Points d'extension (Slots contribués) :</b><br>&nbsp;&nbsp;• {slots_formatted}")
+            changes_html.append(f"<b>{tr('mods_meta_slots_contributed')} :</b><br>&nbsp;&nbsp;• {slots_formatted}")
         else:
-            changes_html.append("<b>Points d'extension (Slots) :</b> <i>Aucun</i>")
+            changes_html.append(f"<b>{tr('mods_meta_slots')} :</b> <i>{tr('mods_meta_none')}</i>")
 
         # 4. Patches
         if manifest.contributes.patches:
             patches_formatted = "<br>&nbsp;&nbsp;• ".join(f"<code>{p}</code>" for p in manifest.contributes.patches)
-            changes_html.append(f"<b>Fonctions internes modifiées (Patches) :</b><br>&nbsp;&nbsp;• {patches_formatted}")
+            changes_html.append(f"<b>{tr('mods_meta_patches')} :</b><br>&nbsp;&nbsp;• {patches_formatted}")
 
         # 5. Slots ouverts créés par ce mod
         if manifest.provides_slots:
             slots_list = "<br>&nbsp;&nbsp;• ".join(f"<code>{s}</code>" for s in manifest.provides_slots.keys())
-            changes_html.append(f"<b>Points d'extension ouverts (Slots créés) :</b><br>&nbsp;&nbsp;• {slots_list}")
+            changes_html.append(f"<b>{tr('mods_meta_slots_provided')} :</b><br>&nbsp;&nbsp;• {slots_list}")
 
         # 6. Dépendances
         if manifest.dependencies:
             deps_formatted = ", ".join(f"<code>{d}</code>" for d in manifest.dependencies.keys())
-            changes_html.append(f"<b>Dépendances de mods requises :</b> {deps_formatted}")
+            changes_html.append(f"<b>{tr('mods_meta_dependencies')} :</b> {deps_formatted}")
 
         if manifest.python_requires:
             py_formatted = ", ".join(f"<code>{p}</code>" for p in manifest.python_requires)
-            changes_html.append(f"<b>Packages Python requis :</b> {py_formatted}")
+            changes_html.append(f"<b>{tr('mods_meta_python_deps')} :</b> {py_formatted}")
 
         self._changes_lbl.setText("<br><br>".join(changes_html))
 
         # Location metadata
         is_archive = path.is_file() and path.suffix == ".axmod"
-        type_str = "Paquet .axmod" if is_archive else "Dossier source décompressé"
+        type_str = tr("mods_type_archive") if is_archive else tr("mods_type_directory")
+        author_str = manifest.author or tr("mods_author_unknown")
+        compat_str = f"v{manifest.axiom_api} ({tr('mods_api_compatible')})" if manifest.axiom_api == 1 else f"v{manifest.axiom_api}"
         self._meta_lbl.setText(
-            f"<b>Type :</b> {type_str}<br>"
-            f"<b>Emplacement :</b> <code>{path}</code><br>"
-            f"<b>Auteur :</b> {manifest.author or 'Inconnu'}<br>"
-            f"<b>Compatibilité API :</b> v{manifest.axiom_api} (Compatible)<br>"
+            f"<b>{tr('mods_meta_type')} :</b> {type_str}<br>"
+            f"<b>{tr('mods_meta_location')} :</b> <code>{path}</code><br>"
+            f"<b>{tr('mods_meta_author')} :</b> {author_str}<br>"
+            f"<b>{tr('mods_meta_api_compat')} :</b> {compat_str}<br>"
             f"<i>{tr('mods_restart_hint')}</i>"
         )
 

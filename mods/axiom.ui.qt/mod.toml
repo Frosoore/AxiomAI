@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Interface Bureau Qt"
 description = "Interface graphique native PySide6 (Tabletop, Creator Studio, Hub, Dialogues de réglages)."
+author = "Vanilla"
 
 [dependencies]
 "axiom.turn" = ">=1.0.0"

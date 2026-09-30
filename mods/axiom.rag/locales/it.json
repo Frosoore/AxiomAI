@@ -1,0 +1,4 @@
+{
+  "title": "Memoria Vettoriale (RAG)",
+  "description": "Indicizzazione e recupero semantico tramite embedding vettoriali in ChromaDB."
+}

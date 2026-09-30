@@ -6,12 +6,15 @@ Reads mod.toml from disk or ZIP archive without executing any Python code.
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from axiom.logger import logger
 
 
 class ManifestError(Exception):
@@ -67,9 +70,86 @@ class ModManifest:
     storage: dict[str, Any] = field(default_factory=dict)
     python_requires: list[str] = field(default_factory=list)
     raw_data: dict[str, Any] = field(default_factory=dict)
+    locales: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def localized_name(self, lang: str | None = None) -> str:
+        """Return the localized name/title of this mod for the specified language.
+
+        If no language is specified, the application's active language is used.
+        Fallback chain:
+        1. Requested language (from locales/<lang>.json or locales/<lang>.toml)
+        2. English ('en')
+        3. Any first available translation defined in the mod
+        4. Manifest default name (from mod.toml)
+        """
+        if lang is None:
+            try:
+                from axiom.config import load_config
+                lang = getattr(load_config(), "language", "en")
+            except Exception:
+                lang = "en"
+
+        # 1. Requested language
+        if lang in self.locales:
+            val = self.locales[lang].get("title") or self.locales[lang].get("name")
+            if val:
+                return str(val)
+
+        # 2. English fallback
+        if "en" in self.locales:
+            val = self.locales["en"].get("title") or self.locales["en"].get("name")
+            if val:
+                return str(val)
+
+        # 3. Any available translation (e.g. community mod providing only one language)
+        for loc_dict in self.locales.values():
+            val = loc_dict.get("title") or loc_dict.get("name")
+            if val:
+                return str(val)
+
+        # 4. Manifest default
+        return self.name or self.id
+
+    def localized_description(self, lang: str | None = None) -> str:
+        """Return the localized description of this mod for the specified language.
+
+        If no language is specified, the application's active language is used.
+        Fallback chain:
+        1. Requested language (from locales/<lang>.json or locales/<lang>.toml)
+        2. English ('en')
+        3. Any first available translation defined in the mod
+        4. Manifest default description (from mod.toml)
+        """
+        if lang is None:
+            try:
+                from axiom.config import load_config
+                lang = getattr(load_config(), "language", "en")
+            except Exception:
+                lang = "en"
+
+        # 1. Requested language
+        if lang in self.locales:
+            val = self.locales[lang].get("description")
+            if val:
+                return str(val)
+
+        # 2. English fallback
+        if "en" in self.locales:
+            val = self.locales["en"].get("description")
+            if val:
+                return str(val)
+
+        # 3. Any available translation (e.g. community mod providing only one language)
+        for loc_dict in self.locales.values():
+            val = loc_dict.get("description")
+            if val:
+                return str(val)
+
+        # 4. Manifest default
+        return self.description
 
 
-def parse_manifest_string(toml_str: str) -> ModManifest:
+def parse_manifest_string(toml_str: str, locales: dict[str, dict[str, Any]] | None = None) -> ModManifest:
     """Parse and strictly validate a TOML string as a ModManifest."""
     try:
         data = tomllib.loads(toml_str)
@@ -173,12 +253,16 @@ def parse_manifest_string(toml_str: str) -> ModManifest:
         storage=storage,
         python_requires=py_reqs,
         raw_data=data,
+        locales=locales or {},
     )
 
 
 
 def parse_manifest_file(file_path: str | Path) -> ModManifest:
-    """Read a mod.toml file from disk and return its parsed ModManifest."""
+    """Read a mod.toml file from disk and return its parsed ModManifest.
+
+    Automatically reads any translation files located in the adjacent `locales/` directory.
+    """
     p = Path(file_path)
     if not p.is_file():
         raise ManifestError(f"Manifest file not found: {p}")
@@ -186,25 +270,72 @@ def parse_manifest_file(file_path: str | Path) -> ModManifest:
         content = p.read_text(encoding="utf-8")
     except Exception as err:
         raise ManifestError(f"Failed to read manifest file {p}: {err}") from err
-    return parse_manifest_string(content)
+
+    locales: dict[str, dict[str, Any]] = {}
+    locales_dir = p.parent / "locales"
+    if locales_dir.is_dir():
+        for loc_file in sorted(locales_dir.iterdir()):
+            if not loc_file.is_file():
+                continue
+            lang_code = loc_file.stem.lower()
+            try:
+                raw_text = loc_file.read_text(encoding="utf-8")
+                if loc_file.suffix.lower() == ".json":
+                    d = json.loads(raw_text)
+                elif loc_file.suffix.lower() == ".toml":
+                    d = tomllib.loads(raw_text)
+                else:
+                    continue
+                if isinstance(d, dict):
+                    locales[lang_code] = d
+            except Exception as err:
+                logger.debug("Failed to read locale file %s: %s", loc_file, err)
+
+    return parse_manifest_string(content, locales=locales)
 
 
 def load_manifest_from_archive(archive_path: str | Path) -> ModManifest:
-    """Extract mod.toml from an .axmod ZIP archive into memory and parse it."""
+    """Extract mod.toml from an .axmod ZIP archive into memory and parse it.
+
+    Automatically extracts any translation files located in the archive's `locales/` directory.
+    """
     p = Path(archive_path)
     if not p.is_file():
         raise ManifestError(f"Mod archive not found: {p}")
     try:
         with zipfile.ZipFile(p, mode="r") as zf:
             target_name = None
+            locale_names: list[str] = []
             for name in zf.namelist():
-                if name.lower() == "mod.toml" or name.lower().endswith("/mod.toml"):
+                norm = name.replace("\\", "/")
+                norm_lower = norm.lower()
+                if norm_lower == "mod.toml" or norm_lower.endswith("/mod.toml"):
                     target_name = name
-                    break
+                elif "/locales/" in norm_lower or norm_lower.startswith("locales/"):
+                    if norm_lower.endswith(".json") or norm_lower.endswith(".toml"):
+                        locale_names.append(name)
+
             if not target_name:
                 raise ManifestError(f"Archive '{p.name}' does not contain 'mod.toml'.")
             content = zf.read(target_name).decode("utf-8")
-            return parse_manifest_string(content)
+
+            locales: dict[str, dict[str, Any]] = {}
+            for loc_entry in locale_names:
+                stem = Path(loc_entry).stem.lower()
+                try:
+                    raw_text = zf.read(loc_entry).decode("utf-8")
+                    if loc_entry.lower().endswith(".json"):
+                        d = json.loads(raw_text)
+                    elif loc_entry.lower().endswith(".toml"):
+                        d = tomllib.loads(raw_text)
+                    else:
+                        continue
+                    if isinstance(d, dict):
+                        locales[stem] = d
+                except Exception as err:
+                    logger.debug("Failed to read locale entry %s in %s: %s", loc_entry, p, err)
+
+            return parse_manifest_string(content, locales=locales)
     except zipfile.BadZipFile as err:
         raise ManifestError(f"Archive '{p.name}' is not a valid ZIP/.axmod archive: {err}") from err
 

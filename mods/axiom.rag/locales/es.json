@@ -1,0 +1,4 @@
+{
+  "title": "Memoria Vectorial (RAG)",
+  "description": "Indexación y búsqueda semántica mediante incrustaciones vectoriales en ChromaDB."
+}

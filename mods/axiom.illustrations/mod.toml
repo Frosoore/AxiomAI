@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Générateur d'Illustrations IA"
 description = "Génération d'images de scène via API Stable Diffusion WebUI ou ComfyUI."
+author = "Vanilla"
 
 [dependencies]
 "axiom.turn" = ">=1.0.0"

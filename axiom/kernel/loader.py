@@ -102,6 +102,12 @@ def load_mod_from_dir(
 
     mod_ctx = ModContext(manifest, registry, config)
 
+    # Register mod locales automatically via ModContext into axiom.kernel:locales slot
+    if getattr(manifest, "locales", None):
+        for lang_code, strings in manifest.locales.items():
+            if isinstance(strings, dict):
+                mod_ctx.contribute_slot("axiom.kernel:locales", (lang_code, strings))
+
     main_py = path / "main.py"
     module = None
     if main_py.is_file():
@@ -158,6 +164,12 @@ def load_mod_from_archive(
         registry.declare_slot(slot_name, rule)
 
     mod_ctx = ModContext(manifest, registry, config)
+
+    # Register mod locales automatically via ModContext into axiom.kernel:locales slot
+    if getattr(manifest, "locales", None):
+        for lang_code, strings in manifest.locales.items():
+            if isinstance(strings, dict):
+                mod_ctx.contribute_slot("axiom.kernel:locales", (lang_code, strings))
 
     module = None
     with zipfile.ZipFile(path, "r") as zf:

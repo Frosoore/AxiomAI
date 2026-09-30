@@ -1,0 +1,4 @@
+{
+  "title": "Inventaire Imbriqué Émergent",
+  "description": "Gestion de l'arbre d'objets et conteneurs (profondeur max 5) et snapshots d'inventaire."
+}

@@ -1,0 +1,4 @@
+{
+  "title": "AI 삽화 생성기",
+  "description": "Stable Diffusion WebUI 또는 ComfyUI API를 통한 턴별 장면 이미지 생성."
+}

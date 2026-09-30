@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Mémoire Vivante"
 description = "Distillation symbolique des faits, croyances et modèles mentaux des entités."
+author = "Vanilla"
 
 [dependencies]
 "axiom.world" = ">=1.0.0"

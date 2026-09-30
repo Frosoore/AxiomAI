@@ -1,0 +1,4 @@
+{
+  "title": "Vector Memory (RAG)",
+  "description": "Semantic indexing and retrieval via vector embeddings in ChromaDB."
+}

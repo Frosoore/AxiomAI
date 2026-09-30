@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Moteur de Tour & Arbitrage"
 description = "Pipeline séquentiel de narration LLM, validation Arbitrator et boucle de correction."
+author = "Vanilla"
 
 [dependencies]
 "axiom.world" = ">=1.0.0"

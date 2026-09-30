@@ -1,0 +1,4 @@
+{
+  "title": "Stat Dynamics & Modifiers",
+  "description": "Handles temporal evolution, rest recovery, saturation, and natural decay of temporary statistics."
+}

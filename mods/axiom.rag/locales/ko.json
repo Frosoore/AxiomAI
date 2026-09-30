@@ -1,0 +1,4 @@
+{
+  "title": "벡터 메모리 (RAG)",
+  "description": "ChromaDB의 벡터 임베딩을 통한 시맨틱 인덱싱 및 검색."
+}

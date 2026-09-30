@@ -1,0 +1,4 @@
+{
+  "title": "Motor de Turno y Arbitraje",
+  "description": "Canalización secuencial de narración LLM, validación por Arbitrator y bucle de corrección."
+}

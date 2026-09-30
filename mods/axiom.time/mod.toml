@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Système Temporel & Chroniqueur"
 description = "Gestion du calendrier, estimation du temps des actions, journal Timeline et simulation hors-champ."
+author = "Vanilla"
 
 [dependencies]
 "axiom.world" = ">=1.0.0"

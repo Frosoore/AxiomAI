@@ -4,6 +4,7 @@ version = "1.0.0"
 axiom_api = 1
 name = "Interface Web SPA"
 description = "Serveur HTTP local et application Web monopage (Tabletop, Creator Studio, Gestionnaire de mods)."
+author = "Vanilla"
 
 [dependencies]
 "axiom.turn" = ">=1.0.0"

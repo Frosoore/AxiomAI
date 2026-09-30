@@ -1,0 +1,4 @@
+{
+  "title": "Mémoire Vectorielle (RAG)",
+  "description": "Indexation et recherche sémantique par embeddings vectoriels dans ChromaDB."
+}

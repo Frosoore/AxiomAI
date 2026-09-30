@@ -1,0 +1,4 @@
+{
+  "title": "LLM ドライバー＆AI プロバイダー",
+  "description": "Google Gemini、Ollama、および OpenAI 互換エンドポイント用の推論ドライバー。"
+}

@@ -1,0 +1,4 @@
+{
+  "title": "Vektorgedächtnis (RAG)",
+  "description": "Semantische Indizierung und Abfrage über Vektor-Embeddings in ChromaDB."
+}

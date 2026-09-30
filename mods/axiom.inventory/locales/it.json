@@ -1,0 +1,4 @@
+{
+  "title": "Inventario Nidificato Emergente",
+  "description": "Gestione dell'albero di oggetti e contenitori nidificati (profondità max 5) e snapshot dell'inventario."
+}

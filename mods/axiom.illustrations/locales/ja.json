@@ -1,0 +1,4 @@
+{
+  "title": "AI イラスト生成機能",
+  "description": "Stable Diffusion WebUI または ComfyUI API を介したターンごとのシーン画像生成。"
+}
