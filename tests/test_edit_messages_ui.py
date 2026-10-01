@@ -1,7 +1,7 @@
 import pytest
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
-from ui.widgets.chat_display import ChatDisplayWidget
+from mods.axiom.ui.qt.ui.widgets.chat_display import ChatDisplayWidget
 
 def test_chat_display_user_message_renders_edit_link(qtbot):
     widget = ChatDisplayWidget()
@@ -50,12 +50,12 @@ def test_chat_display_emits_edit_signal_on_link_click(qtbot):
 
 def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, monkeypatch):
     from unittest.mock import MagicMock
-    from ui.tabletop_view import TabletopView
+    from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
     from axiom.memory import VectorMemory
 
     # Mock components to avoid heavy side-effects
-    monkeypatch.setattr("ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
-    monkeypatch.setattr("ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
     
     view = TabletopView(main_window=MagicMock())
     qtbot.addWidget(view)
@@ -91,13 +91,13 @@ def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, monkeypatch):
 
 def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path, monkeypatch):
     from unittest.mock import MagicMock
-    from ui.tabletop_view import TabletopView
+    from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
 
     # Mock components to avoid side-effects
-    monkeypatch.setattr("ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
-    monkeypatch.setattr("ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
     monkeypatch.setattr("workers.narrative_worker.NarrativeWorker.start", lambda self: None)
-    monkeypatch.setattr("ui.tabletop_view.Session", MagicMock())
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.Session", MagicMock())
     
     view = TabletopView(main_window=MagicMock())
     qtbot.addWidget(view)

@@ -32,7 +32,7 @@ from axiom.config import (
 from core.localization import tr
 
 try:
-    from ui.help_system import doc
+    from mods.axiom.help_system.ui.help_system import doc
 except ImportError:
     def doc(widget: Any, _: str) -> Any:
         return widget

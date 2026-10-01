@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.widgets.universe_card import UniverseCard
+from .widgets.universe_card import UniverseCard
 from axiom.config import GLOBAL_DB_FILE
 from core.localization import tr
 from axiom.db_helpers import provision_blank_universe
@@ -50,7 +50,7 @@ from workers.import_export_worker import ImportExportWorker
 from axiom.paths import UNIVERSES_DIR
 
 if TYPE_CHECKING:
-    from ui.main_window import MainWindow
+    from .main_window import MainWindow
 
 
 class HubView(QWidget):
@@ -94,8 +94,8 @@ class HubView(QWidget):
         toolbar.addWidget(self._header_label)
         toolbar.addStretch()
 
-        from ui.help_system import doc
-        from ui.help_dialogs import make_help_button
+        from mods.axiom.help_system.ui.help_system import doc
+        from mods.axiom.help_system.ui.help_dialogs import make_help_button
         self._import_st_btn = QPushButton(tr("import_st"))
         doc(self._import_st_btn, "hub.import_st")
         self._import_btn = QPushButton(tr("import"))

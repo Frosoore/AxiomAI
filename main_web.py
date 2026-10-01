@@ -2839,9 +2839,25 @@ def query_params_from_url(url: str) -> dict:
     return {k: v[0] for k, v in params.items()}
 
 def run_server(port=8000):
+    from axiom.config import load_config
+    from axiom.kernel.loader import is_mod_enabled
+    cfg = load_config()
+
+    if not is_mod_enabled("axiom.ui.web", cfg):
+        err_msg = (
+            "The web interface mod ('axiom.ui.web') is currently disabled in your configuration.\n"
+            "To re-enable it, run:\n"
+            "    axiom mod enable axiom.ui.web\n\n"
+            "Or launch the desktop Qt interface:\n"
+            "    python main.py"
+        )
+        logger.error(err_msg)
+        print(f"\n[Axiom AI] ERROR: {err_msg}\n", file=sys.stderr)
+        return 1
+
     try:
         from axiom.kernel.bootstrap import bootstrap_all_mods
-        bootstrap_all_mods()
+        bootstrap_all_mods(config=cfg)
     except Exception:
         logger.exception("Failed to bootstrap mods at web server startup")
 
@@ -2860,6 +2876,7 @@ def run_server(port=8000):
     except KeyboardInterrupt:
         print("\nShutting down server...")
         server.shutdown()
+    return 0
 
 if __name__ == "__main__":
     if "--safe-mode" in sys.argv:
@@ -2871,4 +2888,4 @@ if __name__ == "__main__":
         if arg.isdigit():
             port = int(arg)
             break
-    run_server(port)
+    sys.exit(run_server(port) or 0)

@@ -569,7 +569,7 @@ def _run_gui() -> int:
     """
     try:
         from PySide6.QtWidgets import QApplication
-        from ui.diagnostic_dialog import DiagnosticDialog
+        from mods.axiom.ui.qt.ui.diagnostic_dialog import DiagnosticDialog
     except Exception as exc:  # noqa: BLE001
         print(_tr("diag_gui_unavailable", exc=exc), file=sys.stderr)
         return 1

@@ -291,7 +291,7 @@ class TestJsonFenceFiltering:
 
         def feed(self, token: str) -> str:
             self._token_buf += token
-            from ui.widgets.chat_display import ChatDisplayWidget
+            from mods.axiom.ui.qt.ui.widgets.chat_display import ChatDisplayWidget
             # Borrow the method directly
             return ChatDisplayWidget._flush_token_buffer(self)  # type: ignore[arg-type]
 
@@ -354,7 +354,7 @@ class TestJsonFenceFiltering:
         assert "key" not in result
         
         # Now force final flush
-        from ui.widgets.chat_display import ChatDisplayWidget
+        from mods.axiom.ui.qt.ui.widgets.chat_display import ChatDisplayWidget
         f._token_buf += "" # nothing new
         final = ChatDisplayWidget._flush_token_buffer(f, force=True)
         assert "key" not in final
@@ -368,7 +368,7 @@ class TestJsonFenceFiltering:
             result += f.feed(ch)
         assert "state_changes" not in result
         
-        from ui.widgets.chat_display import ChatDisplayWidget
+        from mods.axiom.ui.qt.ui.widgets.chat_display import ChatDisplayWidget
         final = ChatDisplayWidget._flush_token_buffer(f, force=True)
         assert "state_changes" not in final
         assert "Prose." in result or "Prose." in final
@@ -386,7 +386,7 @@ class TestEntityEditorSync:
     """
 
     def _widget(self, qtbot):
-        from ui.widgets.entity_editor import EntityEditorWidget
+        from mods.axiom.ui.qt.ui.widgets.entity_editor import EntityEditorWidget
         w = EntityEditorWidget()
         qtbot.addWidget(w)
         return w
@@ -466,7 +466,7 @@ class TestRuleEditorSync:
     """
 
     def _widget(self, qtbot):
-        from ui.widgets.rule_editor import RuleEditorWidget
+        from mods.axiom.ui.qt.ui.widgets.rule_editor import RuleEditorWidget
         w = RuleEditorWidget()
         qtbot.addWidget(w)
         return w

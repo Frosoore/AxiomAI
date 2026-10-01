@@ -224,7 +224,7 @@ class TestKeyRotation:
 
 class TestFireworksModelEntries:
     def test_merges_listing_with_price_table(self) -> None:
-        from ui.settings_dialog import _fireworks_model_entries
+        from mods.axiom.ui.qt.ui.settings_dialog import _fireworks_model_entries
 
         listed_only = "accounts/fireworks/models/not-in-price-table"
         entries = _fireworks_model_entries([listed_only], builtin=False)
@@ -233,7 +233,7 @@ class TestFireworksModelEntries:
         assert "accounts/fireworks/models/gpt-oss-20b" in ids  # from the table
 
     def test_builtin_mode_keeps_only_affordable(self) -> None:
-        from ui.settings_dialog import _fireworks_model_entries
+        from mods.axiom.ui.qt.ui.settings_dialog import _fireworks_model_entries
 
         entries = _fireworks_model_entries(
             ["accounts/fireworks/models/kimi-k2p6"], builtin=True
@@ -243,7 +243,7 @@ class TestFireworksModelEntries:
         assert "accounts/fireworks/models/kimi-k2p6" not in ids
 
     def test_prices_shown_when_known(self) -> None:
-        from ui.settings_dialog import _fireworks_model_entries
+        from mods.axiom.ui.qt.ui.settings_dialog import _fireworks_model_entries
 
         entries = dict(_fireworks_model_entries([], builtin=True))
         label = entries["accounts/fireworks/models/gpt-oss-120b"]

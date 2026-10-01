@@ -15,9 +15,9 @@ import pytest
 from PySide6.QtCore import Qt
 
 from axiom.config import AppConfig
-from ui.constants_sidebar import ConstantsSidebar
-from ui.settings_dialog import SettingsDialog
-from ui.tabletop_view import TabletopView
+from mods.axiom.ui.qt.ui.constants_sidebar import ConstantsSidebar
+from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
+from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
 
 
 def test_1_default_config_has_image_and_memory_tabs(qtbot) -> None:

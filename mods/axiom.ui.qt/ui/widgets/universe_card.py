@@ -104,7 +104,7 @@ class UniverseCard(QFrame):
 
         layout.addStretch()
 
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
 
         # Primary buttons row: Play + Export
         btn_layout = QHBoxLayout()

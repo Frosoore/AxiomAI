@@ -15,7 +15,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.localization import get_translations_dict
-from ui import help_system
+from mods.axiom.help_system.ui import help_system
 
 
 # ---------------------------------------------------------------------------
@@ -90,19 +90,19 @@ class TestViewCoverage:
     le test de sa vue — c'est voulu : la doc s'étend avec l'app."""
 
     def test_hub_fully_documented(self, qtbot) -> None:
-        from ui.hub_view import HubView
+        from mods.axiom.ui.qt.ui.hub_view import HubView
         view = HubView(main_window=None)
         qtbot.addWidget(view)
         assert help_system.audit_undocumented(view) == []
 
     def test_setup_fully_documented(self, qtbot) -> None:
-        from ui.setup_view import SetupView
+        from mods.axiom.ui.qt.ui.setup_view import SetupView
         view = SetupView(main_window=None)
         qtbot.addWidget(view)
         assert help_system.audit_undocumented(view) == []
 
     def test_tabletop_fully_documented(self, qtbot) -> None:
-        from ui.tabletop_view import TabletopView
+        from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
         view = TabletopView(main_window=None)
         qtbot.addWidget(view)
         assert help_system.audit_undocumented(view) == []
@@ -110,7 +110,7 @@ class TestViewCoverage:
     def test_creator_chrome_documented(self, qtbot) -> None:
         """Le chrome du Studio est documenté ; l'intérieur des éditeurs est
         une dette assumée (chaque onglet a sa doc globale) — voir doc_check."""
-        from ui.creator_studio_view import CreatorStudioView
+        from mods.axiom.ui.qt.ui.creator_studio_view import CreatorStudioView
         view = CreatorStudioView(main_window=None)
         qtbot.addWidget(view)
         skip = (
@@ -123,14 +123,14 @@ class TestViewCoverage:
 
     def test_settings_documented(self, qtbot) -> None:
         from axiom.config import AppConfig
-        from ui.settings_dialog import SettingsDialog
+        from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(AppConfig())
         qtbot.addWidget(dialog)
         assert help_system.audit_undocumented(dialog, skip=(dialog._persona_editor,)) == []
 
     def test_universe_card_buttons_documented(self, qtbot, tmp_path) -> None:
         from axiom.schema import create_universe_db
-        from ui.widgets.universe_card import UniverseCard
+        from mods.axiom.ui.qt.ui.widgets.universe_card import UniverseCard
         db = str(tmp_path / "u.db")
         create_universe_db(db)
         card = UniverseCard(db, "U", "2026-01-01", "Normal")
@@ -145,7 +145,7 @@ class TestViewCoverage:
 class TestDialogs:
     def test_explain_page_contains_every_element(self, qtbot) -> None:
         from core.localization import tr
-        from ui.help_dialogs import ExplainPageDialog
+        from mods.axiom.help_system.ui.help_dialogs import ExplainPageDialog
         dialog = ExplainPageDialog("hub")
         qtbot.addWidget(dialog)
         browser = dialog.findChildren(object)  # the QTextBrowser holds the html
@@ -157,7 +157,7 @@ class TestDialogs:
             assert tr(title_key) in html, f"élément '{element}' absent du dialogue"
 
     def test_directory_lists_all_pages_and_filters(self, qtbot) -> None:
-        from ui.help_dialogs import DocDirectoryDialog
+        from mods.axiom.help_system.ui.help_dialogs import DocDirectoryDialog
         dialog = DocDirectoryDialog()
         qtbot.addWidget(dialog)
         assert dialog._tree.topLevelItemCount() == len(help_system.PAGES)
@@ -179,7 +179,7 @@ class TestDialogs:
         assert all(shown)
 
     def test_quick_tour_walks_all_steps(self, qtbot) -> None:
-        from ui.help_dialogs import QuickTourDialog
+        from mods.axiom.help_system.ui.help_dialogs import QuickTourDialog
         dialog = QuickTourDialog()
         qtbot.addWidget(dialog)
         total = len(help_system.TOUR_STEPS)
@@ -195,7 +195,7 @@ class TestDialogs:
 
     def test_make_help_button(self, qtbot) -> None:
         from core.localization import tr
-        from ui.help_dialogs import make_help_button
+        from mods.axiom.help_system.ui.help_dialogs import make_help_button
         btn = make_help_button("hub")
         qtbot.addWidget(btn)
         # The header button now reads the localized "Information" label
@@ -262,7 +262,7 @@ class TestTooltipGate:
 class TestSetupViewRetranslation:
     def test_persona_tab_follows_language(self, qtbot, monkeypatch) -> None:
         import core.localization as locz
-        from ui.setup_view import SetupView
+        from mods.axiom.ui.qt.ui.setup_view import SetupView
 
         monkeypatch.setattr(locz, "_current_language", lambda: "en")
         view = SetupView(main_window=None)

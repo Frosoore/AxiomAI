@@ -24,8 +24,8 @@ from axiom.kernel.context import ModContext
 from axiom.kernel.loader import is_mod_enabled, load_mod_from_dir
 from axiom.kernel.manifest import parse_manifest_file
 from axiom.kernel.registry import KernelRegistry
-import ui.help_system
-import ui.help_dialogs
+from mods.axiom.help_system.ui import help_system
+from mods.axiom.help_system.ui import help_dialogs
 
 
 def test_1_manifest_and_discovery():
@@ -93,7 +93,7 @@ def test_4_complete_detachment_when_disabled(qtbot, monkeypatch):
     # 1. doc() returns widget with NO tooltip attached
     btn = QPushButton("Action")
     qtbot.addWidget(btn)
-    res_btn = ui.help_system.doc(btn, "hub.import")
+    res_btn = help_system.doc(btn, "hub.import")
     assert res_btn is btn
     assert btn.toolTip() == ""
 
@@ -101,26 +101,26 @@ def test_4_complete_detachment_when_disabled(qtbot, monkeypatch):
     tabs = QTabWidget()
     qtbot.addWidget(tabs)
     tabs.addTab(QWidget(), "Tab 1")
-    ui.help_system.doc_tab(tabs, 0, "setup.tab_saves")
+    help_system.doc_tab(tabs, 0, "setup.tab_saves")
     assert tabs.tabToolTip(0) == ""
 
     # 3. Tooltip functions return inactive states
-    assert ui.help_system.tooltips_enabled() is False
-    assert ui.help_system.tooltip_html("hub.import") == ""
-    assert ui.help_system.audit_undocumented(btn) == []
+    assert help_system.tooltips_enabled() is False
+    assert help_system.tooltip_html("hub.import") == ""
+    assert help_system.audit_undocumented(btn) == []
 
     # 4. make_help_button returns an invisible widget
-    help_btn = ui.help_dialogs.make_help_button("hub")
+    help_btn = help_dialogs.make_help_button("hub")
     qtbot.addWidget(help_btn)
     assert not help_btn.isVisible()
 
 
 def test_5_ui_views_visibility_toggling(qtbot, monkeypatch):
     """Verify that HubView, SetupView, TabletopView and CreatorStudioView toggle Information button."""
-    from ui.hub_view import HubView
-    from ui.setup_view import SetupView
-    from ui.tabletop_view import TabletopView
-    from ui.creator_studio_view import CreatorStudioView
+    from mods.axiom.ui.qt.ui.hub_view import HubView
+    from mods.axiom.ui.qt.ui.setup_view import SetupView
+    from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
+    from mods.axiom.ui.qt.ui.creator_studio_view import CreatorStudioView
 
     # Enabled configuration
     cfg_enabled = AppConfig()
@@ -180,7 +180,7 @@ def test_5_ui_views_visibility_toggling(qtbot, monkeypatch):
 
 def test_6_main_window_actions_decoupling(qtbot, monkeypatch):
     """Verify that MainWindow Help actions are detached when axiom.help_system is disabled."""
-    from ui.main_window import MainWindow
+    from mods.axiom.ui.qt.ui.main_window import MainWindow
 
     cfg_enabled = AppConfig()
     cfg_enabled.mod_settings["axiom.help_system"] = {"enabled": True}

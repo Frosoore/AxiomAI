@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
         self._last_chronicle_turn: int = 0
 
         # Audio Ambiance System (Phase 12 Overhaul)
-        from ui.ambiance_manager import AmbianceManager
+        from .ambiance_manager import AmbianceManager
         self._ambiance_manager = AmbianceManager(self)
         self._current_ambiance_tag: str | None = None
 
@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
 
         # TICKET-057 : honour the "doc tooltips on hover" settings toggle.
         from PySide6.QtWidgets import QApplication
-        from ui.help_system import install_tooltip_gate
+        from mods.axiom.help_system.ui.help_system import install_tooltip_gate
         install_tooltip_gate(QApplication.instance())
         self.update_mod_visibility()
 
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self._volume_slider.setValue(50)
         self._volume_slider.setFixedWidth(80) # Keep slider compact
         self._volume_slider.valueChanged.connect(self._on_volume_changed)
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
         doc(self._volume_slider, "app.volume")
         layout.addWidget(self._volume_slider)
         
@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_setup_view"): self._setup_view.retranslate_ui()
 
         # TICKET-057 : every registered doc tooltip follows the language.
-        from ui.help_system import retranslate_tooltips
+        from mods.axiom.help_system.ui.help_system import retranslate_tooltips
         retranslate_tooltips()
 
     def _on_volume_changed(self, value: int) -> None:
@@ -176,11 +176,11 @@ class MainWindow(QMainWindow):
     def _setup_stack(self) -> None:
         """Instantiate the views and add them to the QStackedWidget."""
         # Import here to avoid module-level circular imports
-        from ui.hub_view import HubView
-        from ui.creator_studio_view import CreatorStudioView
-        from ui.tabletop_view import TabletopView
-        from ui.loading_view import LoadingView
-        from ui.setup_view import SetupView
+        from .hub_view import HubView
+        from .creator_studio_view import CreatorStudioView
+        from .tabletop_view import TabletopView
+        from .loading_view import LoadingView
+        from .setup_view import SetupView
 
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
@@ -274,7 +274,7 @@ class MainWindow(QMainWindow):
         self._cancel_gen_btn = QPushButton(tr("cancel_generation"))
         self._cancel_gen_btn.setStyleSheet("color: #FF4B4B;")
         self._cancel_gen_btn.clicked.connect(self._on_cancel_generation)
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
         doc(self._cancel_gen_btn, "app.cancel_generation")
         self._cancel_gen_btn.hide()
         self._status_bar.addPermanentWidget(self._cancel_gen_btn)
@@ -386,7 +386,7 @@ class MainWindow(QMainWindow):
 
     def _show_settings(self) -> None:
         """Open the Settings dialog and reload the LLM if settings were saved."""
-        from ui.settings_dialog import SettingsDialog
+        from .settings_dialog import SettingsDialog
         from axiom.config import load_config
         from PySide6.QtWidgets import QDialog
         
@@ -466,24 +466,24 @@ class MainWindow(QMainWindow):
         return self._PAGE_BY_INDEX.get(self._stack.currentIndex(), "hub")
 
     def _explain_current_page(self) -> None:
-        from ui.help_dialogs import ExplainPageDialog
+        from mods.axiom.help_system.ui.help_dialogs import ExplainPageDialog
         ExplainPageDialog(self._current_doc_page(), self).exec()
 
     def _show_doc_directory(self) -> None:
-        from ui.help_dialogs import DocDirectoryDialog
+        from mods.axiom.help_system.ui.help_dialogs import DocDirectoryDialog
         DocDirectoryDialog(self, current_page=self._current_doc_page()).exec()
 
     def _show_quick_tour(self) -> None:
-        from ui.help_dialogs import QuickTourDialog
+        from mods.axiom.help_system.ui.help_dialogs import QuickTourDialog
         QuickTourDialog(self).exec()
 
     def _show_diagnostic(self) -> None:
-        from ui.diagnostic_dialog import DiagnosticDialog
+        from .diagnostic_dialog import DiagnosticDialog
         DiagnosticDialog(self).exec()
 
     def _show_mods_manager(self) -> None:
         """Open the graphical Mods Manager dialog."""
-        from ui.mods_dialog import ModsDialog
+        from .mods_dialog import ModsDialog
         dialog = ModsDialog(self)
         dialog.exec()
 

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from PySide6.QtWidgets import QApplication
-from ui.ambiance_manager import AmbianceManager
+from mods.axiom.ui.qt.ui.ambiance_manager import AmbianceManager
 
 def test_audio():
     app = QApplication(sys.argv)

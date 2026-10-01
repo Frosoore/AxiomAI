@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -486,6 +487,32 @@ class ModsDialog(QDialog):
         mod_id = self._current_manifest.id
         current_state = is_mod_enabled(mod_id, self._cfg)
         new_state = not current_state
+
+        if mod_id == "axiom.ui.qt" and not new_state:
+            reply = QMessageBox.question(
+                self,
+                tr("mods_disable_active_ui_title"),
+                tr(
+                    "mods_disable_active_ui_prompt",
+                    mod_name=self._current_manifest.name,
+                    mod_id=mod_id,
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            self._cfg.mod_settings.setdefault(mod_id, {})["enabled"] = False
+            save_config(self._cfg)
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
+            else:
+                self.close()
+            return
 
         self._cfg.mod_settings.setdefault(mod_id, {})["enabled"] = new_state
         save_config(self._cfg)

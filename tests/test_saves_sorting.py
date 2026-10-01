@@ -1,6 +1,6 @@
 import pytest
 from PySide6.QtCore import Qt
-from ui.setup_view import SetupView
+from mods.axiom.ui.qt.ui.setup_view import SetupView
 
 def test_saves_sorting_by_last_updated_and_creation_date(qtbot):
     # Pin the UI language: this test asserts hardcoded English labels built via

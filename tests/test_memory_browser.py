@@ -11,7 +11,7 @@ from axiom.facts import Fact, get_fact, insert_facts
 from axiom.observations import Observation, insert_observation
 from axiom.schema import create_universe_db, get_connection
 from core.localization import tr
-from ui.memory_browser import MemoryBrowserDialog
+from mods.axiom.living_memory.ui.memory_browser import MemoryBrowserDialog
 
 
 @pytest.fixture

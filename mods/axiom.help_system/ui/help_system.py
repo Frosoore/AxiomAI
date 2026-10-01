@@ -26,6 +26,18 @@ import weakref
 from core.localization import tr
 from axiom.logger import logger
 
+
+def is_help_system_enabled(config: Any = None) -> bool:
+    """Return True if the axiom.help_system mod is enabled and loaded."""
+    try:
+        from axiom.kernel.loader import is_mod_enabled
+        from axiom.config import load_config
+        cfg = config if config is not None else load_config()
+        return is_mod_enabled("axiom.help_system", cfg)
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Registry — source of truth for everything documentable in the app.
 # Order matters: it is the display order in the dialogs.
@@ -357,6 +369,8 @@ _live_tabs: list[tuple[weakref.ref, int, str]] = []
 
 def tooltip_html(ref: str) -> str:
     """Rich-text tooltip (bold title + body — rich text makes Qt word-wrap)."""
+    if not is_help_system_enabled():
+        return ""
     contrib = get_contributed_help_entry(ref)
     if contrib:
         title = contrib.get("title") or (tr(contrib["title_key"]) if "title_key" in contrib else ref)
@@ -372,6 +386,8 @@ def doc(widget, ref: str):
     Sets its tooltip now and registers it so retranslate_tooltips() can
     refresh it on language change. Returns the widget (chainable).
     """
+    if not is_help_system_enabled():
+        return widget
     if not _is_known(ref):
         logger.warning(f"help_system: unknown doc ref '{ref}' (add it to PAGES)")
     widget.setToolTip(tooltip_html(ref))
@@ -381,6 +397,8 @@ def doc(widget, ref: str):
 
 def doc_tab(tab_widget, index: int, ref: str) -> None:
     """Same as doc(), for one tab of a QTabWidget."""
+    if not is_help_system_enabled():
+        return
     if not _is_known(ref):
         logger.warning(f"help_system: unknown doc ref '{ref}' (add it to PAGES)")
     tab_widget.setTabToolTip(index, tooltip_html(ref))
@@ -389,6 +407,8 @@ def doc_tab(tab_widget, index: int, ref: str) -> None:
 
 def tooltips_enabled() -> bool:
     """User preference: show the doc tooltips on hover (settings toggle)."""
+    if not is_help_system_enabled():
+        return False
     try:
         from axiom.config import load_config
         return bool(load_config().doc_tooltips_enabled)
@@ -405,18 +425,15 @@ def install_tooltip_gate(app) -> None:
     '?' help buttons) are not affected.
     """
     global _tooltip_gate
+    if not is_help_system_enabled():
+        _tooltip_gate = None
+        return
     if _tooltip_gate is not None:
         return
 
     from PySide6.QtCore import QEvent, QObject
 
     def _is_active():
-        try:
-            import ui.help_system as _core_hs
-            if hasattr(_core_hs, "tooltips_enabled"):
-                return _core_hs.tooltips_enabled()
-        except Exception:
-            pass
         return tooltips_enabled()
 
     class _TooltipGate(QObject):
@@ -468,6 +485,8 @@ def retranslate_tooltips() -> None:
     still alive: a plain WeakKeyDictionary does not catch that. We skip and
     prune them with ``shiboken6.isValid`` so a language change never raises.
     """
+    if not is_help_system_enabled():
+        return
     from shiboken6 import isValid
 
     for widget, ref in list(_live_widgets.items()):
@@ -496,6 +515,8 @@ def audit_undocumented(root, skip: tuple = ()) -> list[str]:
     documented (acknowledged debt — keep that list shrinking).
     Returns human-readable descriptions, empty list = full coverage.
     """
+    if not is_help_system_enabled():
+        return []
     from PySide6.QtWidgets import (
         QAbstractButton,
         QAbstractSpinBox,
@@ -570,3 +591,4 @@ def audit_undocumented(root, skip: tuple = ()) -> list[str]:
             if not tabs.tabToolTip(i):
                 missing.append(f"tab({tabs.tabText(i)})")
     return missing
+

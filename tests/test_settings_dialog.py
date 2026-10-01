@@ -10,7 +10,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 from axiom.config import AppConfig
-from ui.settings_dialog import SettingsDialog
+from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
 
 
 def test_settings_dialog_image_fields(qtbot) -> None:
@@ -244,8 +244,8 @@ def test_settings_tab_help_is_tab_aware(qtbot) -> None:
     """The 'Information' help composes the active tab's rich intro + its elements
     + the always-visible General section."""
     from core.localization import set_language
-    from ui.help_dialogs import settings_tab_help_html
-    from ui.help_system import SETTINGS_TAB_PAGES, SETTINGS_GENERAL_PAGE
+    from mods.axiom.help_system.ui.help_dialogs import settings_tab_help_html
+    from mods.axiom.help_system.ui.help_system import SETTINGS_TAB_PAGES, SETTINGS_GENERAL_PAGE
 
     set_language("en")
     # Memory tab (last in SETTINGS_TAB_PAGES) → its intro + a memory element + General.
@@ -400,7 +400,7 @@ def test_settings_dialog_custom_wallpaper(qtbot, tmp_path) -> None:
 
 def test_main_window_wallpaper_styling(qtbot, tmp_path) -> None:
     """MainWindow correctly updates the QApplication stylesheet based on custom_wallpaper."""
-    from ui.main_window import MainWindow
+    from mods.axiom.ui.qt.ui.main_window import MainWindow
     from PySide6.QtWidgets import QApplication
     from axiom.config import save_config, AppConfig
     

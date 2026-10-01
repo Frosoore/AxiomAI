@@ -31,3 +31,27 @@ Garantir que le système de mods respecte deux principes fondamentaux :
   - `axiom.help_system` : documentation contextuelle, aide interactive et commandes CLI d'aide.
   - `axiom.sillytavern` : importation de personnages SillyTavern / PNG chunks et conversion vers entités Axiom.
   - `community.survival` : surveillance de la fatigue et de l'effort, guidelines de survie injectées dans le prompt et consignation d'épuisement dans la Timeline.
+
+## 4. Gating et Cycle de Vie des Interfaces Frontend
+- **Frontends as Mods (Pilier D4 & §9)** :
+  - `axiom.ui.qt` : contrôle le lancement de l'application de bureau native PySide6. Si désactivé, `main.py` bloque le démarrage et invite à réactiver le mod ou basculer sur l'interface Web. La désactivation in-app depuis `ModsDialog` sollicite une confirmation explicite puis termine le processus.
+  - `axiom.ui.web` : contrôle le serveur HTTP et la SPA locale. Si désactivé, `main_web.py:run_server()` refuse l'écoute réseau.
+  - `axiom.cli` : contrôle la boucle de jeu dans le terminal. Si désactivé, `axiom play` refuse l'exécution de la partie.
+- **Instanciation de widgets par slots** :
+  - `axiom.ui.qt:sidebar_widget` et `axiom.ui.qt:settings_tab` acceptent directement des classes `QWidget` (ainsi que les tuples `(titre, widget)` et dictionnaires) pour permettre aux extensions tierces d'enrichir la barre latérale et les paramètres sans modification du code de l'interface bureau.
+
+## 5. Assainissement des Doublons, Emplacements Canoniques et Éradication de `/ui`
+- **Éradication complète du dossier `/ui`** :
+  - Conformément à l'architecture modulaire pure ("UI as a mod"), l'ensemble des fichiers Python de l'interface bureau native a été déplacé sous `mods/axiom.ui.qt/ui/`.
+  - Aucun fichier Python ne réside désormais à la racine de `/ui` (répertoire supprimé).
+- **Emplacements canoniques par mod** :
+  - `mods/axiom.inventory/ui/inventory_view.py` : vue de l'inventaire.
+  - `mods/axiom.time/ui/timeline_view.py` : vue de la chronologie / calendrier.
+  - `mods/axiom.living_memory/ui/mental_models_widget.py` et `memory_browser.py` : exploration de la mémoire vivante.
+  - `mods/axiom.help_system/ui/help_system.py` et `help_dialogs.py` : système d'aide contextuelle, infobulles, explorateur de documentation et visites guidées.
+- **Façade de découplage à coût nul intégrée** :
+  - Les gardes `is_help_system_enabled()` sont intégrés nativement au sein de `mods/axiom.help_system/ui/help_system.py` et `help_dialogs.py`. Lorsque le mod est désactivé, `doc()` et `doc_tab()` opèrent en no-op immédiat sans coût mémoire ni attachement d'événements, rendant tout shim intermédiaire obsolète.
+- **Support des imports modulaires pointillés (`mods/__init__.py`)** :
+  - Le finder `_DottedModFinder` installe `ModuleSpec` avec `spec.has_location = True` et renseigne `spec.origin`, garantissant la présence native de `__file__` sur tous les modules de mods.
+
+

@@ -43,7 +43,7 @@ from core.localization import tr
 from workers.db_worker import DbWorker
 
 if TYPE_CHECKING:
-    from ui.main_window import MainWindow
+    from .main_window import MainWindow
 
 
 class PersonaCreationDialog(QDialog):
@@ -136,8 +136,8 @@ class SetupView(QWidget):
         header.addWidget(self._title_label)
         header.addStretch()
         
-        from ui.help_system import doc, doc_tab
-        from ui.help_dialogs import make_help_button
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_dialogs import make_help_button
 
         self._back_btn = doc(QPushButton(tr("hub")), "setup.back")
         self._back_btn.clicked.connect(self._on_back_clicked)
@@ -190,7 +190,7 @@ class SetupView(QWidget):
             self._help_btn.setVisible(help_enabled)
 
     def _setup_saves_tab(self) -> None:
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
 
         layout = QVBoxLayout(self._saves_tab)
 
@@ -407,7 +407,7 @@ class SetupView(QWidget):
             self._saves_list.setCurrentRow(row - 1)
 
     def _setup_persona_tab(self) -> None:
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
 
         layout = QVBoxLayout(self._persona_tab)
 

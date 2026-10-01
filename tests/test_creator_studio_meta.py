@@ -8,7 +8,7 @@ Studio meta parsing must survive malformed user-editable values
 import tomllib
 from pathlib import Path
 
-from ui.creator_studio_view import _meta_float
+from mods.axiom.ui.qt.ui.creator_studio_view import _meta_float
 
 
 def test_meta_float_parses_valid_values() -> None:

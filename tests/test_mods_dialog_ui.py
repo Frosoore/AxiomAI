@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt
 
 from axiom.config import load_config, save_config
 from axiom.kernel.manifest import ModContributes, ModManifest, ModOrdering
-from ui.mods_dialog import ModsDialog, categorize_mod
+from mods.axiom.ui.qt.ui.mods_dialog import ModsDialog, categorize_mod
 
 
 def test_categorize_mod_rules():
@@ -182,10 +182,10 @@ def test_mods_dialog_search_filter(qtbot, isolated_axiom_data_dir):
 
 def test_main_window_menu_has_mods_menu(qtbot, isolated_axiom_data_dir, monkeypatch):
     """Verify that MainWindow menuBar contains a 'Mods' menu with management action."""
-    from ui.main_window import MainWindow
+    from mods.axiom.ui.qt.ui.main_window import MainWindow
 
     # Mock heavy dependencies in MainWindow
-    monkeypatch.setattr("ui.main_window.MainWindow._check_first_launch", lambda self: None)
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.main_window.MainWindow._check_first_launch", lambda self: None)
     monkeypatch.setattr("axiom.config.load_config", lambda: load_config())
 
     win = MainWindow()

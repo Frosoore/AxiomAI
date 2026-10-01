@@ -84,8 +84,8 @@ class _FakeWorker(QObject):
 
 @pytest.fixture
 def dialog(monkeypatch):
-    monkeypatch.setattr("ui.diagnostic_dialog.DiagnosticWorker", _FakeWorker)
-    from ui.diagnostic_dialog import DiagnosticDialog
+    monkeypatch.setattr("mods.axiom.ui.qt.ui.diagnostic_dialog.DiagnosticWorker", _FakeWorker)
+    from mods.axiom.ui.qt.ui.diagnostic_dialog import DiagnosticDialog
     dlg = DiagnosticDialog()
     yield dlg
     # Deterministic teardown. A test may switch the dialog's language combo (in-memory

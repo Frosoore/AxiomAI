@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def check_registry_keys() -> int:
     """Contrôle 1 : registre ↔ clés EN. Retourne le nombre de problèmes."""
     from core.localization import get_translations_dict
-    from ui import help_system
+    from mods.axiom.help_system.ui import help_system
 
     en = get_translations_dict()["en"]
     required = help_system.all_doc_keys()
@@ -65,12 +65,12 @@ def check_widgets() -> int:
     app = QApplication.instance() or QApplication([])
 
     from axiom.config import AppConfig
-    from ui import help_system
-    from ui.hub_view import HubView
-    from ui.setup_view import SetupView
-    from ui.tabletop_view import TabletopView
-    from ui.creator_studio_view import CreatorStudioView
-    from ui.settings_dialog import SettingsDialog
+    from mods.axiom.help_system.ui import help_system
+    from mods.axiom.ui.qt.ui.hub_view import HubView
+    from mods.axiom.ui.qt.ui.setup_view import SetupView
+    from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
+    from mods.axiom.ui.qt.ui.creator_studio_view import CreatorStudioView
+    from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
 
     views = {
         "hub": HubView(main_window=None),

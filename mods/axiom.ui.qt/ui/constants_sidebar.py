@@ -94,7 +94,7 @@ class ConstantsSidebar(QWidget):
         if is_mod_enabled("axiom.time", cfg):
             self._tabs.addTab(self._time_scroll, tr("timeline"))
 
-        from ui.help_system import doc_tab
+        from mods.axiom.help_system.ui.help_system import doc_tab
         doc_tab(self._tabs, 0, "tabletop.sidebar_stats")
         inv_idx = self._tabs.indexOf(self._inv_scroll)
         if inv_idx != -1:
@@ -110,9 +110,37 @@ class ConstantsSidebar(QWidget):
         if reg:
             for item in reg.get_slot_contributions("axiom.ui.qt:sidebar_widget"):
                 if isinstance(item, tuple) and len(item) == 2:
-                    self._tabs.addTab(item[1], str(item[0]))
+                    title, widget = item
+                    if isinstance(widget, type):
+                        try:
+                            widget = widget(parent=self)
+                        except TypeError:
+                            widget = widget()
+                    self._tabs.addTab(widget, str(title))
                 elif isinstance(item, dict) and "title" in item and "widget" in item:
-                    self._tabs.addTab(item["widget"], str(item["title"]))
+                    title = item["title"]
+                    widget = item["widget"]
+                    if isinstance(widget, type):
+                        try:
+                            widget = widget(parent=self)
+                        except TypeError:
+                            widget = widget()
+                    self._tabs.addTab(widget, str(title))
+                elif isinstance(item, type):
+                    widget_id = getattr(item, "widget_id", "")
+                    if widget_id in ("timeline", "inventory"):
+                        # Handled by built-in scroll areas
+                        continue
+                    try:
+                        widget = item(parent=self)
+                    except TypeError:
+                        try:
+                            widget = item()
+                        except Exception:
+                            continue
+                    title_key = getattr(item, "title_key", getattr(widget, "title_key", None))
+                    title = tr(title_key) if title_key else getattr(item, "__name__", "Extension")
+                    self._tabs.addTab(widget, str(title))
 
     def update_mod_visibility(self, config=None) -> None:
         """Dynamically add or remove mod-dependent tabs based on active mods."""

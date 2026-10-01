@@ -9,7 +9,7 @@ entirely, and flush any leftover partial fence on demand.
 import os
 import pytest
 from PySide6.QtWidgets import QApplication
-from ui.widgets.chat_display import ChatDisplayWidget
+from mods.axiom.ui.qt.ui.widgets.chat_display import ChatDisplayWidget
 
 # Ensure we can run without a display
 os.environ["QT_QPA_PLATFORM"] = "offscreen"

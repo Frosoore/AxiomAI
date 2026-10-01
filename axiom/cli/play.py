@@ -276,9 +276,23 @@ def play_loop(
 
 def run_play(args: argparse.Namespace) -> int:
     """Résout univers + save + LLM, construit la Session, lance la boucle."""
+    from axiom.config import load_config, build_llm_from_config
+    from axiom.kernel.loader import is_mod_enabled
+
+    cfg = load_config()
+    if not is_mod_enabled("axiom.cli", cfg):
+        print(
+            "The terminal CLI interface mod ('axiom.cli') is currently disabled in your configuration.\n"
+            "To re-enable it, run:\n"
+            "    axiom mod enable axiom.cli\n\n"
+            "Or launch the desktop Qt interface:\n"
+            "    python main.py",
+            file=sys.stderr,
+        )
+        return 1
+
     from axiom.universe import Universe
     from axiom.session import Session
-    from axiom.config import load_config, build_llm_from_config
     from axiom.savestore import create_save, list_saves, prepare_save_for_play
     from axiom.compile import CompileError
     from axiom.package import PackageError

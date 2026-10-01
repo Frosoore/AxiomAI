@@ -49,20 +49,28 @@ class _DottedModFinder(MetaPathFinder):
                 remaining = parts[consumed + 1:]
                 if not remaining:
                     init_file = matched_dir / "__init__.py"
-                    loader = SourceFileLoader(fullname, str(init_file)) if init_file.is_file() else None
-                    spec = ModuleSpec(fullname, loader, is_package=True)
+                    has_init = init_file.is_file()
+                    loader = SourceFileLoader(fullname, str(init_file)) if has_init else None
+                    spec = ModuleSpec(fullname, loader, origin=str(init_file) if has_init else None, is_package=True)
                     spec.submodule_search_locations = [str(matched_dir)]
+                    if has_init:
+                        spec.has_location = True
                     return spec
                 else:
                     target_path = matched_dir.joinpath(*remaining)
                     py_file = target_path.with_suffix(".py")
                     if py_file.is_file():
-                        return ModuleSpec(fullname, SourceFileLoader(fullname, str(py_file)), origin=str(py_file))
+                        spec = ModuleSpec(fullname, SourceFileLoader(fullname, str(py_file)), origin=str(py_file))
+                        spec.has_location = True
+                        return spec
                     if target_path.is_dir():
                         init_file = target_path / "__init__.py"
-                        loader = SourceFileLoader(fullname, str(init_file)) if init_file.is_file() else None
-                        spec = ModuleSpec(fullname, loader, is_package=True)
+                        has_init = init_file.is_file()
+                        loader = SourceFileLoader(fullname, str(init_file)) if has_init else None
+                        spec = ModuleSpec(fullname, loader, origin=str(init_file) if has_init else None, is_package=True)
                         spec.submodule_search_locations = [str(target_path)]
+                        if has_init:
+                            spec.has_location = True
                         return spec
 
         # Intermediate namespaces like mods.axiom, mods.core, mods.community

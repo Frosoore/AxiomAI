@@ -44,3 +44,54 @@
   - L'effectivité réelle de `community.survival` (prompt section et tracking d'effort).
   - L'absence de mods placebo/vides parmi tous les mods installés.
 - 157/157 tests mods & kernel validés avec succès.
+
+### Contrôle et Effectivité des Mods d'Interface (axiom.ui.qt, axiom.ui.web, axiom.cli)
+- `main.py` :
+  - Gating effectif avant lancement : vérifie `is_mod_enabled("axiom.ui.qt", cfg)`. Si désactivé, affiche une erreur claire avec orientation (`axiom mod enable axiom.ui.qt` ou `python main_web.py`), notifie par `QMessageBox.critical` (si display disponible) et quitte proprement avec code 1.
+- `ui/mods_dialog.py` & `mods/axiom.ui.qt/ui/mods_dialog.py` :
+  - Lors de la désactivation de `axiom.ui.qt` depuis l'interface Qt en cours d'exécution, affiche un dialogue de confirmation explicite (`QMessageBox.question`). En cas d'acceptation, enregistre la configuration et ferme l'application via `QApplication.quit()`.
+- `main_web.py` :
+  - `run_server()` vérifie `is_mod_enabled("axiom.ui.web", cfg)` avant de démarrer l'écoute HTTP.
+- `axiom/cli/play.py` :
+  - `run_play()` vérifie `is_mod_enabled("axiom.cli", cfg)` avant de lancer la session interactive textuelle.
+- `mods/axiom.ui.qt/ui/constants_sidebar.py` & `settings_dialog.py` :
+  - Support de l'instanciation de classes `QWidget` contribuées via les slots `axiom.ui.qt:sidebar_widget` et `axiom.ui.qt:settings_tab` sans créer de doublons avec les onglets built-in existants.
+- `core/locales/*.toml` :
+  - Ajout des clés `mods_disable_active_ui_title` et `mods_disable_active_ui_prompt` dans les 10 langues supportées avec préservation des placeholders `{mod_name}` et `{mod_id}`.
+- `tests/test_ui_mods_and_cli.py` :
+  - Ajout de 3 nouveaux tests : refus de démarrage si mod d'interface désactivé, confirmation/fermeture lors de la désactivation in-app dans `ModsDialog`, et instanciation de classes widgets via slots.
+
+### Suppression des Doublons et Shims Résiduels de Mods
+- Suppression des shims de compatibilité résiduels devenus obsolètes dans `/ui` :
+  - `ui/widgets/inventory_view.py` (remplacé définitivement par `mods/axiom.inventory/ui/inventory_view.py`).
+  - `ui/widgets/timeline_view.py` (remplacé définitivement par `mods/axiom.time/ui/timeline_view.py`).
+  - `ui/widgets/mental_models_widget.py` (remplacé définitivement par `mods/axiom.living_memory/ui/mental_models_widget.py`).
+  - `ui/memory_browser.py` (remplacé définitivement par `mods/axiom.living_memory/ui/memory_browser.py`).
+- Suppression du doublon orphelin non maintenu dans `axiom.ui.qt` :
+  - `mods/axiom.ui.qt/ui/memory_browser.py` (471 lignes de doublon historique supprimées au profit de `mods.axiom.living_memory.ui.memory_browser`).
+- Mise à jour des imports des appelants vers l'emplacement canonique du mod :
+  - `mods/axiom.ui.qt/ui/tabletop_view.py` : importation de `MemoryBrowserDialog` depuis `mods.axiom.living_memory.ui.memory_browser`.
+  - `tests/test_memory_browser.py` : importation depuis `mods.axiom.living_memory.ui.memory_browser`.
+- Nettoyage des caches `__pycache__` associés.
+- Suite complète de tests validée : 1 179 tests passés avec succès (0 échec).
+
+### Consolidation Intégrale de l'UI Desktop et Suppression Définitive du Dossier `/ui`
+- **Autonomie complète de `axiom.help_system`** :
+  - Intégration de la logique de découplage `is_help_system_enabled()` directement dans `mods/axiom.help_system/ui/help_system.py` et `help_dialogs.py`.
+  - Quand `axiom.help_system` est désactivé, `doc()` retourne immédiatement le widget d'origine sans attachement de tooltip, `doc_tab()` no-op, les fonctions de recherche/audit retournent des conteneurs vides, et les dialogues (`ExplainPageDialog`, `DocDirectoryDialog`, `QuickTourDialog`) ne s'ouvrent pas.
+  - Suppression des doublons orphelins `mods/axiom.ui.qt/ui/help_system.py` et `mods/axiom.ui.qt/ui/help_dialogs.py`.
+- **Découplage interne strict de `mods/axiom.ui.qt/ui/`** :
+  - Conversion de l'ensemble des imports internes de l'interface bureau vers des imports relatifs (`from .widgets...`, `from .hub_view...`) ou vers les modules canoniques des mods concernés (`from mods.axiom.help_system...`).
+  - Zéro import résiduel vers `ui.` dans `mods/axiom.ui.qt/ui/`.
+- **Éradication totale du dossier `/ui`** :
+  - Tous les composants graphiques natifs (vues, widgets, dialogues, gestionnaire d'ambiance) résident désormais sous `mods/axiom.ui.qt/ui/`.
+  - Suppression de l'intégralité des fichiers Python et répertoires sous `/home/frosoore/Projets/AxiomAI/ui` (0 fichier résiduel, dossier supprimé).
+- **Redirection des appelants et outillages** :
+  - `main.py` : importation de `MainWindow` et `maybe_warn_missing_runtime` depuis `mods.axiom.ui.qt.ui.*`.
+  - `debug/startup_check.py` : vérification au démarrage de `mods.axiom.ui.qt.ui.main_window`.
+  - `tools/diagnostic.py` & `tools/doc_check.py` : importation depuis `mods.axiom.ui.qt.ui.*` et `mods.axiom.help_system.ui.*`.
+  - `mods/__init__.py` : ajout de `spec.has_location = True` dans `_DottedModFinder` pour garantir que l'attribut `__file__` est systématiquement renseigné sur tous les modules chargés dynamiquement depuis `mods/`.
+  - 18 fichiers de tests mis à jour (`test_help_system.py`, `test_help_system_mod.py`, `test_settings_dialog.py`, `test_phase6.py`, `test_runtime_check.py`, `test_saves_sorting.py`, `test_scheduled_events_editor.py`, `test_ui_mods_and_cli.py`, `test_mods_dialog_ui.py`, `test_mod_ui_deactivation.py`, `test_sillytavern_mod.py`, `test_ambiance_manager.py`, etc.).
+- **Validation** :
+  - Suite de tests complète validée : **1 189 tests passés à 100% (0 échec)**.
+

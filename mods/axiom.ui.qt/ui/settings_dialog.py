@@ -51,7 +51,7 @@ from axiom.config import (
 )
 from axiom.kernel.loader import is_mod_enabled
 from core.localization import tr, SUPPORTED_LANGUAGES
-from ui.widgets.persona_editor import PersonaEditorWidget
+from .widgets.persona_editor import PersonaEditorWidget
 from workers.connection_test_worker import ConnectionTestWorker
 from workers.db_worker import DbWorker
 from workers.model_list_worker import ModelListWorker
@@ -149,7 +149,7 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
-        from ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
 
         layout = QVBoxLayout(self)
 
@@ -287,13 +287,41 @@ class SettingsDialog(QDialog):
         if reg:
             for tab_contrib in reg.get_slot_contributions("axiom.ui.qt:settings_tab"):
                 if isinstance(tab_contrib, tuple) and len(tab_contrib) == 2:
-                    self._tabs.addTab(tab_contrib[1], str(tab_contrib[0]))
+                    title, widget = tab_contrib
+                    if isinstance(widget, type):
+                        try:
+                            widget = widget(parent=self)
+                        except TypeError:
+                            widget = widget()
+                    self._tabs.addTab(widget, str(title))
                 elif isinstance(tab_contrib, dict) and "title" in tab_contrib and "widget" in tab_contrib:
-                    self._tabs.addTab(tab_contrib["widget"], str(tab_contrib["title"]))
+                    title = tab_contrib["title"]
+                    widget = tab_contrib["widget"]
+                    if isinstance(widget, type):
+                        try:
+                            widget = widget(parent=self)
+                        except TypeError:
+                            widget = widget()
+                    self._tabs.addTab(widget, str(title))
                 elif isinstance(tab_contrib, dict) and "title" in tab_contrib and "factory" in tab_contrib:
                     w = tab_contrib["factory"](self._config)
                     if w:
                         self._tabs.addTab(w, str(tab_contrib["title"]))
+                elif isinstance(tab_contrib, type):
+                    tab_id = getattr(tab_contrib, "tab_id", "")
+                    if tab_id in ("universal_llm", "cloud_llm", "illustrations", "living_memory"):
+                        # Built-in settings tabs already configured
+                        continue
+                    try:
+                        w = tab_contrib(parent=self)
+                    except TypeError:
+                        try:
+                            w = tab_contrib()
+                        except Exception:
+                            continue
+                    title_key = getattr(tab_contrib, "title_key", getattr(w, "title_key", None))
+                    title = tr(title_key) if title_key else getattr(tab_contrib, "__name__", "Extension")
+                    self._tabs.addTab(w, str(title))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -317,7 +345,7 @@ class SettingsDialog(QDialog):
 
     def _setup_providers_tabs(self) -> None:
         """Setup Universal API tab and Cloud tab contributed by axiom.providers."""
-        from ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
 
         # Universal API tab
         self._univ_widget = QWidget()
@@ -421,7 +449,7 @@ class SettingsDialog(QDialog):
 
     def _setup_image_tab(self) -> None:
         """Setup Image Generation tab contributed by axiom.illustrations."""
-        from ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
         self._image_widget = QWidget()
         image_form = QFormLayout(self._image_widget)
 
@@ -487,7 +515,7 @@ class SettingsDialog(QDialog):
 
     def _setup_memory_tab(self) -> None:
         """Setup Memory tab contributed by axiom.living_memory."""
-        from ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
         self._memory_widget = QWidget()
         memory_form = QFormLayout(self._memory_widget)
 
@@ -1221,7 +1249,7 @@ class SettingsDialog(QDialog):
         Tab-aware (like the Creator Studio): the explanation matches the tab you
         are looking at, then appends the always-visible General section.
         """
-        from ui.help_dialogs import ExplainPageDialog, settings_tab_help_html
+        from mods.axiom.help_system.ui.help_dialogs import ExplainPageDialog, settings_tab_help_html
         title, html = settings_tab_help_html(self._tabs.currentIndex())
         ExplainPageDialog("settings", self, html=html, title=title).exec()
 

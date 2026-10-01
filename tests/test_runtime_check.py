@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from ui import runtime_check
+from mods.axiom.ui.qt.ui import runtime_check
 
 
 def test_status_never_raises_and_is_known():

@@ -28,21 +28,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.widgets.entity_editor import EntityEditorWidget
-from ui.widgets.lore_book_editor import LoreBookEditorWidget
-from ui.widgets.rule_editor import RuleEditorWidget
-from ui.widgets.stat_definition_editor import StatDefinitionEditorWidget
-from ui.widgets.scheduled_events_editor import ScheduledEventsEditorWidget
-from ui.widgets.story_setup_editor import StorySetupEditorWidget
-from ui.widgets.populate_tab import PopulateTabWidget
-from ui.widgets.map_editor import MapEditorWidget
-from ui.widgets.universe_files_tab import UniverseFilesTabWidget
+from .widgets.entity_editor import EntityEditorWidget
+from .widgets.lore_book_editor import LoreBookEditorWidget
+from .widgets.rule_editor import RuleEditorWidget
+from .widgets.stat_definition_editor import StatDefinitionEditorWidget
+from .widgets.scheduled_events_editor import ScheduledEventsEditorWidget
+from .widgets.story_setup_editor import StorySetupEditorWidget
+from .widgets.populate_tab import PopulateTabWidget
+from .widgets.map_editor import MapEditorWidget
+from .widgets.universe_files_tab import UniverseFilesTabWidget
 from workers.db_worker import DbWorker
 from axiom.config import load_config
 from core.localization import tr
 
 if TYPE_CHECKING:
-    from ui.main_window import MainWindow
+    from .main_window import MainWindow
 
 
 def _meta_float(meta: dict, key: str, default: float) -> float:
@@ -83,8 +83,8 @@ class CreatorStudioView(QWidget):
         header.addWidget(self._universe_label)
         header.addStretch()
 
-        from ui.help_system import doc, doc_tab
-        from ui.help_dialogs import make_help_button
+        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from mods.axiom.help_system.ui.help_dialogs import make_help_button
 
         self._save_btn = doc(QPushButton(f"{tr('save_changes')} (Ctrl+S)"), "creator.save")
         self._back_btn = doc(QPushButton(tr("hub")), "creator.back")
@@ -163,7 +163,7 @@ class CreatorStudioView(QWidget):
             shortcut.activated.connect(lambda idx=i: self._tabs.setCurrentIndex(idx))
 
     def _build_lore_tab(self) -> QWidget:
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
 
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -262,7 +262,7 @@ class CreatorStudioView(QWidget):
 
     def current_doc_page(self) -> str:
         """Doc page id for the active tab (drives the tab-aware Information/F1)."""
-        from ui.help_system import CREATOR_TAB_PAGES
+        from mods.axiom.help_system.ui.help_system import CREATOR_TAB_PAGES
         idx = self._tabs.currentIndex()
         if 0 <= idx < len(CREATOR_TAB_PAGES):
             return CREATOR_TAB_PAGES[idx]
@@ -553,7 +553,7 @@ class CreatorStudioView(QWidget):
         if not info.get("diffs"):
             QMessageBox.information(self, tr("populate"), tr("preview_no_changes"))
             return
-        from ui.widgets.diff_preview_dialog import DiffPreviewDialog
+        from .widgets.diff_preview_dialog import DiffPreviewDialog
         dialog = DiffPreviewDialog(info["diffs"], self)
         if dialog.exec() == QDialog.Accepted:
             self._db_worker.apply_staged(info["staged_dir"], info["src_dir"])

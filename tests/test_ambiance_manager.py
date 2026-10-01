@@ -6,7 +6,7 @@ Unit tests for the AmbianceManager.
 
 import pytest
 from PySide6.QtMultimedia import QMediaPlayer
-from ui.ambiance_manager import AmbianceManager
+from mods.axiom.ui.qt.ui.ambiance_manager import AmbianceManager
 
 @pytest.fixture
 def ambiance_manager(qtbot):

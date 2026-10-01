@@ -36,7 +36,7 @@ from axiom.kernel import (
     set_safe_mode,
 )
 from core.localization import reload_translations, set_language, tr
-import ui.help_system as help_sys
+import mods.axiom.help_system.ui.help_system as help_sys
 
 
 def test_manifests_and_loading_ui_mods():
@@ -241,3 +241,127 @@ name = "Third Party Test"
     finally:
         set_safe_mode(False)
         axiom.paths.reset()
+
+
+def test_entrypoints_disabled_mods(tmp_path: Path, monkeypatch):
+    """Entrypoints main.py, main_web.py, and axiom play must refuse to start if their UI mod is disabled."""
+    axiom.paths.configure(config_dir=tmp_path)
+    try:
+        cfg = AppConfig()
+
+        # 1. Test main.py with axiom.ui.qt disabled
+        cfg.mod_settings["axiom.ui.qt"] = {"enabled": False}
+        save_config(cfg)
+        monkeypatch.setattr(sys, "argv", ["main.py"])
+        import PySide6.QtWidgets
+        monkeypatch.setattr(PySide6.QtWidgets.QMessageBox, "critical", lambda *args, **kwargs: None)
+
+        import main
+        ret = main.main()
+        assert ret == 1
+
+        # 2. Test main_web.py with axiom.ui.web disabled
+        cfg.mod_settings["axiom.ui.web"] = {"enabled": False}
+        save_config(cfg)
+        import main_web
+        ret_web = main_web.run_server(port=9999)
+        assert ret_web == 1
+
+        # 3. Test axiom play with axiom.cli disabled
+        cfg.mod_settings["axiom.cli"] = {"enabled": False}
+        save_config(cfg)
+        from axiom.cli.play import run_play
+        ret_cli = run_play(argparse.Namespace(universe="test.axiom"))
+        assert ret_cli == 1
+    finally:
+        axiom.paths.reset()
+
+
+def test_mods_dialog_deactivate_active_ui(qtbot, monkeypatch, tmp_path: Path):
+    """Disabling axiom.ui.qt from within ModsDialog prompts for confirmation and exits cleanly."""
+    axiom.paths.configure(config_dir=tmp_path)
+    try:
+        cfg = AppConfig()
+        cfg.mod_settings["axiom.ui.qt"] = {"enabled": True}
+        save_config(cfg)
+
+        from mods.axiom.ui.qt.ui.mods_dialog import ModsDialog
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QMessageBox
+
+        dialog = ModsDialog(parent=None)
+        qtbot.addWidget(dialog)
+
+        # Find axiom.ui.qt in the list
+        qt_item = None
+        for i in range(dialog._mod_list.count()):
+            item = dialog._mod_list.item(i)
+            data = item.data(Qt.UserRole)
+            if data and isinstance(data, tuple) and data[0].id == "axiom.ui.qt":
+                qt_item = item
+                break
+
+        assert qt_item is not None
+        dialog._mod_list.setCurrentItem(qt_item)
+        assert dialog._current_manifest.id == "axiom.ui.qt"
+
+        # Case 1: User says NO to confirmation dialog
+        monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.No)
+        dialog._toggle_current_mod()
+        cfg_reloaded = load_config()
+        assert is_mod_enabled("axiom.ui.qt", cfg_reloaded)
+
+        # Case 2: User says YES to confirmation dialog
+        quit_called = []
+        monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.Yes)
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        monkeypatch.setattr(app, "quit", lambda: quit_called.append(True))
+
+        dialog._toggle_current_mod()
+        assert len(quit_called) == 1
+        cfg_reloaded = load_config()
+        assert not is_mod_enabled("axiom.ui.qt", cfg_reloaded)
+    finally:
+        axiom.paths.reset()
+
+
+def test_qt_slots_instantiate_widget_classes(qtbot):
+    """axiom.ui.qt:sidebar_widget and axiom.ui.qt:settings_tab instantiate contributed widget classes."""
+    from PySide6.QtWidgets import QWidget, QLabel
+    from axiom.kernel.registry import KernelRegistry, set_active_registry
+    from mods.axiom.ui.qt.ui.constants_sidebar import ConstantsSidebar
+    from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
+
+    reg = KernelRegistry()
+    set_active_registry(reg)
+
+    class CustomSidebarWidget(QWidget):
+        widget_id = "custom_sidebar"
+        title_key = "custom_sidebar_title"
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            label = QLabel("Custom Sidebar Content", self)
+
+    class CustomSettingsTab(QWidget):
+        tab_id = "custom_tab"
+        title_key = "custom_tab_title"
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            label = QLabel("Custom Tab Content", self)
+
+    reg.add_to_slot("axiom.ui.qt:sidebar_widget", "test.mod", CustomSidebarWidget)
+    reg.add_to_slot("axiom.ui.qt:settings_tab", "test.mod", CustomSettingsTab)
+
+    sidebar = ConstantsSidebar()
+    qtbot.addWidget(sidebar)
+    tab_titles = [sidebar._tabs.tabText(i) for i in range(sidebar._tabs.count())]
+    assert "custom_sidebar_title" in tab_titles
+
+    settings = SettingsDialog(config=AppConfig())
+    qtbot.addWidget(settings)
+    settings_tab_titles = [settings._tabs.tabText(i) for i in range(settings._tabs.count())]
+    assert "custom_tab_title" in settings_tab_titles
+

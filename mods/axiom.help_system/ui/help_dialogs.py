@@ -57,6 +57,8 @@ def _intro_with_elements_html(intro_page: str, element_refs) -> str:
 def settings_tab_help_html(tab_index: int) -> tuple[str, str]:
     """(window title, HTML) explaining the active Settings tab + the General
     section (which is always visible below the tabs)."""
+    if not help_system.is_help_system_enabled():
+        return "", ""
     pages = help_system.SETTINGS_TAB_PAGES
     intro_page, elements = (
         pages[tab_index] if 0 <= tab_index < len(pages)
@@ -106,6 +108,11 @@ class ExplainPageDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+    def exec(self) -> int:
+        if not help_system.is_help_system_enabled():
+            return 0
+        return super().exec()
 
 
 class DocDirectoryDialog(QDialog):
@@ -207,6 +214,11 @@ class DocDirectoryDialog(QDialog):
                 page_visible = page_visible or match
             page_item.setHidden(not page_visible)
 
+    def exec(self) -> int:
+        if not help_system.is_help_system_enabled():
+            return 0
+        return super().exec()
+
 
 class QuickTourDialog(QDialog):
     """Brique 3 : paged welcome tour (first launch + Help menu replay)."""
@@ -243,6 +255,11 @@ class QuickTourDialog(QDialog):
 
         self._show_step()
 
+    def exec(self) -> int:
+        if not help_system.is_help_system_enabled():
+            return 0
+        return super().exec()
+
     def _show_step(self) -> None:
         steps = help_system.TOUR_STEPS
         step = steps[self._index]
@@ -276,6 +293,10 @@ def make_help_button(page, parent=None) -> QPushButton:
     at click time — the Creator Studio passes a callable so the dialog always
     matches the active tab.
     """
+    if not help_system.is_help_system_enabled():
+        btn = QPushButton(parent)
+        btn.setVisible(False)
+        return btn
     button = QPushButton(tr("information"), parent)
     button.setStyleSheet(
         "QPushButton { border-radius: 8px; font-weight: bold; padding: 4px 12px; }"
@@ -288,3 +309,4 @@ def make_help_button(page, parent=None) -> QPushButton:
 
     button.clicked.connect(_open)
     return button
+

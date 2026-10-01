@@ -87,7 +87,7 @@ def test_3_service_registration_and_parsing(tmp_path: Path):
 
 def test_4_qt_hub_visibility_deactivation(qtbot, monkeypatch):
     """Verify that HubView dynamically shows or hides the SillyTavern button based on mod state."""
-    from ui.hub_view import HubView
+    from mods.axiom.ui.qt.ui.hub_view import HubView
 
     cfg = AppConfig()
     # 1. Enabled by default

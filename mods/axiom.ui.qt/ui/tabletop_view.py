@@ -34,11 +34,11 @@ from axiom.multiplayer import PlayerAction
 from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
 from axiom.session import Session
 
-from ui.checkpoint_dialog import CheckpointDialog
-from ui.constants_sidebar import ConstantsSidebar
-from ui.mini_dico_panel import MiniDicoPanel
-from ui.tabletop_hardcore import HardcoreMixin
-from ui.widgets.chat_display import ChatDisplayWidget
+from .checkpoint_dialog import CheckpointDialog
+from .constants_sidebar import ConstantsSidebar
+from .mini_dico_panel import MiniDicoPanel
+from .tabletop_hardcore import HardcoreMixin
+from .widgets.chat_display import ChatDisplayWidget
 from axiom.db_helpers import get_max_turn_id, load_rules_for_session, load_saves, get_current_time
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
@@ -55,7 +55,7 @@ from axiom.logger import logger
 from core.localization import tr, format_time
 
 if TYPE_CHECKING:
-    from ui.main_window import MainWindow
+    from .main_window import MainWindow
     from axiom.memory import VectorMemory
     from workers.fact_worker import FactExtractWorker
 
@@ -152,8 +152,8 @@ class TabletopView(HardcoreMixin, QWidget):
         top_bar = QHBoxLayout(top_bar_container)
         top_bar.setContentsMargins(10, 5, 10, 5)
 
-        from ui.help_system import doc
-        from ui.help_dialogs import make_help_button
+        from mods.axiom.help_system.ui.help_system import doc
+        from mods.axiom.help_system.ui.help_dialogs import make_help_button
 
         # 1. Left Section
         left_layout = QHBoxLayout()
@@ -1206,8 +1206,11 @@ class TabletopView(HardcoreMixin, QWidget):
         by the current turn. Read-only, so it works even outside living mode (an
         old save may already hold memory to inspect).
         """
-        from ui.memory_browser import MemoryBrowserDialog
-        MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
+        try:
+            from mods.axiom.living_memory.ui.memory_browser import MemoryBrowserDialog
+            MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
+        except ImportError:
+            pass
 
     def extract_facts_now(self) -> None:
         """Manual trigger (the settings 'extract now' button).
@@ -1304,7 +1307,7 @@ class TabletopView(HardcoreMixin, QWidget):
         if not info.get("diffs"):
             self._main_window.on_status_update(tr("canon_none_msg"))
             return
-        from ui.widgets.diff_preview_dialog import DiffPreviewDialog
+        from .widgets.diff_preview_dialog import DiffPreviewDialog
         dialog = DiffPreviewDialog(info["diffs"], self, title=tr("canonize_btn"))
         if dialog.exec() != QDialog.Accepted:
             from workers.db_tasks import discard_staged_source

@@ -127,7 +127,7 @@ def check_imports():
         ('axiom.arbitrator', 'axiom'),
         ('axiom.schema', 'axiom'),
         ('axiom.backends.base', 'axiom'),
-        ('ui.main_window', 'ui')
+        ('mods.axiom.ui.qt.ui.main_window', 'axiom.ui.qt')
     ]
     
     all_ok = True

@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 
-from ui.main_window import MainWindow
+from mods.axiom.ui.qt.ui.main_window import MainWindow
 from axiom.logger import logger, enable_debug_mode, is_debug
 
 _DARK_QSS: str = """
@@ -410,11 +410,32 @@ def main() -> None:
     register_builtin_providers()
     apply_beta_defaults()
 
-    # Initialize global KernelRegistry and bootstrap all enabled mods
-    from axiom.kernel.loader import bootstrap_all_mods
-    bootstrap_all_mods()
+    # Load configuration and check if Desktop Qt UI mod is enabled
+    from axiom.config import load_config
+    from axiom.kernel.loader import bootstrap_all_mods, is_mod_enabled
+    cfg = load_config()
 
-    app = QApplication(sys.argv)
+    if not is_mod_enabled("axiom.ui.qt", cfg):
+        err_msg = (
+            "The desktop Qt interface mod ('axiom.ui.qt') is currently disabled in your configuration.\n"
+            "To re-enable it, run:\n"
+            "    axiom mod enable axiom.ui.qt\n\n"
+            "Or launch the web interface:\n"
+            "    python main_web.py"
+        )
+        logger.error(err_msg)
+        print(f"\n[Axiom AI] {err_msg}\n", file=sys.stderr)
+        try:
+            _app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(None, "Axiom AI — Interface Disabled", err_msg)
+        except Exception:
+            pass
+        return 1
+
+    # Initialize global KernelRegistry and bootstrap all enabled mods
+    bootstrap_all_mods(config=cfg)
+
+    app = QApplication.instance() or QApplication(sys.argv)
     # Keep a reference on the app so the filter isn't garbage-collected.
     app._wheel_guard = _make_wheel_guard()
     app.installEventFilter(app._wheel_guard)
@@ -436,11 +457,12 @@ def main() -> None:
     # GUI-only: if torch's native runtime failed to load (typically a missing
     # Visual C++ Redistributable on Windows), tell the user how to fix it. The
     # engine already degraded silently; this surfaces the actionable link.
-    from ui.runtime_check import maybe_warn_missing_runtime
+    from mods.axiom.ui.qt.ui.runtime_check import maybe_warn_missing_runtime
     maybe_warn_missing_runtime(window)
 
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)
+

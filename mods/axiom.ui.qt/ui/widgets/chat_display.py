@@ -168,7 +168,7 @@ class ChatDisplayWidget(QWidget):
                     fmt.setFontWeight(QFont.Weight.Normal)
                 self._formats[(bold, italic)] = fmt
 
-        from ui.help_system import doc
+        from mods.axiom.help_system.ui.help_system import doc
         doc(self._narrative_display, "tabletop.chat_log")
 
         # Input row
