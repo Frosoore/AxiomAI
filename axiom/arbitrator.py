@@ -466,7 +466,11 @@ class ArbitratorEngine:
         ctx.lore_book_subset = self._fetch_relevant_lore(ctx.save_id, ctx.combined_intents_text)
 
         from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
-        if memory_mode_is_living(cfg):
+        has_living_memory = (
+            self.kernel_registry is None
+            or (hasattr(self.kernel_registry, "has_service") and self.kernel_registry.has_service("living_memory"))
+        )
+        if memory_mode_is_living(cfg) and has_living_memory:
             fact_lines = self._fetch_relevant_facts(
                 ctx.save_id,
                 max_turn_id=ctx.turn_id,
@@ -643,47 +647,57 @@ class ArbitratorEngine:
         from axiom.config import load_config
         cfg = load_config()
 
-        elapsed_minutes: int | None = None
-        if "elapsed_minutes" in tool_call:
-            try:
-                elapsed_minutes = int(tool_call["elapsed_minutes"])
-            except (ValueError, TypeError):
-                elapsed_minutes = None
+        has_time_mod = (
+            self.kernel_registry is None
+            or (hasattr(self.kernel_registry, "has_service") and self.kernel_registry.has_service("time"))
+        )
 
-        if elapsed_minutes is None and cfg.timekeeper_enabled:
-            prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
-            try:
-                time_llm = getattr(self, "_time_llm", self._llm)
-                tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
-                tk_data = getattr(tk_resp, "tool_call", {}) or {}
-                if not tk_data:
-                    tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
-                    match = re.search(r'\{.*\}', tk_text, re.DOTALL)
-                    if match:
-                        try:
-                            tk_data = json.loads(match.group(0))
-                        except json.JSONDecodeError:
-                            pass
-                if tk_data and "elapsed_minutes" in tk_data:
-                    elapsed_minutes = int(tk_data["elapsed_minutes"])
-            except Exception as e:
-                logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
+        if not has_time_mod:
+            ctx.elapsed_minutes = 0
+            ctx.new_time = ctx.total_mins
+        else:
+            elapsed_minutes: int | None = None
+            raw_elapsed = tool_call.get("elapsed_minutes") if "elapsed_minutes" in tool_call else tool_call.get("time_elapsed_minutes")
+            if raw_elapsed is not None:
+                try:
+                    elapsed_minutes = int(raw_elapsed)
+                except (ValueError, TypeError):
+                    elapsed_minutes = None
 
-        if elapsed_minutes is None:
-            pace_defaults = {
-                "combat": 2,
-                "dialogue": 5,
-                "conversation": 5,
-                "exploration": 15,
-                "travel": 60,
-                "deliberate": 15,
-                "montage": 60,
-                "tension": 10,
-            }
-            elapsed_minutes = pace_defaults.get(ctx.scene_pace, 15)
+            if elapsed_minutes is None and cfg.timekeeper_enabled:
+                prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
+                try:
+                    time_llm = getattr(self, "_time_llm", self._llm)
+                    tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
+                    tk_data = getattr(tk_resp, "tool_call", {}) or {}
+                    if not tk_data:
+                        tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
+                        match = re.search(r'\{.*\}', tk_text, re.DOTALL)
+                        if match:
+                            try:
+                                tk_data = json.loads(match.group(0))
+                            except json.JSONDecodeError:
+                                pass
+                    if tk_data and "elapsed_minutes" in tk_data:
+                        elapsed_minutes = int(tk_data["elapsed_minutes"])
+                except Exception as e:
+                    logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
 
-        ctx.elapsed_minutes = elapsed_minutes
-        ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
+            if elapsed_minutes is None:
+                pace_defaults = {
+                    "combat": 2,
+                    "dialogue": 5,
+                    "conversation": 5,
+                    "exploration": 15,
+                    "travel": 60,
+                    "deliberate": 15,
+                    "montage": 60,
+                    "tension": 10,
+                }
+                elapsed_minutes = pace_defaults.get(ctx.scene_pace, 15)
+
+            ctx.elapsed_minutes = elapsed_minutes
+            ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
 
     def step_5_arbitrate_rules(self, ctx: TurnContext) -> None:
         """Step 5: Validation mathématique des deltas de stats, cohérence des inventaires, déclenchement des règles du RulesEngine."""
@@ -691,8 +705,9 @@ class ArbitratorEngine:
         defined_stats = self._load_defined_stats() if (ctx.raw_state_changes or ctx.raw_modifier_changes) else set()
         entity_meta = self._load_entity_meta()
 
-        if self.kernel_registry and self.kernel_registry.has_hook("axiom.step:arbitrate_mutations"):
-            self.kernel_registry.execute_hook("axiom.step:arbitrate_mutations", ctx)
+        if self.kernel_registry is not None:
+            if self.kernel_registry.has_hook("axiom.step:arbitrate_mutations"):
+                self.kernel_registry.execute_hook("axiom.step:arbitrate_mutations", ctx)
         else:
             rejection_messages: list[str] = []
             for change in ctx.raw_state_changes:
@@ -833,7 +848,7 @@ class ArbitratorEngine:
                     entry_id, ctx.save_id, category, name, keywords, content, ctx.turn_id
                 ))
 
-        if not (self.kernel_registry and self.kernel_registry.has_hook("axiom.step:arbitrate_mutations")):
+        if self.kernel_registry is None:
             triggered_rules: list[dict[str, Any]] = []
             _seen_rule_signatures: set[str] = set()
             mutated_entities = {c.get("entity_id") for c in ctx.applied_changes if c.get("entity_id")}
@@ -1938,63 +1953,3 @@ class ArbitratorEngine:
 
         return True, ""
 
-    def _apply_inventory_change(self, save_id: str, turn_id: int, change: dict,
-                                 pending_events: list[tuple] | None = None) -> None:
-        """Persist an inventory transaction and log the event."""
-        from axiom.inventory import InventoryError, add_item, move_item, remove_item
-
-        action = change["action"]
-        item_id = change["item_id"]
-        quantity = int(change.get("quantity", 1))
-        holder_kind = change.get("holder_kind") or "entity"
-        holder_id = change.get("holder_id") or change.get("entity_id") or ""
-        target = change.get("entity_id") or holder_id
-
-        with get_connection(self._db_path) as conn:
-            try:
-                pending = change.pop("_pending_container", None)
-                if pending:
-                    inst = add_item(
-                        conn, save_id, pending["item_id"],
-                        quantity=1,
-                        holder_kind=pending["holder_kind"],
-                        holder_id=pending["holder_id"],
-                        name=pending["name"],
-                        is_container=True,
-                    )
-                    holder_kind, holder_id = "instance", inst
-                    change["holder_kind"] = holder_kind
-                    change["holder_id"] = holder_id
-                if action == "add":
-                    add_item(
-                        conn, save_id, item_id,
-                        quantity=quantity,
-                        holder_kind=holder_kind,
-                        holder_id=holder_id,
-                        name=str(change.get("name") or ""),
-                        is_container=bool(change.get("is_container")),
-                    )
-                elif action == "remove":
-                    remove_item(
-                        conn, save_id,
-                        item_id=item_id,
-                        holder_kind=holder_kind,
-                        holder_id=holder_id,
-                        quantity=quantity,
-                    )
-                elif action == "move":
-                    dest_kind = str(change.get("dest_holder_kind") or holder_kind)
-                    dest_id = str(change.get("dest_holder_id") or holder_id)
-                    instance_id = change.get("instance_id")
-                    if instance_id:
-                        move_item(conn, save_id, instance_id, dest_kind, dest_id, quantity=quantity)
-                conn.commit()
-            except InventoryError as exc:
-                logger.warning("[ARBITRATOR] Inventory apply failed: %s", exc)
-                return
-
-        event_tuple = (save_id, turn_id, f"inventory_{action}", target, change)
-        if pending_events is not None:
-            pending_events.append(event_tuple)
-        else:
-            self._event_sourcer.append_event(*event_tuple)

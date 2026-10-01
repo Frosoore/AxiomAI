@@ -111,6 +111,7 @@ class Session:
         hero_llm: LLMBackend | None = None,
         time_llm: LLMBackend | None = None,
         kernel_registry: Any | None = None,
+        cfg: Any | None = None,
     ) -> None:
         self._db_path = str(universe_path)
         self._save_id = save_id
@@ -149,34 +150,12 @@ class Session:
             data_root = paths._data_root()
         self._data_root = data_root
 
+        from axiom.config import load_config
+        _active_cfg = cfg or load_config()
+
         if kernel_registry is None:
-            from axiom.kernel import KernelRegistry
-            kernel_registry = KernelRegistry()
-            from axiom.kernel.loader import load_mod
-            from axiom.config import load_config
-            cfg = load_config()
-            mods_dir = Path("mods")
-            if mods_dir.is_dir():
-                for mod_name in [
-                    "axiom.world",
-                    "axiom.turn",
-                    "core.stat_dynamics",
-                    "axiom.time",
-                    "axiom.inventory",
-                    "axiom.rag",
-                    "axiom.living_memory",
-                    "axiom.providers",
-                    "axiom.illustrations",
-                    "axiom.ui.web",
-                    "axiom.ui.qt",
-                    "axiom.cli",
-                ]:
-                    p = mods_dir / mod_name
-                    if p.is_dir():
-                        try:
-                            load_mod(p, kernel_registry, config=cfg)
-                        except Exception:
-                            logger.debug("Auto-load of mod '%s' skipped", mod_name, exc_info=True)
+            from axiom.kernel.loader import bootstrap_all_mods
+            kernel_registry = bootstrap_all_mods(config=_active_cfg)
         self._kernel_registry = kernel_registry
 
         if self._llm is None and self._kernel_registry is not None:
@@ -212,28 +191,31 @@ class Session:
                             vector_memory = None
                     except Exception:
                         vector_memory = None
-            if vector_memory is None:
+            else:
                 reranker = None
                 try:
-                    from axiom.config import load_config
-                    if load_config().memory_reranker_enabled:
+                    if _active_cfg.memory_reranker_enabled:
                         from axiom.retrieval import CrossEncoderReranker
                         reranker = CrossEncoderReranker()
                 except Exception:
                     reranker = None
                 try:
-                    from axiom.memory import VectorMemory
-                    vector_memory = VectorMemory(
-                        persist_dir=str(vector_base / save_id), reranker=reranker
-                    )
+                    from axiom.kernel.loader import is_mod_enabled
+                    if is_mod_enabled("axiom.rag", _active_cfg):
+                        from axiom.memory import VectorMemory
+                        vector_memory = VectorMemory(
+                            persist_dir=str(vector_base / save_id), reranker=reranker
+                        )
                 except Exception:
                     vector_memory = None
         self._vector_memory = vector_memory
 
         self._arbitrator: Any | None = None
         try:
-            from axiom.stat_dynamics import ensure_stat_dynamics
-            ensure_stat_dynamics(self._db_path, llm)
+            from axiom.kernel.loader import is_mod_enabled
+            if is_mod_enabled("core.stat_dynamics", _active_cfg):
+                from axiom.stat_dynamics import ensure_stat_dynamics
+                ensure_stat_dynamics(self._db_path, llm)
         except Exception:
             logger.debug("stat dynamics classify-on-start skipped", exc_info=True)
         self._events = EventSourcer(self._db_path)

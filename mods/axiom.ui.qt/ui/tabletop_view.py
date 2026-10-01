@@ -323,6 +323,10 @@ class TabletopView(HardcoreMixin, QWidget):
             self._image_btn.setVisible(illus_enabled)
             self._image_btn.setEnabled(illus_enabled)
 
+        help_enabled = is_mod_enabled("axiom.help_system", cfg)
+        if hasattr(self, "_help_btn"):
+            self._help_btn.setVisible(help_enabled)
+
         if hasattr(self, "_sidebar") and hasattr(self._sidebar, "update_mod_visibility"):
             self._sidebar.update_mod_visibility(cfg)
 

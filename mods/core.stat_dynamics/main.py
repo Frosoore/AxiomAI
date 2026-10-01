@@ -9,11 +9,18 @@ from __future__ import annotations
 from typing import Any
 
 from axiom.kernel.context import ModContext
-from axiom.stat_dynamics import (
-    apply_entity_tick,
-    dynamics_by_key,
-    is_hidden_stat_key,
-)
+try:
+    from mods.core.stat_dynamics.stat_dynamics import (
+        apply_entity_tick,
+        dynamics_by_key,
+        is_hidden_stat_key,
+    )
+except (ImportError, ValueError):
+    from axiom.stat_dynamics import (
+        apply_entity_tick,
+        dynamics_by_key,
+        is_hidden_stat_key,
+    )
 
 
 def on_arbitrate_stats(ctx: Any) -> None:

@@ -1271,6 +1271,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 self.send_error_json(500, str(exc))
 
         elif path == "/api/universes/import-st":
+            from axiom.kernel.loader import is_mod_enabled
+            cfg = load_config()
+            if not is_mod_enabled("axiom.sillytavern", cfg):
+                self.send_error_json(403, "SillyTavern importer mod (axiom.sillytavern) is disabled in configuration.")
+                return
             st_path = payload.get("path", "").strip()
             if not st_path or not Path(st_path).exists():
                 self.send_error_json(400, "PNG/JSON card does not exist")
@@ -1642,9 +1647,10 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 # job immediately instead of waiting for N more live turns.
                 try:
                     from axiom.config import load_config as _lc, memory_mode_is_living as _living
+                    from axiom.kernel.loader import is_mod_enabled as _mod_enabled
                     from axiom.living_memory import last_fact_turn as _lft
                     _cfg = _lc()
-                    if _living(_cfg):
+                    if _mod_enabled("axiom.living_memory", _cfg) and _living(_cfg):
                         _interval = int(getattr(_cfg, "memory_fact_interval", 0) or 0)
                         _turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
                         _after = _lft(play_db, save_id)
@@ -2390,12 +2396,16 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             mod_id = payload.get("mod_id", "").strip()
             version = payload.get("version")
             repo = payload.get("repo")
+            dest = payload.get("dest")
             if not mod_id:
                 self.send_error_json(400, "Missing 'mod_id' in request payload")
                 return
             try:
                 from axiom.kernel.store import install_mod_from_store
-                installed_path = install_mod_from_store(mod_id, version=version, repo_url=repo, enable=True)
+                kwargs = {"version": version, "repo_url": repo, "enable": True}
+                if dest:
+                    kwargs["dest_dir"] = dest
+                installed_path = install_mod_from_store(mod_id, **kwargs)
                 self.send_json({
                     "status": "success",
                     "mod_id": mod_id,
@@ -2473,6 +2483,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 shutil.rmtree(tmp.parent, ignore_errors=True)
 
         elif path == "/api/universes/import-st":
+            from axiom.kernel.loader import is_mod_enabled
+            cfg = load_config()
+            if not is_mod_enabled("axiom.sillytavern", cfg):
+                self.send_error_json(403, "SillyTavern importer mod (axiom.sillytavern) is disabled in configuration.")
+                return
             try:
                 tmp = _write_upload("file", (".png", ".json", ".webp"))
             except ValueError as exc:
@@ -2589,7 +2604,7 @@ def reset_living_memory_buffer() -> None:
         lm_svc = ACTIVE_SESSION._kernel_registry.get_service("living_memory")
         if lm_svc:
             lm_svc.reset()
-            return
+        return
     try:
         from axiom.living_memory import get_living_memory_accumulator
         get_living_memory_accumulator().reset()
@@ -2824,6 +2839,12 @@ def query_params_from_url(url: str) -> dict:
     return {k: v[0] for k, v in params.items()}
 
 def run_server(port=8000):
+    try:
+        from axiom.kernel.bootstrap import bootstrap_all_mods
+        bootstrap_all_mods()
+    except Exception:
+        logger.exception("Failed to bootstrap mods at web server startup")
+
     server = ThreadingHTTPServer(("127.0.0.1", port), AxiomWebHandler)
     url = f"http://127.0.0.1:{port}/"
     print("================================================================")

@@ -276,9 +276,9 @@ def install_mod_from_store(
         with zipfile.ZipFile(temp_axmod, "r") as zf:
             zf.extractall(target_dir)
 
-        # Also store the verified archive in dist/mods if available
+        # Also store the verified archive in dist/mods if available and installing to standard mods dir
         dist_dir = Path("dist/mods")
-        if dist_dir.is_dir():
+        if dist_dir.is_dir() and Path(dest_dir).resolve() == Path("mods").resolve():
             shutil.copy2(temp_axmod, dist_dir / f"{manifest.id}-{manifest.version}.axmod")
 
     # 5. Enable in configuration

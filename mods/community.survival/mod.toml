@@ -8,6 +8,9 @@ author = "Axiom Community"
 
 [contributes]
 hooks = [
-    "axiom.turn:gather_context",
-    "axiom.turn:after_step"
+    "axiom.step:gather_context",
+    "axiom.step:after_step"
+]
+slots = [
+    "axiom.turn:prompt_sections"
 ]

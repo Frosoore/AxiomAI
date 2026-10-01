@@ -1,59 +1,26 @@
-"""
-core/st_parser.py
+"""core/st_parser.py
 
-Utility functions for extracting character data from SillyTavern files (PNG/JSON).
+Decoupled re-export shim for SillyTavern character card parser.
+Canonical implementation is in mods.axiom.sillytavern.main.
 """
 
-import base64
-import json
+from __future__ import annotations
+
 from pathlib import Path
-from PIL import Image
+from typing import Any
 
-def parse_st_card(filepath: str) -> dict:
+from axiom.config import load_config
+from axiom.kernel.loader import is_mod_enabled
+
+
+def parse_st_card(filepath: str | Path) -> dict[str, Any]:
     """Extract character data from a SillyTavern character card (PNG or JSON).
-    
-    Args:
-        filepath: The path to the .png or .json file.
-        
-    Returns:
-        A dictionary containing the parsed character data.
-        
+
     Raises:
-        ValueError: If the file format is unsupported, metadata is missing, or invalid JSON.
+        RuntimeError: If axiom.sillytavern mod is disabled or missing.
+        ValueError: If file parsing fails or format is unsupported.
     """
-    path = Path(filepath)
-    ext = path.suffix.lower()
-    
-    if ext == ".json":
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-                # Handle nested data structure common in V2/V3 cards
-                if "data" in data:
-                    return data["data"]
-                return data
-        except Exception as exc:
-            raise ValueError(f"Failed to parse JSON card: {exc}")
-            
-    elif ext == ".png":
-        try:
-            with Image.open(path) as img:
-                info = img.info
-                chara_base64 = info.get("chara")
-                
-                if not chara_base64:
-                    raise ValueError("PNG does not contain 'chara' metadata (Not a valid ST card).")
-                
-                decoded_bytes = base64.b64decode(chara_base64)
-                data = json.loads(decoded_bytes)
-                
-                # Handle nested data structure common in V2/V3 cards
-                if "data" in data:
-                    return data["data"]
-                return data
-                
-        except Exception as exc:
-            raise ValueError(f"Failed to extract/parse metadata from PNG: {exc}")
-    
-    else:
-        raise ValueError(f"Unsupported file extension: {ext}")
+    if not is_mod_enabled("axiom.sillytavern", load_config()):
+        raise RuntimeError("SillyTavern Card Importer mod (axiom.sillytavern) is disabled.")
+    from mods.axiom.sillytavern.main import parse_st_card as mod_parse_st_card
+    return mod_parse_st_card(filepath)

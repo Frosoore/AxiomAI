@@ -56,7 +56,7 @@ def _meta_float(meta: dict, key: str, default: float) -> float:
 class CreatorStudioView(QWidget):
     """The universe builder screen."""
 
-    def __init__(self, main_window: "MainWindow", parent=None) -> None:
+    def __init__(self, main_window: "MainWindow" | None = None, parent=None) -> None:
         super().__init__(parent)
         self._main_window = main_window
         self._db_path: str | None = None
@@ -141,6 +141,17 @@ class CreatorStudioView(QWidget):
         self._map_editor.populate_requested.connect(self._on_map_populate_requested)
         self._files_tab.file_saved.connect(self._on_source_file_saved)
         self._files_tab.convert_requested.connect(self._on_convert_requested)
+        self.update_mod_visibility()
+
+    def update_mod_visibility(self, config=None) -> None:
+        """Update visibility of mod-dependent UI elements in CreatorStudioView."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+
+        cfg = config or load_config()
+        help_enabled = is_mod_enabled("axiom.help_system", cfg)
+        if hasattr(self, "_help_btn") and self._help_btn is not None:
+            self._help_btn.setVisible(help_enabled)
 
     def _setup_shortcuts(self) -> None:
         self._save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)

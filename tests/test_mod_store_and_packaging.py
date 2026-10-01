@@ -311,8 +311,8 @@ def test_web_api_store_endpoints(tmp_path: Path) -> None:
     from main_web import AxiomWebHandler
 
     mod_src = tmp_path / "web_store_src"
-    scaffold_mod("community.survival", target_dir=mod_src)
-    archive = pack_mod(mod_src, output_path=tmp_path / "survival.axmod")
+    scaffold_mod("community.testpack", target_dir=mod_src)
+    archive = pack_mod(mod_src, output_path=tmp_path / "testpack.axmod")
 
     index_file = tmp_path / "web_store.json"
     publish_mod_to_store_spec(archive, download_url=f"file://{archive}", output_json=index_file)
@@ -327,12 +327,12 @@ def test_web_api_store_endpoints(tmp_path: Path) -> None:
     handler.send_error_json = lambda code, msg: sent_data.append((code, msg))
 
     # 1. GET /api/store/search
-    handler.handle_api_get("/api/store/search", f"q=survival&repo={index_file}")
+    handler.handle_api_get("/api/store/search", f"q=testpack&repo={index_file}")
     assert len(sent_data) == 1
     code, items = sent_data[0]
     assert code == 200
     assert len(items) == 1
-    assert items[0]["id"] == "community.survival"
+    assert items[0]["id"] == "community.testpack"
 
     # 2. POST /api/store/install
     sent_data.clear()
@@ -340,7 +340,7 @@ def test_web_api_store_endpoints(tmp_path: Path) -> None:
     handler.handle_api_post(
         "/api/store/install",
         {
-            "mod_id": "community.survival",
+            "mod_id": "community.testpack",
             "repo": str(index_file),
             "dest": str(installed_target),
         },

@@ -510,6 +510,8 @@ class ModsDialog(QDialog):
         if parent is not None:
             if hasattr(parent, "_tabletop_view") and hasattr(parent._tabletop_view, "update_mod_visibility"):
                 parent._tabletop_view.update_mod_visibility(self._cfg)
+            if hasattr(parent, "_hub_view") and hasattr(parent._hub_view, "update_mod_visibility"):
+                parent._hub_view.update_mod_visibility(self._cfg)
             if hasattr(parent, "update_mod_visibility"):
                 parent.update_mod_visibility(self._cfg)
 

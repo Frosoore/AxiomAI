@@ -73,10 +73,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSidebarMiniTabs();
   setupSetupLobby();
   await refreshHub();
-  applyDocTooltips();
+  updateHelpSystemVisibility();
   if (!localStorage.getItem('axiom_tour_seen')) {
-    localStorage.setItem('axiom_tour_seen', '1');
-    openQuickTour(0);
+    if (isModEnabled('axiom.help_system')) {
+      localStorage.setItem('axiom_tour_seen', '1');
+      openQuickTour(0);
+    }
   }
 });
 
@@ -331,7 +333,7 @@ async function saveConfig() {
       await loadConfig();
       if (!isAudioEnabled()) stopAmbiance();
       closeAllModals();
-      applyDocTooltips();
+      updateHelpSystemVisibility();
       showStatus('Settings saved successfully.');
     } else {
       alert('Error saving settings.');
@@ -461,6 +463,19 @@ async function refreshHub() {
     renderUniverseGrid();
   } catch (err) {
     console.error('Failed to load universes:', err);
+  }
+  try {
+    const modsRes = await fetch('/api/mods');
+    if (modsRes.ok) {
+      const modsList = await modsRes.json();
+      const stMod = modsList.find(m => m.id === 'axiom.sillytavern');
+      const stBtn = document.getElementById('hub-import-st-btn');
+      if (stBtn) {
+        stBtn.style.display = (stMod && !stMod.enabled) ? 'none' : '';
+      }
+    }
+  } catch (e) {
+    // Non-blocking
   }
 }
 
@@ -3812,8 +3827,25 @@ async function triggerPopulateTargets(targets, previewOnly) {
   }
 }
 
+function isModEnabled(modId) {
+  if (!STATE.config || !STATE.config.mod_settings) return true;
+  const modConf = STATE.config.mod_settings[modId];
+  if (modConf && typeof modConf === 'object' && modConf.enabled === false) return false;
+  return true;
+}
+
+function updateHelpSystemVisibility() {
+  const helpEnabled = isModEnabled('axiom.help_system');
+  ['btn-menu-explain', 'btn-menu-help-directory', 'btn-menu-tour'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = helpEnabled ? '' : 'none';
+  });
+  applyDocTooltips();
+}
+
 function applyDocTooltips() {
-  const on = STATE.config && STATE.config.doc_tooltips_enabled !== false;
+  const helpEnabled = isModEnabled('axiom.help_system');
+  const on = helpEnabled && STATE.config && STATE.config.doc_tooltips_enabled !== false;
   document.querySelectorAll('[data-doc]').forEach(el => {
     const ref = el.getAttribute('data-doc') || '';
     const parts = ref.split('.');

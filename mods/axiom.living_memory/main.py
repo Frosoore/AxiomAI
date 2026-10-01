@@ -14,7 +14,10 @@ from typing import Any, Callable
 
 from axiom.facts import get_facts
 from axiom.kernel.context import ModContext
-from axiom.living_memory import get_living_memory_accumulator
+try:
+    from mods.axiom.living_memory.living_memory import get_living_memory_accumulator
+except (ImportError, ValueError):
+    from axiom.living_memory import get_living_memory_accumulator
 from axiom.logger import logger
 from axiom.mental_models import get_mental_models
 from axiom.observations import get_observations

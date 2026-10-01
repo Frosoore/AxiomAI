@@ -52,7 +52,7 @@ dev avant de modifier `axiom/` ou un fichier partagé.**
 | `Mods/` | Système de mods (`.axmod`) — noyau minimal + tout le reste en mods ; vision, critique et arbitrage (pas encore de code) |
 
 Statut global : **tout est ✅ terminé sauf** `features/fix-json-leak-and-image-prompt` (🔄 en cours),
-`Multiplayer/` (🔄 implémentation en cours), `Mods/` (📋 vision validée — phases 0a à 6 terminées ✅),
+`Multiplayer/` (🔄 implémentation en cours),
 `i18n-doc/TICKET-057-*` (🔄 doc intégrée à enrichir), `hindsight/hindsight-mining` (📋 doc de cadrage,
 
 sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DONE.md`.
@@ -206,3 +206,9 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `phase-4-mod-creator` | ✅ | Outillage de création (`axiom mod new`), testeur unifié (`axiom mod test`), hot-reload (`axiom mod dev`) & créateur LLM (`axiom mod generate`, Web API) |
 | `phase-5-store-and-distribution` | ✅ | Store distant, intégrité SHA-256 (`axiom/kernel/store.py`), dépendances Python légères (D-7), licence AGPLv3 frontière mods (D-9, §14), PyPI headless micro-kernel 1.0.0 (D-8) |
 | `phase-6-i18n-mods` | ✅ | Traduction multilingue complète des 12 mods officiels (10 langues), fallback des mods tiers & injection automatique dans le slot locales |
+| `feature-sillytavern-mod` | ✅ | Extraction du bouton et de la fonction d'importation SillyTavern en mod activable/désactivable (`axiom.sillytavern`) avec i18n 10 langues |
+| `feature-help-system-mod` | ✅ | Extraction du système d'infobulles et du bouton Information en mod activable/désactivable (`axiom.help_system`) avec i18n 10 langues |
+| `audit-and-fix-mods-decoupling` | ✅ | Encapsulation stricte et détachement total du noyau sur l'ensemble des mods officiels (TICKET-106) |
+| `verification-and-functional-audit` | ✅ | Vérification de la déconnexion complète du core, absence de code remanant et audit d'effectivité fonctionnelle de chaque mod |
+
+

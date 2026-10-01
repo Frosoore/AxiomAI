@@ -1,0 +1,4 @@
+{
+  "title": "Импортер карт SillyTavern",
+  "description": "Импортирует карточки персонажей SillyTavern (PNG и JSON) и преобразует их в играбельные вселенные Axiom AI."
+}

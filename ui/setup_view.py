@@ -111,7 +111,7 @@ class SaveStateEditDialog(QDialog):
 class SetupView(QWidget):
     """Full-screen setup screen for starting or resuming a game."""
 
-    def __init__(self, main_window: "MainWindow", parent=None) -> None:
+    def __init__(self, main_window: "MainWindow" | None = None, parent=None) -> None:
         super().__init__(parent)
         self._main_window = main_window
         self._db_path: str | None = None
@@ -177,6 +177,17 @@ class SetupView(QWidget):
         self._launch_btn.setStyleSheet("font-weight: bold; font-size: 16px; background-color: #2E7D32;")
         self._launch_btn.clicked.connect(self._on_launch_clicked)
         layout.addWidget(self._launch_btn)
+        self.update_mod_visibility()
+
+    def update_mod_visibility(self, config=None) -> None:
+        """Update visibility of mod-dependent UI elements in SetupView."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+
+        cfg = config or load_config()
+        help_enabled = is_mod_enabled("axiom.help_system", cfg)
+        if hasattr(self, "_help_btn") and self._help_btn is not None:
+            self._help_btn.setVisible(help_enabled)
 
     def _setup_saves_tab(self) -> None:
         from ui.help_system import doc

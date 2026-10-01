@@ -58,10 +58,13 @@ def is_mod_enabled(mod_id: str, config: AppConfig | None = None) -> bool:
     """Check if a mod is enabled considering safe-mode and mod_settings."""
     if is_safe_mode() and not is_official_mod(mod_id):
         return False
-    if config is not None and hasattr(config, "mod_settings"):
-        settings = config.mod_settings.get(mod_id, {})
-        if isinstance(settings, dict) and not settings.get("enabled", True):
+    if config is not None:
+        if hasattr(config, "disabled_mods") and getattr(config, "disabled_mods") and mod_id in config.disabled_mods:
             return False
+        if hasattr(config, "mod_settings") and isinstance(config.mod_settings, dict):
+            settings = config.mod_settings.get(mod_id, {})
+            if isinstance(settings, dict) and not settings.get("enabled", True):
+                return False
     return True
 
 

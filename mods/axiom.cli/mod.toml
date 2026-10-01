@@ -11,3 +11,6 @@ author = "Vanilla"
 
 [ordering]
 provides = ["user_interface"]
+
+[contributes]
+services = ["cli_play"]

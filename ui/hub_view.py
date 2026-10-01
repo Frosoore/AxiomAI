@@ -64,7 +64,7 @@ class HubView(QWidget):
     _GRID_COLUMNS: int = 3
     _LIBRARY_DIR: str = str(UNIVERSES_DIR)
 
-    def __init__(self, main_window: "MainWindow", parent=None) -> None:
+    def __init__(self, main_window: "MainWindow" | None = None, parent=None) -> None:
         super().__init__(parent)
         self._main_window = main_window
         self._import_worker: ImportExportWorker | None = None
@@ -76,6 +76,7 @@ class HubView(QWidget):
         Path(self._LIBRARY_DIR).mkdir(parents=True, exist_ok=True)
 
         self._setup_ui()
+        self.update_mod_visibility()
 
     # ------------------------------------------------------------------
     # Setup
@@ -133,6 +134,7 @@ class HubView(QWidget):
         self._import_st_btn.clicked.connect(self._on_import_st_clicked)
         self._import_btn.clicked.connect(self._on_import_clicked)
         self._create_btn.clicked.connect(self._on_create_new_clicked)
+        self.update_mod_visibility()
 
     # ------------------------------------------------------------------
     # Public API
@@ -215,6 +217,20 @@ class HubView(QWidget):
             placeholder.setStyleSheet("color: gray; font-size: 14px;")
             self._grid_layout.addWidget(placeholder, 0, 0)
 
+    def update_mod_visibility(self, config=None) -> None:
+        """Update visibility of mod-dependent UI elements in HubView."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+
+        cfg = config if config is not None else load_config()
+        st_enabled = is_mod_enabled("axiom.sillytavern", cfg)
+        if hasattr(self, "_import_st_btn") and self._import_st_btn is not None:
+            self._import_st_btn.setVisible(st_enabled)
+
+        help_enabled = is_mod_enabled("axiom.help_system", cfg)
+        if hasattr(self, "_help_btn") and self._help_btn is not None:
+            self._help_btn.setVisible(help_enabled)
+
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
@@ -222,6 +238,18 @@ class HubView(QWidget):
     @Slot()
     def _on_import_st_clicked(self) -> None:
         """Open a file dialog and start ImportExportWorker in import_st mode."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+
+        cfg = load_config()
+        if not is_mod_enabled("axiom.sillytavern", cfg):
+            QMessageBox.warning(
+                self,
+                tr("warning") if "warning" in tr("ready") else "Warning",
+                "The SillyTavern Card Importer mod (axiom.sillytavern) is disabled in settings.",
+            )
+            return
+
         st_path, _ = QFileDialog.getOpenFileName(
             self,
             tr("import_st"),

@@ -1,0 +1,15 @@
+[mod]
+id = "axiom.help_system"
+version = "1.0.0"
+axiom_api = 1
+name = "Aide intégrée & Infobulles"
+description = "Documentation interactive en jeu, infobulles riches au survol, annuaire global et visite guidée."
+author = "Vanilla"
+
+[dependencies]
+
+[ordering]
+provides = ["help_system", "tooltips", "inapp_documentation"]
+
+[provides_slots]
+"axiom.help_system:contributions" = { rule = "collect" }

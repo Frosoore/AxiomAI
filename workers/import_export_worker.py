@@ -85,6 +85,13 @@ class ImportExportWorker(QThread):
 
     def _run_import_st(self) -> None:
         """Parse a SillyTavern card and provision a new Axiom AI universe."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+
+        if not is_mod_enabled("axiom.sillytavern", load_config()):
+            self.error_occurred.emit("SillyTavern importer mod (axiom.sillytavern) is disabled in configuration.")
+            return
+
         self.status_update.emit("Importing SillyTavern card...")
         self.progress_update.emit(0, 4)
         

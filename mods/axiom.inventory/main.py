@@ -13,18 +13,32 @@ from __future__ import annotations
 
 from typing import Any
 
-from axiom.inventory import (
-    _holder_exists,
-    _slug_item_id,
-    add_item,
-    ensure_item_definition,
-    format_inventory_prompt,
-    list_instances,
-    load_inventory_tree,
-    move_item,
-    remove_item,
-    snapshot_present_inventory,
-)
+try:
+    from mods.axiom.inventory.inventory import (
+        _holder_exists,
+        _slug_item_id,
+        add_item,
+        ensure_item_definition,
+        format_inventory_prompt,
+        list_instances,
+        load_inventory_tree,
+        move_item,
+        remove_item,
+        snapshot_present_inventory,
+    )
+except (ImportError, ValueError):
+    from axiom.inventory import (
+        _holder_exists,
+        _slug_item_id,
+        add_item,
+        ensure_item_definition,
+        format_inventory_prompt,
+        list_instances,
+        load_inventory_tree,
+        move_item,
+        remove_item,
+        snapshot_present_inventory,
+    )
 from axiom.kernel.context import ModContext
 from axiom.kernel.registry import SlotRule
 from axiom.logger import logger

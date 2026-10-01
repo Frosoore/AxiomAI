@@ -101,7 +101,7 @@ def _execute_step_locked(step_context: KernelStepContext, registry: Any) -> None
 
             if isinstance(item, dict):
                 pos = item.get("position", "system")
-                text = item.get("text", "")
+                text = item.get("text") or item.get("content", "")
             elif isinstance(item, str):
                 pos = "system"
                 text = item

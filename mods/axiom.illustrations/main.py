@@ -38,7 +38,10 @@ class IllustrationsService:
         llm: Any = None,
     ) -> Path | None:
         from axiom import paths
-        from axiom.image_generator import ImageGenerator
+        try:
+            from mods.axiom.illustrations.image_generator import ImageGenerator
+        except (ImportError, ValueError):
+            from axiom.image_generator import ImageGenerator
 
         config = cfg or load_config()
         if not getattr(config, "image_generation_enabled", False):

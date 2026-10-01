@@ -19,6 +19,11 @@ from typing import Any
 from axiom.kernel.context import ModContext
 from axiom.logger import logger
 
+try:
+    from mods.axiom.time.time_system import CalendarConfig, TimeSystem
+except (ImportError, ValueError):
+    from axiom.time_system import CalendarConfig, TimeSystem
+
 
 class TimeService:
     """Public service exposed by axiom.time to the engine and UIs."""
@@ -26,7 +31,6 @@ class TimeService:
     @staticmethod
     def format_time(db_path: str, minute: int) -> str:
         from axiom.schema import get_connection
-        from axiom.time_system import CalendarConfig, TimeSystem
         try:
             with get_connection(db_path) as conn:
                 row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'calendar';").fetchone()
@@ -43,7 +47,6 @@ class TimeService:
     @staticmethod
     def get_calendar(db_path: str) -> Any:
         from axiom.schema import get_connection
-        from axiom.time_system import CalendarConfig
         with get_connection(db_path) as conn:
             row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'calendar';").fetchone()
             cal_str = row[0] if row and row[0] else "{}"

@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QApplication
         from ui.help_system import install_tooltip_gate
         install_tooltip_gate(QApplication.instance())
+        self.update_mod_visibility()
 
     def _setup_volume_slider(self) -> None:
         """Add a volume slider to the status bar."""
@@ -239,16 +240,16 @@ class MainWindow(QMainWindow):
 
         # Help menu
         help_menu = menu_bar.addMenu(tr("menu_help"))
-        explain_action = QAction(tr("menu_explain_page"), self)
-        explain_action.setShortcut("F1")
-        explain_action.triggered.connect(self._explain_current_page)
-        help_menu.addAction(explain_action)
-        directory_action = QAction(tr("menu_doc_directory"), self)
-        directory_action.triggered.connect(self._show_doc_directory)
-        help_menu.addAction(directory_action)
-        tour_action = QAction(tr("menu_quick_tour"), self)
-        tour_action.triggered.connect(self._show_quick_tour)
-        help_menu.addAction(tour_action)
+        self._explain_action = QAction(tr("menu_explain_page"), self)
+        self._explain_action.setShortcut("F1")
+        self._explain_action.triggered.connect(self._explain_current_page)
+        help_menu.addAction(self._explain_action)
+        self._directory_action = QAction(tr("menu_doc_directory"), self)
+        self._directory_action.triggered.connect(self._show_doc_directory)
+        help_menu.addAction(self._directory_action)
+        self._tour_action = QAction(tr("menu_quick_tour"), self)
+        self._tour_action.triggered.connect(self._show_quick_tour)
+        help_menu.addAction(self._tour_action)
         diagnostic_action = QAction(tr("menu_diagnostic"), self)
         diagnostic_action.setToolTip(tr("menu_diagnostic_tip"))
         diagnostic_action.triggered.connect(self._show_diagnostic)
@@ -488,8 +489,29 @@ class MainWindow(QMainWindow):
 
     def update_mod_visibility(self, config=None) -> None:
         """Update mod visibility across active views."""
+        from axiom.config import load_config
+        from axiom.kernel.loader import is_mod_enabled
+        cfg = config or load_config()
+
         if hasattr(self, "_tabletop_view") and hasattr(self._tabletop_view, "update_mod_visibility"):
-            self._tabletop_view.update_mod_visibility(config)
+            self._tabletop_view.update_mod_visibility(cfg)
+        if hasattr(self, "_hub_view") and hasattr(self._hub_view, "update_mod_visibility"):
+            self._hub_view.update_mod_visibility(cfg)
+        if hasattr(self, "_setup_view") and hasattr(self._setup_view, "update_mod_visibility"):
+            self._setup_view.update_mod_visibility(cfg)
+        if hasattr(self, "_creator_view") and hasattr(self._creator_view, "update_mod_visibility"):
+            self._creator_view.update_mod_visibility(cfg)
+
+        help_enabled = is_mod_enabled("axiom.help_system", cfg)
+        if hasattr(self, "_explain_action"):
+            self._explain_action.setVisible(help_enabled)
+            self._explain_action.setEnabled(help_enabled)
+        if hasattr(self, "_directory_action"):
+            self._directory_action.setVisible(help_enabled)
+            self._directory_action.setEnabled(help_enabled)
+        if hasattr(self, "_tour_action"):
+            self._tour_action.setVisible(help_enabled)
+            self._tour_action.setEnabled(help_enabled)
 
     def _open_mods_folder(self) -> None:
         """Open the local mods directory in the system file explorer."""
@@ -503,6 +525,10 @@ class MainWindow(QMainWindow):
     def _check_first_launch(self) -> None:
         """First launch: show the quick tour (TICKET-057, replaces the old
         welcome box — the tour's first steps cover the same ground)."""
+        from axiom.kernel.loader import is_mod_enabled
+        from axiom.config import load_config
+        if not is_mod_enabled("axiom.help_system", load_config()):
+            return
         from axiom.paths import SETTINGS_FILE
         if not SETTINGS_FILE.exists():
             self._show_quick_tour()

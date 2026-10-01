@@ -1,0 +1,15 @@
+[mod]
+id = "axiom.sillytavern"
+version = "1.0.0"
+axiom_api = 1
+name = "Importateur de cartes SillyTavern"
+description = "Importe des cartes de personnages SillyTavern (.png ou .json) et les convertit en univers jouables."
+author = "Vanilla"
+
+[dependencies]
+
+[ordering]
+provides = ["sillytavern_import", "card_importer"]
+
+[provides_slots]
+"axiom.sillytavern:importers" = { rule = "collect" }

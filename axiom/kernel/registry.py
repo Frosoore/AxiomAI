@@ -191,3 +191,7 @@ class KernelRegistry:
         if service_name in self._services:
             return self._services[service_name][1]
         return None
+
+    def has_service(self, service_name: str) -> bool:
+        """Check if a service is registered in the kernel registry."""
+        return service_name in self._services

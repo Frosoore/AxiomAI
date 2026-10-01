@@ -1,0 +1,4 @@
+{
+  "title": "SillyTavern Card Importer",
+  "description": "Imports SillyTavern character cards (PNG and JSON) and converts them into playable Axiom AI universes."
+}
