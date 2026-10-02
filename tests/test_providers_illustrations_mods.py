@@ -72,7 +72,7 @@ def test_env(tmp_path: Path):
     }
 
 
-def test_manifests_and_loading():
+def test_manifests_and_loading(tmp_path: Path):
     """1. Manifest compliance and archive loading for providers and illustrations."""
     root = Path(__file__).resolve().parent.parent
     prov_dir = root / "mods" / "axiom.providers"
@@ -91,10 +91,11 @@ def test_manifests_and_loading():
     assert "assets" in illus_m.storage
     assert illus_m.storage["assets"].get("policy") == "custom"
 
-    # Loading archives
+    # Loading archives (packed in tmp_path: dist/ is not versioned)
+    from axiom.cli.mods_cmd import pack_mod
     reg = KernelRegistry()
-    load_mod_from_archive(root / "dist" / "mods" / "axiom.providers.axmod", reg)
-    load_mod_from_archive(root / "dist" / "mods" / "axiom.illustrations.axmod", reg)
+    load_mod_from_archive(pack_mod(prov_dir, tmp_path / "axiom.providers.axmod"), reg)
+    load_mod_from_archive(pack_mod(illus_dir, tmp_path / "axiom.illustrations.axmod"), reg)
     assert reg.get_service("providers") is not None
     assert reg.get_service("illustrations") is not None
 
@@ -133,9 +134,13 @@ def test_custom_driver_registration_and_activation(test_env):
     assert "my_custom_llm" in prov_svc.list_drivers()
 
     # Configure session to use this custom backend
-    from axiom.config import load_config
+    # Persist the choice in the (isolated) settings: mutating the object returned by
+    # load_config() is lost when no settings.json exists, and the Session would then
+    # fall back to the default backend (a real Ollama on localhost).
+    from axiom.config import load_config, save_config
     cfg = load_config()
     cfg.llm_backend = "my_custom_llm"
+    save_config(cfg)
 
     # Instantiate session with NO explicit llm parameter
     sess = Session(
@@ -299,9 +304,12 @@ def test_full_turn_with_all_official_mods_and_implicit_llm(test_env):
     prov_svc = reg.get_service("providers")
     prov_svc.register_driver("scripted_test", lambda cfg, override=None: scripted)
 
-    from axiom.config import load_config
+    # Persisted in the isolated settings (see test_custom_driver_registration_and_activation):
+    # the turn must never reach a real LLM.
+    from axiom.config import load_config, save_config
     cfg = load_config()
     cfg.llm_backend = "scripted_test"
+    save_config(cfg)
 
     # Session initialized WITHOUT passing llm parameter
     sess = Session(

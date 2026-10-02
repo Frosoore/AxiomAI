@@ -7,6 +7,11 @@ The LLM backend is fully mocked.  A real universe db (via tmp_path) is used
 so that Event_Log, State_Cache, and VectorMemory interactions are verified
 against actual storage.  VectorMemory uses the fake embedding function from
 test_vector_memory.py to avoid model downloads.
+
+`process_turn` runs the real turn path: it dispatches to the `axiom.turn` mod
+(hook `axiom.kernel:execute_step`) of the process modpack, so stat validation and
+creator rules come from `axiom.world`, inventory from `axiom.inventory`, time from
+`axiom.time` and narrative indexing from `axiom.rag`.
 """
 
 import hashlib
@@ -21,7 +26,7 @@ import pytest
 
 from chromadb import EmbeddingFunction, Documents, Embeddings
 
-from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.arbitrator import CORRECTION_EVENT, ArbitratorEngine, ArbitratorResult
 from axiom.rules import RulesEngine
 from axiom.events import EventSourcer
 from axiom.modifiers import ModifierProcessor
@@ -203,6 +208,35 @@ def _make_arbitrator(
     arb.configure(llm, vm, time_llm=time_llm)
     return arb, llm
 
+def _store_rule(db_path: str, rule: dict) -> None:
+    """Creator rules live in the universe (Rules table), read by axiom.world."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO Rules (rule_id, priority, conditions, actions, target_entity) "
+            "VALUES (?, ?, ?, ?, ?);",
+            (
+                rule["rule_id"], rule.get("priority", 0), json.dumps(rule["conditions"]),
+                json.dumps(rule["actions"]), rule.get("target_entity", "*"),
+            ),
+        )
+        conn.commit()
+
+
+def _correction_hints(db_path: str, turn_id: int) -> list[str]:
+    """Narrator hints staged as save data by turn `turn_id` (correction loop)."""
+    events = EventSourcer(db_path).get_events("s1")
+    return [
+        e["payload"]["hint"] for e in events
+        if e["turn_id"] == turn_id and e["event_type"] == CORRECTION_EVENT
+    ]
+
+
+def _rag_vector_memory(save_id: str):
+    """Store where the axiom.rag mod indexes narrative (after_step, post-commit)."""
+    from axiom.kernel.loader import get_kernel_registry
+    return get_kernel_registry().get_service("rag").get_vector_memory(save_id)
+
+
 # ---------------------------------------------------------------------------
 # ArbitratorResult dataclass
 # ---------------------------------------------------------------------------
@@ -337,7 +371,8 @@ class TestCorrectionLoop:
         assert len(turn1_stat_changes) == 0
 
     def test_pending_correction_set_after_rejection(self, db_path, vm) -> None:
-        """A rejection queues a pending narrator-hint correction for next turn."""
+        """A rejection stages a narrator-hint correction for next turn, as save data
+        of the turn (Event_Log), not as state of the engine object."""
         response = LLMResponse(
             narrative_text="Bad action.",
             tool_call={"state_changes": [
@@ -347,8 +382,10 @@ class TestCorrectionLoop:
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
         arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
-        assert arb._pending_correction is not None
-        assert "[NARRATOR HINT:" in arb._pending_correction
+        hints = _correction_hints(db_path, 1)
+        assert len(hints) == 1
+        assert "[NARRATOR HINT:" in hints[0]
+        assert "Gold" in hints[0]
 
     def test_pending_correction_injected_in_next_turn(self, db_path, vm) -> None:
         """The queued correction is injected into the next turn's system prompt."""
@@ -372,7 +409,7 @@ class TestCorrectionLoop:
         arb.configure(llm1, vm)
 
         arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
-        assert arb._pending_correction is not None
+        assert _correction_hints(db_path, 1)
 
         # Turn 2: switch LLM stub and check correction injected
         arb._llm = llm2
@@ -385,7 +422,7 @@ class TestCorrectionLoop:
         assert correction_injected
 
     def test_pending_correction_cleared_after_use(self, db_path, vm) -> None:
-        """Once injected, the pending correction is cleared so it fires only once."""
+        """The correction fires only once: turn 2 sees it, turn 3 does not."""
         response1 = LLMResponse(
             narrative_text="Fail.",
             tool_call={"state_changes": [
@@ -398,10 +435,16 @@ class TestCorrectionLoop:
         arb, _ = _make_arbitrator(db_path, vm, response1)
         arb.process_turn("s1", 1, {"player": "bad"}, "sys", [])
 
-        arb._llm = _StubLLM(response2)
+        llm2 = _StubLLM(response2)
+        arb._llm = llm2
         arb.process_turn("s1", 2, {"player": "continue"}, "sys", [])
+        assert any("[NARRATOR HINT:" in m["content"] for m in llm2.last_messages)
+        assert _correction_hints(db_path, 2) == []
 
-        assert arb._pending_correction is None
+        llm3 = _StubLLM(response2)
+        arb._llm = llm3
+        arb.process_turn("s1", 3, {"player": "again"}, "sys", [])
+        assert not any("[NARRATOR HINT:" in m["content"] for m in llm3.last_messages)
 
     def test_unknown_entity_rejected(self, db_path, vm) -> None:
         """A change targeting a non-existent entity is rejected as 'Unknown entity'."""
@@ -446,7 +489,8 @@ class TestRulesTrigger:
             ]},
             finish_reason="stop",
         )
-        arb, _ = _make_arbitrator(db_path, vm, response, rules=[rule])
+        _store_rule(db_path, rule)
+        arb, _ = _make_arbitrator(db_path, vm, response)
         result = arb.process_turn("s1", 1, {"player": "fight"}, "sys", [])
 
         assert len(result.triggered_rules) == 1
@@ -472,7 +516,8 @@ class TestRulesTrigger:
             ]},
             finish_reason="stop",
         )
-        arb, _ = _make_arbitrator(db_path, vm, response, rules=[rule])
+        _store_rule(db_path, rule)
+        arb, _ = _make_arbitrator(db_path, vm, response)
         arb.process_turn("s1", 1, {"player": "die"}, "sys", [])
 
         es = EventSourcer(db_path)
@@ -496,7 +541,7 @@ class TestVectorMemoryIntegration:
         arb, _ = _make_arbitrator(db_path, vm, response)
         arb.process_turn("s1", 1, {"player": "explore"}, "sys", [])
 
-        results = vm.query("s1", "ruins ancient", k=5)
+        results = _rag_vector_memory("s1").query("s1", "ruins ancient", k=5)
         assert any("ruins" in r["text"] for r in results)
 
     def test_embedded_chunk_has_correct_turn_id(self, db_path, vm) -> None:
@@ -509,7 +554,7 @@ class TestVectorMemoryIntegration:
         arb, _ = _make_arbitrator(db_path, vm, response)
         arb.process_turn("s1", 5, {"player": "action"}, "sys", [])
 
-        results = vm.query("s1", "narrative content", k=1)
+        results = _rag_vector_memory("s1").query("s1", "narrative content", k=1)
         assert results[0]["turn_id"] == 5
 
 
@@ -1008,46 +1053,51 @@ class TestInventoryQuantityValidation:
 
     `quantity` is untrusted: int(None)/int("two") raise, a negative add violates
     the quantity>=0 CHECK, and a negative remove would silently *add* items.
+    Validation is done by the axiom.inventory mod (output field `inventory_changes`).
     """
 
-    def _arb(self, db_path: str) -> ArbitratorEngine:
+    @staticmethod
+    def _validate(db_path: str, change: dict) -> tuple[bool, str]:
+        from mods.axiom.inventory.main import validate_inventory_change
         with sqlite3.connect(db_path) as conn:
             conn.execute(
-                "INSERT INTO Item_Definitions (item_id, name) VALUES ('sword', 'Sword');"
+                "INSERT OR IGNORE INTO Item_Definitions (item_id, name) VALUES ('sword', 'Sword');"
             )
             conn.commit()
-        return ArbitratorEngine(db_path, [])
+        return validate_inventory_change(db_path, "s1", change, "player1")
 
     def test_valid_positive_quantity_passes(self, db_path: str) -> None:
-        arb = self._arb(db_path)
-        ok, _ = arb._validate_inventory_change(
-            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": 2}
+        ok, _ = self._validate(
+            db_path, {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": 2}
         )
         assert ok is True
 
     def test_missing_quantity_defaults_to_one(self, db_path: str) -> None:
-        arb = self._arb(db_path)
-        ok, _ = arb._validate_inventory_change(
-            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add"}
+        ok, _ = self._validate(
+            db_path, {"entity_id": "player1", "item_id": "sword", "action": "add"}
         )
         assert ok is True
 
     @pytest.mark.parametrize("bad", ["two", None, "2.5", "", [1]])
     def test_non_integer_quantity_rejected_not_raised(self, db_path: str, bad) -> None:
-        arb = self._arb(db_path)
-        ok, reason = arb._validate_inventory_change(
-            "s1", {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": bad}
+        ok, reason = self._validate(
+            db_path, {"entity_id": "player1", "item_id": "sword", "action": "add", "quantity": bad}
         )
         assert ok is False
         assert "whole number" in reason
 
-    def test_unknown_item_is_created_on_add(self, db_path: str) -> None:
-        arb = self._arb(db_path)
-        ok, reason = arb._validate_inventory_change(
-            "s1", {"entity_id": "player1", "item_id": "Hotel Key", "action": "add", "quantity": 1}
+    def test_unknown_item_is_created_on_add(self, db_path: str, vm) -> None:
+        """An item the narrator invents exists after the turn is committed."""
+        response = LLMResponse(
+            narrative_text="The clerk hands you a key.",
+            tool_call={"state_changes": [], "inventory_changes": [
+                {"entity_id": "player1", "item_id": "Hotel Key", "action": "add", "quantity": 1}
+            ]},
+            finish_reason="stop",
         )
-        assert ok is True, reason
-        import sqlite3
+        arb, _ = _make_arbitrator(db_path, vm, response)
+        result = arb.process_turn("s1", 1, {"player1": "I ask for my key."}, "sys", [])
+        assert [c["item_id"] for c in result.inventory_changes] == ["hotel_key"]
         with sqlite3.connect(db_path) as conn:
             row = conn.execute(
                 "SELECT item_id, name FROM Item_Definitions WHERE item_id = 'hotel_key';"
@@ -1056,15 +1106,11 @@ class TestInventoryQuantityValidation:
 
     @pytest.mark.parametrize("bad", [0, -3])
     def test_non_positive_quantity_rejected(self, db_path: str, bad) -> None:
-        arb = self._arb(db_path)
-        ok, reason = arb._validate_inventory_change(
-            "s1", {"entity_id": "player1", "item_id": "sword", "action": "remove", "quantity": bad}
+        ok, reason = self._validate(
+            db_path, {"entity_id": "player1", "item_id": "sword", "action": "remove", "quantity": bad}
         )
         assert ok is False
         assert "positive" in reason
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1116,6 +1162,9 @@ class TestTurnContextModularPipeline:
             finish_reason="stop",
         )
         arb, _ = _make_arbitrator(db_path, vm, response)
+        # The steps fire the hooks of the real modpack (world, time, stats...).
+        from axiom.kernel.loader import get_kernel_registry
+        arb.kernel_registry = get_kernel_registry()
 
         ctx = TurnContext(
             save_id="s1",
@@ -1127,6 +1176,7 @@ class TestTurnContextModularPipeline:
             history=[],
             universe_system_prompt="You are the Narrator.",
             auto_commit=True,
+            db_path=db_path,
         )
 
         # Step 1

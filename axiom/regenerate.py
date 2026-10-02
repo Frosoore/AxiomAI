@@ -13,9 +13,27 @@ from __future__ import annotations
 import json
 from typing import Callable
 
+import re
+
 from axiom.backends.base import LLMBackend
-from axiom.prompts import DEFAULT_VERBOSITY_LEVEL, build_narrative_prompt
+from axiom.prompts import (
+    DEFAULT_VERBOSITY_LEVEL,
+    NARRATIVE_TOOL_CALL_SCHEMA,
+    build_narrative_prompt,
+)
 from axiom.schema import get_connection
+
+# Replaces the state-change JSON instructions of the turn prompt: a variant is
+# prose only (no rule or stat is re-evaluated).
+_VARIANT_INSTRUCTION = (
+    "You are writing an alternative version of this turn's narration. "
+    "Write prose only: do NOT output any JSON block, code fence or tool call."
+)
+
+# A trailing JSON block, fenced (~~~json / ```json / ~~~ / ```, closed or not).
+_TRAILING_FENCE = re.compile(r"\s*(?:~~~|```)(?:json)?\s*[\[{].*\Z", re.DOTALL | re.IGNORECASE)
+# An unfenced trailing JSON object that looks like a tool call ({"key": ...).
+_TRAILING_OBJECT = re.compile(r'\s*\{\s*"[^"\n]+"\s*:.*\Z', re.DOTALL)
 
 # Mapping verbosité → plafond de tokens (aligné sur l'arbitrator).
 _VERBOSITY_TO_TOKENS = {"short": 150, "balanced": 400, "talkative": 1024}
@@ -70,12 +88,12 @@ def regenerate_variant(
         verbosity_level=verbosity_level,
     )
 
-    # Pas de tool-call sur une régénération : on ne veut que du texte.
+    # Pas de tool-call sur une régénération : on ne veut que du texte. On retire
+    # la vraie consigne JSON du prompt de tour (TICKET-104).
     for msg in prompt:
-        if msg["role"] == "system":
+        if msg["role"] == "system" and NARRATIVE_TOOL_CALL_SCHEMA in msg["content"]:
             msg["content"] = msg["content"].replace(
-                "You MUST end your response with a JSON block",
-                "You are generating a new variant. Do NOT output any JSON tool calls.",
+                NARRATIVE_TOOL_CALL_SCHEMA, _VARIANT_INSTRUCTION
             )
 
     stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>",
@@ -97,8 +115,18 @@ def regenerate_variant(
         if on_token is not None:
             on_token(token)
 
-    append_variant(db_path, save_id, turn_id, narrative_text.strip())
+    # Garde-fou : un modèle qui émet quand même un bloc JSON ne doit pas le
+    # stocker dans la variante (il s'afficherait et repartirait dans l'historique).
+    narrative_text = strip_json_block(narrative_text)
+    append_variant(db_path, save_id, turn_id, narrative_text)
     return narrative_text
+
+
+def strip_json_block(text: str) -> str:
+    """Remove a trailing JSON tool-call block (fenced or bare) from narrative prose."""
+    cleaned = _TRAILING_FENCE.sub("", text or "")
+    cleaned = _TRAILING_OBJECT.sub("", cleaned)
+    return cleaned.strip()
 
 
 def append_variant(db_path: str, save_id: str, turn_id: int, text: str) -> bool:

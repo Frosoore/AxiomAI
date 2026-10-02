@@ -61,8 +61,8 @@ class ProvidersService:
             return self._drivers[clean]
 
         # Check registered drivers via slot contributions
-        if self._ctx and self._ctx._registry:
-            for contrib in self._ctx._registry.get_slot_contributions("axiom.providers:drivers"):
+        if self._ctx is not None:
+            for contrib in self._ctx.get_slot_contributions("axiom.providers:drivers"):
                 if isinstance(contrib, tuple) and len(contrib) == 2:
                     d_name, builder = contrib
                     if str(d_name).lower().strip() == clean:
@@ -75,8 +75,8 @@ class ProvidersService:
 
     def list_drivers(self) -> list[str]:
         drivers = set(self._drivers.keys())
-        if self._ctx and self._ctx._registry:
-            for contrib in self._ctx._registry.get_slot_contributions("axiom.providers:drivers"):
+        if self._ctx is not None:
+            for contrib in self._ctx.get_slot_contributions("axiom.providers:drivers"):
                 if isinstance(contrib, tuple) and len(contrib) == 2:
                     drivers.add(str(contrib[0]).lower().strip())
                 elif isinstance(contrib, dict) and "id" in contrib:
@@ -126,11 +126,10 @@ _SERVICE: ProvidersService | None = None
 
 
 def get_providers_service(ctx: ModContext | None = None) -> ProvidersService:
+    """The service of the last loaded instance of this mod (a new one per init)."""
     global _SERVICE
-    if _SERVICE is None:
+    if _SERVICE is None or (ctx is not None and _SERVICE._ctx is not ctx):
         _SERVICE = ProvidersService(ctx)
-    elif ctx is not None and _SERVICE._ctx is None:
-        _SERVICE._ctx = ctx
     return _SERVICE
 
 
@@ -159,8 +158,8 @@ def init(ctx: ModContext) -> None:
     # 3. Register service
     ctx.register_service("providers", svc)
 
-    # 4. Contribute to axiom.turn:llm_backend
-    ctx.contribute_slot("axiom.turn:llm_backend", resolve_llm_backend)
+    # 4. Contribute to axiom.turn:llm_backend (bound to this instance's service)
+    ctx.contribute_slot("axiom.turn:llm_backend", lambda step_ctx=None: svc.get_backend())
 
     # 5. Register settings tab contributions
     try:

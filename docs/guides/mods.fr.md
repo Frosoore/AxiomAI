@@ -125,7 +125,7 @@ def init(ctx: ModContext) -> None:
 ## 5. Gestion des Dépendances et Licence
 
 - **Dépendances Python (`[python].requires`) :** Les mods peuvent déclarer des packages Python requis dans leur `mod.toml`. Le chargeur vérifie statiquement ces dépendances au démarrage et désactive gracieusement le mod avec un avertissement si des packages sont absents (Règle D-7), sans aucun installateur lourd.
-- **Licence des mods tiers (AGPLv3 §7(b)) :** Les mods tiers interagissant uniquement via l'API publique (`ModContext`, hooks, slots, tables déclaratives) constituent des œuvres indépendantes libres de choisir leur licence (MIT, Apache 2.0, propriétaire, etc.). Les patches intrusifs en mémoire restent soumis aux obligations de réciprocité de l'AGPLv3. Voir `docs/licensing_mods.md`.
+- **Licence des mods tiers : question ouverte.** Aucune exception de licence pour les mods n'a été décidée ; tant que les auteurs n'ont pas tranché (après avis juridique), la licence AGPL-3.0-or-later du projet s'applique telle quelle. `docs/licensing_mods.md` est un brouillon non validé.
 
 ---
 

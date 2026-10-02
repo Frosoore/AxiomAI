@@ -1,5 +1,10 @@
 # Cadre Juridique et Statut des Mods Axiom AI
 
+> ⚠ **BROUILLON NON VALIDÉ — sans valeur juridique.** Ce texte a été rédigé par un agent IA sans décision
+> des auteurs (Pinpanicaille et Frosoore). La licence des mods tiers est une **question ouverte**
+> (`maintenance/Mods/DOC.md` §14, « Questions reportées » : avis juridique requis avant tout store).
+> Tant qu'elle n'est pas tranchée, **seule la licence AGPL-3.0-or-later du projet s'applique** (voir `LICENSE`, `NOTICE`).
+
 Ce document explicite la politique de licence et la frontière juridique applicable au micro-noyau Axiom AI (`axiomai-engine`), aux mods officiels (`axiom.*`, `core.*`), et aux extensions créées par la communauté conformément à la licence **GNU Affero General Public License v3 (AGPL-3.0-or-later)** et à la clause d'attribution additionnelle **§7(b)** (décisions d'arbitrage Rang 36 et D-9).
 
 ---

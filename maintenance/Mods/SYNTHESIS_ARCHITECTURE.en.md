@@ -1,3 +1,6 @@
+> ⚠ **Unreliable document (review of 2026-10-03).** Written by an agent; several claims are false.
+> The actual state is in `ETAT_REEL.md` (French), the roadmap in `TODO.md`.
+
 # Grand Architecture Review & Definitive Synthesis of the Modding System
 
 The modular refactoring of Axiom AI — from Phase 0a through Phase 5 — is now complete with exemplary execution rigor.

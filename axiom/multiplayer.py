@@ -9,6 +9,10 @@ tick) — that is what the GUI uses. `ActionQueue` is the older alternative that
 resolves actions **one at a time** (FIFO) on the caller's thread; it is kept as
 public engine API for headless embedders but no longer used by the app (its Qt
 shell `core/multiplayer_queue.py` was removed). Pure threading, zero Qt.
+
+Each action goes through `ArbitratorEngine.process_turn`, which dispatches to the
+single turn orchestration (hook `axiom.kernel:execute_step` of the `axiom.turn`
+mod) — the same path as `Session.take_turn`.
 """
 
 from __future__ import annotations

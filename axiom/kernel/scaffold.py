@@ -61,7 +61,7 @@ tables = [
 
 [contributes]
 hooks = [
-    "axiom.turn:after_step"
+    "axiom.step:after_step"
 ]
 """
     else:  # default "hook"
@@ -75,8 +75,8 @@ author = "{author}"
 
 [contributes]
 hooks = [
-    "axiom.turn:gather_context",
-    "axiom.turn:after_step"
+    "axiom.step:gather_context",
+    "axiom.step:after_step"
 ]
 """
 
@@ -84,6 +84,7 @@ hooks = [
 def _generate_main_py(mod_id: str, mod_type: str, name: str) -> str:
     """Generate main.py template based on mod type."""
     name_part = mod_id.split(".")[-1]
+    fn_part = re.sub(r"\W", "_", name_part)
 
     if mod_type == "slot":
         return f'''"""{mod_id} - Main mod entry point.
@@ -111,19 +112,18 @@ def init(ctx: ModContext) -> None:
     ctx.contribute_slot(
         "axiom.turn:prompt_sections",
         {{
-            "id": f"{{ctx.mod_id}}_section",
-            "title": "{name}",
-            "content": "Special conditions: active",
+            "position": "system",
+            "text": "{name}: special conditions are active.",
+            "depth": 50,
         }},
     )
-    ctx.contribute_slot(
-        "axiom.turn:output_fields",
-        {{
-            "name": "{name_part}_delta",
-            "type": "integer",
-            "description": "Metric delta produced by {name}",
-        }},
-    )
+    # Receives the parsed value of the '{name_part}_delta' field of the LLM output
+    ctx.contribute_slot("axiom.turn:output_fields", ("{name_part}_delta", on_{fn_part}_delta))
+
+
+def on_{fn_part}_delta(value: Any, turn_ctx: Any) -> None:
+    """Handler for the '{name_part}_delta' output field."""
+    logger.debug("[%s] {name_part}_delta = %s", turn_ctx, value)
 '''
     elif mod_type == "data":
         return f'''"""{mod_id} - Main mod entry point.
@@ -139,15 +139,15 @@ from axiom.kernel.context import ModContext
 from axiom.logger import logger
 
 
-def on_after_step(data: dict[str, Any]) -> None:
-    """Hook invoked after step completion to update persisted state."""
+def on_after_step(turn_ctx: Any) -> None:
+    """Hook invoked after the step's rules and mutations (receives the turn context)."""
     logger.debug("[{mod_id}] Recording step data")
 
 
 def init(ctx: ModContext) -> None:
     """Initialize the data mod and register lifecycle hooks."""
     logger.info("Initializing data mod '%s'", ctx.mod_id)
-    ctx.register_hook("axiom.turn:after_step", on_after_step)
+    ctx.register_hook("axiom.step:after_step", on_after_step)
 '''
     else:  # "hook"
         return f'''"""{mod_id} - Main mod entry point.
@@ -163,21 +163,21 @@ from axiom.kernel.context import ModContext
 from axiom.logger import logger
 
 
-def on_gather_context(data: dict[str, Any]) -> None:
-    """Hook invoked when context is assembled before prompting the LLM."""
+def on_gather_context(turn_ctx: Any) -> None:
+    """Hook invoked once the context is gathered, before the prompt is built."""
     logger.debug("[{mod_id}] Gathering context")
 
 
-def on_after_step(data: dict[str, Any]) -> None:
-    """Hook invoked after step rules and narration have executed."""
+def on_after_step(turn_ctx: Any) -> None:
+    """Hook invoked after the step's rules and narration have executed."""
     logger.debug("[{mod_id}] Step post-processing")
 
 
 def init(ctx: ModContext) -> None:
     """Initialize the mod and register event hooks."""
     logger.info("Initializing hook mod '%s'", ctx.mod_id)
-    ctx.register_hook("axiom.turn:gather_context", on_gather_context)
-    ctx.register_hook("axiom.turn:after_step", on_after_step)
+    ctx.register_hook("axiom.step:gather_context", on_gather_context)
+    ctx.register_hook("axiom.step:after_step", on_after_step)
 '''
 
 
@@ -231,7 +231,8 @@ def scaffold_mod(
     Args:
         mod_id: Namespaced mod ID (e.g. 'author.my_mod').
         mod_type: Template type ('hook', 'slot', or 'data').
-        target_dir: Target directory path. If None, defaults to `mods/<mod_id>`.
+        target_dir: Target directory path. If None, defaults to `<user mods folder>/<mod_id>`
+            (`axiom.paths.get_mods_dir()`), never the sources of the repository.
         author: Author name.
         description: Short human-readable description.
 
@@ -255,7 +256,11 @@ def scaffold_mod(
             f"Invalid mod_type '{mod_type}'. Must be one of: {sorted(_VALID_MOD_TYPES)}"
         )
 
-    dest_dir = Path(target_dir).resolve() if target_dir else (Path("mods") / mod_id).resolve()
+    if target_dir:
+        dest_dir = Path(target_dir).resolve()
+    else:
+        from axiom.kernel.loader import get_user_mods_dir
+        dest_dir = (get_user_mods_dir() / mod_id).resolve()
 
     manifest_file = dest_dir / "mod.toml"
     if manifest_file.exists():

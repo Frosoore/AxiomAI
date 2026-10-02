@@ -851,9 +851,11 @@ def fork_save(
 ) -> str:
     """Create a new save = `save_id`'s journal **truncated** at the chosen point.
 
-    The full journal up to the point is copied (rewind/audit preserved);
-    the nested inventory is taken at the fork point when a snapshot exists
-    (TICKET-095, see `_fork_item_instances`); modifiers are copied as-is.
+    Every runtime table is copied through the storage registry
+    (`axiom.storage_registry.execute_fork`): the journal and the step-keyed
+    tables up to the point, and the snapshot-based state (inventory, modifiers,
+    beliefs, mental models) as it was at the point. If the copy fails, the new
+    save is deleted and the error propagates (no half-forked save).
     Returns the new save_id.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
@@ -874,13 +876,20 @@ def fork_save(
         src["player_persona"] or "",
     )
 
-    from axiom.storage_registry import execute_fork
+    from axiom.storage_registry import execute_external_fork, execute_fork
 
-    with get_connection(db_path) as conn:
-        execute_fork(conn, save_id, new_id, turn_id)
-        conn.commit()
+    try:
+        with get_connection(db_path) as conn:
+            execute_fork(conn, save_id, new_id, turn_id, external=False)
+            conn.commit()
+    except Exception:
+        with get_connection(db_path) as conn:
+            conn.execute("DELETE FROM Saves WHERE save_id = ?;", (new_id,))
+            conn.commit()
+        raise
+    execute_external_fork(save_id, new_id, turn_id)
 
-    sourcer = EventSourcer(db_path)
-    sourcer.rebuild_state_cache(new_id, up_to_turn_id=turn_id)
-    sourcer.take_snapshot(new_id, turn_id)
+    # The source's Snapshots <= turn were copied with the other step-keyed
+    # tables: only the derived State_Cache is rebuilt.
+    EventSourcer(db_path).rebuild_state_cache(new_id, up_to_turn_id=turn_id)
     return new_id

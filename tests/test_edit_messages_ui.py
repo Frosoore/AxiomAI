@@ -48,7 +48,9 @@ def test_chat_display_emits_edit_signal_on_link_click(qtbot):
     assert len(signals) == 1
     assert signals[0] == ("user_input", 8)
 
-def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, monkeypatch):
+def test_tabletop_view_rewind_has_no_second_vector_rollback(qtbot, tmp_path, monkeypatch):
+    """R2-B-2: the Qt rewind goes through the engine path only (which rolls the
+    semantic memory back after its SQL commit); the view must not roll it back again."""
     from unittest.mock import MagicMock
     from mods.axiom.ui.qt.ui.tabletop_view import TabletopView
     from axiom.memory import VectorMemory
@@ -56,38 +58,53 @@ def test_tabletop_view_chains_vector_rollback(qtbot, tmp_path, monkeypatch):
     # Mock components to avoid heavy side-effects
     monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.TabletopView.reload_llm", lambda self: None)
     monkeypatch.setattr("mods.axiom.ui.qt.ui.tabletop_view.load_rules_for_session", lambda *args, **kwargs: [])
-    
+
     view = TabletopView(main_window=MagicMock())
     qtbot.addWidget(view)
 
-    # Setup necessary fields
     view._vector_memory = MagicMock(spec=VectorMemory)
     view._vector_memory._disabled = False
     view._save_id = "test_save"
     view._db_path = str(tmp_path / "dummy.db")
     view._db_worker = MagicMock()
     view._arbitrator = MagicMock()
-    
-    # Spy on finalization
+
     finalize_called = []
     orig_finalize = view._finalize_rewind
     def wrapped_finalize(*args, **kwargs):
         finalize_called.append((args, kwargs))
         return orig_finalize(*args, **kwargs)
     monkeypatch.setattr(view, "_finalize_rewind", wrapped_finalize)
-    
-    # We trigger the slot directly with a summary dict
-    summary = {"rebuilt_to_turn": 5}
-    view._on_rewind_done(summary)
-    
-    # It should have started a VectorWorker
-    assert view._vector_worker is not None
-    
-    # Wait for the worker to finish and trigger finalize
-    qtbot.waitUntil(lambda: len(finalize_called) == 1, timeout=2000)
-    
-    # The worker should be cleaned up
-    assert view._vector_worker is None
+
+    view._on_rewind_done({"rebuilt_to_turn": 5, "external_failures": 0})
+
+    # Finalised at once, without any vector rollback from the UI.
+    assert len(finalize_called) == 1
+    view._vector_memory.rollback.assert_not_called()
+    assert not hasattr(view, "_vector_worker")
+
+
+def test_rewind_task_uses_engine_rewind_path(tmp_path, monkeypatch):
+    """R2-B-2: RewindTask delegates to CheckpointManager.rewind (shared with
+    Session.rewind): the save's epoch is bumped, a backup is made."""
+    from pathlib import Path
+    from axiom.compile import compile_universe
+    from axiom.epoch import get_session_epoch_manager
+    from axiom.savestore import create_save
+    from workers.db_tasks import RewindTask
+
+    root = Path(__file__).resolve().parent.parent
+    uni = compile_universe(root / "universes" / "Myria", tmp_path / "m.db", force=True)
+    info = create_save(uni, "Hero", "Normal")
+    before = get_session_epoch_manager(info["save_id"]).current
+
+    summary = RewindTask(info["db_path"], info["save_id"], 0).execute()
+
+    assert summary["rebuilt_to_turn"] == 0
+    assert get_session_epoch_manager(info["save_id"]).current == before + 1
+    backups = list((Path(info["db_path"]).parent / "auto_backups").glob("*rewind_to_turn_0*"))
+    assert backups
+
 
 def test_tabletop_view_on_send_message_increments_turn_id_first(qtbot, tmp_path, monkeypatch):
     from unittest.mock import MagicMock

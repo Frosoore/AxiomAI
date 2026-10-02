@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from axiom.backends.base import LLMBackend
 from axiom.consolidate import consolidate
@@ -19,6 +19,38 @@ from axiom.observations import apply_consolidation, get_observations
 
 # Cap on how many subjects get a (costly LLM) mental-model refresh in one pass.
 _MAX_MODEL_REFRESH = 3
+
+_STALE = object()
+
+
+def _epoch_guarded(
+    save_id: str,
+    epoch: int | None,
+    epoch_checker: Callable[[], int] | None,
+    write: Callable[[], Any],
+) -> Any:
+    """Run ``write`` only if the save's epoch is still ``epoch``, atomically.
+
+    The check and the write happen under the epoch manager's write guard, so a
+    rewind/fork/load cannot bump the epoch in between (R2-m-6): either the job
+    sees the new epoch and writes nothing, or the rewind waits for the write and
+    then removes it. Returns ``_STALE`` when the write was discarded.
+    """
+    if epoch is None:
+        return write()
+    from axiom.epoch import get_session_epoch_manager
+    from axiom.logger import logger
+
+    mgr = get_session_epoch_manager(save_id)
+    with mgr.guarded_write(epoch, epoch_checker) as valid:
+        if not valid:
+            logger.warning(
+                "Époque de session périmée (capturée %d) pour la save %s. Écriture ignorée.",
+                epoch,
+                save_id,
+            )
+            return _STALE
+        return write()
 
 
 def distil_narrative_to_memory(
@@ -62,18 +94,12 @@ def distil_narrative_to_memory(
         if not facts:
             return empty
 
-        if epoch is not None and epoch_checker is not None:
-            curr_epoch = epoch_checker()
-            if epoch != curr_epoch:
-                from axiom.logger import logger
-                logger.warning(
-                    "Époque de session périmée (%d vs %d). Écriture ignorée.",
-                    epoch,
-                    curr_epoch,
-                )
-                return empty
-
-        new_ids = insert_facts(db_path, save_id, turn_id, facts)
+        new_ids = _epoch_guarded(
+            save_id, epoch, epoch_checker,
+            lambda: insert_facts(db_path, save_id, turn_id, facts),
+        )
+        if new_ids is _STALE:
+            return empty
         stored_count = len(new_ids)
         beliefs_touched = 0
         models_refreshed = 0
@@ -194,6 +220,8 @@ def consolidate_facts_to_beliefs(
     refresh_mental_models: bool = False,
     raise_on_error: bool = False,
     max_facts: int = 24,
+    epoch: int | None = None,
+    epoch_checker: Callable[[], int] | None = None,
 ) -> dict[str, int]:
     """Run belief consolidation on **already stored** facts (no re-extract).
 
@@ -215,6 +243,8 @@ def consolidate_facts_to_beliefs(
         facts,
         refresh_mental_models=refresh_mental_models,
         raise_on_error=raise_on_error,
+        epoch=epoch,
+        epoch_checker=epoch_checker,
     )
     return {
         "facts_stored": 0,
@@ -262,20 +292,12 @@ def _run_consolidation(
             if f.fact_id is not None
         }
 
-        if epoch is not None and epoch_checker is not None:
-            curr_epoch = epoch_checker()
-            if epoch != curr_epoch:
-                from axiom.logger import logger
-                logger.warning(
-                    "Époque de session périmée (%d vs %d). Écriture ignorée.",
-                    epoch,
-                    curr_epoch,
-                )
-                return 0, 0
-
-        counts = apply_consolidation(
-            db_path, save_id, turn_id, actions, fact_turn_map
+        counts = _epoch_guarded(
+            save_id, epoch, epoch_checker,
+            lambda: apply_consolidation(db_path, save_id, turn_id, actions, fact_turn_map),
         )
+        if counts is _STALE:
+            return 0, 0
         beliefs_touched = int(
             counts.get("created", 0)
             + counts.get("updated", 0)
@@ -316,21 +338,13 @@ def _refresh_models(llm, db_path, save_id, turn_id, actions, mission, *, epoch: 
             if not summary:
                 continue
 
-            if epoch is not None and epoch_checker is not None:
-                curr_epoch = epoch_checker()
-                if epoch != curr_epoch:
-                    from axiom.logger import logger
-                    logger.warning(
-                        "Époque de session périmée (%d vs %d). Écriture ignorée.",
-                        epoch,
-                        curr_epoch,
-                    )
-                    return written
-
             src = [o.observation_id for o in beliefs if o.observation_id is not None]
-            upsert_mental_model(
-                db_path, save_id, subj, summary, turn_id, sources=src
+            res = _epoch_guarded(
+                save_id, epoch, epoch_checker,
+                lambda: upsert_mental_model(db_path, save_id, subj, summary, turn_id, sources=src),
             )
+            if res is _STALE:
+                return written
             written += 1
         return written
     except Exception:
@@ -589,7 +603,14 @@ class LivingMemoryAccumulator:
         llm: LLMBackend | None = None,
         force_catchup: bool = False,
     ) -> dict:
-        """Run synchronous extract now for UI / API endpoints."""
+        """Run synchronous extract now for UI / API endpoints.
+
+        Epoch-guarded like the background job: a rewind/fork/load of the save
+        while the (slow) LLM extraction runs makes its writes be discarded.
+        """
+        from axiom.epoch import get_session_epoch_manager
+        captured_epoch = get_session_epoch_manager(save_id).current
+
         with self._lock:
             pending = list(self._pending.get(save_id, []))
             self._pending[save_id] = []
@@ -645,6 +666,7 @@ class LivingMemoryAccumulator:
                 refresh_mental_models=memory_mental_models_active(cfg),
                 raise_on_error=True,
                 max_turns=8,
+                epoch=captured_epoch,
             )
         elif force_catchup and memory_beliefs_active(cfg):
             existing_beliefs = get_observations(db_path, save_id, max_turn_id=turn_id)
@@ -663,6 +685,7 @@ class LivingMemoryAccumulator:
                 turn_id,
                 refresh_mental_models=memory_mental_models_active(cfg),
                 raise_on_error=True,
+                epoch=captured_epoch,
             )
         else:
             return {

@@ -180,12 +180,11 @@ def test_mods_dialog_search_filter(qtbot, isolated_axiom_data_dir):
         assert "turn" in text_corpus
 
 
-def test_main_window_menu_has_mods_menu(qtbot, isolated_axiom_data_dir, monkeypatch):
+def test_main_window_menu_has_mods_menu(qtbot, isolated_axiom_data_dir, monkeypatch, no_first_launch):
     """Verify that MainWindow menuBar contains a 'Mods' menu with management action."""
     from mods.axiom.ui.qt.ui.main_window import MainWindow
 
-    # Mock heavy dependencies in MainWindow
-    monkeypatch.setattr("mods.axiom.ui.qt.ui.main_window.MainWindow._check_first_launch", lambda self: None)
+    # Mock heavy dependencies in MainWindow (first-launch Quick Tour: no_first_launch fixture)
     monkeypatch.setattr("axiom.config.load_config", lambda: load_config())
 
     win = MainWindow()

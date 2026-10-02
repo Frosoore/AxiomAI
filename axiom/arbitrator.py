@@ -4,25 +4,18 @@ core/arbitrator.py
 The ArbitratorEngine — Axiom AI's deterministic firewall between LLM creativity and
 the game's mathematical state.
 
-On every narrative turn the ArbitratorEngine:
-
-1. Fetches current entity stats from State_Cache + applies modifier overlay.
-2. Retrieves relevant narrative memories from VectorMemory (RAG).
-3. Builds the full narrative prompt (injecting any pending correction).
-4. Calls the LLM and parses its response.
-5. Validates every proposed state change against current stats.
-6. Persists valid changes via EventSourcer; queues corrections for invalids.
-7. Runs the Rules Engine for each mutated entity; persists triggered actions.
-8. Ticks modifier durations.
-9. Embeds the narrative chunk into VectorMemory.
-10. Returns an ArbitratorResult with full detail for the UI / tests.
+The engine provides the six steps of a turn (gather context, build prompt,
+inference, parse, arbitrate, stage mutations). The turn is orchestrated by the
+`axiom.turn` mod (hook `axiom.kernel:execute_step`), which is the only
+orchestration: `process_turn` dispatches to it. Stat validation and creator rules
+live in `axiom.world`, inventory in `axiom.inventory`, time in `axiom.time`.
 
 The Correction Loop (spec §4-B)
 ---------------------------------
-If a change is rejected, a hidden system message is stored in
-`_pending_correction`.  On the VERY NEXT turn this message is injected into
-the prompt immediately before the user's input, then immediately cleared
-so it cannot affect turn N+2.
+A rejected change queues a hint on the turn (`TurnContext.queue_correction`).
+The hint is staged as a `correction_hint` event of that turn in the Event_Log, so
+it is save data: it is read back by the VERY NEXT turn only (turn N+1 reads the
+hints of turn N) and is undone by a rewind like any other event.
 """
 
 from collections.abc import Callable
@@ -34,14 +27,7 @@ from typing import Any
 import uuid
 
 from axiom.logger import logger
-from axiom.rules import RulesEngine
 from axiom.turn_batch import TurnWriteBatch
-
-
-def _slug_item_id(raw: str) -> str:
-    """Turn an LLM item label into a stable item_id."""
-    slug = re.sub(r"[^a-z0-9]+", "_", (raw or "").strip().lower()).strip("_")
-    return (slug[:64] or "item")
 from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 from axiom.db_helpers import (
     get_current_time,
@@ -57,6 +43,9 @@ from axiom.prompts import (
     format_entity_stats_block,
 )
 from axiom.schema import get_connection
+
+#: Event_Log type of the narrator hint staged by a turn whose changes were rejected.
+CORRECTION_EVENT = "correction_hint"
 
 
 # Common words ignored when matching a turn's input against Lore_Book keywords
@@ -149,6 +138,21 @@ class TurnContext:
     raw_inventory_changes: list[dict[str, Any]] = field(default_factory=list)
     raw_modifier_changes: list[dict[str, Any]] = field(default_factory=list)
     db_path: str = ""
+    #: Narrator hints queued by validators (rejected changes); staged as save data.
+    correction_hints: list[str] = field(default_factory=list)
+    #: Narration backend, session epoch and epoch reader, for post-commit jobs of mods.
+    llm: Any = None
+    epoch: int | None = None
+    epoch_checker: Callable[[], int] | None = None
+
+    def queue_correction(self, reason: str) -> None:
+        """Queue a narrator hint for the next turn (correction loop, spec §4-B)."""
+        reason = str(reason or "").strip()
+        if reason:
+            self.correction_hints.append(
+                f"[NARRATOR HINT: The previous action failed because {reason}. "
+                "Describe this failure naturally in the story. Do not mention this hint.]"
+            )
 
     @property
     def turn_id(self) -> int:
@@ -199,6 +203,9 @@ class ArbitratorResult:
     #: read (see ui/tabletop_view._on_turn_complete).
     in_game_time: int = 0
     batch: Any = None
+    #: Mods disabled during this turn because one of their contributions raised
+    #: (mod_id -> reason); the turn went on without them.
+    faulted_mods: dict[str, str] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -210,18 +217,20 @@ class ArbitratorEngine:
 
     Args:
         db_path:            Path to the universe .db for direct entity queries.
-        rules_list:         List of creator-defined rules.
+        rules_list:         Ignored, kept for API compatibility: creator rules are
+                            loaded and evaluated by the `axiom.world` mod.
+        kernel_registry:    Registry (or a mod's ModContext) used to fire the turn
+                            hooks and read mod services. Required to run a turn.
 
     """
 
     def __init__(
         self,
         db_path: str,
-        rules_list: list[dict],
+        rules_list: list[dict] | None = None,
         kernel_registry: Any | None = None,
     ) -> None:
         self._db_path = db_path
-        self._rules_engine = RulesEngine(rules_list)
         self._event_sourcer = EventSourcer(db_path)
         self._modifier_processor = ModifierProcessor(db_path)
         self.kernel_registry = kernel_registry
@@ -229,7 +238,6 @@ class ArbitratorEngine:
         # Dependencies to be injected via configure()
         self._llm: LLMBackend | None = None
         self._vector_memory: Any | None = None
-        self._pending_correction: str | None = None
         self._mode: str = "Normal"
         self._hero_entity_id: str | None = None
         # Saves whose Lore Book has been embedded this session (TICKET-072). Lore
@@ -273,53 +281,51 @@ class ArbitratorEngine:
         hero_entity_id: str | None = None,
         auto_commit: bool = True,
     ) -> ArbitratorResult:
-        """Execute one full ArbitratorEngine turn through 6 modular pipeline steps."""
-        player_entity_id = next((aid for aid in intents if aid != hero_entity_id), "player") if intents else "player"
-        combined_text = " ".join(intents.values()) if intents else ""
-        ctx = TurnContext(
+        """Run one turn with this engine through the installed turn pipeline.
+
+        There is a single orchestration of the turn: the `axiom.kernel:execute_step`
+        hook of the `axiom.turn` mod. This method only builds the step context
+        (with this engine, its LLM and vector memory) and dispatches it; errors
+        (LLM unreachable...) propagate unchanged. Uses `self.kernel_registry`, or the
+        process-wide modpack when the engine has none.
+        """
+        from axiom.kernel import KernelStepContext, NoTurnPipelineInstalledError
+
+        registry = self.kernel_registry
+        if registry is None or not hasattr(registry, "invoke_hook_unguarded"):
+            from axiom.kernel.loader import get_kernel_registry
+            registry = get_kernel_registry()
+        if not registry.has_hook("axiom.kernel:execute_step"):
+            raise NoTurnPipelineInstalledError(
+                "No turn pipeline installed. Ensure 'axiom.turn' mod is loaded."
+            )
+        step_context = KernelStepContext(
             save_id=save_id,
-            step_id=turn_id,
-            user_input=combined_text,
-            player_entity_id=player_entity_id,
-            verbosity=verbosity_level,
-            intents=dict(intents),
-            history=history,
-            universe_system_prompt=universe_system_prompt,
-            mode=mode,
-            hero_entity_id=hero_entity_id,
+            step=turn_id,
+            input=" ".join(intents.values()) if intents else "",
+            db_path=self._db_path,
+            llm=self._llm,
+            time_llm=getattr(self, "_time_llm", None),
+            vector_memory=self._vector_memory,
+            stream_token_callback=stream_token_callback,
             temperature=temperature,
             top_p=top_p,
+            verbosity_level=verbosity_level,
+            mode=mode,
+            hero_entity_id=hero_entity_id,
+            intents=dict(intents or {}),
             auto_commit=auto_commit,
-            db_path=self._db_path,
+            history=list(history or []),
+            system_prompt=universe_system_prompt,
+            extras={"axiom.turn:engine": self},
         )
-
-        self.step_1_gather_context(ctx)
-        self.step_2_build_prompt(ctx)
-        self.step_3_execute_inference(ctx, stream_cb=stream_token_callback)
-        self.step_4_parse_response(ctx)
-        self.step_5_arbitrate_rules(ctx)
-        self.step_6_stage_mutations(ctx)
-
-        res = ArbitratorResult(
-            narrative_text=ctx.narrative_text,
-            applied_changes=ctx.applied_changes,
-            rejected_changes=ctx.rejected_changes_detailed,
-            inventory_changes=ctx.inventory_changes,
-            applied_modifiers=ctx.applied_modifiers,
-            triggered_rules=ctx.triggered_rules,
-            rule_chain_warning=ctx.rule_chain_warning,
-            game_state_tag=ctx.game_state_tag,
-            player_entity_id=ctx.player_entity_id,
-            elapsed_minutes=ctx.elapsed_minutes,
-            scene_pace=ctx.scene_pace,
-            in_game_time=ctx.new_time,
-            lore_hits=ctx.lore_book_subset,
-            image_path=getattr(ctx, "image_path", None),
-            batch=ctx.write_batch,
-        )
-        ctx.result = res
-        return res
-
+        registry.invoke_hook_unguarded("axiom.kernel:execute_step", step_context)
+        if step_context.result is None:
+            raise RuntimeError(
+                "The turn pipeline ran but produced no result "
+                "(see the mod statuses: `axiom mods list`)."
+            )
+        return step_context.result
 
     def step_1_gather_context(self, ctx: TurnContext) -> None:
         """Step 1: Récupération des stats, RAG/mémoire vectorielle, voisins spatiaux et entités pertinentes."""
@@ -400,7 +406,7 @@ class ArbitratorEngine:
             except Exception as exc:
                 logger.debug("vector_memory query failed: %s", exc)
                 rag_results = []
-        elif self.kernel_registry:
+        elif self.kernel_registry is not None:
             rag_svc = self.kernel_registry.get_service("rag")
             if rag_svc is not None:
                 try:
@@ -466,10 +472,7 @@ class ArbitratorEngine:
         ctx.lore_book_subset = self._fetch_relevant_lore(ctx.save_id, ctx.combined_intents_text)
 
         from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
-        has_living_memory = (
-            self.kernel_registry is None
-            or (hasattr(self.kernel_registry, "has_service") and self.kernel_registry.has_service("living_memory"))
-        )
+        has_living_memory = self._has_service("living_memory")
         if memory_mode_is_living(cfg) and has_living_memory:
             fact_lines = self._fetch_relevant_facts(
                 ctx.save_id,
@@ -498,18 +501,15 @@ class ArbitratorEngine:
             if prefix:
                 ctx.rag_chunks = prefix + ctx.rag_chunks
 
-        if self.kernel_registry:
-            self.kernel_registry.execute_hook("axiom.step:gather_context", ctx)
+        # Fired once per turn, here (the axiom.turn orchestrator does not fire it again).
+        self._fire("axiom.step:gather_context", ctx)
 
     def step_2_build_prompt(self, ctx: TurnContext) -> None:
         """Step 2: Assemblage des sections de prompt (lore, persona, consignes, état du monde)."""
         active_modifiers = self._load_active_modifiers(ctx.save_id)
         dyn_table = {}
         dyn_prompt = ""
-        has_stat_dyn = (
-            self.kernel_registry is None
-            or (hasattr(self.kernel_registry, "has_hook") and self.kernel_registry.has_hook("axiom.turn:arbitrate_stats"))
-        )
+        has_stat_dyn = self._has_hook("axiom.turn:arbitrate_stats")
         if has_stat_dyn:
             try:
                 from axiom.stat_dynamics import (
@@ -547,16 +547,6 @@ class ArbitratorEngine:
         if dyn_prompt:
             entity_block = f"{entity_block}\n\n{dyn_prompt}"
 
-        if self.kernel_registry is None:
-            try:
-                from axiom.inventory import format_inventory_prompt, load_inventory_tree
-                inv_tree = load_inventory_tree(self._db_path, ctx.save_id)
-                inv_text = format_inventory_prompt(inv_tree, ctx.id_to_name)
-                if inv_text and inv_text != "(empty)":
-                    entity_block = f"{entity_block}\n\nINVENTORY (nested: on person / in containers / at locations)\n{inv_text}"
-            except Exception:
-                pass
-
         named_intents = {ctx.id_to_name.get(eid, eid): intent for eid, intent in (ctx.intents or {}).items()}
         hero_name_str = ctx.id_to_name.get(ctx.hero_entity_id, ctx.hero_entity_id) if ctx.hero_entity_id else None
 
@@ -566,10 +556,11 @@ class ArbitratorEngine:
         ctx.prompt_messages = build_narrative_prompt(
             universe_system_prompt=ctx.universe_system_prompt,
             entity_stats_block=entity_block,
-            rag_chunks=ctx.rag_chunks if self.kernel_registry is None else [],
+            # Memories are rendered by the prompt sections of the memory mods.
+            rag_chunks=[],
             history=ctx.history,
             intents=named_intents,
-            pending_correction=self._pending_correction,
+            pending_correction=self._load_pending_correction(ctx.save_id, ctx.turn_id),
             player_persona=ctx.player_persona,
             lore_book=ctx.lore_book_subset,
             verbosity_level=ctx.verbosity,
@@ -582,8 +573,6 @@ class ArbitratorEngine:
             basic_prompt=getattr(cfg, "basic_prompt", ""),
             negative_prompt=getattr(cfg, "negative_prompt", ""),
         )
-
-        self._pending_correction = None
 
     def step_3_execute_inference(
         self,
@@ -647,10 +636,7 @@ class ArbitratorEngine:
         from axiom.config import load_config
         cfg = load_config()
 
-        has_time_mod = (
-            self.kernel_registry is None
-            or (hasattr(self.kernel_registry, "has_service") and self.kernel_registry.has_service("time"))
-        )
+        has_time_mod = self._has_service("time")
 
         if not has_time_mod:
             ctx.elapsed_minutes = 0
@@ -700,65 +686,14 @@ class ArbitratorEngine:
             ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
 
     def step_5_arbitrate_rules(self, ctx: TurnContext) -> None:
-        """Step 5: Validation mathématique des deltas de stats, cohérence des inventaires, déclenchement des règles du RulesEngine."""
-        _pending_events = ctx.write_batch.events
-        defined_stats = self._load_defined_stats() if (ctx.raw_state_changes or ctx.raw_modifier_changes) else set()
+        """Step 5: arbitrage (hooks des mods monde/stats), modificateurs et lore de session."""
+        defined_stats = self._load_defined_stats() if ctx.raw_modifier_changes else set()
         entity_meta = self._load_entity_meta()
 
-        if self.kernel_registry is not None:
-            if self.kernel_registry.has_hook("axiom.step:arbitrate_mutations"):
-                self.kernel_registry.execute_hook("axiom.step:arbitrate_mutations", ctx)
-        else:
-            rejection_messages: list[str] = []
-            for change in ctx.raw_state_changes:
-                entity_id: str = self._resolve_entity_id(
-                    change.get("entity_id", ""), ctx.all_stats, entity_meta
-                )
-                stat_key: str = self._resolve_stat_key(
-                    change.get("stat_key", ""), ctx.all_stats.get(entity_id, {})
-                )
-                change["entity_id"] = entity_id
-                change["stat_key"] = stat_key
-                delta: float | None = change.get("delta")
-                value: Any = change.get("value")
-
-                valid, reason = self._validate_change(
-                    entity_id, stat_key, delta, value, ctx.all_stats, defined_stats
-                )
-
-                if valid:
-                    payload: dict[str, Any] = {"entity_id": entity_id, "stat_key": stat_key}
-                    if delta is not None:
-                        payload["delta"] = delta
-                        event_type = "stat_change"
-                    else:
-                        payload["value"] = value
-                        event_type = "stat_set"
-
-                    if entity_id == ctx.player_entity_id and stat_key == "Location" and value:
-                        old_loc = ctx.all_stats.get(entity_id, {}).get("Location")
-                        if old_loc and old_loc != value:
-                            travel_dist = self._get_travel_distance(old_loc, value)
-                            if travel_dist > 0:
-                                ctx.travel_note = f"Traveled to {value} ({travel_dist} km)"
-
-                    _pending_events.append((ctx.save_id, ctx.turn_id, event_type, entity_id, payload))
-                    ctx.write_batch.stat_changes.append(change)
-                    self._apply_local_change(entity_id, payload, ctx.all_stats)
-                    ctx.applied_changes.append(change)
-                else:
-                    rejected = dict(change)
-                    rejected["reason"] = reason
-                    ctx.rejected_changes_detailed.append(rejected)
-                    msg = f"{entity_id}.{stat_key}: {reason}"
-                    ctx.rejected_changes.append(msg)
-                    rejection_messages.append(msg)
-
-            if rejection_messages:
-                self._queue_correction("; ".join(rejection_messages))
-
-        if self.kernel_registry:
-            self.kernel_registry.execute_hook("axiom.turn:arbitrate_stats", ctx)
+        # Stat validation, travel and creator rules: axiom.world (rejections queue
+        # their own correction hints on ctx).
+        self._fire("axiom.step:arbitrate_mutations", ctx)
+        self._fire("axiom.turn:arbitrate_stats", ctx)
 
         for mod in ctx.raw_modifier_changes:
             if not isinstance(mod, dict):
@@ -772,7 +707,7 @@ class ArbitratorEngine:
             clear = bool(mod.get("clear"))
             if clear:
                 if not entity_id or not stat_key:
-                    self._queue_correction("Modifier clear missing entity_id or stat_key")
+                    ctx.queue_correction("Modifier clear missing entity_id or stat_key")
                     continue
                 ctx.write_batch.modifier_mutations.append({
                     "type": "clear",
@@ -788,9 +723,7 @@ class ArbitratorEngine:
             try:
                 delta = float(mod.get("delta"))
             except (TypeError, ValueError):
-                self._queue_correction(
-                    f"Modifier {entity_id}.{stat_key}: delta must be a number"
-                )
+                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: delta must be a number")
                 continue
             minutes_raw = mod.get("minutes", mod.get("minutes_remaining", 0))
             try:
@@ -798,14 +731,10 @@ class ArbitratorEngine:
             except (TypeError, ValueError):
                 minutes = 0
             if minutes < 1:
-                self._queue_correction(
-                    f"Modifier {entity_id}.{stat_key}: minutes must be >= 1"
-                )
+                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: minutes must be >= 1")
                 continue
             if defined_stats and stat_key.lower() not in defined_stats:
-                self._queue_correction(
-                    f"Modifier {entity_id}.{stat_key}: unknown stat"
-                )
+                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: unknown stat")
                 continue
             ctx.write_batch.modifier_mutations.append({
                 "type": "add",
@@ -820,18 +749,6 @@ class ArbitratorEngine:
                 "delta": delta,
                 "minutes": minutes,
             })
-
-        if self.kernel_registry is None:
-            for inv_change in ctx.raw_inventory_changes:
-                valid, reason = self._validate_inventory_change(ctx.save_id, inv_change)
-                if valid:
-                    ctx.write_batch.inventory_mutations.append(dict(inv_change))
-                    action = inv_change["action"]
-                    target = inv_change.get("entity_id") or inv_change.get("holder_id")
-                    _pending_events.append((ctx.save_id, ctx.turn_id, f"inventory_{action}", target, inv_change))
-                    ctx.inventory_changes.append(inv_change)
-                else:
-                    self._queue_correction(f"Inventory: {reason}")
 
         if ctx.session_lore_changes:
             for entry in ctx.session_lore_changes:
@@ -848,74 +765,19 @@ class ArbitratorEngine:
                     entry_id, ctx.save_id, category, name, keywords, content, ctx.turn_id
                 ))
 
-        if self.kernel_registry is None:
-            triggered_rules: list[dict[str, Any]] = []
-            _seen_rule_signatures: set[str] = set()
-            mutated_entities = {c.get("entity_id") for c in ctx.applied_changes if c.get("entity_id")}
-            rule_chain_warning = False
-
-            for i in range(5):
-                new_mutations = set()
-                for entity_id in list(mutated_entities):
-                    stats = ctx.all_stats.get(entity_id, {})
-                    triggered_actions = self._rules_engine.evaluate(entity_id, stats)
-
-                    for action in triggered_actions:
-                        action_id = f"{entity_id}_{action.get('type')}_{action.get('stat')}_{action.get('value')}"
-                        if action_id in _seen_rule_signatures:
-                            continue
-                        _seen_rule_signatures.add(action_id)
-
-                        payload: dict[str, Any] = {
-                            "entity_id": entity_id,
-                            "stat_key": action.get("stat"),
-                            "source_rule": action.get("rule_id")
-                        }
-
-                        event_type = "stat_set"
-                        if action["type"] == "stat_change":
-                            payload["delta"] = action.get("value")
-                            event_type = "stat_change"
-                        else:
-                            payload["value"] = action.get("value")
-
-                        _pending_events.append((ctx.save_id, ctx.turn_id, event_type, entity_id, payload))
-                        _pending_events.append((ctx.save_id, ctx.turn_id, "rule_trigger", entity_id, action))
-                        self._apply_local_change(entity_id, payload, ctx.all_stats)
-
-                        triggered_rules.append(action)
-                        new_mutations.add(entity_id)
-
-                if not new_mutations:
-                    break
-
-                if i == 4:
-                    rule_chain_warning = True
-                    _pending_events.append((ctx.save_id, ctx.turn_id, "rule_engine_warning", "system",
-                        {"message": "Maximum rule chaining depth (5) reached. Possible infinite loop detected."})
-                    )
-
-                mutated_entities = new_mutations
-
-            ctx.triggered_rules = triggered_rules
-            ctx.rule_chain_warning = rule_chain_warning
-
     def step_6_stage_mutations(self, ctx: TurnContext) -> None:
         """Step 6: Remplissage de ctx.write_batch avec les événements narratifs, les snapshots et les modificateurs."""
         _pending_events = ctx.write_batch.events
-        if self.kernel_registry:
-            self.kernel_registry.execute_hook("axiom.step:after_step", ctx)
-        else:
-            timeline_desc = ctx.travel_note or f"Turn advanced by {ctx.elapsed_minutes} mins"
-            ctx.write_batch.timeline_entries.append((ctx.save_id, ctx.turn_id, ctx.new_time, timeline_desc))
-            ctx.write_batch.modifier_mutations.append({"type": "tick", "elapsed_minutes": ctx.elapsed_minutes})
-            ctx.write_batch.modifier_mutations.append({"type": "snapshot", "turn_id": ctx.turn_id})
+        # Timeline (axiom.time), modifier tick (core.stat_dynamics), memory indexing
+        # (axiom.rag / axiom.living_memory)...
+        self._fire("axiom.step:after_step", ctx)
 
-        if not self.kernel_registry and self._vector_memory is not None:
-            if ctx.narrative_text.strip():
-                ctx.write_batch.post_commit_callbacks.append(
-                    lambda: self._vector_memory.embed_chunk(ctx.save_id, ctx.turn_id, ctx.narrative_text)
-                )
+        # Correction loop: the hint is save data of this turn (rewound with it).
+        if ctx.correction_hints:
+            _pending_events.append((
+                ctx.save_id, ctx.turn_id, CORRECTION_EVENT, "system",
+                {"hint": " ".join(ctx.correction_hints)},
+            ))
 
         text_to_log = ctx.combined_intents_text if not ctx.narrative_text.strip() else ctx.narrative_text
         _pending_events.append((
@@ -1025,62 +887,6 @@ class ArbitratorEngine:
             pass
 
         return resp
-
-    def _tick_stat_dynamics(
-        self,
-        save_id: str,
-        turn_id: int,
-        all_stats: dict[str, dict[str, str]],
-        elapsed_minutes: int,
-        now_minutes: int,
-        stat_events: list[dict[str, Any]],
-        pending: list,
-    ) -> list[dict[str, Any]]:
-        """Heal, clamp, crash, and peak-clock updates from authored profiles."""
-        from axiom.stat_dynamics import (
-            apply_entity_tick,
-            dynamics_by_key,
-            is_hidden_stat_key,
-        )
-
-        table = dynamics_by_key(self._db_path)
-        if not table:
-            return []
-        applied: list[dict[str, Any]] = []
-        for entity_id, stats in list(all_stats.items()):
-            changes = apply_entity_tick(
-                stats,
-                table,
-                elapsed_minutes=elapsed_minutes,
-                now_minutes=now_minutes,
-                stat_events=stat_events,
-                entity_id=entity_id,
-            )
-            for stat_key, value, reason in changes:
-                payload = {
-                    "entity_id": entity_id,
-                    "stat_key": stat_key,
-                    "value": value,
-                    "source": "dynamics",
-                    "reason": reason,
-                }
-                pending.append((save_id, turn_id, "stat_set", entity_id, payload))
-                self._apply_local_change(entity_id, payload, all_stats)
-                if not is_hidden_stat_key(stat_key):
-                    applied.append({
-                        "entity_id": entity_id,
-                        "stat_key": stat_key,
-                        "value": value,
-                        "reason": reason,
-                    })
-                if reason == "crash":
-                    try:
-                        self._modifier_processor.clear_modifiers(
-                            save_id, entity_id, stat_key
-                        )
-                    except Exception:
-                        logger.debug("dynamics crash clear failed", exc_info=True)
-        return applied
 
     def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
         """Fetch all active entity stats and apply modifier overlays.
@@ -1235,25 +1041,6 @@ class ArbitratorEngine:
         except Exception as e:
             logger.error(f"[ARBITRATOR] Error fetching scheduled events: {e}")
         return events
-
-    def _mark_event_as_fired(self, save_id: str, event_id: str, fired_turn_id: int) -> None:
-        """Record that a scheduled event has occurred for this save.
-
-        Stores the turn it fired on (``fired_turn_id``) so a subsequent rewind to
-        an earlier turn can un-fire it and let it trigger again (TICKET-075).
-        """
-        try:
-            from axiom.schema import ensure_fired_event_turn_column
-            with get_connection(self._db_path) as conn:
-                ensure_fired_event_turn_column(conn)
-                conn.execute(
-                    "INSERT OR IGNORE INTO Fired_Scheduled_Events "
-                    "(save_id, event_id, fired_turn_id) VALUES (?, ?, ?);",
-                    (save_id, event_id, fired_turn_id)
-                )
-                conn.commit()
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Error marking event as fired: {e}")
 
     def _fetch_relevant_facts(
         self,
@@ -1586,25 +1373,6 @@ class ArbitratorEngine:
         scored.sort(key=lambda s: s[0], reverse=True)
         return [entry for _score, entry in scored[:k]]
 
-    def _get_travel_distance(self, source_id: str, target_id: str) -> int:
-        """Query the distance between two locations in kilometers."""
-        try:
-            with get_connection(self._db_path) as conn:
-                row = conn.execute(
-                    "SELECT distance_km FROM Location_Connections WHERE source_id = ? AND target_id = ?;",
-                    (source_id, target_id)
-                ).fetchone()
-                if row:
-                    return int(row[0])
-        except Exception:
-            # Distance unknown → treat as 0 (adjacent), but leave a trace: a DB
-            # error here would otherwise silently distort travel-time logic.
-            logger.debug(
-                "Travel-distance lookup %s→%s failed; defaulting to 0.",
-                source_id, target_id, exc_info=True,
-            )
-        return 0
-
     def _load_entity_meta(self) -> dict[str, dict[str, str]]:
         """entity_id → {name, entity_type, entity_role} for alias resolution."""
         try:
@@ -1625,45 +1393,6 @@ class ArbitratorEngine:
             }
         except sqlite3.Error:
             return {}
-
-    def _stat_allowed_for_entity(self, entity_id: str, stat_key: str) -> bool:
-        """True if the stat is unlinked (all types) or linked to this entity's type."""
-        try:
-            with get_connection(self._db_path) as conn:
-                if not conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Stat_Type_Links';"
-                ).fetchone():
-                    return True
-                links = [
-                    r[0] for r in conn.execute(
-                        "SELECT type_id FROM Stat_Type_Links WHERE LOWER(stat_id) = LOWER(?);",
-                        (stat_key,),
-                    )
-                ]
-                # Also match by Stat_Definitions.name (display vs id).
-                if not links:
-                    row = conn.execute(
-                        "SELECT stat_id FROM Stat_Definitions WHERE LOWER(name) = LOWER(?);",
-                        (stat_key,),
-                    ).fetchone()
-                    if row:
-                        links = [
-                            r[0] for r in conn.execute(
-                                "SELECT type_id FROM Stat_Type_Links WHERE stat_id = ?;",
-                                (row[0],),
-                            )
-                        ]
-                if not links:
-                    return True
-                etype = conn.execute(
-                    "SELECT entity_type FROM Entities WHERE entity_id = ?;",
-                    (entity_id,),
-                ).fetchone()
-                if not etype:
-                    return True
-                return etype[0] in links
-        except sqlite3.Error:
-            return True
 
     @staticmethod
     def _resolve_entity_id(
@@ -1714,242 +1443,41 @@ class ArbitratorEngine:
         except sqlite3.Error:
             return set()
 
-    def _validate_change(
-        self,
-        entity_id: str,
-        stat_key: str,
-        delta: float | None,
-        value: Any,
-        all_effective_stats: dict[str, dict[str, str]],
-        defined_stats: set[str],
-    ) -> tuple[bool, str]:
-        """Validate a single proposed state change.
+    def _load_pending_correction(self, save_id: str, turn_id: int) -> str | None:
+        """Narrator hint staged by the previous turn (correction loop), if any.
 
-        Rules:
-        - Unknown entity_id → rejected (if the entity set is non-empty).
-        - Stat key not in Stat_Definitions → rejected (except special 'Description').
-        - Delta change on a non-negative resource that would go below 0 → rejected.
-        - Absolute assignment on a non-negative resource that would go below 0 → rejected.
-
-        Args:
-            entity_id:           The entity to modify.
-            stat_key:            The stat to change.
-            delta:               Signed numeric change, or None if using value.
-            value:               Absolute assignment value, or None if using delta.
-            all_effective_stats: Full map of entity_id -> stats for all active
-                                 entities in this save.
-            defined_stats:       Lowercased set of stat names defined in this
-                                 universe (loaded once per turn).
-
-        Returns:
-            (True, "") if valid, or (False, reason_string) if invalid.
-
-        """
-        if not entity_id:
-            return False, "Missing entity_id in state change."
-
-        if all_effective_stats and entity_id not in all_effective_stats:
-            # Non-empty entity set means we know all valid entities
-            return False, f"Unknown entity: {entity_id}"
-
-        # Stat Restriction Rule: Only allow stats defined in Stat_Definitions (case-insensitive)
-        # Plus the special 'Description' and 'Location' stats which are allowed for entities.
-        if stat_key.lower() not in ("description", "location"):
-            if stat_key.lower() not in defined_stats:
-                return False, f"Stat '{stat_key}' is not defined in this universe. Custom stats are forbidden."
-            if not self._stat_allowed_for_entity(entity_id, stat_key):
-                return False, (
-                    f"Stat '{stat_key}' is not linked to this entity's type."
-                )
-
-        # Resource sufficiency rules (prevent stats like HP, Gold, etc. from going below zero)
-        entity_stats = all_effective_stats.get(entity_id, {})
-        current_raw = entity_stats.get(stat_key)
-        if current_raw is None:
-            for k, v in entity_stats.items():
-                if k.lower() == stat_key.lower():
-                    current_raw = v
-                    break
-        if current_raw is None:
-            current_raw = "0"
-
+        Read from the Event_Log, so a rewind before that turn removes it."""
         try:
-            current_val = float(current_raw)
-        except ValueError:
-            current_val = None  # Non-numeric stat
-
-        # Calculate proposed new value
-        if delta is not None:
-            if current_val is None:
-                return False, f"Cannot apply numeric delta to non-numeric stat {entity_id}.{stat_key}."
-            result_val = current_val + float(delta)
-        elif value is not None:
+            with get_connection(self._db_path) as conn:
+                rows = conn.execute(
+                    "SELECT payload FROM Event_Log WHERE save_id = ? AND turn_id = ? "
+                    "AND event_type = ? ORDER BY event_id;",
+                    (save_id, turn_id - 1, CORRECTION_EVENT),
+                ).fetchall()
+        except sqlite3.Error:
+            logger.debug("Correction hint lookup failed", exc_info=True)
+            return None
+        hints: list[str] = []
+        for row in rows:
             try:
-                result_val = float(value)
-            except (ValueError, TypeError):
-                result_val = None  # Assigning a non-numeric string is always valid for the cache
-        else:
-            return False, f"State change for {entity_id}.{stat_key} has neither delta nor value."
+                payload = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            except (TypeError, ValueError):
+                continue
+            hint = payload.get("hint") if isinstance(payload, dict) else None
+            if hint:
+                hints.append(str(hint))
+        return " ".join(hints) or None
 
-        # Enforce non-negativity if it's a numeric resource
-        if current_val is not None and result_val is not None:
-            if current_val >= 0 and result_val < 0:
-                # COMPANION MODE: Hero has Plot Armor (cannot drop below 0 for critical resources)
-                if self._mode == "Companion" and entity_id == self._hero_entity_id:
-                    # Allow it but set to 0 instead of rejecting, or just ignore the reduction
-                    # Here we silently cap at 0 to ensure the turn proceeds but the hero survives.
-                    return True, ""
+    def _fire(self, hook_name: str, ctx: TurnContext) -> None:
+        """Fire a turn hook; faulty mod callbacks are isolated by the kernel (§6.1)."""
+        reg = self.kernel_registry
+        if reg is not None:
+            reg.invoke_hook(hook_name, ctx)
 
-                return False, (
-                    f"{entity_id} does not have enough {stat_key} (current: {current_val:.0f})"
-                )
+    def _has_hook(self, hook_name: str) -> bool:
+        reg = self.kernel_registry
+        return bool(reg is not None and reg.has_hook(hook_name))
 
-        return True, ""
-
-    def _queue_correction(self, reason: str) -> None:
-        """Format and store a correction message for the next turn's prompt.
-
-        If a correction is already queued (from multiple rejections), the new
-        reason is concatenated.
-
-        Args:
-            reason: Human-readable description of what failed.
-
-        """
-        correction = (
-            f"[NARRATOR HINT: The previous action failed because {reason}. "
-            "Describe this failure naturally in the story. Do not mention this hint.]"
-        )
-        if self._pending_correction is None:
-            self._pending_correction = correction
-        else:
-            self._pending_correction += f" {correction}"
-
-    def _apply_local_change(self, entity_id: str, payload: dict, all_stats: dict) -> None:
-        """Update a local stats snapshot with a proposed change.
-
-        Ensures that within a single turn, subsequent validations or rules
-        see the effects of previous changes.
-        """
-        if entity_id not in all_stats:
-            all_stats[entity_id] = {}
-
-        stat_key = payload["stat_key"]
-        if "delta" in payload:
-            current_raw = all_stats[entity_id].get(stat_key, "0")
-            try:
-                current = float(current_raw)
-            except ValueError:
-                current = 0.0
-            new_val = current + float(payload["delta"])
-            all_stats[entity_id][stat_key] = (
-                str(int(new_val)) if new_val == int(new_val) else str(new_val)
-            )
-        else:
-            all_stats[entity_id][stat_key] = str(payload["value"])
-
-    def _resolve_inventory_holder(self, change: dict) -> tuple[str, str]:
-        """Normalize holder_kind/holder_id from an LLM inventory change."""
-        meta = self._load_entity_meta()
-        holder_kind = str(change.get("holder_kind") or "").strip().lower()
-        holder_id = str(change.get("holder_id") or "").strip()
-        entity_id = change.get("entity_id")
-        location_id = str(change.get("location_id") or "").strip()
-        container = str(
-            change.get("container_instance_id")
-            or change.get("container_id")
-            or change.get("container")
-            or change.get("container_name")
-            or ""
-        ).strip()
-
-        if holder_kind in ("entity", "location", "instance") and holder_id:
-            if holder_kind == "entity":
-                holder_id = self._resolve_entity_id(holder_id, {}, meta)
-            return holder_kind, holder_id
-        if container:
-            return "instance", container
-        if location_id:
-            return "location", location_id
-        if entity_id:
-            return "entity", self._resolve_entity_id(entity_id, {}, meta)
-        return "entity", self._resolve_entity_id("player", {}, meta)
-
-    def _validate_inventory_change(self, save_id: str, change: dict) -> tuple[bool, str]:
-        """Verify if an inventory transaction is legal."""
-        item_id = change.get("item_id")
-        action = change.get("action")
-
-        if not item_id or action not in ("add", "remove", "move"):
-            return False, "Malformed inventory change (missing item_id or invalid action)."
-
-        change["item_id"] = _slug_item_id(str(item_id))
-        item_id = change["item_id"]
-        try:
-            quantity = int(change.get("quantity", 1))
-        except (ValueError, TypeError):
-            return False, "Inventory quantity must be a whole number."
-        if quantity <= 0:
-            return False, "Inventory quantity must be a positive whole number."
-
-        holder_kind, holder_id = self._resolve_inventory_holder(change)
-        change["holder_kind"] = holder_kind
-        change["holder_id"] = holder_id
-        change["entity_id"] = holder_id if holder_kind == "entity" else change.get("entity_id") or holder_id
-
-        is_container = bool(change.get("is_container"))
-        container_name = str(
-            change.get("container_name")
-            or change.get("container_id")
-            or change.get("container")
-            or ""
-        ).strip()
-
-        from axiom.inventory import InventoryError, _holder_exists, ensure_item_definition
-
-        with get_connection(self._db_path) as conn:
-            ensure_item_definition(
-                conn, item_id,
-                name=str(change.get("name") or item_id),
-                is_container=is_container,
-            )
-            if container_name and holder_kind != "instance":
-                cid = _slug_item_id(container_name)
-                existing = conn.execute(
-                    "SELECT instance_id FROM Item_Instances "
-                    "WHERE save_id = ? AND item_id = ? AND holder_kind = ? AND holder_id = ? "
-                    "LIMIT 1;",
-                    (save_id, cid, holder_kind, holder_id),
-                ).fetchone()
-                if existing:
-                    change["holder_kind"] = "instance"
-                    change["holder_id"] = existing[0]
-                    holder_kind, holder_id = "instance", existing[0]
-                else:
-                    change["_pending_container"] = {
-                        "item_id": cid, "name": container_name,
-                        "holder_kind": holder_kind, "holder_id": holder_id,
-                    }
-            elif not _holder_exists(conn, holder_kind, holder_id):
-                return False, f"Unknown holder: {holder_kind}:{holder_id}"
-
-            if action == "remove":
-                row = conn.execute(
-                    "SELECT SUM(quantity) FROM Item_Instances "
-                    "WHERE save_id = ? AND item_id = ? AND holder_kind = ? AND holder_id = ?;",
-                    (save_id, item_id, holder_kind, holder_id),
-                ).fetchone()
-                current_qty = int(row[0] or 0) if row else 0
-                if current_qty == 0:
-                    row = conn.execute(
-                        "SELECT quantity FROM Items_Inventory "
-                        "WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
-                        (save_id, holder_id, item_id),
-                    ).fetchone()
-                    current_qty = int(row[0]) if row else 0
-                if current_qty < quantity:
-                    return False, f"Insufficient quantity for {item_id} (has {current_qty}, needs {quantity})."
-            conn.commit()
-
-        return True, ""
-
+    def _has_service(self, service_name: str) -> bool:
+        reg = self.kernel_registry
+        return bool(reg is not None and reg.get_service(service_name) is not None)

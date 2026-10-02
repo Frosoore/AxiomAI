@@ -5,6 +5,14 @@ axiom_api = 1
 name = "Survival"
 description = "Survival extension mod for Axiom AI."
 author = "Axiom Community"
+# Example mod: off until the user enables it (it changes every narrator prompt).
+enabled_by_default = false
+
+[dependencies]
+"axiom.turn" = ">=1.0.0"
+
+[ordering]
+after = ["axiom.turn"]
 
 [contributes]
 hooks = [

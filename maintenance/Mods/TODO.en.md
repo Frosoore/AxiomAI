@@ -1,3 +1,6 @@
+> ⚠ **Unreliable document (review of 2026-10-03).** Written by an agent; several claims are false.
+> The actual state is in `ETAT_REEL.md` (French), the roadmap in `TODO.md`.
+
 # TODO — Modding System Roadmap (`.axmod`)
 
 ## Phase 0 — Sanitize Engine (without mods) (✅ COMPLETED)

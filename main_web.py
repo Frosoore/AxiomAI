@@ -1120,8 +1120,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         elif path == "/api/models":
             try:
                 cfg = load_config()
-                from axiom.config import build_llm_from_config
-                llm = build_llm_from_config(cfg)
+                from axiom.session import resolve_llm_backend
+                llm = resolve_llm_backend(cfg)
                 list_models = getattr(llm, "list_models", None)
                 models = list_models() if callable(list_models) else []
                 self.send_json({"models": list(models or [])})
@@ -1197,12 +1197,12 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
 
                 # Update live active session LLM immediately if loaded
                 if ACTIVE_SESSION:
-                    from axiom.config import build_llm_from_config
+                    from axiom.session import resolve_llm_backend
                     with ACTIVE_SESSION_LOCK:
-                        ACTIVE_SESSION._llm = build_llm_from_config(cfg)
+                        ACTIVE_SESSION._llm = resolve_llm_backend(cfg)
                         if ACTIVE_SESSION._mode == "Companion":
                             from axiom.config import resolve_extraction_model
-                            ACTIVE_SESSION._hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+                            ACTIVE_SESSION._hero_llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
 
                 self.send_json({"status": "success"})
             except Exception as exc:
@@ -1233,8 +1233,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 cfg = load_config()
                 # Run connection check asynchronously or synchronously
                 from axiom.backends.base import LLMBackend
-                from axiom.config import build_llm_from_config
-                llm = build_llm_from_config(cfg)
+                from axiom.session import resolve_llm_backend
+                llm = resolve_llm_backend(cfg)
                 available = llm.is_available()
                 if available:
                     self.send_json({"message": f"Connection OK: {cfg.llm_backend}"})
@@ -1582,22 +1582,15 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 return
             try:
                 inv_service = ACTIVE_SESSION.kernel_registry.get_service("inventory") if getattr(ACTIVE_SESSION, "kernel_registry", None) else None
-                if inv_service and hasattr(inv_service, "move"):
-                    inv_service.move(
-                        ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
-                        quantity=payload.get("quantity") or 1,
-                    )
-                else:
-                    from axiom.inventory import InventoryError, move_item, snapshot_present_inventory
-                    from axiom.schema import migrate_schema
-                    migrate_schema(ACTIVE_SESSION._db_path)
-                    with get_connection(ACTIVE_SESSION._db_path) as conn:
-                        move_item(
-                            conn, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
-                            quantity=payload.get("quantity"),
-                        )
-                        snapshot_present_inventory(conn, ACTIVE_SESSION._save_id)  # TICKET-095
-                        conn.commit()
+                # Inventory rules belong to the axiom.inventory mod: no game write
+                # from the UI when it is not loaded.
+                if not (inv_service and hasattr(inv_service, "move")):
+                    self.send_error_json(409, "Inventory mod (axiom.inventory) is not loaded")
+                    return
+                inv_service.move(
+                    ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id, instance_id, dest_kind, dest_id,
+                    quantity=payload.get("quantity") or 1,
+                )
                 self.send_json({"status": "ok"})
             except Exception as exc:
                 self.send_error_json(500, str(exc))
@@ -1624,14 +1617,14 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     return
 
                 cfg = load_config()
-                from axiom.config import build_llm_from_config
-                llm = build_llm_from_config(cfg)
+                from axiom.session import resolve_llm_backend
+                llm = resolve_llm_backend(cfg)
                 
                 # Check for companion mode models
                 hero_llm = None
                 if difficulty == "Companion":
                     from axiom.config import resolve_extraction_model
-                    hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+                    hero_llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
 
                 with ACTIVE_SESSION_LOCK:
                     ACTIVE_SESSION = Session(
@@ -1643,22 +1636,10 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     )
                 reset_living_memory_buffer()
                 # If this save is already several turns past the last fact
-                # extraction (common after a server restart), kick a catch-up
-                # job immediately instead of waiting for N more live turns.
+                # extraction (common after a server restart), the engine kicks a
+                # catch-up job (no-op without the axiom.living_memory mod).
                 try:
-                    from axiom.config import load_config as _lc, memory_mode_is_living as _living
-                    from axiom.kernel.loader import is_mod_enabled as _mod_enabled
-                    from axiom.living_memory import last_fact_turn as _lft
-                    _cfg = _lc()
-                    if _mod_enabled("axiom.living_memory", _cfg) and _living(_cfg):
-                        _interval = int(getattr(_cfg, "memory_fact_interval", 0) or 0)
-                        _turn = int(getattr(ACTIVE_SESSION, "_turn_id", 0) or 0)
-                        _after = _lft(play_db, save_id)
-                        if _interval > 0 and (_turn - _after) >= _interval:
-                            from axiom.living_memory import get_living_memory_accumulator
-                            get_living_memory_accumulator().spawn_distillation(
-                                play_db, save_id, _turn, cfg=_cfg, llm=llm, force_catchup=True
-                            )
+                    ACTIVE_SESSION.start_living_memory_catchup()
                 except Exception:
                     logger.exception("Living-memory session catch-up failed to start")
 
@@ -2049,10 +2030,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             stats = payload.get("stats") or []
             hint = str(payload.get("world_hint") or "")
             try:
-                from axiom.config import build_llm_from_config, resolve_extraction_model
+                from axiom.config import resolve_extraction_model
+                from axiom.session import resolve_llm_backend
                 from axiom.stat_dynamics import infer_stat_dynamics
                 cfg = load_config()
-                llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+                llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
                 merged = infer_stat_dynamics(stats, llm, world_hint=hint)
                 self.send_json({"stats": merged})
             except Exception as exc:
@@ -2235,11 +2217,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
 
             try:
                 cfg = load_config()
-                from axiom.config import build_llm_from_config
+                from axiom.session import resolve_llm_backend
                 from axiom.populate import POPULATE_TARGETS
                 
                 # Build target functions
-                llm = build_llm_from_config(cfg)
+                llm = resolve_llm_backend(cfg)
                 
                 # In order to support preview/diff, we can populate to a temporary DB copy,
                 # generate diff vs original, and apply if requested.
@@ -2856,8 +2838,9 @@ def run_server(port=8000):
         return 1
 
     try:
-        from axiom.kernel.bootstrap import bootstrap_all_mods
-        bootstrap_all_mods(config=cfg)
+        # The process modpack: bootstrapped once, shared by every Session (D-4).
+        from axiom.kernel.loader import get_kernel_registry
+        get_kernel_registry(cfg)
     except Exception:
         logger.exception("Failed to bootstrap mods at web server startup")
 
@@ -2882,7 +2865,7 @@ if __name__ == "__main__":
     if "--safe-mode" in sys.argv:
         from axiom.kernel.loader import set_safe_mode
         set_safe_mode(True)
-        print("Axiom AI Safe Mode active: third-party mods disabled.")
+        print("Axiom AI Safe Mode active: no mod is loaded.")
     port = 8000
     for arg in sys.argv[1:]:
         if arg.isdigit():

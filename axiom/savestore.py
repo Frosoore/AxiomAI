@@ -230,6 +230,13 @@ def create_save(
         conn.commit()
 
     final_db = finalize_save_container(container, actual_id)
+    # Materialise State_Cache at genesis (universe base stats + turn 0): the
+    # per-turn update only rewrites the touched stats on top of it, so an empty
+    # cache would turn a delta into an absolute value (e.g. -15 instead of 85).
+    from axiom.events import EventSourcer
+    EventSourcer(str(final_db)).rebuild_state_cache(actual_id)
+    from axiom.storage_registry import apply_registered_mod_migrations
+    apply_registered_mod_migrations(str(final_db))
     return {"save_id": actual_id, "db_path": str(final_db)}
 
 

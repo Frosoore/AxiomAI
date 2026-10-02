@@ -42,7 +42,7 @@ from .widgets.chat_display import ChatDisplayWidget
 from axiom.db_helpers import get_max_turn_id, load_rules_for_session, load_saves, get_current_time
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
-from workers.vector_worker import VectorWorker, VectorInitWorker
+from workers.vector_worker import VectorInitWorker
 from axiom.config import (
     load_config,
     build_llm_from_config,
@@ -111,7 +111,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._narrative_worker: "NarrativeWorker | None" = None
         self._db_worker: DbWorker | None = None
         self._lore_worker: DbWorker | None = None
-        self._vector_worker: VectorWorker | None = None
         self._vector_init_worker: VectorInitWorker | None = None
         self._hardcore_worker: HardcoreWorker | None = None
         # Living memory (Phase 2 item 4): background fact extraction. The pending
@@ -1077,38 +1076,17 @@ class TabletopView(HardcoreMixin, QWidget):
 
     @Slot(dict)
     def _on_rewind_done(self, summary: dict) -> None:
-        """Called when the database rewind task completes. Chains the vector rollback."""
-        target_turn_id = summary.get("rebuilt_to_turn")
-        if self._vector_memory is not None and target_turn_id is not None:
-            self._main_window.on_status_update(f"{tr('rewind')} (vector)...")
-            self._vector_worker = VectorWorker(
-                self._vector_memory,
-                self._save_id,
-                target_turn_id
+        """Called when the engine rewind completes.
+
+        The engine path (CheckpointManager.rewind, shared with Session.rewind)
+        already bumped the epoch, made the auto-backup and rolled back the
+        semantic memory after its SQL commit: nothing to roll back here.
+        """
+        if summary.get("external_failures"):
+            QMessageBox.warning(
+                self, tr("error"),
+                "Some memory stores could not be rewound (see the log).",
             )
-            self._vector_worker.rollback_complete.connect(self._on_vector_rollback_done)
-            self._vector_worker.error_occurred.connect(self._on_vector_rollback_error)
-            self._vector_worker.start()
-        else:
-            self._finalize_rewind()
-
-    @Slot(int)
-    def _on_vector_rollback_done(self, count: int) -> None:
-        """Called when the VectorMemory rollback thread completes successfully."""
-        if self._vector_worker is not None:
-            self._vector_worker.rollback_complete.disconnect(self._on_vector_rollback_done)
-            self._vector_worker.error_occurred.disconnect(self._on_vector_rollback_error)
-            self._vector_worker = None
-        self._finalize_rewind()
-
-    @Slot(str)
-    def _on_vector_rollback_error(self, error_msg: str) -> None:
-        """Called if VectorMemory rollback fails."""
-        if self._vector_worker is not None:
-            self._vector_worker.rollback_complete.disconnect(self._on_vector_rollback_done)
-            self._vector_worker.error_occurred.disconnect(self._on_vector_rollback_error)
-            self._vector_worker = None
-        QMessageBox.warning(self, tr("error"), f"Vector memory rollback failed: {error_msg}")
         self._finalize_rewind()
 
     def _finalize_rewind(self) -> None:

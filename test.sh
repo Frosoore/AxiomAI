@@ -50,6 +50,25 @@ else
     RUNNER="$PYTEST_CMD"
 fi
 
-echo "Running tests..."
-# Pass all arguments to pytest (e.g., ./test.sh tests/test_llm_base.py)
-$RUNNER -v "$@"
+# With arguments: pass them to pytest as-is (e.g., ./test.sh tests/test_llm_base.py).
+if [ "$#" -gt 0 ]; then
+    echo "Running tests..."
+    $RUNNER -v "$@"
+    exit $?
+fi
+
+# Without arguments: the full suite, in the same separate batches as the CI
+# (.github/workflows/tests.yml). Loading QtMultimedia (ambiance, MainWindow)
+# before torch in one process segfaults on some setups (TICKET-067).
+QT_MULTIMEDIA_TESTS="tests/test_ambiance_manager.py tests/test_help_system_mod.py tests/test_mods_dialog_ui.py tests/test_settings_dialog.py tests/test_sillytavern_mod.py"
+IGNORES=""
+for f in $QT_MULTIMEDIA_TESTS; do IGNORES="$IGNORES --ignore=$f"; done
+
+STATUS=0
+echo "Running tests (main batch)..."
+$RUNNER -q tests/ $IGNORES || STATUS=1
+echo "Running tests (Qt multimedia batch)..."
+$RUNNER -q $QT_MULTIMEDIA_TESTS || STATUS=1
+echo "Running tests (mods batch)..."
+$RUNNER -q mods/*/tests -p tests.conftest || STATUS=1
+exit $STATUS

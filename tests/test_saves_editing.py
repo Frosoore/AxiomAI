@@ -288,9 +288,11 @@ def test_fork_by_minute(played_save):
 
 def test_fork_copies_modifiers_and_fired_events(played_save):
     """TICKET-034 : le fork emporte les modifiers actifs et les événements déjà
-    déclenchés (sinon buffs perdus + re-déclenchement des Scheduled_Events)."""
+    déclenchés (sinon buffs perdus + re-déclenchement des Scheduled_Events).
+    R2-m-1 / TICKET-103 : seulement ceux qui existaient au point de fork."""
     db, save_id = played_save
     with get_connection(db) as conn:
+        # Buff posé au tour 3 (présent) : aucun snapshot de modifiers au tour 2.
         conn.execute(
             "INSERT INTO Active_Modifiers "
             "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
@@ -302,26 +304,42 @@ def test_fork_copies_modifiers_and_fired_events(played_save):
             "VALUES ('ev1', 10, 'Aube', '');"
         )
         conn.execute(
-            "INSERT INTO Fired_Scheduled_Events (save_id, event_id) VALUES (?, 'ev1');",
+            "INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) "
+            "VALUES ('ev3', 40, 'Midi', '');"
+        )
+        conn.execute(
+            "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) VALUES (?, 'ev1', 1);",
+            (save_id,),
+        )
+        conn.execute(
+            "INSERT INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) VALUES (?, 'ev3', 3);",
             (save_id,),
         )
         conn.commit()
 
-    new_id = fork_save(db, save_id, at_turn=2)
+    def _fork_state(new_id):
+        with get_connection(db) as conn:
+            mods = conn.execute(
+                "SELECT entity_id, stat_key, delta, minutes_remaining, modifier_id "
+                "FROM Active_Modifiers WHERE save_id = ?;",
+                (new_id,),
+            ).fetchall()
+            fired = conn.execute(
+                "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ? ORDER BY event_id;",
+                (new_id,),
+            ).fetchall()
+        return mods, [f[0] for f in fired]
 
-    with get_connection(db) as conn:
-        mods = conn.execute(
-            "SELECT entity_id, stat_key, delta, minutes_remaining, modifier_id "
-            "FROM Active_Modifiers WHERE save_id = ?;",
-            (new_id,),
-        ).fetchall()
-        fired = conn.execute(
-            "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ?;",
-            (new_id,),
-        ).fetchall()
+    # Fork au présent (tour 3) : le buff actif et les deux déclenchements suivent.
+    mods, fired = _fork_state(fork_save(db, save_id, at_turn=3))
     assert [(m[0], m[1], m[2], m[3]) for m in mods] == [("player_1", "Health", -5.0, 30)]
     assert mods[0][4] != "m1"  # modifier_id régénéré (pas de collision de PK)
-    assert [f[0] for f in fired] == ["ev1"]
+    assert fired == ["ev1", "ev3"]
+
+    # Fork au tour 2 : ni le buff du tour 3 (m-1), ni l'événement déclenché au tour 3 (103).
+    mods, fired = _fork_state(fork_save(db, save_id, at_turn=2))
+    assert mods == []
+    assert fired == ["ev1"]
 
 
 def test_fork_rewind_still_works(played_save):

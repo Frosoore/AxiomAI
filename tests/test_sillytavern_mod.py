@@ -148,9 +148,15 @@ def test_6_web_api_guard_when_disabled(tmp_path: Path, monkeypatch):
     assert "disabled" in error_msg.lower()
 
 
-def test_7_store_index_integrity():
-    """Verify that axiom.sillytavern is correctly recorded in dist/mods/store_index.json."""
-    store_file = Path("dist/mods/store_index.json")
+def test_7_store_index_integrity(tmp_path):
+    """Verify that axiom.sillytavern is correctly recorded in a store index generated from
+    its packed archive (built in tmp_path: dist/ is not versioned)."""
+    from axiom.cli.mods_cmd import pack_mod
+    from axiom.kernel.store import calculate_sha256, publish_mod_to_store_spec
+
+    archive = pack_mod(Path("mods/axiom.sillytavern"), output_path=tmp_path / "axiom.sillytavern-1.0.0.axmod")
+    store_file = tmp_path / "store_index.json"
+    publish_mod_to_store_spec(archive, output_json=store_file)
     assert store_file.is_file()
 
     with store_file.open("r", encoding="utf-8") as f:
@@ -163,3 +169,4 @@ def test_7_store_index_integrity():
     assert st_entry["axiom_api"] == 1
     assert "sillytavern_import" in st_entry["provides"]
     assert len(st_entry["sha256"]) == 64
+    assert st_entry["sha256"] == calculate_sha256(archive)

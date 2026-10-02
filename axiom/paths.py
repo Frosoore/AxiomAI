@@ -124,6 +124,12 @@ def get_assets_dir() -> Path:
     return _data_root() / "assets"
 
 
+def get_mods_dir() -> Path:
+    """User mods directory (installed by the user, the store or the mod creator),
+    honours injected/env data_dir. Official mods live next to the installation."""
+    return _data_root() / "mods"
+
+
 def get_log_dir() -> Path:
     """Log directory. Defaults to the machine-global cache root (legacy
     location); under an injected/env data_dir, logs move to ``<data_dir>/logs``."""

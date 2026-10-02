@@ -407,9 +407,9 @@ def test_session_epoch_bump_and_stale_worker_discard(isolated_harness_env):
     session.rewind(1)
     assert session.epoch == initial_epoch + 1
 
-    # Fork -> epoch + 1
+    # Fork -> the SOURCE save is only read: its epoch does not move (R2-m-6)
     session.fork()
-    assert session.epoch == initial_epoch + 2
+    assert session.epoch == initial_epoch + 1
 
     # Simulation d'un worker asynchrone démarré à l'époque précédente
     captured_stale_epoch = session.epoch - 1  # Périmée

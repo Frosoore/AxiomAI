@@ -123,7 +123,7 @@ def init(ctx: ModContext) -> None:
 ## 5. Dependencies and Licensing Boundary
 
 - **Lightweight Python Dependencies (`[python].requires`):** Mods declare required third-party Python packages in their `mod.toml`. The loader verifies them statically at boot time and gracefully disables the mod with an informative warning if requirements are unsatisfied (Rule D-7), avoiding invasive pip installations.
-- **Third-Party Mod Licensing (AGPLv3 §7(b)):** Third-party mods interfacing solely via public APIs (`ModContext`, hooks, slots, declarative storage schemas) are legally recognized as independent works under Section 7(b) of the AGPLv3, free to adopt any license of their choice (MIT, Apache 2.0, proprietary, etc.). Intrusive in-memory monkeypatches modifying private kernel internals remain bound by AGPLv3 reciprocity terms. See `docs/licensing_mods.md`.
+- **Third-party mod licensing: open question.** No licensing exception for mods has been decided yet; until the authors decide (after legal advice), the project's AGPL-3.0-or-later license applies as-is. `docs/licensing_mods.md` is an unvalidated draft.
 
 ---
 

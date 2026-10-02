@@ -125,7 +125,7 @@ def on_after_step(ctx: Any) -> None:
             from axiom.events import EventSourcer
 
             chronicler = ChroniclerEngine(
-                llm=getattr(ctx, "_llm", None),
+                llm=getattr(ctx, "llm", None),
                 event_sourcer=EventSourcer(db_path),
                 db_path=db_path,
                 trigger_interval=interval,

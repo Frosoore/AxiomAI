@@ -1,67 +1,87 @@
 # TODO — Système de mods
 
-> Référence : `DOC.md` (vision, garde-fous §2, feuille de route §13). Ne pas mélanger les phases.
-> Chaque phase ouvrira son propre sous-dossier `maintenance/Mods/<phase>/` au moment de coder.
+> Référence : `DOC.md` (vision, garde-fous §2, feuille de route §13). **État réel détaillé et
+> justification de chaque case : `ETAT_REEL.md`** (identifiants entre crochets).
+> Révisé le 2026-10-03 après la revue de la branche `mods` : les cases cochées par Frosoore sans
+> comportement vérifié ont été **décochées**. Règle désormais : **une case ne se coche qu'avec un test
+> qui prouve le comportement promis par la vision.**
+> Légende : `[x]` fait et vérifié · `[~]` partiel (voir ETAT_REEL) · `[ ]` à faire.
 
 ## Cadrage
-- [x] Formaliser la vision validée en discussion → `DOC.md`
-- [x] Critique indépendante (agent Opus, lecture doc + code) → `CRITIQUE.md`
-- [x] Arbitrage de la critique → `ARBITRAGE.md`
-- [x] Décisions utilisateur D-1 → D-9 (2026-09-26) intégrées dans `DOC.md` (§2 garde-fous, §14 registre)
+- [x] Vision validée → `DOC.md`
+- [x] Critique → `CRITIQUE.md` ; arbitrage → `ARBITRAGE.md`
+- [x] Décisions D-1 → D-9 (2026-09-26)
+- [x] Revue de l'implémentation (2026-10-03) → `review-2026-10-03/`, `ETAT_REEL.md`
 
-## Préalable — bugs confirmés (tickets normaux, hors chantier ; décision D-1)
-- [ ] TICKET-100 — rewind web/CLI sans rollback ChromaDB (+ doublons uuid)
-- [ ] TICKET-101 — tour échoué/annulé : `user_input` orphelin + `turn_id` décalé
-- [ ] TICKET-102 — job mémoire living web sans verrou : course avec le rewind
-- [ ] TICKET-103 — `fork_save --turn` copie des events planifiés / lore de session postérieurs au fork
-- [ ] TICKET-104 — `regenerate.py` : remplacement de consigne sans effet → JSON dans les variantes
-- [ ] TICKET-105 — `_pending_correction` non remise à zéro au rewind
-- [ ] TICKET-089 (étendu) — `_RUNTIME_TABLES` oublie aussi `Item_Instances` et `Session_Lore`
+## Préalable — bugs confirmés (D-1)
+- [~] TICKET-100 — rewind ChromaDB OK ; reste ids déterministes + rollback Chroma après le commit SQL
+- [x] TICKET-101 — tour échoué/annulé : plus de message orphelin (vérifié en exécutant)
+- [~] TICKET-102 — web OK ; Qt contourne `Session.rewind` (époque non incrémentée)
+- [~] TICKET-103 — `Session_Lore` OK ; `Fired_Scheduled_Events` toujours copiés sans filtre
+- [ ] TICKET-104 — `regenerate.py` inchangé
+- [ ] TICKET-105 — « résolu » par une régression (boucle de correction morte) → à refaire proprement [M4]
+- [ ] TICKET-088 — le fork perd toujours la mémoire living, sans erreur [0c]
+- [x] TICKET-089 (étendu)
 
-## Coordination (décision D-6)
-- [ ] Formaliser avec Frosoore dans `maintenance/collab/` : propriétaire unique de `arbitrator.py`/`session.py` pendant 0b/0c/0d/0f
-- [ ] Statuer sur `Multiplayer/` : fini ou gelé avant 0f
+## Coordination (D-6)
+- [ ] Propriétaire unique de `arbitrator.py`/`session.py` formalisé dans `maintenance/collab/`
+- [ ] Statut de `Multiplayer/` (fini ou gelé)
 
-## Phase 0 — Assainir le moteur (sans mods)
-- [x] 0a. Harnais « golden step » (faux LLM scripté, N tours → rewind → fork → export → comparaison)
-- [x] 0b. Fin de tour unique dans `Session` (mémoire living Qt/web unifiée, auto-canonize)
-- [x] 0c. Un seul rewind + registre des données de save (fin des 5 listes de tables)
-- [x] 0d. Tour transactionnel + époques de session
-- [x] 0e. Config ouverte (`[mods.<id>]`) + version de schéma + migrations + retrait des CHECK figés
-- [x] 0f. Découpage de `process_turn` en étapes nommées
+## Corrections d'octobre (voir `ETAT_REEL.md` §7)
+- [x] Lot A — tests hermétiques (config, `dist/`, Ollama, Quick Tour) + CI adaptée + import web
+- [x] Lot C — noyau (conflits, statut, ordre, versions, isolation, à chaud, safe mode, découverte, `.axmod`, patches, créateur LLM)
+- [x] Décisions prises sans le propriétaire annulées (clause `NOTICE`, en-tête/bilan du DOC, licence = question ouverte)
+- [~] Lot B (B1 saves/rewind, B2 tour) — arrêté en cours, voir `ETAT_REEL.md` §8
+- [ ] Lot E — vraie phase 2 (déplacer le tour et les features dans leurs mods, supprimer les proxys)
+- [ ] Doc (exemple de mod qui marche, README, ARCHITECTURE, STATUS, Changelog, PENDING)
 
-## Phase 1 — Noyau
-- [x] Chargeur + manifeste `mod.toml` + registre (exclusif / chaîne / collecte) + hooks + `ModContext`
-- [x] Stockage par politiques + modpack + mode sans échec + CLI `axiom mods`
-- [x] Évaluer `pluggy` comme brique interne (écarté au profit d'un registre noyau plus hermétique et sécurisé)
-- [x] Premier mod officiel extrait (`core.stat_dynamics`) pour valider
+## Phase 0 — Assainir le moteur (≈ 75 %)
+- [~] 0a. Harnais golden — existe ; état comparé trop étroit, pas de fork à mi-partie, non hermétique
+- [~] 0b. Fin de tour unique — mémoire living OK ; auto-canonize encore dans Qt + web ; logique de jeu dans `main_web.py`
+- [~] 0c. Rewind unique + registre — registre OK ; rewind Qt séparé ; fork amnésique ; fork non générique
+- [~] 0d. Tour transactionnel + époques — OK sauf `Item_Definitions` écrit hors tampon et gardes d'époque incomplètes
+- [~] 0e. Config/schéma ouverts — config + CHECK OK ; migrations par mod jamais appelées
+- [~] 0f. Découpage du tour — étapes réelles ; deux orchestrations ; `gather_context` appelé deux fois
 
-## Phase 2 — Features en mods officiels (✅ TERMINÉE)
-- [x] `axiom.world` & `axiom.turn` (modèle de monde et pipeline du tour)
-- [x] `axiom.time` & `axiom.inventory` (gestion causale du temps et des conteneurs)
-- [x] `axiom.rag` & `axiom.living_memory` (mémoire sémantique vectorielle et mémoire symbolique vivante)
-- [x] `axiom.providers` & `axiom.illustrations` (pilotes d'inférence LLM, génération d'images et hooks Universe-as-Code)
-- [x] Interfaces Utilisateurs (`axiom.ui.web`, `axiom.ui.qt`, `axiom.cli`) & extensions transversales (i18n, aide, safe-mode)
+## Phase 1 — Noyau (squelette)
+- [~] Chargeur + manifeste — manifeste, tri des dépendances OK ; conflits qui vident tout, versions et ordre utilisateur ignorés [K1–K4]
+- [~] Registre exclusif / chaîne / collecte — collecte/chaîne OK ; exclusif = « premier arrivé » [K3]
+- [~] Hooks — appelés ; isolation inversée (erreurs avalées, mod fautif jamais désactivé) [K5, K6]
+- [~] `ModContext` — existe ; `cleanup` jamais appelé en prod, pas d'API publique de lecture, pas de jobs [K7, K11]
+- [ ] Stockage par politiques (`ctx.store`, `versioned_kv`, `[storage]` lu) [K9]
+- [ ] Modpack enregistré dans la save et les exports [K10]
+- [~] Mode sans échec — existe mais garde les mods `axiom.*`/`core.*` [K8]
+- [x] CLI `axiom mods` utilisable sans UI
+- [x] `pluggy` évalué et écarté
+- [ ] Noyau neutre (ni LLM, ni JDR, ni config applicative) [K12]
 
-## Phase 3 — Patches outillés (✅ TERMINÉE)
-- [x] Trampolines `@patchable` (before, after, around) et sentinelle `ShortCircuit`
-- [x] Mécanisme de secours par substitution de bytecode (`__code__` swapping) préservant l'identité d'objet
-- [x] Enregistrement réversible `ctx.patch()` et restauration intégrale au `ctx.cleanup()` (D11)
-- [x] Gel d'exécution par step (§6.2.3, `step_patch_freeze()`, `PatchingDuringStepError`)
-- [x] Inspection CLI (`axiom mods patches`) et validation statique (`axiom mod validate`)
+## Phase 2 — Features en mods officiels (façade)
+- [ ] `axiom.turn` contient réellement le tour (aujourd'hui coquille autour de `axiom/arbitrator.py`) [M2]
+- [ ] Le noyau n'importe plus rien de `mods/` (6 proxys à supprimer) [M1]
+- [~] `axiom.world` — règles déplacées ; boucle de correction cassée [M4]
+- [~] `axiom.time`, `axiom.inventory`, `axiom.rag`, `axiom.living_memory`, `axiom.illustrations`, `core.stat_dynamics` — décochables un par un (vérifié) ; code encore importé par le noyau
+- [ ] `axiom.providers` effectif (aujourd'hui les UI construisent le LLM elles-mêmes) [M8]
+- [~] UI en mods (`axiom.ui.qt`, `axiom.ui.web`, `axiom.cli`) — lanceurs ; emplacements web non lus ; dépendance `help_system` non déclarée [M7]
+- [ ] Mod « chat minimal » (installation « tout décoché ») [M3]
+- [~] Emplacements du tour — consultés ; contribution au schéma JSON et sections positionnées manquantes [M5, M6]
 
-## Phase 4 — Création de mods (outils + créateur LLM) (✅ TERMINÉE)
-- [x] Échafaudage de mods `axiom mod new` (`axiom/kernel/scaffold.py`) : archétypes hook, slot, data
-- [x] Testeur de mod unifié `axiom mod test` (`axiom/kernel/tester.py`) : validation manifestes, vérification D4 imports UI, runner pytest borné
-- [x] Mode développement à chaud `axiom mod dev` (`axiom/kernel/dev.py`) : watcher mtime, dépilage D11 et rechargement
-- [x] Créateur de mods par LLM `axiom mod generate` & API Web (`axiom/kernel/llm_creator.py`) : staging sandbox, diffs, tests automatiques et garde-fous de confirmation (§12, D14)
+## Phase 3 — Patches outillés
+- [x] Trampolines `@patchable` (before/after/around, `ShortCircuit`) sur fonctions, from-import capturés
+- [~] Secours `__code__` — fonctions simples OK ; méthodes et closures échouent en silence [P1]
+- [ ] Refus bruyant des cibles introuvables, aucun patch inactif listé [P1, P3]
+- [ ] Points `@patchable` dans le moteur [P2]
+- [~] Gel pendant un step — non réentrant [P4]
+- [~] `axiom mods patches` / `axiom mod validate` — existent ; listent des patches inactifs
 
-## Phase 5 — Store, Dépendances, Licence & Distribution (✅ TERMINÉE)
-- [x] Protocole du Store distant (`axiom/kernel/store.py`) : catalogue d'index, recherche, installation, vérification stricte du hash SHA-256 (`ModIntegrityError`)
-- [x] Vérification déclarative des dépendances Python légères (`axiom/kernel/dependencies.py`, `[python].requires`, Règle D-7)
-- [x] Cadre juridique et licence des mods (`docs/licensing_mods.md`, `NOTICE`, Règle D-9 & §14)
-- [x] Packaging PyPI headless micro-kernel (`export_engine.py`, exclusion mods/UI, Règle D-8) et passage à la version 1.0.0
-- [x] Commandes CLI (`axiom mods search`, `axiom mods install`, `axiom mods update`)
-- [x] Endpoints API Web (`GET /api/store/search`, `POST /api/store/install`)
-- [x] Catalogue officiel initial d'index (`dist/mods/store_index.json`)
-- [x] Suite de tests dédiée (`tests/test_mod_store_and_packaging.py`) — 9/9 tests au vert
+## Phase 4 — Création de mods
+- [~] `axiom mod new` — existe ; modèles branchés sur des hooks inexistants [C2]
+- [~] `axiom mod test` — existe ; n'utilise pas le harnais golden [C3]
+- [x] `axiom mod dev` (rechargement à chaud en dev)
+- [ ] Créateur LLM : aucune exécution avant confirmation, écriture confinée [C1]
+- [ ] Créateur LLM sorti du noyau (mod) [C4]
+
+## Phase 5 — Store, dépendances, licence, distribution (gelée)
+- [x] Vérification déclarative `[python].requires`, sans installeur (D-7)
+- [~] Client de store (recherche/installation, SHA-256) — sans catalogue ni serveur ; installe dans les sources [S3, S4]
+- [ ] Licence des mods — **question ouverte** (avis juridique requis ; clause retirée de `NOTICE`) [S2]
+- [ ] Paquet PyPI « noyau seul » fonctionnel — **ne pas publier la 1.0.0 en l'état** [S5]

@@ -131,7 +131,6 @@ def validate_inventory_change(
     change["holder_id"] = holder_id
     change["entity_id"] = holder_id if holder_kind == "entity" else change.get("entity_id") or holder_id
 
-    is_container = bool(change.get("is_container"))
     container_target = str(
         change.get("container_id")
         or change.get("container_name")
@@ -139,14 +138,10 @@ def validate_inventory_change(
         or ""
     ).strip()
 
+    # Read-only validation (0d, R2-I-7): a new Item_Definitions row for an
+    # emergent item is created by add_item when the turn's write batch commits,
+    # so an aborted turn leaves no definition behind.
     with get_connection(db_path) as conn:
-        ensure_item_definition(
-            conn,
-            item_id,
-            name=str(change.get("name") or item_id),
-            is_container=is_container,
-        )
-
         if action == "move":
             if container_target:
                 cid = _slug_item_id(container_target)
@@ -209,8 +204,6 @@ def validate_inventory_change(
             current_qty = int(row[0] or 0) if row else 0
             if current_qty < quantity:
                 return False, f"Insufficient quantity for {item_id} (has {current_qty}, needs {quantity})."
-
-        conn.commit()
 
     return True, ""
 

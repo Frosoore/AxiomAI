@@ -39,7 +39,7 @@ from core.localization import reload_translations, set_language, tr
 import mods.axiom.help_system.ui.help_system as help_sys
 
 
-def test_manifests_and_loading_ui_mods():
+def test_manifests_and_loading_ui_mods(tmp_path):
     """1. Manifest validation and runtime loading of axiom.ui.web, axiom.ui.qt, and axiom.cli."""
     reg = KernelRegistry()
     cfg = AppConfig()
@@ -62,8 +62,9 @@ def test_manifests_and_loading_ui_mods():
         assert ctx is not None
         assert module is not None
 
-        # Also verify archived .axmod exists and loads
-        archive_path = Path("dist/mods") / f"{mod_id}.axmod"
+        # Also verify the packed .axmod loads (built in tmp_path: dist/ is not versioned)
+        from axiom.cli.mods_cmd import pack_mod
+        archive_path = pack_mod(mod_dir, tmp_path / f"{mod_id}.axmod")
         assert archive_path.is_file(), f"Archive missing: {archive_path}"
         reg_archive = KernelRegistry()
         m_arc, ctx_arc, _ = load_mod_from_archive(archive_path, reg_archive, config=cfg)

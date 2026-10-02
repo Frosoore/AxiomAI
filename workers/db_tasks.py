@@ -19,8 +19,13 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 from axiom.backends.base import GenerationCancelled
 from axiom.logger import logger
 from axiom.events import EventSourcer
-from axiom.checkpoint import CheckpointManager
+from axiom.checkpoint import CheckpointManager, set_rewind_backup_handler
 from axiom.schema import get_connection
+from database.backup_manager import create_auto_backup
+
+# Every rewind of the app (Qt RewindTask, Session.rewind) goes through
+# CheckpointManager.rewind, which makes this backup first.
+set_rewind_backup_handler(create_auto_backup)
 
 
 class TaskSignals(QObject):
@@ -153,6 +158,11 @@ class LoadCheckpointsTask(BaseDbTask):
 
 
 class RewindTask(BaseDbTask):
+    """Qt rewind = the engine's single rewind path (`CheckpointManager.rewind`,
+    the same one `Session.rewind` uses): epoch bump, auto-backup, SQL rewind,
+    then the external stores (semantic memory, illustrations) after the commit.
+    Nothing is rolled back on the Qt side (R2-B-2 / TICKET-102)."""
+
     def __init__(self, db_path: str, save_id: str, target_turn_id: int):
         super().__init__(db_path)
         self.save_id = save_id
@@ -160,23 +170,8 @@ class RewindTask(BaseDbTask):
 
     def execute(self) -> dict:
         self.signals.status.emit(f"Rewinding to turn {self.target_turn_id}...")
-        
-        # Fail-safe: Create an auto-backup before destructive rewind
-        from database.backup_manager import create_auto_backup
-        create_auto_backup(self.db_path, f"rewind_to_turn_{self.target_turn_id}")
-        
-        # Truncate assets (illustrations) for rolled back turns (TICKET-048)
-        try:
-            from axiom import paths
-            from axiom.savestore import truncate_assets_in
-            assets_dir = paths.get_assets_dir() / self.save_id
-            truncate_assets_in(assets_dir, self.target_turn_id)
-        except Exception:
-            pass
-
         cm = CheckpointManager(self.db_path)
         return cm.rewind(self.save_id, self.target_turn_id)
-
 
 
 class AppendEventTask(BaseDbTask):

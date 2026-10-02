@@ -41,45 +41,42 @@ class _DottedModFinder(MetaPathFinder):
             elif candidate_underscored and (mods_dir / candidate_underscored).is_dir():
                 matched_dir = mods_dir / candidate_underscored
                 consumed = 1
-            elif (mods_dir / parts[1]).is_dir():
-                matched_dir = mods_dir / parts[1]
-                consumed = 1
 
             if matched_dir:
                 remaining = parts[consumed + 1:]
                 if not remaining:
-                    init_file = matched_dir / "__init__.py"
-                    has_init = init_file.is_file()
-                    loader = SourceFileLoader(fullname, str(init_file)) if has_init else None
-                    spec = ModuleSpec(fullname, loader, origin=str(init_file) if has_init else None, is_package=True)
-                    spec.submodule_search_locations = [str(matched_dir)]
-                    if has_init:
-                        spec.has_location = True
+                    return _package_spec(fullname, matched_dir)
+                target_path = matched_dir.joinpath(*remaining)
+                py_file = target_path.with_suffix(".py")
+                if py_file.is_file():
+                    spec = ModuleSpec(fullname, SourceFileLoader(fullname, str(py_file)), origin=str(py_file))
+                    spec.has_location = True
                     return spec
-                else:
-                    target_path = matched_dir.joinpath(*remaining)
-                    py_file = target_path.with_suffix(".py")
-                    if py_file.is_file():
-                        spec = ModuleSpec(fullname, SourceFileLoader(fullname, str(py_file)), origin=str(py_file))
-                        spec.has_location = True
-                        return spec
-                    if target_path.is_dir():
-                        init_file = target_path / "__init__.py"
-                        has_init = init_file.is_file()
-                        loader = SourceFileLoader(fullname, str(init_file)) if has_init else None
-                        spec = ModuleSpec(fullname, loader, origin=str(init_file) if has_init else None, is_package=True)
-                        spec.submodule_search_locations = [str(target_path)]
-                        if has_init:
-                            spec.has_location = True
-                        return spec
+                if target_path.is_dir():
+                    return _package_spec(fullname, target_path)
+                # The mod folder exists but not this module: real ImportError.
+                return None
 
-        # Intermediate namespaces like mods.axiom, mods.core, mods.community
-        if len(parts) >= 2:
+        # Intermediate namespaces like mods.axiom, mods.core, mods.community:
+        # only when a mod folder actually lives below (e.g. mods/axiom.time/).
+        prefix = ".".join(parts[1:]) + "."
+        if any(p.is_dir() and p.name.startswith(prefix) for p in mods_dir.iterdir()):
             spec = ModuleSpec(fullname, None, is_package=True)
             spec.submodule_search_locations = [str(mods_dir)]
             return spec
 
         return None
+
+
+def _package_spec(fullname: str, folder: Path) -> ModuleSpec:
+    init_file = folder / "__init__.py"
+    has_init = init_file.is_file()
+    loader = SourceFileLoader(fullname, str(init_file)) if has_init else None
+    spec = ModuleSpec(fullname, loader, origin=str(init_file) if has_init else None, is_package=True)
+    spec.submodule_search_locations = [str(folder)]
+    if has_init:
+        spec.has_location = True
+    return spec
 
 
 def install_dotted_mod_finder() -> None:

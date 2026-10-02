@@ -178,7 +178,7 @@ def test_5_ui_views_visibility_toggling(qtbot, monkeypatch):
     assert tabletop._help_btn.isVisible()
 
 
-def test_6_main_window_actions_decoupling(qtbot, monkeypatch):
+def test_6_main_window_actions_decoupling(qtbot, monkeypatch, no_first_launch):
     """Verify that MainWindow Help actions are detached when axiom.help_system is disabled."""
     from mods.axiom.ui.qt.ui.main_window import MainWindow
 
@@ -213,9 +213,15 @@ def test_6_main_window_actions_decoupling(qtbot, monkeypatch):
     assert win._tour_action.isVisible() and win._tour_action.isEnabled()
 
 
-def test_7_store_index_integrity_and_sha256():
-    """Verify that store_index.json contains axiom.help_system with valid metadata and matching SHA-256."""
-    store_file = Path("dist/mods/store_index.json")
+def test_7_store_index_integrity_and_sha256(tmp_path):
+    """Verify that the store index entry generated for axiom.help_system carries valid metadata
+    and the SHA-256 of its .axmod archive (built in tmp_path: dist/ is not versioned)."""
+    from axiom.cli.mods_cmd import pack_mod
+    from axiom.kernel.store import publish_mod_to_store_spec
+
+    archive_path = pack_mod(Path("mods/axiom.help_system"), output_path=tmp_path / "axiom.help_system-1.0.0.axmod")
+    store_file = tmp_path / "store_index.json"
+    publish_mod_to_store_spec(archive_path, output_json=store_file)
     assert store_file.is_file()
 
     with store_file.open("r", encoding="utf-8") as f:
@@ -229,7 +235,6 @@ def test_7_store_index_integrity_and_sha256():
     assert entry["author"] == "Vanilla"
     assert "help_system" in entry["provides"]
 
-    archive_path = Path("dist/mods/axiom.help_system-1.0.0.axmod")
     assert archive_path.is_file(), f"Missing archive file: {archive_path}"
 
     hasher = hashlib.sha256()
@@ -237,5 +242,4 @@ def test_7_store_index_integrity_and_sha256():
         while chunk := f.read(65536):
             hasher.update(chunk)
     actual_hash = hasher.hexdigest()
-
     assert actual_hash == entry["sha256"], f"SHA256 mismatch: {actual_hash} != {entry['sha256']}"

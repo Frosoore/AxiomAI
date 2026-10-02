@@ -8,10 +8,9 @@ CheckpointManager, VectorMemory) and exposes a synchronous game loop that any
 application (GUI, CLI, server) can drive::
 
     from axiom.session import Session
-    from axiom.config import load_config, build_llm_from_config
 
-    llm = build_llm_from_config(load_config())
-    sess = Session("universes/my_world.axiom", save_id, llm=llm)
+    # LLM backend: the modpack's (axiom.providers), or pass llm=... explicitly.
+    sess = Session("universes/my_world.axiom", save_id)
     result = sess.take_turn("I open the door.", on_token=print)
 
 Streaming happens through the `on_token` callback. The method is synchronous:
@@ -21,9 +20,10 @@ on the GUI side, the app wraps it in a QThread (see workers/narrative_worker.py)
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+import threading
+from typing import Any, Callable
 
-from axiom.arbitrator import ArbitratorEngine, ArbitratorResult
+from axiom.arbitrator import ArbitratorResult
 from axiom.backends.base import LLMBackend, LLMMessage
 from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
@@ -31,7 +31,6 @@ from axiom.logger import logger
 from axiom.prompts import HISTORY_TURN_CAP
 from axiom.universe import Universe
 from axiom.db_helpers import (
-    load_rules_for_session,
     get_max_turn_id,
     load_active_entities,
 )
@@ -55,6 +54,63 @@ _SNAPSHOT_INTERVAL_TURNS = 25
 #: Exposed as a constant so the GUI can react (e.g. show a placeholder) without
 #: matching a hard-coded English message.
 IMAGE_GEN_STATUS = "Generating scene illustration..."
+
+
+def get_auto_canonize(cfg: Any) -> bool:
+    """« Canon auto » setting: after each turn, the story is canonized into the save.
+
+    Stored in the existing config, section `mod_settings["axiom.turn"]["auto_canonize"]`
+    (AppConfig has no dedicated field yet). Off by default.
+    """
+    section = (getattr(cfg, "mod_settings", None) or {}).get("axiom.turn")
+    return bool(section.get("auto_canonize", False)) if isinstance(section, dict) else False
+
+
+def set_auto_canonize(cfg: Any, enabled: bool) -> None:
+    """Set the « Canon auto » setting on `cfg` (the caller saves the config)."""
+    cfg.mod_settings.setdefault("axiom.turn", {})["auto_canonize"] = bool(enabled)
+
+
+def resolve_llm_backend(
+    cfg: Any | None = None,
+    *,
+    model_override: str | None = None,
+    registry: Any | None = None,
+) -> LLMBackend:
+    """The narration backend of the modpack (single entry point for Session and UIs).
+
+    With the `axiom.providers` mod active, the backend comes from the exclusive slot
+    `axiom.turn:llm_backend` (or, for an auxiliary model, from the `providers`
+    service). Without it, falls back to `build_llm_from_config`.
+    """
+    from axiom.config import build_llm_from_config, load_config
+
+    if registry is None:
+        try:
+            from axiom.kernel.loader import get_kernel_registry
+            registry = get_kernel_registry()
+        except Exception:
+            logger.warning("Mod registry unavailable; building the LLM from the config.", exc_info=True)
+            registry = None
+    if registry is not None:
+        try:
+            if model_override is None:
+                backend = registry.get_slot("axiom.turn:llm_backend")
+                if callable(backend):
+                    backend = backend()
+                if backend is not None:
+                    return backend
+            providers = registry.get_service("providers")
+            if providers is not None and hasattr(providers, "get_backend"):
+                return providers.get_backend(cfg, model_override=model_override)
+        except Exception:
+            logger.warning("LLM backend slot failed; building the LLM from the config.", exc_info=True)
+    return build_llm_from_config(cfg or load_config(), model_override=model_override)
+
+
+# One auto-canonize job at a time per save (a slow one is not stacked, the turn is skipped).
+_CANON_BUSY: set[tuple[str, str]] = set()
+_CANON_LOCK = threading.Lock()
 
 
 def _emit(callback: Callable[[str], None] | None, message: str) -> None:
@@ -87,7 +143,8 @@ class Session:
     Args:
         universe_path:  Path of the universe file (.axiom / SQLite .db).
         save_id:        Identifier of the active save.
-        llm:            Pre-built LLM backend (see build_llm_from_config).
+        llm:            Pre-built LLM backend. If None, the modpack's backend
+                        (see `resolve_llm_backend`).
         vector_memory:  Vector memory. If None, a `VectorMemory` is created
                         under `<data_dir>/vector/<save_id>` (or the app's
                         default vector folder when data_dir is None).
@@ -127,7 +184,8 @@ class Session:
         # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
         # mirroring how the Companion hero backend is resolved. Falls back to the
         # main narration backend if config/backend construction fails (TICKET-016).
-        self._time_llm = time_llm if time_llm else (self._resolve_time_llm(llm) if llm else None)
+        # (resolved below, once the mod registry is known)
+        self._time_llm = time_llm or None
         self._mode = mode
         self._hero_llm = hero_llm
         self._entities: list[dict] | None = None
@@ -154,66 +212,44 @@ class Session:
         _active_cfg = cfg or load_config()
 
         if kernel_registry is None:
-            from axiom.kernel.loader import bootstrap_all_mods
-            kernel_registry = bootstrap_all_mods(config=_active_cfg)
+            if cfg is not None:
+                # An explicit config means a dedicated modpack (embedders, tests).
+                from axiom.kernel.loader import bootstrap_all_mods
+                kernel_registry = bootstrap_all_mods(config=cfg)
+            else:
+                # One modpack per process (D-4): bootstrapped once, shared by every session.
+                from axiom.kernel.loader import get_kernel_registry
+                kernel_registry = get_kernel_registry(_active_cfg)
         self._kernel_registry = kernel_registry
 
-        if self._llm is None and self._kernel_registry is not None:
-            backend_slot = self._kernel_registry.get_slot("axiom.turn:llm_backend")
-            if callable(backend_slot):
-                try:
-                    self._llm = backend_slot()
-                except Exception:
-                    self._llm = None
-            elif backend_slot is not None:
-                self._llm = backend_slot
-            if self._llm is None:
-                prov_svc = self._kernel_registry.get_service("providers")
-                if prov_svc is not None and hasattr(prov_svc, "get_backend"):
-                    try:
-                        self._llm = prov_svc.get_backend()
-                    except Exception:
-                        self._llm = None
+        if self._llm is None:
+            # Backend of the modpack (axiom.providers -> slot axiom.turn:llm_backend).
+            try:
+                self._llm = resolve_llm_backend(_active_cfg, registry=self._kernel_registry)
+            except Exception:
+                logger.warning("No LLM backend could be resolved for this session.", exc_info=True)
+                self._llm = None
 
         if self._time_llm is None and self._llm is not None:
             self._time_llm = self._resolve_time_llm(self._llm)
 
         if vector_memory is None:
-            if self._kernel_registry is not None:
-                rag_svc = self._kernel_registry.get_service("rag")
-                if rag_svc is not None and hasattr(rag_svc, "get_vector_memory"):
+            rag_svc = self._kernel_registry.get_service("rag")
+            if rag_svc is not None and hasattr(rag_svc, "get_vector_memory"):
+                try:
+                    vector_memory = rag_svc.get_vector_memory(save_id, base_dir=vector_base)
+                except TypeError:
                     try:
-                        vector_memory = rag_svc.get_vector_memory(save_id, base_dir=vector_base)
-                    except TypeError:
-                        try:
-                            vector_memory = rag_svc.get_vector_memory(save_id)
-                        except Exception:
-                            vector_memory = None
+                        vector_memory = rag_svc.get_vector_memory(save_id)
                     except Exception:
                         vector_memory = None
-            else:
-                reranker = None
-                try:
-                    if _active_cfg.memory_reranker_enabled:
-                        from axiom.retrieval import CrossEncoderReranker
-                        reranker = CrossEncoderReranker()
-                except Exception:
-                    reranker = None
-                try:
-                    from axiom.kernel.loader import is_mod_enabled
-                    if is_mod_enabled("axiom.rag", _active_cfg):
-                        from axiom.memory import VectorMemory
-                        vector_memory = VectorMemory(
-                            persist_dir=str(vector_base / save_id), reranker=reranker
-                        )
                 except Exception:
                     vector_memory = None
         self._vector_memory = vector_memory
 
-        self._arbitrator: Any | None = None
         try:
-            from axiom.kernel.loader import is_mod_enabled
-            if is_mod_enabled("core.stat_dynamics", _active_cfg):
+            # Only when core.stat_dynamics is really loaded (its hook is registered).
+            if self._kernel_registry.has_hook("axiom.turn:arbitrate_stats"):
                 from axiom.stat_dynamics import ensure_stat_dynamics
                 ensure_stat_dynamics(self._db_path, llm)
         except Exception:
@@ -225,29 +261,23 @@ class Session:
         self._entity_names: dict[str, str] | None = None
         self._last_lore_hits: list[dict] = []
         self._last_game_state_tag: str = "exploration"
-        self._living_memory = None
-        if self._kernel_registry is None:
-            try:
-                from axiom.living_memory import get_living_memory_accumulator
-                self._living_memory = get_living_memory_accumulator()
-            except Exception:
-                self._living_memory = None
+        #: Outcome of the last background « Canon auto » job (info dict or {"error": ...}).
+        self.last_auto_canonize: dict | None = None
         from axiom.epoch import get_session_epoch_manager
         self._epoch_manager = get_session_epoch_manager(save_id)
 
-    @staticmethod
-    def _resolve_time_llm(default_llm: LLMBackend) -> LLMBackend:
+    def _resolve_time_llm(self, default_llm: LLMBackend) -> LLMBackend:
         """Construit le backend du Timekeeper depuis la config (réglage « Time
         Model »). Replie sur le backend principal en cas d'erreur (clé Gemini
         absente, config illisible…) pour ne jamais casser la construction."""
         try:
-            from axiom.config import (
-                load_config,
-                build_llm_from_config,
-                resolve_time_model,
-            )
+            from axiom.config import load_config, resolve_time_model
             cfg = load_config()
-            return build_llm_from_config(cfg, model_override=resolve_time_model(cfg))
+            return resolve_llm_backend(
+                cfg,
+                model_override=resolve_time_model(cfg),
+                registry=getattr(self, "_kernel_registry", None),
+            )
         except Exception:
             return default_llm
 
@@ -277,8 +307,6 @@ class Session:
     @kernel_registry.setter
     def kernel_registry(self, reg: Any | None) -> None:
         self._kernel_registry = reg
-        if hasattr(self, "_arbitrator") and self._arbitrator is not None:
-            self._arbitrator.kernel_registry = reg
 
     def submit_intent(self, entity_id: str, intent_text: str) -> None:
         """Submit an action intent to the pool for the current turn."""
@@ -295,8 +323,6 @@ class Session:
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
         """Resolve every intent currently in the pool as a single tick."""
-        if self._arbitrator is not None:
-            self._arbitrator.configure(self._llm, self._vector_memory, self._time_llm)
         _emit(on_status, "Generating narrative…")
 
         # Capture current pool and step turn_id
@@ -311,6 +337,7 @@ class Session:
                 raise NoTurnPipelineInstalledError(
                     "No turn pipeline installed. Ensure 'axiom.turn' mod is loaded."
                 )
+            history = self._load_history()
 
             from axiom.kernel import KernelStepContext
             step_context = KernelStepContext(
@@ -331,11 +358,19 @@ class Session:
                 intents=intents,
                 auto_commit=False,
                 session=self,
+                history=history,
+                system_prompt=self._system_prompt,
             )
-            self.kernel_registry.execute_hook("axiom.kernel:execute_step", step_context)
+            # Unguarded: the real error of the turn (LLM unreachable, cancellation...)
+            # reaches the caller unchanged; contributions of other mods are isolated
+            # inside the pipeline itself.
+            self.kernel_registry.invoke_hook_unguarded("axiom.kernel:execute_step", step_context)
             result = step_context.result
             if result is None:
-                raise RuntimeError("Turn pipeline mod returned no result.")
+                raise RuntimeError(
+                    "The turn pipeline ran but produced no result for this turn "
+                    "(a mod it depends on may have been disabled: see `axiom mods list`)."
+                )
         except Exception:
             self._turn_id = old_turn_id
             self._intent_pool.update(intents)
@@ -438,13 +473,10 @@ class Session:
     def rewind(self, target_turn_id: int) -> dict[str, int]:
         """Bring the save back to its state at turn `target_turn_id`.
 
-        Invalidates the Arbitrator's stats cache and resynchronises `turn_id`.
-        Returns the summary provided by `CheckpointManager.rewind`.
+        Resynchronises `turn_id`. Returns the summary provided by
+        `CheckpointManager.rewind` (which also bumps the save's epoch).
         """
-        self._epoch_manager.bump()
         summary = self._checkpoints.rewind(self._save_id, target_turn_id)
-        if self._arbitrator is not None:
-            self._arbitrator.invalidate_stats_cache()
         self._entity_names = None
         self._turn_id = get_max_turn_id(self._db_path, self._save_id)
         # Les illustrations des tours annulés ne doivent pas réapparaître si on
@@ -476,14 +508,14 @@ class Session:
         self._epoch_manager = get_session_epoch_manager(self._save_id)
         self._epoch_manager.bump()
         self._turn_id = get_max_turn_id(self._db_path, save_id)
-        if self._arbitrator is not None:
-            self._arbitrator.invalidate_stats_cache()
         self._entity_names = None
         self._intent_pool.clear()
 
     def fork(self, player_name: str | None = None, at_turn: int | None = None, **kwargs) -> str:
-        """Fork save at current or specified turn, incrementing session epoch."""
-        self._epoch_manager.bump()
+        """Fork save at current or specified turn into a new save.
+
+        The source save is only read: its epoch is not bumped (a background job of
+        the source stays valid). The new save starts with its own epoch."""
         from axiom.saves import fork_save
         target_turn = at_turn if at_turn is not None else self._turn_id
         name = player_name or kwargs.pop("new_save_name", None)
@@ -608,26 +640,81 @@ class Session:
         except Exception as db_err:
             logger.warning(f"Failed to update last_updated for save {self._save_id}: {db_err}")
 
-        # 2. Déclenchement conditionnel de la living memory (si activée dans AppConfig)
-        try:
-            lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
-            if lm_svc is None and self._living_memory is not None:
-                narrative = getattr(result, "narrative_text", "") or ""
-                self._living_memory.record_turn(
-                    self._db_path,
-                    self._save_id,
-                    self._turn_id,
-                    narrative,
-                    llm=self._llm,
-                    epoch=self.epoch,
-                    epoch_checker=lambda: self.epoch,
-                )
-        except Exception as lm_err:
-            logger.warning(f"Living memory accumulation failed: {lm_err}")
+        # 2. Living memory: recorded by the axiom.living_memory mod (after_step hook,
+        #    post-commit), nothing to do here.
 
         # 3. Émission des métadonnées d'ambiance et de tag
         if hasattr(result, "game_state_tag") and not result.game_state_tag:
             result.game_state_tag = self._last_game_state_tag
+
+        # 4. « Canon auto » (single place for Qt, web and CLI).
+        self._maybe_auto_canonize(result)
+
+    def _maybe_auto_canonize(self, result: ArbitratorResult) -> bool:
+        """Post-commit: canonize this turn's story into the save, in the background,
+        when the « Canon auto » setting is on. Skipped on a Hardcore death, on an
+        empty narrative, or while a previous canonization of this save still runs.
+        Returns True when a job was started."""
+        try:
+            from axiom.config import load_config
+            if not get_auto_canonize(load_config()):
+                return False
+        except Exception:
+            return False
+        narrative = (getattr(result, "narrative_text", "") or "").strip()
+        if not narrative:
+            return False
+        if self._mode == "Hardcore" and is_player_death_triggered(result):
+            return False
+        key = (self._db_path, self._save_id)
+        with _CANON_LOCK:
+            if key in _CANON_BUSY:
+                return False
+            _CANON_BUSY.add(key)
+        epoch = self.epoch
+        db_path = self._db_path
+
+        def _job() -> None:
+            try:
+                if self.epoch != epoch:  # rewound / reloaded meanwhile
+                    return
+                from axiom.canonize import canonize_story
+                info = canonize_story(db_path, narrative, preview=False)
+                self.last_auto_canonize = info
+            except Exception as err:
+                # A save not linked to a universe folder cannot be canonized: just log.
+                logger.info("Auto-canonize skipped: %s", err)
+                self.last_auto_canonize = {"error": str(err)}
+            finally:
+                with _CANON_LOCK:
+                    _CANON_BUSY.discard(key)
+
+        threading.Thread(target=_job, name="axiom-auto-canonize", daemon=True).start()
+        return True
+
+    def start_living_memory_catchup(self) -> bool:
+        """Start a background distillation when the save is several turns past its
+        last extracted fact (e.g. after a restart). Returns True if a job started.
+
+        Living memory belongs to the `axiom.living_memory` mod: without it, nothing."""
+        lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
+        accumulator = getattr(lm_svc, "accumulator", None)
+        if accumulator is None or not hasattr(accumulator, "spawn_distillation"):
+            return False
+        from axiom.config import load_config, memory_mode_is_living
+        cfg = load_config()
+        if not memory_mode_is_living(cfg):
+            return False
+        interval = int(getattr(cfg, "memory_fact_interval", 0) or 0)
+        facts = lm_svc.get_facts(self._db_path, self._save_id) or []
+        last_fact_turn = max((int(getattr(f, "turn_id", 0) or 0) for f in facts), default=0)
+        if interval <= 0 or (self._turn_id - last_fact_turn) < interval:
+            return False
+        accumulator.spawn_distillation(
+            self._db_path, self._save_id, self._turn_id,
+            cfg=cfg, llm=self._llm, force_catchup=True,
+        )
+        return True
 
     def resolve_player_entity_id(self) -> str:
         """Resolve the primary player entity ID for this session."""
@@ -810,11 +897,7 @@ class Session:
     def get_memory_snapshot(self) -> dict[str, Any]:
         """Facts + beliefs + mental models for this session."""
         lm_svc = self._kernel_registry.get_service("living_memory") if self._kernel_registry else None
-        if lm_svc is not None:
-            facts = lm_svc.get_facts(self._db_path, self._save_id, max_turn_id=self._turn_id)
-            beliefs = lm_svc.get_observations(self._db_path, self._save_id, max_turn_id=self._turn_id)
-            models = lm_svc.get_models(self._db_path, self._save_id, max_turn_id=self._turn_id)
-        elif self._kernel_registry is not None:
+        if lm_svc is None:
             return {
                 "disabled": True,
                 "turn_id": self._turn_id,
@@ -822,14 +905,9 @@ class Session:
                 "beliefs": [],
                 "mental_models": [],
             }
-        else:
-            from axiom.facts import get_facts
-            from axiom.mental_models import get_mental_models
-            from axiom.observations import get_observations
-
-            facts = get_facts(self._db_path, self._save_id, max_turn_id=self._turn_id)
-            beliefs = get_observations(self._db_path, self._save_id, max_turn_id=self._turn_id)
-            models = get_mental_models(self._db_path, self._save_id, max_turn_id=self._turn_id)
+        facts = lm_svc.get_facts(self._db_path, self._save_id, max_turn_id=self._turn_id)
+        beliefs = lm_svc.get_observations(self._db_path, self._save_id, max_turn_id=self._turn_id)
+        models = lm_svc.get_models(self._db_path, self._save_id, max_turn_id=self._turn_id)
 
         return {
             "turn_id": self._turn_id,
@@ -877,16 +955,6 @@ class Session:
                 self._turn_id,
                 llm=self._llm,
                 force_catchup=force_catchup,
-            )
-            res["memory"] = self.get_memory_snapshot()
-            return res
-        if self._living_memory is not None:
-            res = self._living_memory.run_extract_now(
-                self._db_path,
-                self._save_id,
-                self._turn_id,
-                force_catchup=force_catchup,
-                llm=self._llm,
             )
             res["memory"] = self.get_memory_snapshot()
             return res
@@ -1035,7 +1103,7 @@ class Session:
         self, hero_ent: dict, history: list[LLMMessage], current_intents: dict[str, str]
     ) -> str:
         """Appelle le LLM héros pour décider de son action (modèle local par défaut)."""
-        from axiom.config import load_config, build_llm_from_config, resolve_extraction_model
+        from axiom.config import load_config, resolve_extraction_model
         from axiom.prompts import build_hero_decision_prompt, format_entity_stats_block
         from axiom.schema import get_connection
 
@@ -1043,7 +1111,9 @@ class Session:
         if hero_llm is None:
             cfg = load_config()
             # Modèle auxiliaire pour le héros (local si Ollama, gemini_model si Gemini).
-            hero_llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+            hero_llm = resolve_llm_backend(
+                cfg, model_override=resolve_extraction_model(cfg), registry=self._kernel_registry
+            )
 
         player_name = "Player"
         player_persona = ""

@@ -12,3 +12,11 @@
 - `TODO.md` : feuille de route par phases.
 - Bugs confirmés ouverts dans `PENDING.md` : TICKET-100 → 105 ; TICKET-089 étendu (`Item_Instances`, `Session_Lore`).
 - `ARCHITECTURE.md` : renvoi vers la vision cible.
+
+## 2026-10-03 — Revue de l'implémentation de Frosoore (branche `mods`)
+- Revue par 4 agents → `review-2026-10-03/` (synthèse `0-SYNTHESE.md`).
+- `ETAT_REEL.md` créé : état réel phase par phase (fait / partiel / mal fait / absent), pourquoi, comment bien faire, ordre des corrections.
+- `TODO.md` révisé : cases non prouvées décochées.
+- Décisions prises sans le propriétaire annulées : clause de licence retirée de `NOTICE` ; README, guides et `docs/licensing_mods.md` marqués « question ouverte / brouillon » ; `DOC.md` restauré à la version validée (+ ligne d'état), §15/§16 déplacés dans `BILAN_AGENT_FROSOORE_NON_VALIDE.md` ; bandeau « non fiable » sur `SYNTHESE_ARCHITECTURE*.md` et `TODO.en.md`.
+- Corrections lancées (lots A tests/CI, C noyau) → `corrections-2026-10/`.
+- Lots A et C terminés, B1/B2 arrêtés en cours (budget) ; point d'arrêt et reste à faire : `ETAT_REEL.md` §8. Rien n'est commité.

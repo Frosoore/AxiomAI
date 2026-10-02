@@ -47,8 +47,13 @@ def run_test(args: argparse.Namespace) -> int:
     """Execute test subcommand."""
     if args.golden:
         import subprocess
-        cmd = [sys.executable, "-m", "pytest", "tests/test_golden_step.py", "-v"]
-        result = subprocess.run(cmd)
+        project_root = Path(__file__).resolve().parent.parent.parent
+        golden = project_root / "tests" / "test_golden_step.py"
+        if not golden.is_file():
+            print(f"Error: golden step suite not found ({golden}); it ships with the source tree only.", file=sys.stderr)
+            return 1
+        cmd = [sys.executable, "-m", "pytest", str(golden), "-v"]
+        result = subprocess.run(cmd, cwd=str(project_root))
         return result.returncode
 
     if args.canonicalize:

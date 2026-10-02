@@ -34,6 +34,7 @@ Prepend a new bullet at the very top of the **Log** section, newest first, in th
 
 <!-- Newest first. Add your line directly under this comment on every commit. -->
 
+- **2026-10-03** · `engine` · fix: mods branch review + first correction pass (hermetic tests and CI, kernel loader/patches/creator fixes, fork keeps living memory, LLM errors surface again, correction loop restored); unvalidated licence clause removed; real status in `maintenance/Mods/ETAT_REEL.md`. Site: September dev log + blog post "Axiom is getting mods".
 - **2026-09-22** · `site` · change: Dev updates for July (quiet month) and a note on August's regressions; removed the expired tester banner; new blog post "Quiet, but stable".
 
 - **2026-09-22** · `engine` · fix: rewinding a game now puts the inventory back as it was at that turn (items gained, lost or moved later are undone; bags keep their contents). Viewing or forking a save at a past turn shows that turn's items too. Turns played before this update can't be restored.

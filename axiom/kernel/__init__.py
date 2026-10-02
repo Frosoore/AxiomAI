@@ -3,6 +3,7 @@
 Core Mod Loader, Topological Order Resolver, Manifest Parser, and Registry.
 """
 
+from axiom.kernel.api import KERNEL_API, PUBLIC_HOOKS, PUBLIC_SLOTS
 from axiom.kernel.context import ModContext
 from axiom.kernel.manifest import (
     ManifestError,
@@ -17,14 +18,29 @@ from axiom.kernel.manifest import (
 )
 from axiom.kernel.loader import (
     ModLoadError,
+    ModLoadState,
+    ModStatus,
+    ModpackPlan,
     bootstrap_all_mods,
+    disable_mod_hot,
+    discover_mods,
+    get_kernel_registry,
+    get_load_state,
+    get_mod_status,
+    get_official_mods_dir,
+    get_user_mod_order,
+    get_user_mods_dir,
+    is_mod_active,
     is_mod_enabled,
     is_official_mod,
     is_safe_mode,
     load_mod,
     load_mod_from_archive,
     load_mod_from_dir,
+    plan_modpack,
+    reset_kernel_registry,
     set_safe_mode,
+    set_user_mod_order,
 )
 from axiom.kernel.registry import (
     KernelRegistry,
@@ -46,6 +62,7 @@ from axiom.kernel.step_context import (
 )
 from axiom.kernel.patcher import (
     PatchRecord,
+    PatchTargetError,
     PatchType,
     PatchingDuringStepError,
     ShortCircuit,
@@ -80,15 +97,26 @@ from axiom.kernel.store import (
     search_store,
 )
 
-try:
-    import importlib
-    _m = importlib.import_module("mods")
-    if hasattr(_m, "install_dotted_mod_finder"):
-        _m.install_dotted_mod_finder()
-except Exception:
-    pass
-
 __all__ = [
+    "KERNEL_API",
+    "ModLoadState",
+    "ModStatus",
+    "ModpackPlan",
+    "PUBLIC_HOOKS",
+    "PUBLIC_SLOTS",
+    "PatchTargetError",
+    "disable_mod_hot",
+    "discover_mods",
+    "get_kernel_registry",
+    "get_load_state",
+    "get_mod_status",
+    "get_official_mods_dir",
+    "get_user_mod_order",
+    "get_user_mods_dir",
+    "is_mod_active",
+    "plan_modpack",
+    "reset_kernel_registry",
+    "set_user_mod_order",
     "ConflictError",
     "CyclicDependencyError",
     "KernelRegistry",

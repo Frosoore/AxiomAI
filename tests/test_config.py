@@ -27,9 +27,14 @@ from axiom.config import (
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def config_dir(tmp_path: Path):
-    """Patch _CONFIG_FILE to use a temp directory."""
+def config_dir(tmp_path: Path, monkeypatch):
+    """Point the config root at a temp directory.
+
+    AXIOM_CONFIG_DIR takes precedence over the module globals (_CONFIG_FILE),
+    so both are set: the test passes whether or not the env var was already set.
+    """
     config_file = tmp_path / "settings.json"
+    monkeypatch.setenv("AXIOM_CONFIG_DIR", str(tmp_path))
     with patch("axiom.config._CONFIG_FILE", config_file), \
          patch("axiom.config._CONFIG_DIR", tmp_path):
         yield tmp_path, config_file
@@ -128,9 +133,10 @@ class TestSaveConfig:
         assert loaded.custom_wallpaper == "my_wallpaper.png"
 
 
-    def test_creates_directory(self, tmp_path: Path) -> None:
+    def test_creates_directory(self, tmp_path: Path, monkeypatch) -> None:
         """save_config creates any missing parent directories for the settings file."""
         nested = tmp_path / "a" / "b" / "settings.json"
+        monkeypatch.setenv("AXIOM_CONFIG_DIR", str(nested.parent))
         with patch("axiom.config._CONFIG_FILE", nested), \
              patch("axiom.config._CONFIG_DIR", nested.parent):
             save_config(AppConfig())

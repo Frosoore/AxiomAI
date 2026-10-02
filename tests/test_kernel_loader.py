@@ -182,7 +182,8 @@ class TestLoadOrderResolver:
         report2 = resolve_load_order(manifests, user_order=["comm.magic", "comm.quests"])
         assert report2.load_order == ["core.world", "core.turn", "comm.magic", "comm.quests"]
 
-    def test_cyclic_dependency_raises_explicit_error(self) -> None:
+    def test_cyclic_dependency_sets_cycle_aside_with_reason(self) -> None:
+        """1-NOYAU B1: a cycle no longer empties the modpack; the cycle is reported."""
         mA = parse_manifest_string("""
         [mod]
         id = "mod.a"
@@ -208,15 +209,22 @@ class TestLoadOrderResolver:
         after = ["mod.a"]
         """)
 
-        manifests = {"mod.a": mA, "mod.b": mB, "mod.c": mC}
-        with pytest.raises(CyclicDependencyError) as exc_info:
-            resolve_load_order(manifests)
+        m_free = parse_manifest_string("""
+        [mod]
+        id = "mod.free"
+        version = "1.0.0"
+        axiom_api = 1
+        """)
 
-        err_msg = str(exc_info.value)
-        assert "Cyclic dependency detected" in err_msg
-        assert "mod.a" in err_msg
-        assert "mod.b" in err_msg
-        assert "mod.c" in err_msg
+        manifests = {"mod.a": mA, "mod.b": mB, "mod.c": mC, "mod.free": m_free}
+        report = resolve_load_order(manifests)
+
+        assert report.load_order == ["mod.free"]
+        for mod_id in ("mod.a", "mod.b", "mod.c"):
+            err_msg = report.disabled_mods[mod_id]
+            assert "Cyclic dependency detected" in err_msg
+            assert "mod.a" in err_msg and "mod.b" in err_msg and "mod.c" in err_msg
+        assert report.cycles
 
     def test_missing_mandatory_dependency_prunes_dependent_mod(self) -> None:
         mA = parse_manifest_string("""
@@ -242,7 +250,8 @@ class TestLoadOrderResolver:
         assert "mod.lonely" in report.disabled_mods
         assert "missing.parent" in report.disabled_mods["mod.lonely"]
 
-    def test_direct_conflict_raises_error(self) -> None:
+    def test_direct_conflict_sets_loser_aside(self) -> None:
+        """1-NOYAU B1/I6: a conflict disables only the loser (by user order), not everything."""
         mA = parse_manifest_string("""
         [mod]
         id = "comm.hunger_a"
@@ -259,8 +268,16 @@ class TestLoadOrderResolver:
         """)
 
         manifests = {"comm.hunger_a": mA, "comm.hunger_b": mB}
-        with pytest.raises(ConflictError, match="conflicts with"):
-            resolve_load_order(manifests)
+        report = resolve_load_order(manifests)
+        # Default order is alphabetical: hunger_a wins
+        assert report.load_order == ["comm.hunger_a"]
+        assert "Conflicts with 'comm.hunger_a'" in report.disabled_mods["comm.hunger_b"]
+        assert report.conflicts == [("comm.hunger_b", "comm.hunger_a", "'comm.hunger_a' declares a conflict with 'comm.hunger_b'")]
+
+        # The user order decides the winner
+        report2 = resolve_load_order(manifests, user_order=["comm.hunger_b"])
+        assert report2.load_order == ["comm.hunger_b"]
+        assert "comm.hunger_a" in report2.disabled_mods
 
 
 class TestKernelRegistryAndModContext:
@@ -323,11 +340,18 @@ class TestKernelRegistryAndModContext:
         assert registry.get_slot("ui:toolbar") == []
 
     def test_exclusive_slot_rule(self) -> None:
+        """1-NOYAU I6: every candidate is kept, the first in mod order wins, conflict visible."""
         registry = KernelRegistry()
         registry.declare_slot("core:primary_audio", SlotRule.EXCLUSIVE)
 
         registry.add_to_slot("core:primary_audio", "mod.audio1", "AudioEngine1")
         assert registry.get_slot("core:primary_audio") == "AudioEngine1"
 
-        with pytest.raises(RegistryError, match="EXCLUSIVE"):
-            registry.add_to_slot("core:primary_audio", "mod.audio2", "AudioEngine2")
+        # No RegistryError any more: the second mod is a candidate
+        registry.add_to_slot("core:primary_audio", "mod.audio2", "AudioEngine2")
+        assert registry.get_slot("core:primary_audio") == "AudioEngine1"
+        assert registry.get_slot_conflicts() == {"core:primary_audio": ["mod.audio1", "mod.audio2"]}
+
+        # The user order (load order) designates the winner
+        registry.set_mod_order(["mod.audio2", "mod.audio1"])
+        assert registry.get_slot("core:primary_audio") == "AudioEngine2"

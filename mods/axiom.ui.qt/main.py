@@ -29,14 +29,14 @@ class QtUIService:
 
     def get_sidebar_widgets(self) -> list[Any]:
         """Aggregate sidebar widgets contributed by other mods."""
-        if self._ctx and self._ctx._registry:
-            return self._ctx._registry.get_slot_contributions("axiom.ui.qt:sidebar_widget")
+        if self._ctx is not None:
+            return self._ctx.get_slot_contributions("axiom.ui.qt:sidebar_widget")
         return []
 
     def get_settings_tabs(self) -> list[Any]:
         """Aggregate settings tabs contributed by other mods."""
-        if self._ctx and self._ctx._registry:
-            return self._ctx._registry.get_slot_contributions("axiom.ui.qt:settings_tab")
+        if self._ctx is not None:
+            return self._ctx.get_slot_contributions("axiom.ui.qt:settings_tab")
         return []
 
     def launch_gui(self, argv: list[str] | None = None) -> int:

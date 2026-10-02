@@ -384,7 +384,7 @@ def main() -> None:
     if "--safe-mode" in sys.argv:
         from axiom.kernel.loader import set_safe_mode
         set_safe_mode(True)
-        logger.warning("Safe mode requested via command line: third-party mods disabled.")
+        logger.warning("Safe mode requested via command line: no mod is loaded.")
     logger.info("Application starting...")
     if is_debug():
         logger.debug("Debug mode enabled — verbose console output active.")
@@ -412,7 +412,7 @@ def main() -> None:
 
     # Load configuration and check if Desktop Qt UI mod is enabled
     from axiom.config import load_config
-    from axiom.kernel.loader import bootstrap_all_mods, is_mod_enabled
+    from axiom.kernel.loader import get_kernel_registry, is_mod_enabled
     cfg = load_config()
 
     if not is_mod_enabled("axiom.ui.qt", cfg):
@@ -432,8 +432,8 @@ def main() -> None:
             pass
         return 1
 
-    # Initialize global KernelRegistry and bootstrap all enabled mods
-    bootstrap_all_mods(config=cfg)
+    # The process modpack: bootstrapped once, shared by the UI and every Session (D-4).
+    get_kernel_registry(cfg)
 
     app = QApplication.instance() or QApplication(sys.argv)
     # Keep a reference on the app so the filter isn't garbage-collected.

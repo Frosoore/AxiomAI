@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Axiom is getting mods · Axiom AI blog</title>
+<meta name="description" content="Axiom is turning into a small kernel plus mods you can tick on and off, Minecraft style." />
+<meta name="theme-color" content="#1e1e2e" />
+<link rel="icon" href="../assets/icon.svg" type="image/svg+xml" />
+<link rel="alternate" type="application/rss+xml" title="Axiom AI blog" href="../feed.xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+        <header class="nav">
+            <div class="wrap nav-inner">
+                <a class="brand" href="../index.html#top"><img src="../assets/icon.svg" alt="Axiom AI logo" /><b>Axiom&nbsp;AI</b></a>
+                <nav class="nav-links">
+                    <a href="../index.html#how">How it works</a>
+                    <a href="../index.html#features">Features</a>
+                    <a href="../dev-updates.html">Roadmap</a>
+                    <a href="../blog/index.html">Blog</a>
+                    <a class="nav-cta" href="https://github.com/Frosoore/AxiomAI" target="_blank" rel="noopener">GitHub ↗</a>
+                </nav>
+            </div>
+        </header>
+        <section class="post-section"><div class="wrap">
+        <article class="post">
+            <p class="post-back"><a href="index.html">← All posts</a></p>
+            <h1 class="post-title">Axiom is getting mods</h1>
+            <p class="post-meta">October 3, 2026 · Pinpanicaille</p>
+            <div class="tldr"><span class="tldr-label">TL;DR</span>
+            <ul>
+                <li>Axiom is turning into a small kernel plus mods you can tick on and off, Minecraft style.</li>
+                <li>Even the core features (memory, time, inventory, the interfaces) are becoming mods you can swap out.</li>
+                <li>A first version exists on a separate branch, it is not ready yet, and we are fixing it before merging.</li>
+            </ul></div>
+            <div class="post-body">
+<p>Remember the &quot;quiet, but stable&quot; post from last month? Well, it stayed stable. It did not stay quiet.</p>
+<p>We started working on the biggest change Axiom has had so far: <strong>mods</strong>.</p>
+<h2>The idea</h2>
+<p>Today, every feature of Axiom is baked into the engine. Memory, time, inventory, image generation, the desktop app, the web app, all of it. If you want something different, you have to dig into the code.</p>
+<p>The plan is to flip that around. Axiom becomes a tiny kernel that does almost nothing on its own, and everything else becomes a mod. Think Minecraft with Fabric, or Skyrim with its load order:</p>
+<ul>
+<li>a mod is a single <code>.axmod</code> file you import;</li>
+<li>you tick it on or off in a list;</li>
+<li>mods can depend on other mods, and the order of the list decides who wins when two of them touch the same thing;</li>
+<li>and the features we ship (memory, time, inventory, the interfaces...) are mods too, so you can disable them or replace them with someone else's version.</li>
+</ul>
+<p>Want a completely different memory system? Write a mod that takes over the memory slot. Want a hunger gauge that drops over time? That's a small mod. Want to use Axiom for something that isn't role-play at all? In theory, even the turn itself is a mod.</p>
+<h2>Mods written by an AI</h2>
+<p>The part I'm most excited about: making a mod should be simple enough that an AI can write one for you. You ask &quot;add a hunger gauge that goes down every hour&quot;, Axiom drafts the mod, shows you exactly what it's going to install, and you say yes or no.</p>
+<p>That only works if the mod API is small, documented, and honest about what it does. So a lot of the work so far went into the boring part: rules about what the kernel is allowed to know, how mods store their data so rewinding a game still works, what happens when a mod crashes (spoiler: the mod gets turned off, not your game).</p>
+<h2>Where we are, honestly</h2>
+<p>Frosoore built a first version on a separate <code>mods</code> branch, and it's a big one. Some of it is really solid: you can already disable most features one by one and the game keeps running.</p>
+<p>But we reviewed it closely, and it is <strong>not ready</strong>. The turn engine is still wrapped inside the kernel instead of living in its own mod, a few promises are only half kept, and the review found some regressions (like the narrator no longer being told when one of its moves got rejected). We've already fixed a good chunk of that, and the rest is written down in a public status file so nothing gets lost.</p>
+<p>So: no merge yet, no release yet, and definitely no mod store yet. When it lands on the main branch, you'll hear about it here.</p>
+<h2>One more thing</h2>
+<p>We haven't decided anything about licensing for third-party mods. Until we do (after some proper legal advice), everything stays under the project's AGPL-3.0-or-later, same as today.</p>
+<p>If you have ideas of mods you'd want, or features you'd love to rip out of Axiom, come tell us on Discord or open an issue. That's exactly the kind of feedback that shapes the API.</p>
+<p>See you around.</p>
+
+            </div>
+            <p class="post-foot"><a href="index.html">← Back to the blog</a> · <a href="../index.html#top">Home</a></p>
+        </article>
+        </div></section>
+        <footer>
+            <div class="wrap">
+                <div class="foot-bottom">
+                    <span>AGPL-3.0-or-later · built by Pinpanicaille &amp; Frosoore</span>
+                    <span><a href="../feed.xml">RSS feed</a> · <a href="../blog/index.html">Blog</a> · <a href="../dev-updates.html">Dev updates</a></span>
+                </div>
+            </div>
+        </footer>
+    </body>
+</html>

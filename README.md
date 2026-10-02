@@ -352,7 +352,7 @@ Full guides available: **[English Guide](docs/guides/mods.en.md)** | **[Guide en
 Distributed under the **GNU Affero General Public License v3.0 (or later)**. See `LICENSE` for details.
 
 - **Attribution Notice:** Under AGPLv3 section 7(b), any redistribution must preserve the `NOTICE` file and credit the original project: *"Based on Axiom AI (https://github.com/Frosoore/AxiomAI) by Pinpanicaille and Frosoore."*
-- **Third-Party Mods Extensibility:** Under Section 7(b), independent third-party mods created using the public API (`ModContext`, hooks, slots, declarative schemas, and `.axmod` packaging) are recognized as separate works and may be distributed under licenses of the author's choice (MIT, Apache 2.0, proprietary, etc.). See [`docs/licensing_mods.md`](docs/licensing_mods.md) for the legal specification.
+- **Third-Party Mods:** the licensing of third-party mods is an **open question** (no exception to the AGPL has been decided; legal advice pending). Until then, the AGPL-3.0-or-later applies as-is.
 
 ---
 

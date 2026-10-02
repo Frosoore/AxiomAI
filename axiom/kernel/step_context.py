@@ -36,6 +36,13 @@ class KernelStepContext:
     auto_commit: bool = True
     session: Any = None
     result: Any = None
+    #: Conversation history and system prompt prepared by the caller (Session), so the
+    #: pipeline mod does not reach into Session internals.
+    history: list[Any] | None = None
+    system_prompt: str | None = None
+    #: Pipeline-specific objects, keyed "<mod_id>:<name>" (e.g. the engine instance a
+    #: caller wants the turn mod to use).
+    extras: dict[str, Any] = field(default_factory=dict)
 
     @property
     def turn_id(self) -> int:

@@ -24,20 +24,20 @@ class WebUIService:
 
     def get_side_panels(self) -> list[Any]:
         """Aggregate side panels contributed by other mods."""
-        if self._ctx and self._ctx._registry:
-            return self._ctx._registry.get_slot_contributions("axiom.ui.web:side_panel")
+        if self._ctx is not None:
+            return self._ctx.get_slot_contributions("axiom.ui.web:side_panel")
         return []
 
     def get_settings_tabs(self) -> list[Any]:
         """Aggregate settings tabs contributed by other mods."""
-        if self._ctx and self._ctx._registry:
-            return self._ctx._registry.get_slot_contributions("axiom.ui.web:settings_tab")
+        if self._ctx is not None:
+            return self._ctx.get_slot_contributions("axiom.ui.web:settings_tab")
         return []
 
     def get_action_buttons(self) -> list[Any]:
         """Aggregate action buttons contributed by other mods."""
-        if self._ctx and self._ctx._registry:
-            return self._ctx._registry.get_slot_contributions("axiom.ui.web:action_button")
+        if self._ctx is not None:
+            return self._ctx.get_slot_contributions("axiom.ui.web:action_button")
         return []
 
     def enrich_session_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -59,15 +59,21 @@ class WebUIService:
         self._server = server
 
         if background:
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            # Jobs owned by the mod (D11): disabling the mod stops the server.
+            thread = self._ctx.spawn_job(server.serve_forever, name="axiom.ui.web:server")
+            self._ctx.spawn_job(self._stop_on_cleanup, server, name="axiom.ui.web:stopper")
             self._server_thread = thread
-            thread.start()
             logger.info("Web UI server running in background on http://127.0.0.1:%d", port)
             return server
         else:
             logger.info("Web UI server starting synchronously on http://127.0.0.1:%d", port)
             server.serve_forever()
             return server
+
+    def _stop_on_cleanup(self, server: Any) -> None:
+        self._ctx.stop_event.wait()
+        if self._server is server:
+            self.stop_server()
 
     def stop_server(self) -> None:
         """Shut down the HTTP server if running."""

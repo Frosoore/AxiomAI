@@ -74,10 +74,21 @@ def vm(tmp_path: Path):
 
 class TestEmbedChunk:
     def test_returns_string_id(self, vm: VectorMemory) -> None:
-        """embed_chunk returns the new chunk's id as a 36-char UUID string."""
+        """embed_chunk returns the chunk's deterministic id "{save}:{turn}:{type}:{idx}" (TICKET-100)."""
         doc_id = vm.embed_chunk("save1", 1, "The knight enters the dungeon.")
-        assert isinstance(doc_id, str)
-        assert len(doc_id) == 36  # UUID format
+        assert doc_id == "save1:1:narrative:0"
+        assert vm.embed_chunk("save1", 1, "A second chunk.") == "save1:1:narrative:1"
+
+    def test_replayed_turn_overwrites_its_chunk(self, vm: VectorMemory) -> None:
+        """TICKET-100: re-embedding chunk 0 of a turn (turn replayed after a rewind
+        whose vector rollback did not run) replaces it instead of duplicating it."""
+        vm.embed_chunk("save1", 2, "Old version of turn two.", chunk_index=0)
+        vm.embed_chunk("save1", 2, "New version of turn two.", chunk_index=0)
+        res = vm._collection.get(where={"turn_id": {"$eq": 2}})
+        assert res["ids"] == ["save1:2:narrative:0"]
+        assert res["documents"] == ["New version of turn two."]
+        hits = vm.query("save1", "version of turn two", k=5)
+        assert [h["text"] for h in hits] == ["New version of turn two."]
 
     def test_returns_unique_ids(self, vm: VectorMemory) -> None:
         """Distinct chunks get distinct ids."""

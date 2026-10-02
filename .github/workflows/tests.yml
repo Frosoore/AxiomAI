@@ -1,9 +1,13 @@
 # Run the Axiom AI test suite on every push / pull request.
 #
-# The suite is split into TWO batches on purpose: loading PySide6 QtMultimedia
-# (tests/test_ambiance_manager.py) before importing torch → triton makes the
-# native triton dlopen crash on some setups (TICKET-067). Keeping the audio
-# test in its own pytest process sidesteps that, and both batches must pass.
+# The suite is split into THREE batches on purpose: loading PySide6 QtMultimedia
+# before importing torch → triton makes the native triton dlopen crash on some
+# setups (TICKET-067). Every test that loads QtMultimedia — the ambiance test and
+# every test that builds MainWindow (main_window.py imports QtMultimedia) — runs
+# in its own pytest process. The in-tree mod tests (mods/*/tests) run in a third
+# process, with the isolation fixtures of tests/conftest.py loaded as a plugin.
+# All batches must pass. The tests never touch the real ~/.config/AxiomAI or
+# ~/AxiomAI (autouse isolation fixture in tests/conftest.py).
 
 name: tests
 
@@ -30,6 +34,13 @@ jobs:
     env:
       # PySide6 has no display in CI; render off-screen.
       QT_QPA_PLATFORM: offscreen
+      # Tests whose process builds MainWindow or loads QtMultimedia (TICKET-067).
+      QT_MULTIMEDIA_TESTS: >-
+        tests/test_ambiance_manager.py
+        tests/test_help_system_mod.py
+        tests/test_mods_dialog_ui.py
+        tests/test_settings_dialog.py
+        tests/test_sillytavern_mod.py
     steps:
       - uses: actions/checkout@v4
 
@@ -81,13 +92,27 @@ jobs:
           done
           echo "::warning::could not pre-fetch embedding model; memory tests may fail"
 
-      # Batch 1 — everything except the Qt-multimedia test.
-      - name: Run tests (main batch)
-        run: pytest tests/ --ignore=tests/test_ambiance_manager.py -q
+      # Isolated config/data roots for anything run outside pytest's fixtures.
+      - name: Point Axiom AI config and data at temporary folders
+        run: |
+          echo "AXIOM_CONFIG_DIR=$RUNNER_TEMP/axiom_config" >> "$GITHUB_ENV"
+          echo "AXIOM_DATA_DIR=$RUNNER_TEMP/axiom_data" >> "$GITHUB_ENV"
 
-      # Batch 2 — the Qt-multimedia test, in its own process. `always()` so it
-      # runs even when batch 1 failed, giving a full picture; the job still
-      # fails if either batch fails.
-      - name: Run tests (audio batch)
+      # Batch 1 — everything except the Qt-multimedia tests.
+      - name: Run tests (main batch)
+        run: |
+          ignores=""
+          for f in $QT_MULTIMEDIA_TESTS; do ignores="$ignores --ignore=$f"; done
+          pytest tests/ $ignores -q
+
+      # Batch 2 — the Qt-multimedia / MainWindow tests, in their own process.
+      # `always()` so it runs even when batch 1 failed, giving a full picture;
+      # the job still fails if any batch fails.
+      - name: Run tests (Qt multimedia batch)
         if: always()
-        run: pytest tests/test_ambiance_manager.py -q
+        run: pytest $QT_MULTIMEDIA_TESTS -q
+
+      # Batch 3 — the in-tree mod test suites.
+      - name: Run tests (mods batch)
+        if: always()
+        run: pytest mods/*/tests -p tests.conftest -q

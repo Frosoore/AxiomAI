@@ -40,16 +40,3 @@ applies to this work:
 
 Removing or altering this attribution is a violation of the license
 terms (AGPLv3, section 7, last paragraph of "Additional Terms").
-
-
-Third-Party Mods and Extensibility Boundary
--------------------------------------------
-
-Third-party extensions communicating strictly through the public ModContext
-API, official hooks, JSON slots, and the .axmod packaging specification are
-considered independent modular components and are not forced into AGPLv3,
-permitting authors to choose their own licensing terms. Any mod employing
-intrusive internal monkeypatching (__code__ swapping or private core function
-interception) constitutes a derivative work subject to the GNU AGPLv3.
-See docs/licensing_mods.md for the complete legal specification.
-

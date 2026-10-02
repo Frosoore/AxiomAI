@@ -17,6 +17,39 @@
 # =============================================================================
 
 [[update]]
+id = "2026-09"
+label = "September 2026"
+summary = "Two things this month: a bug-fixing pass on everything that landed over the summer, and the start of the biggest change Axiom has seen so far, a mod system. The mods work lives on a separate <code>mods</code> branch and is not merged yet: it is an early alpha that we are still reviewing and fixing."
+
+[[update.section]]
+title = "Added"
+kind = "added"
+items = [
+    "Mod system design: Axiom becomes a small kernel plus mods (<code>.axmod</code> files you can tick on and off, with dependencies, load order and versions). Vision, critique and arbitration are written down in <code>maintenance/Mods/</code>.",
+    "First implementation on the <code>mods</code> branch (not merged): kernel loader, mod manifests, slots and hooks, <code>axiom mods</code> CLI, safe mode, patches, a mod creator driven by an LLM, and the existing features (time, inventory, memory, images, providers, UIs) repackaged as mods you can disable one by one.",
+    "Engine clean-up done ahead of the mods: one storage registry for rewind, fork and export, a turn that is written in a single transaction, and a golden test harness.",
+]
+
+[[update.section]]
+title = "Fixed"
+kind = "fixed"
+items = [
+    "The desktop window no longer hangs forever at startup.",
+    "A fresh install compiles the bundled Myria universe again (no more <code>FOREIGN KEY constraint failed</code>).",
+    "Rewinding a game now rewinds the inventory too.",
+    "Security pass on the web version; i18n check fixed in CI.",
+    "A failed or cancelled turn no longer leaves an orphan player message behind (mods branch).",
+]
+
+[[update.section]]
+title = "Known rough edges"
+kind = "known"
+items = [
+    "The mods branch is not ready: the turn engine still lives in the kernel instead of its own mod, some promises are not kept yet (stored data for mods, mod list saved in the save file), and a review on Oct 3 found regressions that are being fixed. Full status in <code>maintenance/Mods/ETAT_REEL.md</code>.",
+    "No license decision yet for third-party mods: until then, everything stays under the project's AGPL-3.0-or-later.",
+]
+
+[[update]]
 id = "2026-08"
 label = "August 2026"
 summary = "A quiet month on the calendar, but one big drop at the very end: the web UI becomes the daily driver (streaming, cancel, full settings and lobby), and play state is finally editable without a TOML blob: typed stats, session lore that stays on the save, and nested inventory."

@@ -24,3 +24,10 @@ sont explicitement écartées).
 - Non-objectifs assumés : pas de sécurité/sandbox, pas de résilience des saves, pas de trieur imposé.
 - Pendant le découpage du tour : propriétaire unique de `arbitrator.py`/`session.py` (à caler avec
   Frosoore, cf. [[project-parallel-dev-handover]]).
+
+**Mise à jour 2026-10-03 :** Frosoore a implémenté le chantier sur la branche `mods` (4 commits,
+TODO « tout ✅ »). Revue par 4 agents → `maintenance/Mods/review-2026-10-03/0-SYNTHESE.md` :
+direction bonne mais **pas mergeable** — « tour = mod » est une façade (`arbitrator.py` resté dans
+le noyau), le noyau dépend des mods via proxys, régressions (boucle de correction, erreurs masquées,
+fork qui perd la mémoire living), licence des mods tranchée sans le propriétaire. ⚠ Les tests mods
+écrivent dans la vraie `~/.config/AxiomAI/settings.json` (fixture n'isole pas la config).

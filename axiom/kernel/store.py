@@ -95,7 +95,8 @@ def fetch_store_index(
 
     if repo_url is None:
         # Default fallback to repo-bundled index if present, else empty or default URL
-        local_dist_index = Path("dist/mods/store_index.json").resolve()
+        from axiom.kernel.loader import get_official_mods_dir
+        local_dist_index = get_official_mods_dir().parent / "dist" / "mods" / "store_index.json"
         if local_dist_index.is_file():
             raw_json = local_dist_index.read_text(encoding="utf-8")
         else:
@@ -205,7 +206,7 @@ def _download_file(url: str, dest_path: Path) -> Path:
 def install_mod_from_store(
     mod_id: str,
     version: str | None = None,
-    dest_dir: Path | str = Path("mods"),
+    dest_dir: Path | str | None = None,
     repo_url: str | Path | None = None,
     enable: bool = True,
 ) -> Path:
@@ -214,7 +215,7 @@ def install_mod_from_store(
     Args:
         mod_id: Namespaced mod ID.
         version: Optional exact version string.
-        dest_dir: Destination folder (default: mods/).
+        dest_dir: Destination folder (default: the user mods folder, never the repository).
         repo_url: Optional index URL or file path.
         enable: Whether to enable the mod in AppConfig.
 
@@ -256,7 +257,12 @@ def install_mod_from_store(
 
         # 2. Manifest and API check
         manifest = load_manifest_from_archive(temp_axmod)
-        if manifest.axiom_api != 1:
+        if manifest.id != target_entry.id:
+            raise StoreError(
+                f"Store entry '{target_entry.id}' contains a mod whose manifest id is '{manifest.id}'; refused."
+            )
+        from axiom.kernel.api import KERNEL_API
+        if manifest.axiom_api != KERNEL_API:
             raise StoreError(
                 f"Mod '{mod_id}' requires incompatible axiom_api version: {manifest.axiom_api}"
             )
@@ -268,6 +274,9 @@ def install_mod_from_store(
                 logger.warning("[PythonDeps] %s", w)
 
         # 4. Unpack into target destination
+        if dest_dir is None:
+            from axiom.kernel.loader import get_user_mods_dir
+            dest_dir = get_user_mods_dir()
         target_dir = Path(dest_dir).resolve() / manifest.id
         if target_dir.exists():
             shutil.rmtree(target_dir)
@@ -275,11 +284,6 @@ def install_mod_from_store(
 
         with zipfile.ZipFile(temp_axmod, "r") as zf:
             zf.extractall(target_dir)
-
-        # Also store the verified archive in dist/mods if available and installing to standard mods dir
-        dist_dir = Path("dist/mods")
-        if dist_dir.is_dir() and Path(dest_dir).resolve() == Path("mods").resolve():
-            shutil.copy2(temp_axmod, dist_dir / f"{manifest.id}-{manifest.version}.axmod")
 
     # 5. Enable in configuration
     if enable:

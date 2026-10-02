@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 import zipfile
 
-from axiom.kernel.manifest import ManifestError, parse_manifest_file
+from axiom.kernel.manifest import ManifestError, ModManifest, parse_manifest_file
 from axiom.logger import logger
 
 
@@ -34,7 +34,7 @@ def pack_mod(
     manifest = parse_manifest_file(manifest_file)
 
     if output_path is None:
-        dist_dir = Path("dist/mods")
+        dist_dir = Path.cwd() / "dist" / "mods"
         dist_dir.mkdir(parents=True, exist_ok=True)
         dest = dist_dir / f"{manifest.id}-{manifest.version}.axmod"
     else:
@@ -61,37 +61,10 @@ def pack_mod(
 
 
 def discover_installed_mods(extra_dirs: list[Path] | None = None) -> list[tuple[ModManifest, Path]]:
-    """Scan standard locations for installed mods (.axmod archives or unpacked dirs)."""
-    search_dirs: list[Path] = [Path("mods"), Path("dist/mods")]
-    if extra_dirs:
-        search_dirs.extend(extra_dirs)
-
-    found: dict[str, tuple[ModManifest, Path]] = {}
-
-    for base_dir in search_dirs:
-        if not base_dir.is_dir():
-            continue
-
-        # 1. Unpacked directories
-        for sub_dir in sorted(base_dir.iterdir()):
-            if sub_dir.is_dir() and (sub_dir / "mod.toml").is_file():
-                try:
-                    manifest = parse_manifest_file(sub_dir / "mod.toml")
-                    found[manifest.id] = (manifest, sub_dir)
-                except Exception as err:
-                    logger.debug("Failed to parse manifest in %s: %s", sub_dir, err)
-
-        # 2. .axmod archives
-        for archive_file in sorted(base_dir.glob("*.axmod")):
-            try:
-                from axiom.kernel.manifest import load_manifest_from_archive
-                manifest = load_manifest_from_archive(archive_file)
-                if manifest.id not in found:
-                    found[manifest.id] = (manifest, archive_file)
-            except Exception as err:
-                logger.debug("Failed to read archive %s: %s", archive_file, err)
-
-    return sorted(found.values(), key=lambda t: t[0].id)
+    """Installed mods (.axmod archives or unpacked dirs) from the official mods folder and the
+    user mods folder — absolute paths, independent of the current directory, `dist/` excluded."""
+    from axiom.kernel.loader import discover_mods
+    return discover_mods(extra_dirs)
 
 
 def add_mod_arguments(parser: argparse.ArgumentParser) -> None:
@@ -113,8 +86,27 @@ def add_mod_arguments(parser: argparse.ArgumentParser) -> None:
     disable_p.set_defaults(func=run_mod_disable)
 
     # patches (D13)
-    patches_p = sub.add_parser("patches", help="List active or declared Python function patches.")
+    patches_p = sub.add_parser("patches", help="List active Python function patches (and declared ones).")
+    patches_p.add_argument(
+        "--load",
+        action="store_true",
+        default=False,
+        help="Load the modpack in this process first, to list the patches really installed.",
+    )
     patches_p.set_defaults(func=run_mods_patches)
+
+    # conflicts (§8, D13)
+    conflicts_p = sub.add_parser("conflicts", help="Show mod conflicts and exclusive slot winners.")
+    conflicts_p.set_defaults(func=run_mods_conflicts)
+
+    # order (§8)
+    order_p = sub.add_parser("order", help="Show or set the user load order of mods.")
+    order_p.add_argument(
+        "mod_ids",
+        nargs="*",
+        help="New preferred order (highest priority first). Without ids, print the effective order.",
+    )
+    order_p.set_defaults(func=run_mods_order)
 
     # validate
     validate_p = sub.add_parser("validate", help="Statically validate a mod directory or .axmod archive.")
@@ -147,7 +139,7 @@ def add_mod_arguments(parser: argparse.ArgumentParser) -> None:
     new_p.add_argument(
         "--dir",
         default=None,
-        help="Custom destination directory (default: mods/<mod_id>).",
+        help="Custom destination directory (default: <user mods folder>/<mod_id>).",
     )
     new_p.add_argument("--author", default="Axiom Community", help="Author metadata.")
     new_p.add_argument("--description", default="", help="Short description.")
@@ -191,7 +183,7 @@ def add_mod_arguments(parser: argparse.ArgumentParser) -> None:
     install_p = sub.add_parser("install", help="Install and verify a mod package from the store.")
     install_p.add_argument("mod_id", help="ID of the mod to install (e.g. 'axiom.world').")
     install_p.add_argument("--version", default=None, help="Specific version to install.")
-    install_p.add_argument("--dest", default="mods", help="Destination folder (default: mods).")
+    install_p.add_argument("--dest", default=None, help="Destination folder (default: the user mods folder).")
     install_p.add_argument("--repo", default=None, help="Custom repository index URL or path.")
     install_p.set_defaults(func=run_mods_install)
 
@@ -205,33 +197,82 @@ def add_mod_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def run_mods_patches(args: argparse.Namespace) -> int:
-    """Handler for `axiom mods patches` command (Rule D13)."""
+    """Handler for `axiom mods patches` command (Rule D13).
+
+    Lists only patches really installed in this process (never an inactive one). In a
+    fresh CLI process no mod is loaded: `--load` loads the modpack first; otherwise the
+    patches declared in the manifests are shown in a separate, explicitly labelled list.
+    """
     from axiom.kernel.patcher import get_active_patches
 
+    if getattr(args, "load", False):
+        from axiom.kernel.loader import get_kernel_registry
+        get_kernel_registry()
+
     active_records = get_active_patches()
-
-    # Also inspect installed mods for declared patches
-    declared: list[tuple[str, str, str, int]] = []
-    if not active_records:
-        installed = discover_installed_mods()
-        for manifest, _ in installed:
-            for patch_target in manifest.contributes.patches:
-                declared.append((patch_target, "declared", manifest.id, 100))
-
-    if not active_records and not declared:
-        print("No active or declared function patches.")
-        return 0
-
-    print(f"{'Target Function':<35} {'Type':<10} {'Mod ID':<20} {'Priority'}")
-    print("-" * 75)
-
     if active_records:
+        print(f"{'Target Function':<35} {'Type':<10} {'Mod ID':<20} {'Priority'}")
+        print("-" * 75)
         for r in sorted(active_records, key=lambda x: (x.target_name, x.priority)):
             print(f"{r.target_name:<35} {r.patch_type.value:<10} {r.mod_id:<20} {r.priority}")
-    else:
-        for target, ptype, mod_id, priority in declared:
-            print(f"{target:<35} {ptype:<10} {mod_id:<20} {priority}")
+        return 0
 
+    declared: list[tuple[str, str]] = []
+    for manifest, _ in discover_installed_mods():
+        for patch_target in manifest.contributes.patches:
+            declared.append((patch_target, manifest.id))
+
+    print("No active function patch in this process.")
+    if declared:
+        print("\nDeclared in manifests (NOT active here; run with --load to load the modpack):")
+        for target, mod_id in declared:
+            print(f"  {target:<35} {mod_id}")
+    return 0
+
+
+def run_mods_conflicts(args: argparse.Namespace) -> int:
+    """Handler for `axiom mods conflicts` (§8, D13): declared conflicts, cycles and
+    exclusive slots claimed by several mods (first in mod order wins)."""
+    from axiom.config import load_config
+    from axiom.kernel.loader import get_load_state, plan_modpack
+
+    plan = plan_modpack(discover_installed_mods(), load_config())
+    report = plan.report
+    found = False
+    for loser, winner, explanation in report.conflicts:
+        found = True
+        print(f"CONFLICT  {explanation}: '{winner}' wins, '{loser}' is not loaded.")
+    for cycle in report.cycles:
+        found = True
+        print(f"CYCLE     {' -> '.join(cycle)}: these mods are not loaded.")
+    exclusive = dict(plan.exclusive_conflicts)
+    state = get_load_state()
+    if state is not None:
+        exclusive.update(state.registry.get_slot_conflicts())
+    for slot, mods in sorted(exclusive.items()):
+        found = True
+        others = ", ".join(mods[1:])
+        print(f"EXCLUSIVE '{slot}': {', '.join(mods)} provide it; '{mods[0]}' wins (ignored: {others}).")
+    if not found:
+        print("No conflict between the enabled mods.")
+    return 0
+
+
+def run_mods_order(args: argparse.Namespace) -> int:
+    """Handler for `axiom mods order [ids...]` (§8)."""
+    from axiom.config import load_config, save_config
+    from axiom.kernel.loader import get_user_mod_order, plan_modpack, set_user_mod_order
+
+    cfg = load_config()
+    if args.mod_ids:
+        set_user_mod_order(cfg, [m.strip() for m in args.mod_ids if m.strip()])
+        save_config(cfg)
+        print("Mod order saved.")
+    plan = plan_modpack(discover_installed_mods(), cfg)
+    print(f"User order: {', '.join(get_user_mod_order(cfg)) or '(none: alphabetical under constraints)'}")
+    print("Effective load order (dependencies and before/after constraints applied):")
+    for i, mod_id in enumerate(plan.load_order, 1):
+        print(f"  {i:>2}. {mod_id}")
     return 0
 
 
@@ -274,24 +315,43 @@ def run_mod_validate(args: argparse.Namespace) -> int:
 
 
 def run_mod_list(args: argparse.Namespace) -> int:
-    """Handler for `axiom mods list` command."""
+    """Handler for `axiom mods list` command.
+
+    Shows the real status of each mod (B5): the plan computed from the manifests
+    (user choice, safe mode, Python packages, API, dependencies with cascade, conflicts,
+    cycles) merged with what happened in this process if mods were loaded (init errors,
+    runtime faults).
+    """
     from axiom.config import load_config
-    from axiom.kernel.loader import is_mod_enabled
+    from axiom.kernel.api import KERNEL_API
+    from axiom.kernel.loader import get_load_state, get_mod_search_dirs, plan_modpack
 
     cfg = load_config()
     mods = discover_installed_mods()
 
     if not mods:
-        print("No mods found in standard directories (mods/, dist/mods/).")
+        dirs = ", ".join(str(d) for d in get_mod_search_dirs())
+        print(f"No mods found in the mod folders ({dirs}).")
         return 0
 
-    print(f"{'MOD ID':<28} {'VERSION':<10} {'STATUS':<10} {'API':<8} {'NAME'}")
-    print("-" * 75)
+    plan = plan_modpack(mods, cfg)
+    statuses = dict(plan.statuses)
+    state = get_load_state()
+    if state is not None:
+        statuses.update({k: v for k, v in state.statuses.items() if k in statuses})
+
+    print(f"{'MOD ID':<28} {'VERSION':<10} {'STATUS':<12} {'ORDER':<6} {'API':<8} {'NAME'}")
+    print("-" * 90)
     for manifest, _path in mods:
-        enabled = is_mod_enabled(manifest.id, cfg)
-        status = "enabled" if enabled else "disabled"
-        api_compat = "v1 (OK)" if manifest.axiom_api == 1 else f"v{manifest.axiom_api} (!)"
-        print(f"{manifest.id:<28} {manifest.version:<10} {status:<10} {api_compat:<8} {manifest.localized_name()}")
+        st = statuses[manifest.id]
+        status = "enabled" if st.state in ("enabled", "active") else "disabled"
+        order = str(st.order + 1) if st.order is not None and status == "enabled" else "-"
+        api_compat = f"v{manifest.axiom_api} (OK)" if manifest.axiom_api == KERNEL_API else f"v{manifest.axiom_api} (!)"
+        print(f"{manifest.id:<28} {manifest.version:<10} {status:<12} {order:<6} {api_compat:<8} {manifest.localized_name()}")
+        if st.reason and st.state != "enabled":
+            print(f"    -> {st.state}: {st.reason}")
+    if plan.exclusive_conflicts or plan.report.conflicts or plan.report.cycles:
+        print("\nConflicts found: run 'axiom mods conflicts' for details.")
     return 0
 
 
@@ -420,8 +480,12 @@ def _print_colored_diff(diff_text: str) -> None:
 
 
 def run_mod_generate(args: argparse.Namespace) -> int:
-    """Handler for `axiom mod generate` command (Rule §12 & D14)."""
-    from axiom.kernel.llm_creator import apply_generated_mod, generate_mod
+    """Handler for `axiom mod generate` command (Rule §12 & D14).
+
+    Nothing generated is executed before the user's confirmation: the diff and a static
+    validation are shown first; the mod's tests run only after "yes", before install.
+    """
+    from axiom.kernel.llm_creator import ModTestsFailedError, apply_generated_mod, generate_mod
 
     print(f"Generating mod from prompt: \"{args.prompt}\"...")
     try:
@@ -432,7 +496,7 @@ def run_mod_generate(args: argparse.Namespace) -> int:
 
     print("\n" + "=" * 65)
     print(f"GENERATED MOD: {result.mod_id} (v{result.manifest.version})")
-    print(f"Staged at: {result.staged_dir}")
+    print(f"Preparation folder: {result.staged_dir}")
     print("=" * 65)
 
     for rel_path, diff in result.file_diffs.items():
@@ -441,12 +505,13 @@ def run_mod_generate(args: argparse.Namespace) -> int:
         _print_colored_diff(diff)
 
     print("\n" + "-" * 65)
-    if result.tests_passed:
-        print("Sandbox Tests & Validation: PASSED")
+    if result.validation_passed:
+        print("Static validation (no code executed): PASSED")
     else:
-        print("Sandbox Tests & Validation: WARNINGS/FAILURES ENCOUNTERED")
+        print("Static validation (no code executed): PROBLEMS FOUND")
         if result.error_report:
             print(result.error_report)
+    print("The mod's tests will run only after your confirmation.")
 
     # User confirmation gate
     if not args.yes:
@@ -457,14 +522,21 @@ def run_mod_generate(args: argparse.Namespace) -> int:
             return 1
 
         if choice not in ("y", "yes", "oui", "o"):
-            print(f"\nInstallation annulée. Les fichiers générés sont conservés dans :\n  {result.staged_dir}")
+            print(f"\nInstallation annulée. Les fichiers générés sont conservés dans le dossier de préparation :\n  {result.staged_dir}")
             return 0
 
-    dest_dir, axmod_path = apply_generated_mod(result.staged_dir)
+    try:
+        dest_dir, axmod_path = apply_generated_mod(result.staged_dir)
+    except ModTestsFailedError as err:
+        print(f"\nLes tests du mod ont échoué, rien n'a été installé :\n{err}", file=sys.stderr)
+        return 1
+    except Exception as err:
+        print(f"\nInstallation impossible : {err}", file=sys.stderr)
+        return 1
     print(f"\nMod '{result.mod_id}' installé avec succès dans : {dest_dir}")
     if axmod_path:
         print(f"Archive compilée : {axmod_path}")
-    print(f"Mod activé dans la configuration.")
+    print("Mod activé dans la configuration.")
     return 0
 
 

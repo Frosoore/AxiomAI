@@ -80,7 +80,7 @@ def test_scaffold_mod_hook_archetype(tmp_path: Path) -> None:
     manifest = parse_manifest_file(dest / "mod.toml")
     assert manifest.id == "community.weather"
     assert manifest.axiom_api == 1
-    assert "axiom.turn:after_step" in manifest.contributes.hooks
+    assert "axiom.step:after_step" in manifest.contributes.hooks
 
     # Validate test runner
     result = test_mod(dest)
@@ -225,7 +225,7 @@ def test_mod_dev_poll_and_cleanup(tmp_path: Path) -> None:
     assert reloaded
     assert ctx is not None
     assert ctx.mod_id == "community.hotreload"
-    assert any(mid == "community.hotreload" for mid, _ in registry._hooks.get("axiom.turn:after_step", []))
+    assert any(mid == "community.hotreload" for mid, _ in registry._hooks.get("axiom.step:after_step", []))
 
     # Second poll without changes should do nothing
 
@@ -266,7 +266,7 @@ description = "Tracks physical exhaustion"
 author = "LLM Creator"
 
 [contributes]
-hooks = ["axiom.turn:after_step"]
+hooks = ["axiom.step:after_step"]
 slots = ["axiom.turn:prompt_sections"]
 """,
             "main.py": """from axiom.kernel.context import ModContext
@@ -275,11 +275,10 @@ def on_after_step(data: dict) -> None:
     pass
 
 def init(ctx: ModContext) -> None:
-    ctx.register_hook("axiom.turn:after_step", on_after_step)
+    ctx.register_hook("axiom.step:after_step", on_after_step)
     ctx.contribute_slot("axiom.turn:prompt_sections", {
-        "id": "fatigue_section",
-        "title": "Fatigue",
-        "content": "Fatigue: Moderate (40/100)",
+        "position": "system",
+        "text": "Fatigue: Moderate (40/100)",
     })
 """,
             "tests/test_fatigue.py": """from axiom.kernel.manifest import parse_manifest_file
@@ -296,7 +295,7 @@ def test_fatigue_manifest():
     staged_root = tmp_path / "staged"
     installed_root = tmp_path / "installed"
 
-    # Step 1: Generate into sandbox
+    # Step 1: Generate into the preparation folder (static validation only)
     gen_result: ModGenerationResult = generate_mod(
         prompt="Create a fatigue system that tracks exhaustion",
         llm_backend=mock_llm,
@@ -308,7 +307,8 @@ def test_fatigue_manifest():
     assert gen_result.staged_dir == staged_root / "community.fatigue"
     assert gen_result.staged_dir.is_dir()
     assert (gen_result.staged_dir / "mod.toml").is_file()
-    assert gen_result.tests_passed, f"Staging tests failed: {gen_result.error_report}"
+    assert gen_result.validation_passed, f"Static validation failed: {gen_result.error_report}"
+    assert gen_result.tests_passed  # backward-compatible alias
 
     # Diffs must be present for all 3 files
     assert "mod.toml" in gen_result.file_diffs

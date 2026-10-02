@@ -5,7 +5,7 @@ Provides:
 1. Local semantic memory store backed by ChromaDB and offline embeddings.
 2. Slot contribution to axiom.turn:prompt_sections (injects relevant past memories into LLM prompt).
 3. Hook axiom.step:after_step (embeds generated narrative prose into ChromaDB post-commit).
-4. Custom storage rollback registration in storage_registry.
+4. External storage registration (rewind after the SQL commit) via ctx.register_storage.
 5. Service 'rag' registration for engine and session queries.
 """
 
@@ -76,6 +76,12 @@ class RagService:
         vm = self.get_vector_memory(save_id)
         return vm.rollback(save_id, target_turn_id)
 
+    def fork(self, src_save_id: str, dst_save_id: str, at_turn: int) -> int:
+        """Give a forked save the source's memories up to the fork point."""
+        src = self.get_vector_memory(src_save_id)
+        dst = self.get_vector_memory(dst_save_id)
+        return src.copy_to(dst, src_save_id, dst_save_id, at_turn)
+
 
 _RAG_SERVICE: RagService | None = None
 
@@ -139,7 +145,9 @@ def on_after_step(ctx: Any) -> None:
 
     def _embed() -> None:
         try:
-            svc.embed_chunk(save_id, turn_id, narrative)
+            # One narrative chunk per turn: index 0, so a turn replayed after a
+            # rewind overwrites its chunk instead of duplicating it (TICKET-100).
+            svc.embed_chunk(save_id, turn_id, narrative, chunk_index=0)
         except Exception as exc:
             logger.warning("[axiom.rag] Narrative embedding failed: %s", exc)
 
@@ -160,16 +168,10 @@ def init(ctx: ModContext) -> None:
     # Register turn hook
     ctx.register_hook("axiom.step:after_step", on_after_step)
 
-    # Register custom storage rollback with storage_registry
-    try:
-        from axiom.storage_registry import register_custom_storage
-        register_custom_storage(
-            "vector_store",
-            rewind_callback=lambda conn, sid, t: svc.rollback(sid, t),
-        )
-        register_custom_storage(
-            "VectorMemory",
-            rewind_callback=lambda conn, sid, t: svc.rollback(sid, t),
-        )
-    except Exception as exc:
-        logger.debug("[axiom.rag] Failed to register custom storage: %s", exc)
+    # External store: rolled back by the engine after the SQL rewind is
+    # committed; unregistered when the mod is disabled.
+    ctx.register_storage(
+        "vector_store",
+        rewind_callback=lambda conn, sid, t: svc.rollback(sid, t),
+        fork_callback=lambda conn, src, dst, t: svc.fork(src, dst, t),
+    )

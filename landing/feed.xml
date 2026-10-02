@@ -6,7 +6,14 @@
     <atom:link href="https://frosoore.github.io/AxiomAI/feed.xml" rel="self" type="application/rss+xml" />
     <description>News, deep dives and the life of the Axiom AI project.</description>
     <language>en</language>
-    <lastBuildDate>Tue, 22 Sep 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 03 Oct 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>Axiom is getting mods</title>
+      <link>https://frosoore.github.io/AxiomAI/blog/axiom-is-getting-mods.html</link>
+      <guid isPermaLink="true">https://frosoore.github.io/AxiomAI/blog/axiom-is-getting-mods.html</guid>
+      <pubDate>Sat, 03 Oct 2026 00:00:00 +0000</pubDate>
+      <description>Axiom is turning into a small kernel plus mods you can tick on and off, Minecraft style. / Even the core features (memory, time, inventory, the interfaces) are becoming mods you can swap out. / A first version exists on a separate branch, it is not ready yet, and we are fixing it before merging.</description>
+    </item>
     <item>
       <title>Quiet, but stable</title>
       <link>https://frosoore.github.io/AxiomAI/blog/quiet-but-stable.html</link>

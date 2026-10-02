@@ -17,7 +17,6 @@ from axiom.config import AppConfig, load_config
 from axiom.kernel.context import ModContext
 from axiom.logger import logger
 from axiom.savestore import truncate_assets_in
-from axiom.storage_registry import register_custom_storage
 
 
 class IllustrationsService:
@@ -86,7 +85,7 @@ def build_illustrations_prompt_section(ctx: Any) -> dict[str, str] | None:
     return None
 
 
-def on_after_step(ctx: Any) -> None:
+def on_after_step(ctx: Any, mod_ctx: ModContext | None = None) -> None:
     """Hook: axiom.step:after_step.
     Extracts visual descriptions and schedules image generation post-commit.
     """
@@ -128,9 +127,10 @@ def on_after_step(ctx: Any) -> None:
 
     if hasattr(ctx, "write_batch") and hasattr(ctx.write_batch, "post_commit_callbacks"):
         ctx.write_batch.post_commit_callbacks.append(_generate)
+    elif mod_ctx is not None:
+        mod_ctx.spawn_job(_generate, name="axiom.illustrations:generate")  # stopped with the mod
     else:
-        import threading
-        threading.Thread(target=_generate, daemon=True).start()
+        _generate()
 
 
 def init(ctx: ModContext) -> None:
@@ -141,19 +141,17 @@ def init(ctx: ModContext) -> None:
     ctx.register_service("illustrations", svc)
 
     # 2. Register hook
-    ctx.register_hook("axiom.step:after_step", on_after_step)
+    ctx.register_hook("axiom.step:after_step", lambda turn_ctx: on_after_step(turn_ctx, ctx))
 
     # 3. Register prompt section contribution
     ctx.contribute_slot("axiom.turn:prompt_sections", build_illustrations_prompt_section)
 
-    # 4. Register custom storage rollback with storage_registry
-    try:
-        register_custom_storage(
-            "assets",
-            rewind_callback=lambda conn, sid, t: svc.truncate_assets(sid, t),
-        )
-    except Exception as exc:
-        logger.debug("[axiom.illustrations] Failed to register custom storage 'assets': %s", exc)
+    # 4. External store (turn images): truncated by the engine after the SQL
+    # rewind is committed; unregistered when the mod is disabled.
+    ctx.register_storage(
+        "assets",
+        rewind_callback=lambda conn, sid, t: svc.truncate_assets(sid, t),
+    )
 
     # 5. Register settings tab contribution
     try:

@@ -20,7 +20,6 @@ ID              : UUID string, generated per chunk
 """
 
 import json
-import uuid
 from typing import Any
 
 from axiom.retrieval import fusion, lexical
@@ -158,6 +157,11 @@ class _EmbeddingSingleton:
         return cls._instance
 
 
+def chunk_id(save_id: str, turn_id: int, chunk_type: str, index: int) -> str:
+    """Deterministic ChromaDB id of a memory chunk (TICKET-100)."""
+    return f"{save_id}:{int(turn_id)}:{chunk_type}:{int(index)}"
+
+
 class VectorMemory:
     """Local semantic memory store backed by ChromaDB.
 
@@ -182,9 +186,9 @@ class VectorMemory:
         # of the lexical arm); rebuilding it identically every turn is wasteful for
         # a corpus that did not change (e.g. the lore subset, embedded once per
         # session). Value: (fingerprint, bm25, built_ids). The fingerprint is the
-        # corpus's id-set — sound because every content change mints a fresh chunk
-        # uuid (embed adds; update_turn_narrative deletes-then-adds), so an
-        # unchanged id-set means unchanged content. ``built_ids`` is the id order
+        # corpus's id-set — sound because a new chunk gets a new id and the only
+        # in-place overwrite (embed_chunk upserting an existing deterministic id)
+        # clears this cache, so an unchanged id-set means unchanged content. ``built_ids`` is the id order
         # the index was built against (Chroma's get() does not promise a stable
         # order across calls, and BM25 scoring aligns by position). The growing
         # narrative corpus changes its id-set each turn and correctly rebuilds.
@@ -222,13 +226,23 @@ class VectorMemory:
         text: str,
         chunk_type: str = "narrative",
         metadata_extra: dict[str, Any] | None = None,
+        chunk_index: int | None = None,
     ) -> str:
         """Embed a text chunk and store it with turn_id metadata.
+
+        The chunk id is deterministic, ``"{save_id}:{turn_id}:{chunk_type}:{idx}"``,
+        and written with ``upsert`` (TICKET-100): embedding the same chunk of the
+        same turn again (a turn replayed after a rewind) replaces it instead of
+        adding a duplicate.
 
         Args:
             metadata_extra: Optional extra metadata merged into the chunk record
                 (e.g. a lore entry's ``entry_id``). The core keys (save_id,
                 turn_id, chunk_type) always take precedence.
+            chunk_index: Position of the chunk within (turn, chunk_type). Callers
+                that know it (one narrative chunk per turn → 0) pass it so a
+                replay overwrites. ``None`` appends: next free index of that
+                turn and type.
         """
         if not text or not text.strip():
             raise ValueError("Cannot embed empty or whitespace-only text.")
@@ -236,19 +250,41 @@ class VectorMemory:
         self._ensure_connected()
         if self._disabled:
             return ""
-        doc_id = str(uuid.uuid4())
+        if chunk_index is None:
+            chunk_index = self._next_chunk_index(save_id, turn_id, chunk_type)
+            doc_id = chunk_id(save_id, turn_id, chunk_type, chunk_index)
+        else:
+            doc_id = chunk_id(save_id, turn_id, chunk_type, chunk_index)
+            if self._collection.get(ids=[doc_id], include=[]).get("ids"):
+                self._bm25_cache.clear()  # same id, new content: id-set fingerprint unchanged
         metadata: dict[str, Any] = dict(metadata_extra or {})
         metadata.update({
             "save_id": save_id,
             "turn_id": turn_id,
             "chunk_type": chunk_type,
         })
-        self._collection.add(
+        self._collection.upsert(
             documents=[text],
             metadatas=[metadata],
             ids=[doc_id],
         )
         return doc_id
+
+    def _next_chunk_index(self, save_id: str, turn_id: int, chunk_type: str) -> int:
+        """First unused index among this (save, turn, type)'s deterministic ids."""
+        existing = self._collection.get(
+            where={"$and": [
+                {"save_id": {"$eq": save_id}},
+                {"turn_id": {"$eq": turn_id}},
+                {"chunk_type": {"$eq": chunk_type}},
+            ]},
+            include=[],
+        )
+        used = set(existing.get("ids", []) or [])
+        idx = 0
+        while chunk_id(save_id, turn_id, chunk_type, idx) in used:
+            idx += 1
+        return idx
 
     def query(
         self,
@@ -475,6 +511,7 @@ class VectorMemory:
             self.embed_chunk(
                 save_id, 0, text, chunk_type="lore",
                 metadata_extra={"entry_id": str(entry_id)},
+                chunk_index=count,
             )
             count += 1
         return count
@@ -499,6 +536,59 @@ class VectorMemory:
             self._collection.delete(ids=ids_to_delete)
 
         return len(ids_to_delete)
+
+    def copy_to(
+        self,
+        target: "VectorMemory",
+        src_save_id: str,
+        dst_save_id: str,
+        max_turn_id: int,
+    ) -> int:
+        """Copy this save's chunks up to ``max_turn_id`` into ``target`` (save fork).
+
+        Embeddings are copied as is (no re-embedding); ids are re-derived for the
+        new save. Returns the number of chunks copied (0 when a store is disabled).
+        """
+        self._ensure_connected()
+        target._ensure_connected()
+        if self._disabled or target._disabled:
+            return 0
+        res = self._collection.get(
+            where={"$and": [
+                {"save_id": {"$eq": src_save_id}},
+                {"turn_id": {"$lte": max_turn_id}},
+            ]},
+            include=["documents", "metadatas", "embeddings"],
+        )
+        ids = list(res.get("ids") or [])
+        if not ids:
+            return 0
+        docs = list(res.get("documents") or [])
+        metas = list(res.get("metadatas") or [])
+        embs = res.get("embeddings")
+        embs = [list(e) for e in embs] if embs is not None else None
+
+        order = sorted(range(len(ids)), key=lambda i: ids[i])
+        next_idx: dict[tuple[int, str], int] = {}
+        new_ids, new_docs, new_metas, new_embs = [], [], [], []
+        for i in order:
+            meta = dict(metas[i] or {})
+            turn = int(meta.get("turn_id", 0))
+            ctype = str(meta.get("chunk_type", "narrative"))
+            idx = next_idx.get((turn, ctype), 0)
+            next_idx[(turn, ctype)] = idx + 1
+            meta["save_id"] = dst_save_id
+            new_ids.append(chunk_id(dst_save_id, turn, ctype, idx))
+            new_docs.append(docs[i])
+            new_metas.append(meta)
+            if embs is not None:
+                new_embs.append(embs[i])
+        kwargs: dict[str, Any] = {"ids": new_ids, "documents": new_docs, "metadatas": new_metas}
+        if embs is not None:
+            kwargs["embeddings"] = new_embs
+        target._collection.upsert(**kwargs)
+        target._bm25_cache.clear()
+        return len(new_ids)
 
     def update_turn_narrative(
         self,
@@ -527,5 +617,5 @@ class VectorMemory:
             self._collection.delete(ids=ids_to_delete)
         
         if new_text and new_text.strip():
-            self.embed_chunk(save_id, turn_id, new_text, chunk_type)
+            self.embed_chunk(save_id, turn_id, new_text, chunk_type, chunk_index=0)
 

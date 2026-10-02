@@ -10,7 +10,8 @@ distillation) when a rewind, save change, or fork occurs concurrently.
 from __future__ import annotations
 
 import threading
-from typing import Callable
+from contextlib import contextmanager
+from typing import Callable, Iterator
 
 from axiom.logger import logger
 
@@ -21,6 +22,9 @@ class SessionEpochManager:
     def __init__(self, initial_epoch: int = 0) -> None:
         self._epoch = initial_epoch
         self._lock = threading.Lock()
+        # Held by a guarded write (check + write) and by bump(): an epoch change
+        # can never land between a job's check and its write (R2-m-6).
+        self._write_lock = threading.RLock()
 
     @property
     def current(self) -> int:
@@ -28,10 +32,36 @@ class SessionEpochManager:
             return self._epoch
 
     def bump(self) -> int:
-        """Atomically increment the epoch and return the new value."""
-        with self._lock:
-            self._epoch += 1
-            return self._epoch
+        """Atomically increment the epoch and return the new value.
+
+        Waits for a write running under :meth:`guarded_write` to finish, so the
+        caller's next step (a rewind) sees — and removes — what it wrote.
+        """
+        with self._write_lock:
+            with self._lock:
+                self._epoch += 1
+                return self._epoch
+
+    @contextmanager
+    def guarded_write(
+        self,
+        captured_epoch: int,
+        epoch_checker: Callable[[], int] | None = None,
+    ) -> Iterator[bool]:
+        """Check the epoch and keep it frozen for the duration of the block.
+
+        Usage::
+
+            with mgr.guarded_write(captured) as valid:
+                if valid:
+                    write(...)   # no rewind/fork/load can bump in between
+
+        ``epoch_checker`` overrides how the current epoch is read (defaults to
+        this manager). Keep the block short: it delays a concurrent rewind.
+        """
+        with self._write_lock:
+            current = epoch_checker() if epoch_checker is not None else self.current
+            yield current == captured_epoch
 
     def set_epoch(self, val: int) -> None:
         with self._lock:

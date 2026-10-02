@@ -12,9 +12,33 @@ import os
 import shutil
 import sqlite3
 from pathlib import Path
+from typing import Any, Callable
 
 from axiom.schema import get_connection
 from axiom.events import EventSourcer
+from axiom.logger import logger
+
+
+_REWIND_BACKUP: Callable[[str, str], Any] | None = None
+
+
+def set_rewind_backup_handler(handler: Callable[[str, str], Any] | None) -> None:
+    """Install the auto-backup made before every rewind: ``handler(db_path, reason)``.
+
+    The application installs ``database.backup_manager.create_auto_backup``
+    (the headless engine package cannot import it); without a handler the
+    rewind runs without backup.
+    """
+    global _REWIND_BACKUP
+    _REWIND_BACKUP = handler
+
+
+def _auto_backup(db_path: str, reason: str) -> None:
+    handler = _REWIND_BACKUP
+    if handler is None:
+        return
+    if handler(db_path, reason) is None:
+        logger.warning("Auto-backup failed before %s of %s; rewinding anyway.", reason, db_path)
 
 
 class CheckpointManager:
@@ -33,55 +57,68 @@ class CheckpointManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def rewind(self, save_id: str, target_turn_id: int) -> dict[str, int]:
-        """Revert a save to its state at target_turn_id.
+    def rewind(self, save_id: str, target_turn_id: int, *, backup: bool = True) -> dict[str, int]:
+        """Revert a save to its state at target_turn_id — the engine's single rewind path.
 
-        Comprehensive and atomic: in a single transaction it removes everything
-        recorded after the target turn and rebuilds every derived view to its
-        turn-N state:
+        Every frontend goes through here (``Session.rewind`` for web/CLI, the Qt
+        ``RewindTask``), so the steps below happen exactly once, in this order:
 
-          1. Count the future events to delete (for the summary).
-          2. DELETE the future ``Event_Log`` rows, plus the ``Snapshots`` and
-             ``Timeline`` rows for later turns.
-          3. Roll back living-mode memory: future ``Facts`` are dropped, beliefs
-             are recomputed from their surviving sources
-             (:func:`axiom.observations.rollback_observations`) and mental models
-             created after the target are dropped / flagged stale
-             (:func:`axiom.mental_models.rollback_mental_models`).
-          4. Restore temporary modifiers (buffs/debuffs) to their turn-N state
-             from the per-turn snapshot
-             (:func:`axiom.modifiers.rollback_modifiers`) — they decay in minutes
-             and are not event-sourced, so they cannot be replayed.
-             Same for the nested inventory
-             (:func:`axiom.inventory.rollback_inventory`, TICKET-095) — left
-             untouched if the target turn predates inventory snapshots.
-          5. Un-fire scheduled events that fired after the target turn, so they
-             can trigger again when the clock re-crosses their minute.
-          6. Rebuild ``State_Cache`` from the surviving events.
-
-        Note: the semantic memory store is a separate concern, rolled back by the
-        caller via :meth:`axiom.memory.VectorMemory.rollback`.
+          1. Bump the save's epoch (:mod:`axiom.epoch`) so a background job that
+             captured the old epoch (living-memory distillation) discards its
+             writes. Bumping waits for an in-flight guarded write to finish; that
+             write is then removed by step 3 (TICKET-102).
+          2. Auto-backup of the database file before the destructive change,
+             through the handler the application installed with
+             :func:`set_rewind_backup_handler` (``backup=False`` skips it).
+          3. One SQL transaction through the storage registry
+             (:func:`axiom.storage_registry.execute_rewind`): future
+             ``Event_Log`` rows and every step-keyed table (Timeline, Snapshots,
+             Facts, Session_Lore, fired scheduled events…) cut after the target,
+             beliefs / mental models / modifiers / nested inventory restored to
+             their turn-N state, ``Saves.last_updated`` touched. Then commit.
+          4. Rebuild ``State_Cache`` from the surviving events.
+          5. Only after the commit: the external stores registered by mods (the
+             semantic memory of ``axiom.rag``, the illustrations of
+             ``axiom.illustrations``) — :func:`axiom.storage_registry.execute_external_rewind`.
+             If the SQL part failed, they are left untouched (TICKET-100).
 
         Args:
             save_id:        The save to rewind.
             target_turn_id: The turn to revert to (inclusive).  All events
                             with turn_id strictly greater than this value are
                             permanently removed.
+            backup:         Create the auto-backup first (default True).
 
         Returns:
-            A summary dict: A dict with keys deleted_events and rebuilt_to_turn.
+            A summary dict with keys deleted_events, rebuilt_to_turn and
+            external_failures (number of external stores that failed to rewind;
+            their errors are logged).
 
         Raises:
-            sqlite3.Error: On any database failure.
+            sqlite3.Error: On any database failure (nothing is committed then).
         """
-        from axiom.storage_registry import execute_rewind
+        from datetime import datetime, timezone
+
+        from axiom.epoch import get_session_epoch_manager
+        from axiom.storage_registry import execute_external_rewind, execute_rewind
+
+        get_session_epoch_manager(save_id).bump()
+
+        if backup:
+            _auto_backup(self._db_path, f"rewind_to_turn_{target_turn_id}")
 
         with get_connection(self._db_path) as conn:
-            summary = execute_rewind(conn, save_id, target_turn_id)
+            summary = execute_rewind(conn, save_id, target_turn_id, external=False)
+            conn.execute(
+                "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
+                (datetime.now(timezone.utc).isoformat(), save_id),
+            )
             conn.commit()
 
         self._event_sourcer.rebuild_state_cache(save_id, up_to_turn_id=target_turn_id)
 
+        failed = execute_external_rewind(save_id, target_turn_id)
+        summary["external_failures"] = len(failed)
         return summary
 
     def list_checkpoints(self, save_id: str) -> list[int]:

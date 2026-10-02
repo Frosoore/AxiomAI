@@ -65,30 +65,38 @@ def reload_mod_instance(
 
     manifest = parse_manifest_file(manifest_file)
 
-    # Re-declare any slots provided by this mod
+    new_ctx = ModContext(manifest, registry, config)
+
+    # Re-declare any slots provided by this mod (through the context: undone on cleanup)
     for slot_name, rule_str in getattr(manifest, "provides_slots", {}).items():
         try:
             rule = SlotRule(rule_str.lower())
         except ValueError:
             rule = SlotRule.COLLECT
-        registry.declare_slot(slot_name, rule)
-
-    new_ctx = ModContext(manifest, registry, config)
+        new_ctx.declare_slot(slot_name, rule)
 
     # 3. Reload module
     main_py = mod_dir / "main.py"
     module = None
     if main_py.is_file():
         module_name = f"axiom_mod_{manifest.id.replace('.', '_')}"
-        spec = importlib.util.spec_from_file_location(module_name, main_py)
+        spec = importlib.util.spec_from_file_location(
+            module_name, main_py, submodule_search_locations=[str(mod_dir)]
+        )
         if spec is None or spec.loader is None:
             raise ImportError(f"Failed to create spec for {main_py}")
+        # Drop stale submodules so edited helper files are reloaded too.
+        for name in [n for n in sys.modules if n == module_name or n.startswith(module_name + ".")]:
+            sys.modules.pop(name, None)
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-
-        if hasattr(module, "init") and callable(module.init):
-            module.init(new_ctx)
+        try:
+            spec.loader.exec_module(module)
+            if hasattr(module, "init") and callable(module.init):
+                module.init(new_ctx)
+        except BaseException:
+            new_ctx.cleanup()  # a broken edit must not leave half a mod registered
+            raise
 
     logger.info("[ModDev] Reloaded mod %s successfully.", manifest.id)
     return manifest, new_ctx, module

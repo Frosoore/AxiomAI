@@ -51,6 +51,9 @@ class ModContributes:
     hooks: list[str] = field(default_factory=list)
     slots: list[str] = field(default_factory=list)
     patches: list[str] = field(default_factory=list)
+    # True when the mod runs "raw" code with side effects the kernel cannot undo
+    # (monkeypatching, global state...): it can only be disabled at next launch (D-5).
+    raw_code: bool = False
 
 
 @dataclass(frozen=True)
@@ -197,6 +200,16 @@ def parse_manifest_string(toml_str: str, locales: dict[str, dict[str, Any]] | No
                 v_spec = str(dep_spec.get("version", "*"))
                 opt = bool(dep_spec.get("optional", False))
                 deps[dep_name] = ModDependency(name=dep_name, version_spec=v_spec, optional=opt)
+            else:
+                raise ManifestError(
+                    f"Invalid dependency '{dep_name}': expected a version string or a table."
+                )
+        from axiom.kernel.api import validate_version_spec
+        for dep in deps.values():
+            try:
+                validate_version_spec(dep.version_spec)
+            except ValueError as err:
+                raise ManifestError(f"Dependency '{dep.name}': {err}") from err
 
     # Ordering
     ordering_section = data.get("ordering", {})
@@ -216,7 +229,8 @@ def parse_manifest_string(toml_str: str, locales: dict[str, dict[str, Any]] | No
     hooks = list(contrib_section.get("hooks", [])) if isinstance(contrib_section, dict) else []
     slots = list(contrib_section.get("slots", [])) if isinstance(contrib_section, dict) else []
     patches = list(contrib_section.get("patches", [])) if isinstance(contrib_section, dict) else []
-    contributes = ModContributes(hooks=hooks, slots=slots, patches=patches)
+    raw_code = bool(contrib_section.get("raw_code", False)) if isinstance(contrib_section, dict) else False
+    contributes = ModContributes(hooks=hooks, slots=slots, patches=patches, raw_code=raw_code)
 
     # Storage
     storage_section = data.get("storage", {})
