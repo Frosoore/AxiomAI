@@ -31,3 +31,10 @@ direction bonne mais **pas mergeable** — « tour = mod » est une façade (`ar
 le noyau), le noyau dépend des mods via proxys, régressions (boucle de correction, erreurs masquées,
 fork qui perd la mémoire living), licence des mods tranchée sans le propriétaire. ⚠ Les tests mods
 écrivent dans la vraie `~/.config/AxiomAI/settings.json` (fixture n'isole pas la config).
+
+**Mise à jour 2026-10-03 (soir) :** audit réel + corrections (`audit-reel-2026-10-03/`) puis **vrai
+déplacement** (`phase-2-vrai-deplacement/`, décisions : 5 fonctionnalités + satellites dans leurs mods,
+`arbitrator.py` reste au noyau ; données d'un mod décoché gérées par son seul `storage.py` ;
+`axiom.providers` seule source d'IA ; safe mode = interfaces + chat minimal + fournisseur). Suite
+1 300 ✅. Restent : K12 (noyau neutre), C3/C4, licence, D-6, M2 complet, lanceurs à la racine (M7).
+

@@ -148,7 +148,7 @@ def test_import_hand_written(universe_db: str, tmp_path: Path):
 
 def test_modifiers_roundtrip(universe_db: str, tmp_path: Path):
     """Les modifiers (par-save depuis TICKET-024) survivent à export→import."""
-    from axiom.modifiers import ModifierProcessor
+    from mods.core.stat_dynamics.modifiers import ModifierProcessor
 
     save_id = create_new_save(universe_db, "Hero", "Normal")
     ModifierProcessor(universe_db).add_modifier(save_id, "player_1", "Health", 5.0, 30)
@@ -396,8 +396,8 @@ def test_diff_stats_changees_seulement():
     patch = diff_save_states(before, after)
     # Seules les valeurs modifiées/nouvelles — pas d'event parasite pour Mana.
     assert patch["entities"] == {"alice": {"Health": "55"}, "bob": {"Health": "100"}}
-    assert patch["inventory"] == []
-    assert patch["modifiers"] == []
+    assert patch.get("inventory", []) == []  # no section in either state: nothing to apply
+    assert patch.get("modifiers", []) == []
 
 
 def test_diff_inventaire_modifie_ajoute_retire():
@@ -463,7 +463,7 @@ def save_with_point_in_time_history(universe_db: str) -> tuple[str, str]:
     """Une save de 4 tours où un modifier apparaît au tour 2 (et dure) et une
     entrée de lore apparaît au tour 4, pour vérifier que `materialize_state`
     ne montre que ce qui existait au tour demandé."""
-    from axiom.modifiers import ModifierProcessor
+    from mods.core.stat_dynamics.modifiers import ModifierProcessor
 
     save_id = create_new_save(universe_db, "Hero", "Normal")
     es = EventSourcer(universe_db)

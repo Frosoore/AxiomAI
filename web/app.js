@@ -867,8 +867,15 @@ async function startSession(universePath, saveId, difficulty) {
       updateMultiplayerLobby();
 
       await refreshTabletopState();
+      const canonBox = document.getElementById('chat-canon-auto');
+      if (canonBox && STATE.activeSession.auto_canonize !== undefined) {
+        canonBox.checked = !!STATE.activeSession.auto_canonize;
+      }
       showScreen('view-tabletop');
       showStatus('Ready.');
+      if (STATE.activeSession.modpack_warning) {
+        alert(tr('modpack_mismatch_warning', { details: STATE.activeSession.modpack_warning }));
+      }
       checkSessionIntegrity();
     } else {
       let errMsg = 'Failed to start session.';
@@ -888,6 +895,7 @@ async function startSession(universePath, saveId, difficulty) {
 
 async function refreshTabletopState() {
   if (!STATE.activeSession) return;
+  refreshModExtensions();
   // Stats Sidebar
   const statsList = document.getElementById('tabletop-entities-list');
   statsList.innerHTML = '';
@@ -1407,7 +1415,6 @@ async function submitTurn(overrideText, displayText) {
         updateMultiplayerLobby();
         reportRejectedChanges(result);
         if (result.hardcore_death) await handleHardcoreDeath();
-        else maybeAutoCanonize();
       }
     } catch (err) {
       console.error(err);
@@ -1433,7 +1440,6 @@ async function submitTurn(overrideText, displayText) {
       await refreshTabletopState();
       reportRejectedChanges(result);
       if (result.hardcore_death) await handleHardcoreDeath();
-      else maybeAutoCanonize();
     }
   } catch (err) {
     console.error(err);
@@ -1980,6 +1986,134 @@ function fillCreatorStats() {
     tr.onclick = () => openCreatorStatEditor(stat.stat_id);
     table.appendChild(tr);
   });
+}
+
+// ── Mod extensions (axiom.ui.web slots: side panels, action buttons, settings tabs) ──
+async function refreshModExtensions() {
+  const section = document.getElementById('mod-extensions-section');
+  if (!section) return;
+  try {
+    const res = await fetch('/api/mods/web-extensions');
+    if (!res.ok) return;
+    const data = await res.json();
+    const panelsBox = document.getElementById('mod-side-panels');
+    const buttonsBox = document.getElementById('mod-action-buttons');
+    panelsBox.innerHTML = '';
+    buttonsBox.innerHTML = '';
+    (data.side_panels || []).forEach(p => {
+      const box = document.createElement('div');
+      box.className = 'entity-box mod-side-panel';
+      box.innerHTML = `<div class="entity-box-header"><span>${escapeHtml(p.title)}</span></div>`;
+      const body = document.createElement('div');
+      body.className = 'mod-side-panel-text';
+      body.textContent = p.text || '';
+      box.appendChild(body);
+      panelsBox.appendChild(box);
+    });
+    (data.action_buttons || []).forEach(b => {
+      const btn = document.createElement('button');
+      btn.className = 'btn-secondary w-100';
+      btn.textContent = b.label;
+      btn.onclick = () => runModAction(b.id);
+      buttonsBox.appendChild(btn);
+    });
+    section.hidden = !((data.side_panels || []).length || (data.action_buttons || []).length);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function runModAction(actionId) {
+  try {
+    const res = await fetch('/api/mods/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: actionId })
+    });
+    const data = await res.json();
+    showStatus(res.ok ? (data.message || 'Ready.') : (data.error || 'Mod action failed.'));
+  } catch (err) {
+    console.error(err);
+  }
+  await refreshTabletopState();
+}
+
+async function loadModSettingsTabs() {
+  const nav = document.querySelector('#modal-settings .settings-tabs');
+  const content = document.querySelector('#modal-settings .settings-content');
+  if (!nav || !content) return;
+  nav.querySelectorAll('.mod-settings-tab-btn').forEach(el => el.remove());
+  content.querySelectorAll('.mod-settings-panel').forEach(el => el.remove());
+  STATE.modSettingsTabs = [];
+  try {
+    const res = await fetch('/api/mods/web-extensions');
+    if (!res.ok) return;
+    const data = await res.json();
+    STATE.modSettingsTabs = data.settings_tabs || [];
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  STATE.modSettingsTabs.forEach(tab => {
+    const panelId = `mod-settings-panel-${tab.id}`;
+    const btn = document.createElement('button');
+    btn.className = 'settings-tab-btn mod-settings-tab-btn';
+    btn.textContent = tab.title;
+    btn.onclick = () => {
+      nav.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+      content.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(panelId).classList.add('active');
+    };
+    nav.appendChild(btn);
+    const panel = document.createElement('div');
+    panel.id = panelId;
+    panel.className = 'settings-panel mod-settings-panel';
+    tab.fields.forEach(f => {
+      const group = document.createElement('div');
+      group.className = 'form-group';
+      const label = document.createElement('label');
+      label.textContent = f.label;
+      const input = document.createElement('input');
+      input.dataset.key = f.key;
+      input.dataset.type = f.type;
+      if (f.type === 'bool') {
+        input.type = 'checkbox';
+        input.checked = !!f.value;
+      } else {
+        input.type = f.type === 'number' ? 'number' : 'text';
+        input.value = (f.value === null || f.value === undefined) ? '' : f.value;
+      }
+      group.appendChild(label);
+      group.appendChild(input);
+      panel.appendChild(group);
+    });
+    content.appendChild(panel);
+  });
+}
+
+async function saveModSettingsTabs() {
+  for (const tab of (STATE.modSettingsTabs || [])) {
+    const panel = document.getElementById(`mod-settings-panel-${tab.id}`);
+    if (!panel) continue;
+    const values = {};
+    panel.querySelectorAll('input[data-key]').forEach(input => {
+      values[input.dataset.key] = input.dataset.type === 'bool' ? input.checked : input.value;
+    });
+    try {
+      const res = await fetch('/api/mods/web-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: tab.id, values })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(`${tab.title}: ${data.error || 'save failed'}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
 }
 
 function escapeHtml(s) {
@@ -2549,11 +2683,13 @@ function wireStudioFillDown(root) {
 
 function fillCreatorEvents() {
   const cal = STATE.creatorData.calendar || {};
-  document.getElementById('cal-mph').value = cal.minutes_per_hour || 60;
-  document.getElementById('cal-hpd').value = cal.hours_per_day || 24;
-  document.getElementById('cal-start-day').value = cal.start_day || 1;
-  document.getElementById('cal-start-hour').value = cal.start_hour || 8;
-  document.getElementById('cal-start-minute').value = cal.start_minute || 0;
+  // Explicit defaults: a stored 0 (midnight, minute 0) is a value, not "missing".
+  const calValue = (v, dflt) => (v === undefined || v === null) ? dflt : v;
+  document.getElementById('cal-mph').value = calValue(cal.minutes_per_hour, 60);
+  document.getElementById('cal-hpd').value = calValue(cal.hours_per_day, 24);
+  document.getElementById('cal-start-day').value = calValue(cal.start_day, 1);
+  document.getElementById('cal-start-hour').value = calValue(cal.start_hour, 0);
+  document.getElementById('cal-start-minute').value = calValue(cal.start_minute, 0);
   document.getElementById('cal-months').value = (cal.month_names || []).join(', ');
 
   const events = STATE.creatorData.events || [];
@@ -2775,11 +2911,15 @@ async function saveCreatorChanges() {
 
   // Sync Calendar
   const cal = STATE.creatorData.calendar || {};
-  cal.minutes_per_hour = parseInt(document.getElementById('cal-mph').value) || 60;
-  cal.hours_per_day = parseInt(document.getElementById('cal-hpd').value) || 24;
-  cal.start_day = parseInt(document.getElementById('cal-start-day').value) || 1;
-  cal.start_hour = parseInt(document.getElementById('cal-start-hour').value) || 8;
-  cal.start_minute = parseInt(document.getElementById('cal-start-minute').value) || 0;
+  const calInt = (id, dflt) => {
+    const v = parseInt(document.getElementById(id).value, 10);
+    return isNaN(v) ? dflt : v;
+  };
+  cal.minutes_per_hour = calInt('cal-mph', 60) || 60;
+  cal.hours_per_day = calInt('cal-hpd', 24) || 24;
+  cal.start_day = calInt('cal-start-day', 1) || 1;
+  cal.start_hour = calInt('cal-start-hour', 0);
+  cal.start_minute = calInt('cal-start-minute', 0);
   cal.month_names = document.getElementById('cal-months').value.split(',').map(s => s.trim()).filter(Boolean);
 
   try {
@@ -3060,7 +3200,10 @@ function setupTabHandlers() {
 
 function setupUIEventListeners() {
   // Menu Actions
-  document.getElementById('btn-menu-settings').onclick = () => openModal('modal-settings');
+  document.getElementById('btn-menu-settings').onclick = () => {
+    openModal('modal-settings');
+    loadModSettingsTabs();
+  };
   document.getElementById('btn-menu-diag').onclick = () => openModal('modal-diagnostics');
   document.getElementById('btn-menu-about').onclick = () => {
     document.getElementById('about-content').innerHTML = tr('about_text');
@@ -3127,6 +3270,22 @@ function setupUIEventListeners() {
 
   const canonBtn = document.getElementById('btn-canonize');
   if (canonBtn) canonBtn.onclick = () => runCanonize(true);
+
+  const canonAutoBox = document.getElementById('chat-canon-auto');
+  if (canonAutoBox) {
+    canonAutoBox.onchange = async () => {
+      try {
+        await fetch('/api/session/auto-canonize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: canonAutoBox.checked })
+        });
+        if (STATE.activeSession) STATE.activeSession.auto_canonize = canonAutoBox.checked;
+      } catch (err) {
+        console.error('Failed to update auto-canonize:', err);
+      }
+    };
+  }
 
   const checkpointApply = document.getElementById('checkpoint-apply-btn');
   if (checkpointApply) checkpointApply.onclick = () => applyCheckpointRewind();
@@ -3226,7 +3385,10 @@ function setupUIEventListeners() {
   }
 
   // Settings Save
-  document.getElementById('settings-save-btn').onclick = saveConfig;
+  document.getElementById('settings-save-btn').onclick = async () => {
+    await saveModSettingsTabs();
+    await saveConfig();
+  };
   document.getElementById('edit-save-apply-btn').onclick = submitSaveEdit;
   document.getElementById('edit-message-apply-btn').onclick = submitMessageEdit;
   document.querySelectorAll('#edit-save-tabs .tab-btn').forEach(btn => {
@@ -4305,12 +4467,6 @@ async function applyCanonizeSelection() {
     console.error(err);
     alert('Failed to apply canonize.');
   }
-}
-
-function maybeAutoCanonize() {
-  const box = document.getElementById('chat-canon-auto');
-  if (!box || !box.checked || STATE.isGenerating) return;
-  runCanonize(false);
 }
 
 async function openModelBrowser() {

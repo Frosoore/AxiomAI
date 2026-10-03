@@ -33,6 +33,9 @@ KERNEL_API: int = 1
 PUBLIC_HOOKS: dict[str, str] = {
     "axiom.kernel:execute_step": "Runs a whole step (KernelStepContext). Critical: exceptions propagate.",
     "axiom.step:gather_context": "After context gathering, before the prompt is built (TurnContext).",
+    "axiom.step:response_parsed": (
+        "After the LLM answer is parsed and output fields routed, before arbitration (TurnContext)."
+    ),
     "axiom.step:arbitrate_mutations": "While state mutations are arbitrated (TurnContext).",
     "axiom.step:after_step": "After rules and mutations are staged, before commit (TurnContext).",
     "axiom.turn:arbitrate_stats": "During stats arbitration (TurnContext).",
@@ -47,8 +50,11 @@ PUBLIC_SLOTS: dict[str, tuple[str, str]] = {
     "axiom.kernel:help_entries": ("collect", "In-app help entries."),
     "axiom.turn:prompt_sections": (
         "collect",
-        "dict {'position': 'system'|'before_system'|'user', 'text': str, 'depth': int} "
-        "or a callable(turn_ctx) returning such a dict.",
+        "(id, position, depth, text, order) tuple — or (position, text), (position, depth, text), "
+        "a plain string, or a dict {'position', 'text', 'depth', 'order'} — or a callable(turn_ctx) "
+        "returning one of these (None = nothing this turn). position: 'system', 'before_system', "
+        "'user', 'in_chat' (system message `depth` messages before the end) or 'rag' (one [MEMORY] line per text line). "
+        "A malformed section disables its mod with the reason.",
     ),
     "axiom.turn:output_fields": (
         "collect",

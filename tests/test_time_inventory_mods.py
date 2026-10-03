@@ -78,7 +78,7 @@ def test_manifests_and_loading(tmp_path: Path):
     assert time_m.id == "axiom.time"
     assert "axiom.step:after_step" in time_m.contributes.hooks
     assert "axiom.turn:output_fields" in time_m.contributes.slots
-    assert "axiom.turn:prompt_sections" in time_m.contributes.slots
+    assert "axiom.step:response_parsed" in time_m.contributes.hooks
 
     inv_m = parse_manifest_file(inv_dir / "mod.toml")
     assert inv_m.id == "axiom.inventory"
@@ -152,7 +152,7 @@ def test_inventory_move_item_into_container(test_env):
     save_db = save_info["db_path"]
 
     # Pre-populate player with backpack (container) and potion
-    from axiom.inventory import add_item
+    from mods.axiom.inventory.inventory import add_item
     with get_connection(save_db) as conn:
         backpack_inst = add_item(
             conn, save_id, "leather_backpack", quantity=1,
@@ -278,11 +278,39 @@ def test_scheduled_events_trigger_on_time_advance(test_env):
     session = Session(save_db, save_id, llm=llm, time_llm=llm)
     session.take_turn("March into the valley")
 
-    # Verify event fired
-    with get_connection(save_db) as conn:
-        fired = conn.execute(
-            "SELECT event_id FROM Fired_Scheduled_Events WHERE save_id = ? AND event_id = 'blood_moon';",
-            (save_id,),
-        ).fetchone()
-        assert fired is not None
-        assert fired[0] == "blood_moon"
+    def fired_turn() -> int | None:
+        with get_connection(save_db) as conn:
+            row = conn.execute(
+                "SELECT fired_turn_id FROM Fired_Scheduled_Events WHERE save_id = ? AND event_id = 'blood_moon';",
+                (save_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    # Due during turn 1 (minute 30 of 0 -> 45): not narrated yet, so not fired yet.
+    assert fired_turn() is None
+
+    # Turn 2 starts at minute 45: the event is due, narrated in this turn's prompt
+    # and fired with it.
+    llm2 = _RecordingScriptedLLM([
+        ScriptedTurnResponse(narrative_chunks=["The sky turns scarlet."], tool_call={"elapsed_minutes": 5}),
+    ])
+    session2 = Session(save_db, save_id, llm=llm2, time_llm=llm2)
+    session2.take_turn("Look up")
+    assert any("Blood Moon" in m["content"] for msgs in llm2.prompts for m in msgs)
+    assert fired_turn() == 2
+
+
+class _RecordingScriptedLLM(ScriptedLLMBackend):
+    """Scripted backend that keeps the narration prompts it received."""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.prompts: list = []
+
+    def complete(self, messages, *args, **kwargs):
+        self.prompts.append(list(messages))
+        return super().complete(messages, *args, **kwargs)
+
+    def stream_tokens(self, messages, *args, **kwargs):
+        self.prompts.append(list(messages))
+        return super().stream_tokens(messages, *args, **kwargs)

@@ -45,10 +45,11 @@ def _hook_llm(llm: LLMBackend, on_status: StatusCallback,
 
 
 def _default_llm() -> LLMBackend:
-    from axiom.config import build_llm_from_config, load_config, resolve_extraction_model
+    from axiom.config import load_config, resolve_extraction_model
+    from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
 
     cfg = load_config()
-    return build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+    return resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
 
 
 def _global_lore(db_path: str) -> str:

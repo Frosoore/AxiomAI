@@ -13,7 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from axiom.config import AppConfig, load_config
+from axiom import config as axiom_config
+from axiom.config import AppConfig
 from axiom.kernel.context import ModContext
 from axiom.logger import logger
 from axiom.savestore import truncate_assets_in
@@ -24,6 +25,19 @@ class IllustrationsService:
 
     def __init__(self, data_root: Path | None = None) -> None:
         self.data_root = data_root
+        # Data root of each save seen in a turn (a Session may inject its own
+        # data_dir): rewind and fork then touch the right assets folder.
+        self._save_roots: dict[str, Path] = {}
+
+    def remember_root(self, save_id: str, root: Path | None) -> None:
+        if save_id and root is not None:
+            self._save_roots[save_id] = Path(root)
+
+    def _root_for(self, save_id: str, data_root: Path | None = None) -> Path:
+        # Explicit root, else the root seen in this save's turns, else the data root
+        # in effect (a Session with its own data_dir scopes it during rewind/fork).
+        from axiom import paths
+        return Path(data_root or self._save_roots.get(save_id) or self.data_root or paths._data_root())
 
     def generate_turn_image(
         self,
@@ -36,13 +50,9 @@ class IllustrationsService:
         cfg: AppConfig | None = None,
         llm: Any = None,
     ) -> Path | None:
-        from axiom import paths
-        try:
-            from mods.axiom.illustrations.image_generator import ImageGenerator
-        except (ImportError, ValueError):
-            from axiom.image_generator import ImageGenerator
+        from mods.axiom.illustrations.image_generator import ImageGenerator
 
-        config = cfg or load_config()
+        config = cfg or axiom_config.load_config()
         if not getattr(config, "image_generation_enabled", False):
             return None
 
@@ -54,8 +64,7 @@ class IllustrationsService:
                 character_desc=character_desc,
                 game_state_tag=game_state_tag,
             )
-            root = self.data_root or paths._data_root()
-            assets_dir = root / "assets" / save_id
+            assets_dir = self._root_for(save_id) / "assets" / save_id
             filename = f"turn_{turn_id}.png"
             return img_gen.generate_image(visual_prompt, assets_dir, filename)
         except Exception as exc:
@@ -64,10 +73,28 @@ class IllustrationsService:
 
     def truncate_assets(self, save_id: str, last_kept_turn_id: int, data_root: Path | None = None) -> int:
         """Delete PNG assets with turn_id > last_kept_turn_id."""
-        from axiom import paths
-        root = data_root or self.data_root or paths._data_root()
-        assets_dir = root / "assets" / save_id
+        assets_dir = self._root_for(save_id, data_root) / "assets" / save_id
         return truncate_assets_in(assets_dir, last_kept_turn_id)
+
+    def fork_assets(self, src_save_id: str, dst_save_id: str, at_turn: int) -> int:
+        """Copy the illustrations of turns <= at_turn to the forked save."""
+        import re
+        import shutil
+
+        root = self._root_for(src_save_id)
+        src = root / "assets" / src_save_id
+        if not src.is_dir():
+            return 0
+        dst = root / "assets" / dst_save_id
+        copied = 0
+        for f in src.glob("turn_*.png"):
+            m = re.fullmatch(r"turn_(\d+)\.png", f.name)
+            if m and int(m.group(1)) <= at_turn:
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dst / f.name)
+                copied += 1
+        self.remember_root(dst_save_id, root)
+        return copied
 
 
 _SERVICE: IllustrationsService | None = None
@@ -89,7 +116,8 @@ def on_after_step(ctx: Any, mod_ctx: ModContext | None = None) -> None:
     """Hook: axiom.step:after_step.
     Extracts visual descriptions and schedules image generation post-commit.
     """
-    config = load_config()
+    # Read at call time (not bound at import): the current settings apply.
+    config = axiom_config.load_config()
     if not getattr(config, "image_generation_enabled", False):
         return
 
@@ -100,6 +128,7 @@ def on_after_step(ctx: Any, mod_ctx: ModContext | None = None) -> None:
         return
 
     svc = get_illustrations_service()
+    svc.remember_root(save_id, getattr(ctx, "data_root", None))
     location_desc = getattr(ctx, "location_desc", "")
     character_desc = getattr(ctx, "character_desc", "")
     game_state_tag = getattr(ctx, "game_state_tag", "exploration")
@@ -151,6 +180,7 @@ def init(ctx: ModContext) -> None:
     ctx.register_storage(
         "assets",
         rewind_callback=lambda conn, sid, t: svc.truncate_assets(sid, t),
+        fork_callback=lambda conn, src, dst, t: svc.fork_assets(src, dst, t),
     )
 
     # 5. Register settings tab contribution

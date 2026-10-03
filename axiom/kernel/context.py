@@ -53,6 +53,8 @@ class ModContext:
         self._jobs: list[threading.Thread] = []
         self._stop_event = threading.Event()
         self.cleaned_up = False
+        from axiom.kernel.kv_store import ModStore
+        self.store = ModStore(self.mod_id)
         attach = getattr(kernel_registry, "attach_context", None)
         if callable(attach):
             attach(self)
@@ -114,10 +116,31 @@ class ModContext:
         (``conn`` is None). Removed on cleanup (D11).
         """
         from axiom.storage_registry import register_custom_storage
+        self._check_storage_name_free(name)
         spec = register_custom_storage(
             name, rewind_callback=rewind_callback, fork_callback=fork_callback, owner=self.mod_id
         )
         self._registered_storages.append(spec)
+
+    def register_table_storage(self, spec: Any) -> None:
+        """Register a SQL table of this mod with its own rewind/fork code (policy
+        ``custom`` with a ``table``, or a ``TableStorageSpec`` built by the mod).
+        The spec's owner is set to this mod; removed on cleanup (D11)."""
+        import dataclasses
+        from axiom.storage_registry import register_table_storage
+        self._check_storage_name_free(spec.table_name)
+        spec = dataclasses.replace(spec, owner=self.mod_id)
+        register_table_storage(spec)
+        self._registered_storages.append(spec)
+
+    def _check_storage_name_free(self, name: str) -> None:
+        from axiom.storage_registry import find_storage_spec
+        existing = find_storage_spec(name)
+        if existing is not None and existing.owner != self.mod_id:
+            raise ValueError(
+                f"Storage '{name}' is already registered by "
+                f"{'mod ' + existing.owner if existing.owner else 'the kernel'}."
+            )
 
     def register_migrations(
         self,

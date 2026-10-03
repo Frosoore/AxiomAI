@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from axiom import facts
+from mods.axiom.living_memory import recall
+
+from mods.axiom.living_memory import facts
 from axiom.config import AppConfig, memory_mode_is_living
-from axiom.facts import Fact
+from mods.axiom.living_memory.facts import Fact
 from axiom.schema import create_universe_db
 
 
@@ -142,8 +144,7 @@ class TestArbitratorFactInjection:
         facts.insert_facts(db_path, "s1", 4, [Fact(statement="A storm rolled in")])
         facts.insert_facts(db_path, "s1", 9, [Fact(statement="Mira leaves town", entities=["Mira"])])
 
-        out = self._arb(db_path)._fetch_relevant_facts(
-            "s1", max_turn_id=5, on_scene=["Mira"], limit=5
+        out = recall.relevant_facts(db_path, "s1", max_turn_id=5, on_scene=["Mira"], limit=5
         )
         assert out[0] == "Mira owns the inn"          # on-scene first
         assert "A storm rolled in" in out             # recent filler
@@ -153,22 +154,19 @@ class TestArbitratorFactInjection:
         facts.insert_facts(db_path, "s1", 1, [Fact(statement="Shared", entities=["Mira"])])
         facts.insert_facts(db_path, "s1", 2, [Fact(statement="Extra A")])
         facts.insert_facts(db_path, "s1", 3, [Fact(statement="Extra B")])
-        out = self._arb(db_path)._fetch_relevant_facts(
-            "s1", max_turn_id=3, on_scene=["Mira"], limit=2
+        out = recall.relevant_facts(db_path, "s1", max_turn_id=3, on_scene=["Mira"], limit=2
         )
         assert len(out) == 2
         assert out[0] == "Shared"          # on-scene, not duplicated by the recent pass
         assert out.count("Shared") == 1
 
     def test_empty_when_no_facts(self, db_path: str) -> None:
-        assert self._arb(db_path)._fetch_relevant_facts(
-            "s1", max_turn_id=10, on_scene=["Mira"], limit=5
+        assert recall.relevant_facts(db_path, "s1", max_turn_id=10, on_scene=["Mira"], limit=5
         ) == []
 
     def test_zero_limit_returns_empty(self, db_path: str) -> None:
         facts.insert_facts(db_path, "s1", 1, [Fact(statement="x")])
-        assert self._arb(db_path)._fetch_relevant_facts(
-            "s1", max_turn_id=10, on_scene=[], limit=0
+        assert recall.relevant_facts(db_path, "s1", max_turn_id=10, on_scene=[], limit=0
         ) == []
 
 

@@ -210,5 +210,6 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `feature-help-system-mod` | ✅ | Extraction du système d'infobulles et du bouton Information en mod activable/désactivable (`axiom.help_system`) avec i18n 10 langues |
 | `audit-and-fix-mods-decoupling` | ✅ | Encapsulation stricte et détachement total du noyau sur l'ensemble des mods officiels (TICKET-106) |
 | `verification-and-functional-audit` | ✅ | Vérification de la déconnexion complète du core, absence de code remanant et audit d'effectivité fonctionnelle de chaque mod |
+| `audit-reel-2026-10-03` | ✅ audit (corrections en attente) | Vérification dans le code de tout ce qui est déclaré fait (lots A/B/C + vague non commitée) : lots A/C/B1/B2 tiennent ; « lot E » inversé (code remis dans le noyau), `[storage]`/`ctx.store` bogués, régression d'isolation (M6), suite 1 216 ✅ / 1 ❌ |
 
 

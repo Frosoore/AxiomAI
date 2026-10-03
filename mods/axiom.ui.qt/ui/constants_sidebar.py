@@ -304,9 +304,11 @@ class ConstantsSidebar(QWidget):
             self._time_layout.insertWidget(0, placeholder)
             return
 
-        from axiom.db_helpers import get_time_of_day_context
+        from axiom.kernel.loader import get_kernel_registry
+        time_svc = get_kernel_registry().get_service("time")
         for event in timeline_events:
-            time_str = get_time_of_day_context(event.get("in_game_time", 0))
+            minute = event.get("in_game_time", 0)
+            time_str = time_svc.time_of_day(minute) if time_svc else str(minute)
             turn_id = event.get("turn_id", 0)
             desc = event.get("description", "")
             

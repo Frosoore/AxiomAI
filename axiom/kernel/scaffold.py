@@ -55,9 +55,8 @@ description = "{description}"
 author = "{author}"
 
 [storage]
-tables = [
-    "{name_part}_records"
-]
+# Save data of the mod: rewound and forked by the kernel (ctx.store).
+{name_part}_steps = {{ policy = "versioned_kv" }}
 
 [contributes]
 hooks = [
@@ -139,14 +138,17 @@ from axiom.kernel.context import ModContext
 from axiom.logger import logger
 
 
-def on_after_step(turn_ctx: Any) -> None:
-    """Hook invoked after the step's rules and mutations (receives the turn context)."""
-    logger.debug("[{mod_id}] Recording step data")
-
-
 def init(ctx: ModContext) -> None:
     """Initialize the data mod and register lifecycle hooks."""
     logger.info("Initializing data mod '%s'", ctx.mod_id)
+
+    def on_after_step(turn_ctx: Any) -> None:
+        """Count the steps played: stored as save data, committed with the turn,
+        rewound and forked with the save (ctx.store)."""
+        steps = ctx.store.get(turn_ctx, "{name_part}_steps", 0)
+        ctx.store.set(turn_ctx, "{name_part}_steps", steps + 1)
+        logger.debug("[{mod_id}] %d steps recorded", steps + 1)
+
     ctx.register_hook("axiom.step:after_step", on_after_step)
 '''
     else:  # "hook"

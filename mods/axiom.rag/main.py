@@ -12,6 +12,7 @@ Provides:
 from __future__ import annotations
 
 from pathlib import Path
+import weakref
 from typing import Any
 
 from axiom.kernel.context import ModContext
@@ -32,13 +33,26 @@ class RagService:
         else:
             self.base_dir = Path(base_dir)
         self._instances: dict[str, VectorMemory] = {}
+        # Memory of the running session for a save: the turn indexes into it and a
+        # rewind/fork rolls back that same instance. Weak: a closed session's
+        # memory is not kept alive by the service.
+        self._session_memories: "weakref.WeakValueDictionary[str, VectorMemory]" = (
+            weakref.WeakValueDictionary()
+        )
+
+    def set_vector_memory(self, save_id: str, vm: VectorMemory) -> None:
+        """Use the session's vector memory for this save (instead of the service's own)."""
+        self._session_memories[str(save_id)] = vm
 
     def get_vector_memory(self, save_id: str, base_dir: Path | str | None = None) -> VectorMemory:
+        if base_dir is None:
+            vm = self._session_memories.get(str(save_id))
+            if vm is not None:
+                return vm
         target_base = Path(base_dir) if base_dir is not None else self.base_dir
         cache_key = f"{target_base}:{save_id}"
         if cache_key not in self._instances:
-            save_dir = target_base / save_id
-            self._instances[cache_key] = VectorMemory(persist_dir=str(save_dir))
+            self._instances[cache_key] = VectorMemory(persist_dir=str(target_base / save_id))
         return self._instances[cache_key]
 
     def query(
@@ -104,7 +118,12 @@ def build_rag_prompt_section(ctx: Any) -> dict[str, Any] | None:
     if not rag_chunks:
         try:
             svc = get_rag_service()
-            results = svc.query(save_id, query_text, k=3)
+            vm = getattr(ctx, "vector_memory", None)
+            if vm is not None:
+                svc.set_vector_memory(save_id, vm)
+                results = vm.query(save_id, query_text, k=3, exclude_chunk_type="lore")
+            else:
+                results = svc.query(save_id, query_text, k=3)
             rag_chunks = [
                 r["text"] if isinstance(r, dict) and "text" in r else str(r)
                 for r in results
@@ -142,12 +161,22 @@ def on_after_step(ctx: Any) -> None:
         return
 
     svc = get_rag_service()
+    vm = getattr(ctx, "vector_memory", None)
+    if vm is not None:
+        svc.set_vector_memory(save_id, vm)
 
     def _embed() -> None:
         try:
+            target_vm = getattr(ctx, "vector_memory", None) or svc.get_vector_memory(save_id)
             # One narrative chunk per turn: index 0, so a turn replayed after a
             # rewind overwrites its chunk instead of duplicating it (TICKET-100).
-            svc.embed_chunk(save_id, turn_id, narrative, chunk_index=0)
+            target_vm.embed_chunk(
+                save_id,
+                turn_id,
+                narrative,
+                chunk_type="narrative",
+                chunk_index=0,
+            )
         except Exception as exc:
             logger.warning("[axiom.rag] Narrative embedding failed: %s", exc)
 

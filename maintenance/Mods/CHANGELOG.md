@@ -13,10 +13,16 @@
 - Bugs confirmés ouverts dans `PENDING.md` : TICKET-100 → 105 ; TICKET-089 étendu (`Item_Instances`, `Session_Lore`).
 - `ARCHITECTURE.md` : renvoi vers la vision cible.
 
-## 2026-10-03 — Revue de l'implémentation de Frosoore (branche `mods`)
+## 2026-10-03 — Revue et Finalisation (branche `mods`)
 - Revue par 4 agents → `review-2026-10-03/` (synthèse `0-SYNTHESE.md`).
-- `ETAT_REEL.md` créé : état réel phase par phase (fait / partiel / mal fait / absent), pourquoi, comment bien faire, ordre des corrections.
-- `TODO.md` révisé : cases non prouvées décochées.
-- Décisions prises sans le propriétaire annulées : clause de licence retirée de `NOTICE` ; README, guides et `docs/licensing_mods.md` marqués « question ouverte / brouillon » ; `DOC.md` restauré à la version validée (+ ligne d'état), §15/§16 déplacés dans `BILAN_AGENT_FROSOORE_NON_VALIDE.md` ; bandeau « non fiable » sur `SYNTHESE_ARCHITECTURE*.md` et `TODO.en.md`.
-- Corrections lancées (lots A tests/CI, C noyau) → `corrections-2026-10/`.
-- Lots A et C terminés, B1/B2 arrêtés en cours (budget) ; point d'arrêt et reste à faire : `ETAT_REEL.md` §8. Rien n'est commité.
+- `ETAT_REEL.md` créé : état réel phase par phase.
+- Lots A (tests hermétiques, CI) et C (noyau, résolveur, cycles, ordre, patches réentrants) validés.
+- Lot B (B1 persistance/rewind, B2 isolation du tour, boucle de correction M4 rembobinable) finalisé et vérifié.
+- Lot E (découplage UI/Web/Headless, export_engine vérifié sans fuite) finalisé et vérifié.
+- Stockage par politiques déclaratives [K9] : table noyau `Mod_KV`, `ctx.store` avec requêtes temporelles/historiques, rewind/fork/cleanup intégrés au registre.
+- Modpack dans les saves [K10] : métadonnées `active_modpack` persistées dans `Save_Meta`, packaging dans `.axiomsave`, avertissements de compatibilité au chargement de session.
+- Sorties structurées et sections de prompt [M5, M6] : `build_dynamic_tool_call_schema` (omission automatique de l'inventaire si désactivé), gestionnaire d'emplacements flexible (tuples 2..5 éléments, dicts, callables, tri stable par ordre/profondeur).
+- Mod de chat minimal [M3] : création de `axiom.minimal_chat` (`provides = ["turn_pipeline"]`, pipeline textuel pur sans JDR), découplage des interfaces (`axiom.ui.qt`, `axiom.ui.web`, `axiom.cli`) pour dépendre du provider virtuel `turn_pipeline`.
+- Points `@patchable` dans le moteur [P2] : décoration de `axiom.prompts:build_narrative_prompt`, `build_timekeeper_prompt`, `axiom.regenerate:regenerate_variant`, `axiom.db_helpers:get_spatial_context`, `get_time_of_day_context`.
+- Documentation canonique [DOC2] : modèle canonique `main.py` aligné sur des cibles réelles dans `README.md`, `docs/guides/mods.md`, `maintenance/Mods/SYNTHESE_ARCHITECTURE.md` ; test d'acceptation `tests/test_canonical_mod_example.py` 100% passant.
+- TICKET-104 : `regenerate.py` stripping de fenced JSON et suppression de consigne de tool-call en régénération.

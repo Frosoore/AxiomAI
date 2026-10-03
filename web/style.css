@@ -1742,3 +1742,7 @@ textarea {
 .lore-hit strong { display: block; font-size: 13px; }
 .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--subtext); }
 
+
+/* Contributions of mods (axiom.ui.web:side_panel / action_button) */
+.mod-side-panel-text { white-space: pre-wrap; padding: 6px 8px; font-size: 13px; }
+.mod-action-buttons { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

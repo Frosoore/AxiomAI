@@ -3,6 +3,8 @@ ui/widgets/scheduled_events_editor.py
 
 Visual editor for Scheduled Events and Custom Calendars in the Creator Studio.
 Uses a spreadsheet-like grid for events and a form for calendar configuration.
+The calendar arithmetic is the `axiom.time` mod's: the Studio shows this editor
+only while that mod is active (see CreatorStudioView).
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QLabel, QSpinBox,
     QGroupBox, QFormLayout, QLineEdit, QSplitter
 )
-from axiom.time_system import CalendarConfig, TimeSystem
 from core.localization import tr, format_time
 
 class ScheduledEventsEditorWidget(QWidget):
@@ -25,8 +26,10 @@ class ScheduledEventsEditorWidget(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        from mods.axiom.time.time_system import CalendarConfig, TimeSystem
+        self._CalendarConfig, self._TimeSystem = CalendarConfig, TimeSystem
         self._calendar = CalendarConfig()
-        self._time_system = TimeSystem(self._calendar)
+        self._time_system = self._TimeSystem(self._calendar)
         self._setup_ui()
         self.retranslate_ui()
 
@@ -164,8 +167,8 @@ class ScheduledEventsEditorWidget(QWidget):
         
         # Load Calendar
         cal_str = meta.get("calendar_config", "{}")
-        self._calendar = CalendarConfig.from_json(cal_str)
-        self._time_system = TimeSystem(self._calendar)
+        self._calendar = self._CalendarConfig.from_json(cal_str)
+        self._time_system = self._TimeSystem(self._calendar)
         
         # Block signals to prevent valueChanged slot (_on_cal_changed) from overwriting
         # the calendar configuration properties before they are fully loaded into the UI.
@@ -326,8 +329,12 @@ class ScheduledEventsEditorWidget(QWidget):
         raw_months = self._month_edit.text().strip()
         if raw_months:
             self._calendar.month_names = [m.strip() for m in raw_months.split(",") if m.strip()]
-        
-        self._time_system = TimeSystem(self._calendar)
+            # One length per month: keep the known ones, 30 days for an added month.
+            n = len(self._calendar.month_names)
+            kept = list(self._calendar.days_per_month)[:n]
+            self._calendar.days_per_month = kept + [30] * (n - len(kept))
+
+        self._time_system = self._TimeSystem(self._calendar)
         
         # Update start hour/start minute ranges based on hpd/mph values
         self._start_hour_spin.setRange(0, max(0, self._calendar.hours_per_day - 1))

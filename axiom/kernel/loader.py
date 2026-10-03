@@ -50,7 +50,9 @@ _SAFE_MODE: bool = False
 
 
 def set_safe_mode(enabled: bool) -> None:
-    """Toggle kernel safe mode. In safe mode, NO mod is loaded (§4.1)."""
+    """Toggle kernel safe mode (§4.1, owner decision 2026-10-03): only the mods shipped
+    with the installation that declare `[mod] safe_mode = true` are loaded — the
+    interfaces and the minimal chat — whatever the user's choices. Nothing else."""
     global _SAFE_MODE
     _SAFE_MODE = bool(enabled)
 
@@ -92,6 +94,26 @@ def set_user_mod_order(config: AppConfig, order: list[str]) -> None:
 _DEFAULT_DISABLED: set[str] = set()
 
 
+# Ids of discovered mods allowed in safe mode (shipped with the installation and
+# declaring `[mod] safe_mode = true`).
+_SAFE_MODE_ELIGIBLE: set[str] = set()
+
+SAFE_MODE_REASON = (
+    "Safe mode: only the interfaces, the AI providers and the minimal chat shipped with Axiom are loaded."
+)
+
+
+def is_safe_mode_eligible(manifest: ModManifest, path: Path | None) -> bool:
+    """`[mod] safe_mode = true` honoured only for a mod of the official folder: a third-party
+    mod cannot put itself in the recovery mode meant to get away from it."""
+    mod_section = manifest.raw_data.get("mod", {}) if isinstance(manifest.raw_data, dict) else {}
+    if not (isinstance(mod_section, dict) and mod_section.get("safe_mode") is True):
+        return False
+    if path is None:
+        return False
+    return Path(path).resolve().parent == get_official_mods_dir()
+
+
 def is_enabled_by_default(manifest: ModManifest) -> bool:
     """Manifest field `[mod] enabled_by_default` (default true)."""
     mod_section = manifest.raw_data.get("mod", {}) if isinstance(manifest.raw_data, dict) else {}
@@ -110,7 +132,7 @@ def is_mod_enabled(
     explicit choice, a mod declared `enabled_by_default = false` is off.
     """
     if is_safe_mode():
-        return False
+        return mod_id in _SAFE_MODE_ELIGIBLE
     if config is not None:
         if hasattr(config, "disabled_mods") and getattr(config, "disabled_mods") and mod_id in config.disabled_mods:
             return False
@@ -195,6 +217,10 @@ def discover_mods(extra_dirs: list[Path] | None = None) -> list[tuple[ModManifes
                 logger.info("Mod '%s' in %s is shadowed by %s", mod_id, entry[1], found[mod_id][1])
                 continue
             found[mod_id] = entry
+            if is_safe_mode_eligible(entry[0], entry[1]):
+                _SAFE_MODE_ELIGIBLE.add(mod_id)
+            else:
+                _SAFE_MODE_ELIGIBLE.discard(mod_id)
             if is_enabled_by_default(entry[0]):
                 _DEFAULT_DISABLED.discard(mod_id)
             else:
@@ -210,7 +236,7 @@ def discover_mods(extra_dirs: list[Path] | None = None) -> list[tuple[ModManifes
 STATE_ACTIVE = "active"                  # loaded in this process
 STATE_ENABLED = "enabled"                # will load (plan computed without running code)
 STATE_DISABLED = "disabled"              # disabled by the user
-STATE_SAFE_MODE = "safe_mode"            # safe mode: no mod at all
+STATE_SAFE_MODE = "safe_mode"            # not loaded in safe mode (only the recovery set is)
 STATE_MISSING_PY = "missing_python_deps"
 STATE_REJECTED = "rejected"              # set aside by the resolver (API, deps, conflict, cycle)
 STATE_FAILED = "failed"                  # error while loading / in init()
@@ -226,6 +252,7 @@ class ModStatus:
     path: Path | None = None
     manifest: ModManifest | None = None
     order: int | None = None
+    content_hash: str = ""   # computed once per load (get_active_modpack)
 
     @property
     def is_loaded(self) -> bool:
@@ -262,9 +289,9 @@ def plan_modpack(
     for manifest, path in installed:
         st = ModStatus(manifest.id, STATE_ENABLED, path=path, manifest=manifest)
         plan.statuses[manifest.id] = st
-        if is_safe_mode():
-            st.state, st.reason = STATE_SAFE_MODE, "Safe mode: no mod is loaded."
-        elif not is_mod_enabled(manifest.id, config, manifest):
+        if is_safe_mode() and not is_safe_mode_eligible(manifest, path):
+            st.state, st.reason = STATE_SAFE_MODE, SAFE_MODE_REASON
+        elif not is_safe_mode() and not is_mod_enabled(manifest.id, config, manifest):
             st.state, st.reason = STATE_DISABLED, (
                 "Disabled by the user." if is_enabled_by_default(manifest)
                 or "enabled" in (getattr(config, "mod_settings", {}) or {}).get(manifest.id, {})
@@ -331,6 +358,10 @@ def _load_mod_root(
                 if isinstance(strings, dict):
                     mod_ctx.contribute_slot("axiom.kernel:locales", (lang_code, strings))
 
+        # Declarative storage policies of the manifest (DOC §10.2, K9); already done
+        # at bootstrap for every installed mod, done here for a mod loaded alone.
+        declare_mod_storage(manifest, root)
+
         main_py = root / "main.py"
         if main_py.is_file():
             spec = importlib.util.spec_from_file_location(
@@ -350,6 +381,8 @@ def _load_mod_root(
                     module.init(mod_ctx)
                 except Exception as err:
                     raise ModLoadError(f"Error during init() of mod '{manifest.id}': {err}") from err
+
+        _check_custom_storage_registered(manifest)
     except BaseException:
         # I4: nothing of a failed mod stays registered.
         try:
@@ -360,6 +393,152 @@ def _load_mod_root(
 
     logger.info("Loaded mod '%s' (v%s) from %s", manifest.id, manifest.version, origin)
     return manifest, mod_ctx, module
+
+
+# Storage declared by each installed mod's manifest: {mod_id: [registered specs]}.
+# Kept while the mod is disabled — the kernel still rewinds/forks its data with
+# its storage code only (owner decision 2026-10-03).
+_DECLARED_STORAGE: dict[str, list[Any]] = {}
+
+
+def _resolve_storage_handler(manifest: ModManifest, root: Path, ref: str) -> Any:
+    """``"module:function"`` of the mod. Only that module is imported (as
+    ``mods.<mod_id>.<module>``): no hook, prompt or UI of the mod runs."""
+    module_name, func_name = ref.split(":", 1)
+    register_mod_root(manifest.id, root)
+    try:
+        module = importlib.import_module(f"mods.{manifest.id}.{module_name}")
+    except Exception as err:
+        raise ModLoadError(f"[storage] cannot import '{module_name}' of mod '{manifest.id}': {err}") from err
+    func = getattr(module, func_name, None)
+    if not callable(func):
+        raise ModLoadError(f"[storage] '{ref}' of mod '{manifest.id}' is not a function.")
+    return func
+
+
+def declare_mod_storage(manifest: ModManifest, root: Path) -> list[Any]:
+    """Register the save data declared by a mod's `[storage]` (idempotent).
+
+    Called for every installed mod, enabled or not: ``step_keyed_table`` data is
+    rewound/forked generically, ``custom`` data by the handlers the manifest names
+    (``rewind`` / ``fork`` / ``snapshot``). ``events`` / ``versioned_kv`` live in
+    kernel tables. A table already registered differently or by another owner is a
+    conflict (ModLoadError, nothing registered for that mod).
+    """
+    from axiom.storage_registry import (
+        StoragePolicy,
+        TableStorageSpec,
+        find_storage_spec,
+        register_table_storage,
+        unregister_storage,
+    )
+
+    if manifest.id in _DECLARED_STORAGE:
+        return _DECLARED_STORAGE[manifest.id]
+    registered: list[Any] = []
+    try:
+        for name, decl in (manifest.storage or {}).items():
+            policy = decl["policy"]
+            if policy in ("events", "versioned_kv"):
+                continue
+            if policy == "custom" and not any(
+                h in decl for h in ("rewind", "fork", "snapshot", "state", "load", "diff")
+            ):
+                continue  # registered by init() (checked once it has run)
+            table = decl.get("table") or name
+            existing = find_storage_spec(table)
+            if policy == "step_keyed_table":
+                if existing is not None and existing.owner is None and existing.policy is StoragePolicy.STEP_KEYED \
+                        and (existing.step_column or "").lower() == decl["step_column"].lower():
+                    continue  # handled by the kernel itself
+                spec = TableStorageSpec(
+                    table_name=table,
+                    policy=StoragePolicy.STEP_KEYED,
+                    step_column=decl["step_column"],
+                    columns=tuple(decl["columns"]),
+                    id_column=decl["id_column"],
+                    id_autoincrement=decl["id_autoincrement"],
+                    fork_with=decl.get("fork_with"),
+                    owner=manifest.id,
+                )
+            else:
+                handlers = {h: _resolve_storage_handler(manifest, root, decl[h])
+                            for h in ("rewind", "fork", "snapshot", "state", "load", "diff") if h in decl}
+                external = "table" not in decl
+                spec = TableStorageSpec(
+                    table_name=table,
+                    policy=StoragePolicy.CUSTOM,
+                    step_column=None,
+                    is_runtime=True,
+                    custom_rewind=handlers.get("rewind"),
+                    custom_fork=handlers.get("fork"),
+                    custom_snapshot=handlers.get("snapshot"),
+                    section=decl.get("section"),
+                    custom_state=handlers.get("state"),
+                    custom_load=handlers.get("load"),
+                    custom_diff=handlers.get("diff"),
+                    save_scoped=not external,
+                    external=external,
+                    owner=manifest.id,
+                )
+            if existing is not None:
+                raise ModLoadError(
+                    f"[storage] '{name}': table '{table}' is already registered "
+                    f"({existing.policy.value}, by {'mod ' + existing.owner if existing.owner else 'the kernel'})."
+                )
+            register_table_storage(spec)
+            registered.append(spec)
+    except BaseException:
+        for spec in registered:
+            unregister_storage(spec)
+        raise
+    _DECLARED_STORAGE[manifest.id] = registered
+    return registered
+
+
+def ensure_installed_storage_declared() -> None:
+    """Declare the `[storage]` of every installed mod (no mod code runs but their
+    storage handlers). Called by the storage registry before its first rewind,
+    fork or purge when no modpack was bootstrapped in this process."""
+    try:
+        installed = discover_mods()
+    except Exception:
+        logger.exception("Mod discovery failed: mods' save data not declared")
+        return
+    for manifest, path in installed:
+        try:
+            root = path if path.is_dir() else _extract_archive(path, manifest)
+            declare_mod_storage(manifest, root)
+        except Exception as err:
+            logger.error("Storage of mod '%s' could not be declared: %s", manifest.id, err)
+
+
+def forget_declared_storage() -> None:
+    """Unregister every manifest-declared storage (a new modpack is being loaded)."""
+    from axiom.storage_registry import unregister_storage
+
+    for specs in _DECLARED_STORAGE.values():
+        for spec in specs:
+            unregister_storage(spec)
+    _DECLARED_STORAGE.clear()
+
+
+def _check_custom_storage_registered(manifest: ModManifest) -> None:
+    """A declared ``custom`` storage must exist once ``init`` has run (D13: no
+    declaration without behaviour)."""
+    from axiom.storage_registry import find_storage_spec
+
+    for name, decl in (manifest.storage or {}).items():
+        if decl["policy"] != "custom":
+            continue
+        target = decl.get("table", name)
+        spec = find_storage_spec(target)
+        if spec is None or (spec.owner not in (None, manifest.id)):
+            raise ModLoadError(
+                f"[storage] '{name}': declared `custom` but '{target}' was not registered "
+                f"(storage handlers in the manifest, or ctx.register_storage / "
+                f"ctx.register_table_storage in init())."
+            )
 
 
 def load_mod_from_dir(
@@ -560,6 +739,9 @@ class ModLoadState:
         return outcome
 
 
+_PATCH_FAULT_LISTENER: Any = None
+
+
 def bootstrap_all_mods(
     registry: KernelRegistry | None = None,
     config: AppConfig | None = None,
@@ -574,7 +756,11 @@ def bootstrap_all_mods(
     Prefer `get_kernel_registry()` to share one modpack per process (D-4).
     """
     from axiom.config import load_config
-    from axiom.kernel.patcher import add_patch_fault_listener, set_patch_mod_order
+    from axiom.kernel.patcher import (
+        add_patch_fault_listener,
+        remove_patch_fault_listener,
+        set_patch_mod_order,
+    )
     from axiom.kernel.registry import set_active_registry
 
     if config is None:
@@ -590,6 +776,24 @@ def bootstrap_all_mods(
         installed = []
 
     plan = plan_modpack(installed, config, user_order)
+
+    # Save data of EVERY installed mod, loaded or not: a disabled mod's data keeps
+    # following rewinds and forks (only its storage code runs).
+    from axiom.storage_registry import mark_mod_storage_ready
+    forget_declared_storage()
+    mark_mod_storage_ready()
+    for manifest, path in installed:
+        st = plan.statuses.get(manifest.id)
+        try:
+            root = path if path.is_dir() else _extract_archive(path, manifest)
+            declare_mod_storage(manifest, root)
+        except Exception as err:
+            logger.error("Storage of mod '%s' could not be declared: %s", manifest.id, err)
+            if st is not None and st.state == STATE_ENABLED:
+                st.state, st.reason = STATE_FAILED, f"Storage declaration failed: {err}"
+                if manifest.id in plan.load_order:
+                    plan.load_order.remove(manifest.id)
+
     state = ModLoadState(registry, plan)
     registry.load_state = state
     registry.set_mod_order(plan.load_order)
@@ -599,6 +803,12 @@ def bootstrap_all_mods(
     def _patch_fault(mod_id: str, reason: str) -> None:
         if mod_id in state.contexts and state.statuses[mod_id].state == STATE_ACTIVE:
             registry.disable_mod(mod_id, reason)
+    # Patches are process-wide: only the latest modpack listens to their faults
+    # (one listener, not one more per bootstrap).
+    global _PATCH_FAULT_LISTENER
+    if _PATCH_FAULT_LISTENER is not None:
+        remove_patch_fault_listener(_PATCH_FAULT_LISTENER)
+    _PATCH_FAULT_LISTENER = _patch_fault
     add_patch_fault_listener(_patch_fault)
 
     for mod_id, st in plan.statuses.items():
@@ -713,3 +923,76 @@ def disable_mod_hot(
     if state is None:
         return "not_loaded"
     return state.disable(mod_id, reason)
+
+
+def mod_content_hash(path: Path | str) -> str:
+    """SHA-256 of a mod's content: the archive bytes, or every file of the folder
+    (relative path + bytes, sorted; caches excluded). Same content = same hash."""
+    p = Path(path)
+    h = hashlib.sha256()
+    if p.is_file():
+        h.update(p.read_bytes())
+        return h.hexdigest()
+    files = sorted(
+        f for f in p.rglob("*")
+        if f.is_file() and "__pycache__" not in f.parts and f.suffix != ".pyc"
+    )
+    for f in files:
+        h.update(f.relative_to(p).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(f.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def _status_hash(st: ModStatus) -> str:
+    if not st.content_hash and st.path is not None:
+        st.content_hash = mod_content_hash(st.path)
+    return st.content_hash
+
+
+def get_active_modpack(registry: KernelRegistry | None = None) -> list[dict[str, str]]:
+    """The loaded modpack, in load order: [{id, version, name, hash}] (DOC §10.3:
+    ids + versions + hash). Empty when no modpack is loaded in this process."""
+    state = get_load_state(registry)
+    if state is None:
+        return []
+    out = []
+    for mod_id in state.load_order:
+        st = state.statuses.get(mod_id)
+        if st is None or st.state != STATE_ACTIVE or st.manifest is None:
+            continue
+        out.append({
+            "id": mod_id,
+            "version": st.manifest.version,
+            "name": st.manifest.name,
+            "hash": _status_hash(st),
+        })
+    return out
+
+
+def interface_unavailable_message(mod_id: str, registry: KernelRegistry | None = None) -> str | None:
+    """Why the interface mod ``mod_id`` cannot run, with how to fix it (None = it is active).
+
+    Launchers check the real status (dependencies, conflicts, failures...), not only
+    the user's checkbox: an interface whose turn pipeline is gone must not start.
+    """
+    st = get_mod_status(mod_id, registry)
+    if st is not None and st.state == STATE_ACTIVE:
+        return None
+    if st is None:
+        reason = "it is not installed."
+    elif st.state == STATE_DISABLED:
+        reason = "it is disabled in your configuration."
+    else:
+        reason = f"it could not be loaded: {st.reason}"
+    lines = [f"The interface mod '{mod_id}' is not available: {reason}"]
+    if st is not None and st.state == STATE_DISABLED:
+        lines.append(f"To re-enable it, run:\n    axiom mods enable {mod_id}")
+    if not is_safe_mode():
+        lines.append(
+            "To repair your mods, start in safe mode (interface + minimal chat only):\n"
+            "    python main.py --safe-mode    (or python main_web.py --safe-mode)\n"
+            "then check them with:\n    axiom mods list"
+        )
+    return "\n\n".join(lines)

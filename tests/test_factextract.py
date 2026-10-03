@@ -7,7 +7,7 @@ Covers payload shapes, coercion, caps, and graceful failure.
 import json
 
 from axiom.backends.base import LLMResponse
-from axiom.factextract import extract_facts
+from mods.axiom.living_memory.factextract import extract_facts
 
 
 class _FakeLLM:

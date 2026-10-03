@@ -384,7 +384,7 @@ def main() -> None:
     if "--safe-mode" in sys.argv:
         from axiom.kernel.loader import set_safe_mode
         set_safe_mode(True)
-        logger.warning("Safe mode requested via command line: no mod is loaded.")
+        logger.warning("Safe mode requested via command line: interface + minimal chat only.")
     logger.info("Application starting...")
     if is_debug():
         logger.debug("Debug mode enabled — verbose console output active.")
@@ -410,30 +410,24 @@ def main() -> None:
     register_builtin_providers()
     apply_beta_defaults()
 
-    # Load configuration and check if Desktop Qt UI mod is enabled
+    # The process modpack: bootstrapped once, shared by the UI and every Session (D-4).
+    # The Qt interface is a mod: it starts only if it really loaded (its turn
+    # pipeline included), not just because its box is checked.
     from axiom.config import load_config
-    from axiom.kernel.loader import get_kernel_registry, is_mod_enabled
+    from axiom.kernel.loader import get_kernel_registry, interface_unavailable_message
     cfg = load_config()
+    get_kernel_registry(cfg)
 
-    if not is_mod_enabled("axiom.ui.qt", cfg):
-        err_msg = (
-            "The desktop Qt interface mod ('axiom.ui.qt') is currently disabled in your configuration.\n"
-            "To re-enable it, run:\n"
-            "    axiom mod enable axiom.ui.qt\n\n"
-            "Or launch the web interface:\n"
-            "    python main_web.py"
-        )
+    err_msg = interface_unavailable_message("axiom.ui.qt")
+    if err_msg is not None:
         logger.error(err_msg)
         print(f"\n[Axiom AI] {err_msg}\n", file=sys.stderr)
         try:
             _app = QApplication.instance() or QApplication(sys.argv)
-            QMessageBox.critical(None, "Axiom AI — Interface Disabled", err_msg)
+            QMessageBox.critical(None, "Axiom AI — Interface unavailable", err_msg)
         except Exception:
-            pass
+            logger.exception("Could not show the 'interface unavailable' dialog")
         return 1
-
-    # The process modpack: bootstrapped once, shared by the UI and every Session (D-4).
-    get_kernel_registry(cfg)
 
     app = QApplication.instance() or QApplication(sys.argv)
     # Keep a reference on the app so the filter isn't garbage-collected.

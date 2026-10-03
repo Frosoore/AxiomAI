@@ -18,7 +18,10 @@ Design rules (same as :mod:`axiom.factextract` / :mod:`axiom.consolidate`):
 from __future__ import annotations
 
 from axiom.backends.base import LLMBackend, LLMMessage
-from axiom.observations import Observation
+try:
+    from .observations import Observation
+except (ImportError, ValueError):
+    from mods.axiom.living_memory.observations import Observation
 
 # Don't bother modelling a subject backed by fewer beliefs than this — a single
 # belief is already its own one-liner; a model adds value once memory accumulates.

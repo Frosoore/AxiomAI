@@ -232,7 +232,7 @@ class MemoryBrowserDialog(QDialog):
         self._load_facts()
 
     def _load_models(self) -> None:
-        from axiom.mental_models import get_mental_models
+        from mods.axiom.living_memory.mental_models import get_mental_models
 
         table = self._models_table
         empty = self._empty_label("models")
@@ -262,7 +262,7 @@ class MemoryBrowserDialog(QDialog):
         _tune_columns(table, stretch_col=1)
 
     def _load_beliefs(self) -> None:
-        from axiom.observations import get_observations
+        from mods.axiom.living_memory.observations import get_observations
 
         table = self._beliefs_table
         empty = self._empty_label("beliefs")
@@ -303,7 +303,7 @@ class MemoryBrowserDialog(QDialog):
         _tune_columns(table, stretch_col=1)
 
     def _load_facts(self) -> None:
-        from axiom.facts import get_facts
+        from mods.axiom.living_memory.facts import get_facts
 
         table = self._facts_table
         empty = self._empty_label("facts")
@@ -355,7 +355,7 @@ class MemoryBrowserDialog(QDialog):
             self._edit_model(row_id)
 
     def _edit_fact(self, fact_id: int) -> None:
-        from axiom.facts import get_fact, update_fact
+        from mods.axiom.living_memory.facts import get_fact, update_fact
 
         f = get_fact(self._db_path, self._save_id, fact_id)
         if f is None:
@@ -370,7 +370,7 @@ class MemoryBrowserDialog(QDialog):
             self._load_facts()
 
     def _edit_belief(self, observation_id: int) -> None:
-        from axiom.observations import get_observation, update_observation
+        from mods.axiom.living_memory.observations import get_observation, update_observation
 
         o = get_observation(self._db_path, self._save_id, observation_id)
         if o is None:
@@ -396,7 +396,7 @@ class MemoryBrowserDialog(QDialog):
             self._load_beliefs()
 
     def _edit_model(self, model_id: int) -> None:
-        from axiom.mental_models import get_mental_model, update_mental_model
+        from mods.axiom.living_memory.mental_models import get_mental_model, update_mental_model
 
         m = get_mental_model(self._db_path, self._save_id, model_id)
         if m is None:
@@ -437,23 +437,23 @@ class MemoryBrowserDialog(QDialog):
 
         ok = False
         if kind == "facts":
-            from axiom.facts import delete_fact
+            from mods.axiom.living_memory.facts import delete_fact
             ok = delete_fact(self._db_path, self._save_id, row_id)
             if ok:
                 self._load_facts()
         elif kind == "beliefs":
-            from axiom.observations import delete_observation
+            from mods.axiom.living_memory.observations import delete_observation
             ok = delete_observation(self._db_path, self._save_id, row_id)
             if ok:
                 self._load_beliefs()
         else:
-            from axiom.mental_models import delete_mental_model
+            from mods.axiom.living_memory.mental_models import delete_mental_model
             ok = delete_mental_model(self._db_path, self._save_id, row_id)
             if ok:
                 self._load_models()
 
     def _on_add_fact(self) -> None:
-        from axiom.facts import Fact, insert_facts
+        from mods.axiom.living_memory.facts import Fact, insert_facts
 
         text, ok = QInputDialog.getMultiLineText(
             self, tr("memory_browser_add_fact"), tr("memory_browser_col_fact"), ""

@@ -14,7 +14,7 @@ import pytest
 
 from axiom.checkpoint import CheckpointManager
 from axiom.events import EventSourcer
-from axiom.inventory import (
+from mods.axiom.inventory.inventory import (
     add_item,
     inventory_at,
     list_instances,

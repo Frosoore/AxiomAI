@@ -21,7 +21,10 @@ from __future__ import annotations
 import json
 
 from axiom.backends.base import LLMBackend, LLMMessage
-from axiom.facts import FACT_TYPES, Fact
+try:
+    from .facts import FACT_TYPES, Fact
+except (ImportError, ValueError):
+    from mods.axiom.living_memory.facts import FACT_TYPES, Fact
 
 _MAX_FACTS_DEFAULT = 8
 

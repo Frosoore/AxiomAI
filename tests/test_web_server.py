@@ -310,6 +310,7 @@ def test_session_lifecycle_start_turn_rewind(web_server):
         # Session._resolve_time_llm's internal call -- short-circuit the
         # latter directly so the Timekeeper never makes a real network call.
         with patch("axiom.config.build_llm_from_config", return_value=narrative_stub), \
+             patch("axiom.session.resolve_llm_backend", return_value=narrative_stub), \
              patch("axiom.session.Session._resolve_time_llm", return_value=time_stub):
 
             # 2. Start session -> opening narrative must be present in history.
@@ -464,6 +465,7 @@ def test_session_inventory_endpoint(web_server):
             conn.commit()
 
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             status, data = _post_json(f"{web_server}/api/session/start", {
                 "universe_path": str(db_file),
@@ -538,6 +540,7 @@ def test_session_edit_message_ai_patches_active_variant(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             save_id = _start_lifecycle_session(web_server, db_file, "Edit AI Universe")
 
@@ -574,6 +577,7 @@ def test_session_edit_message_user_input_rewinds_and_resubmits(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             save_id = _start_lifecycle_session(web_server, db_file, "Edit User Universe")
 
@@ -608,6 +612,7 @@ def test_session_regenerate_appends_variant_and_switches_active(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             save_id = _start_lifecycle_session(web_server, db_file, "Regenerate Universe")
 
@@ -639,6 +644,7 @@ def test_session_variant_switch(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             save_id = _start_lifecycle_session(web_server, db_file, "Variant Switch Universe")
 
@@ -744,6 +750,7 @@ def test_session_turn_includes_game_state_tag(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             save_id = _start_lifecycle_session(web_server, db_file, "Ambiance Universe")
 
@@ -840,6 +847,7 @@ def test_hardcore_delete_removes_save_and_blocks_non_hardcore(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             create_universe_db(str(db_file))
             provision_blank_universe(str(db_file), "Hardcore Universe")
@@ -896,6 +904,7 @@ def test_session_multiplayer_turn_intents(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             create_universe_db(str(db_file))
             provision_blank_universe(str(db_file), "Multiplayer Universe")
@@ -1015,6 +1024,7 @@ def test_settings_update_reloads_active_session_llm(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             create_universe_db(str(db_file))
             provision_blank_universe(str(db_file), "Settings LLM Universe")
@@ -1062,6 +1072,7 @@ def test_session_lore_search(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             create_universe_db(str(db_file))
             provision_blank_universe(str(db_file), "Lore Test Universe")
@@ -1147,6 +1158,7 @@ def test_session_snapshot_uses_named_player_entity(web_server):
             conn.commit()
 
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             status, data = _post_json(f"{web_server}/api/saves/create", {
                 "universe_path": str(db_file),
@@ -1184,6 +1196,7 @@ def test_session_turn_stream_emits_done(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Stream Universe")
             req = urllib.request.Request(
@@ -1223,6 +1236,7 @@ def test_session_verbosity_and_timeline(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Verbosity Universe")
             status, data = _post_json(f"{web_server}/api/session/verbosity", {"level": "short"})
@@ -1255,6 +1269,7 @@ def test_canonize_requires_folder_universe(web_server):
 
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Flat Canon Universe")
             status, data = _post_json(
@@ -1398,6 +1413,7 @@ def test_session_integrity_endpoint(web_server):
         db_file.unlink()
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Integrity Universe")
             req = urllib.request.urlopen(f"{web_server}/api/session/integrity")
@@ -1422,6 +1438,7 @@ def test_canonize_apply_save_scope_writes_lore_to_save(web_server):
         db_file.unlink()
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Canon Save Universe")
             status, data = _post_json(f"{web_server}/api/session/canonize/apply", {
@@ -1472,6 +1489,7 @@ def test_canonize_apply_ignores_client_paths(web_server, tmp_path):
         db_file.unlink()
     try:
         with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
              patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
             _start_lifecycle_session(web_server, db_file, "Canon Paths Universe")
             with patch("axiom.canonize.apply_canonize_preview") as apply_mock:
@@ -1618,3 +1636,45 @@ def test_creator_file_traversal_sibling_prefix_rejected(web_server, tmp_path):
         assert exc.code == 404
 
 
+
+
+def test_settings_save_keeps_the_server_mod_settings(web_server):
+    """The browser posts its whole (possibly stale) config: the mods' settings, owned
+    by the server (mods page, mod settings tabs, Canon auto), must not be overwritten."""
+    from axiom.config import load_config, save_config
+
+    cfg = load_config()
+    cfg.mod_settings.setdefault("axiom.turn", {})["auto_canonize"] = True
+    save_config(cfg)
+
+    with urllib.request.urlopen(f"{web_server}/api/settings") as res:
+        browser_copy = json.loads(res.read().decode("utf-8"))
+    browser_copy["mod_settings"] = {}          # stale copy taken before the toggle
+    status, _ = _post_json(f"{web_server}/api/settings", browser_copy)
+    assert status == 200
+    assert load_config().mod_settings["axiom.turn"]["auto_canonize"] is True
+
+
+def test_mod_web_extensions_endpoints(web_server):
+    from axiom.kernel.loader import get_kernel_registry
+
+    reg = get_kernel_registry()
+    reg.add_to_slot("axiom.ui.web:settings_tab", "probe.web", {
+        "id": "probe_tab", "title": "Probe",
+        "fields": [{"key": "level", "label": "Level", "type": "number", "default": 1}],
+    })
+    try:
+        with urllib.request.urlopen(f"{web_server}/api/mods/web-extensions") as res:
+            data = json.loads(res.read().decode("utf-8"))
+        tab = next(t for t in data["settings_tabs"] if t["id"] == "probe_tab")
+        assert tab["fields"][0]["value"] == 1
+
+        status, _ = _post_json(f"{web_server}/api/mods/web-settings", {"id": "probe_tab", "values": {"level": "3"}})
+        assert status == 200
+        from axiom.config import load_config
+        assert load_config().mod_settings["probe.web"]["level"] == 3
+
+        status, _ = _post_json(f"{web_server}/api/mods/web-settings", {"id": "nope", "values": {}})
+        assert status == 404
+    finally:
+        reg.remove_slot_contribution("axiom.ui.web:settings_tab", "probe.web")

@@ -24,7 +24,7 @@ from typing import Any
 
 from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.schema import create_universe_db
-from axiom.time_system import CalendarConfig
+from axiom.universe_format import calendar_to_meta, fold_stat_parameters
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -181,16 +181,7 @@ def _parse_universe(src_dir: Path) -> tuple[dict[str, str], set[str]]:
 
     calendar = data.get("calendar")
     if calendar:
-        cfg = CalendarConfig(
-            minutes_per_hour=int(calendar.get("minutes_per_hour", 60)),
-            hours_per_day=int(calendar.get("hours_per_day", 24)),
-            days_per_month=list(calendar.get("days_per_month", [30] * 12)),
-            month_names=list(calendar.get("month_names", [f"Month {i + 1}" for i in range(12)])),
-            start_day=int(calendar.get("start_day", 1)),
-            start_hour=int(calendar.get("start_hour", 0)),
-            start_minute=int(calendar.get("start_minute", 0)),
-        )
-        meta[_META_CALENDAR] = cfg.to_json()
+        meta[_META_CALENDAR] = calendar_to_meta(calendar)
 
     companion = data.get("companion")
     if companion is not None:
@@ -213,13 +204,11 @@ def _parse_stat_definitions(src_dir: Path) -> tuple[list[tuple], list[tuple]]:
     path = src_dir / "stats" / "definitions.toml"
     if not path.exists():
         return [], []
-    from axiom.stat_dynamics import fold_into_parameters
-
     data = _load_toml(path)
     rows: list[tuple] = []
     links: list[tuple] = []
     for entry in data.get("definitions", []):
-        params = fold_into_parameters(entry)
+        params = fold_stat_parameters(entry)
         stat_id = _require(entry, "stat_id", path.name)
         rows.append((
             stat_id,

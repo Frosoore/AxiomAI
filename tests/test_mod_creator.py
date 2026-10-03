@@ -107,7 +107,7 @@ def test_scaffold_mod_data_archetype(tmp_path: Path) -> None:
     scaffold_mod("community.quest_log", mod_type="data", target_dir=dest)
 
     manifest = parse_manifest_file(dest / "mod.toml")
-    assert "quest_log_records" in manifest.storage.get("tables", [])
+    assert manifest.storage.get("quest_log_steps") == {"policy": "versioned_kv"}
 
     result = test_mod(dest)
     assert result.passed, f"Data mod failed test_mod: {result.errors}"
@@ -366,7 +366,7 @@ name = "Test Gen"
         },
     }
     mock_llm = MockLLMBackend(json.dumps(mock_payload))
-    monkeypatch.setattr("axiom.kernel.llm_creator.build_llm_from_config", lambda *a, **k: mock_llm)
+    monkeypatch.setattr("axiom.session.resolve_llm_backend", lambda *a, **k: mock_llm)  # via axiom.providers
 
     staged_dir = tmp_path / "staged"
     installed_dir = tmp_path / "installed"
@@ -405,7 +405,7 @@ name = "Web Generated Mod"
         },
     }
     mock_llm = MockLLMBackend(json.dumps(mock_payload))
-    monkeypatch.setattr("axiom.kernel.llm_creator.build_llm_from_config", lambda *a, **k: mock_llm)
+    monkeypatch.setattr("axiom.session.resolve_llm_backend", lambda *a, **k: mock_llm)  # via axiom.providers
 
     staged_dir = tmp_path / "staged_web"
     installed_dir = tmp_path / "installed_web"

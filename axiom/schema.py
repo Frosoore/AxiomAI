@@ -10,6 +10,7 @@ import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+from typing import Callable
 
 # NOTE: the database layer must not import `core` at module load time. Doing so
 # triggers core/__init__ (which eagerly imports the arbitrator -> event_sourcing
@@ -428,6 +429,18 @@ CREATE TABLE IF NOT EXISTS Location_Connections (
 );
 """
 
+_DDL_MOD_KV = """
+CREATE TABLE IF NOT EXISTS Mod_KV (
+    save_id TEXT NOT NULL,
+    mod_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    from_step INTEGER NOT NULL DEFAULT 0,
+    to_step INTEGER,
+    PRIMARY KEY (save_id, mod_id, key, from_step)
+);
+"""
+
 _ALL_DDL: list[str] = [
     _DDL_UNIVERSE_META,
     _DDL_ENTITY_TYPES,
@@ -458,6 +471,7 @@ _ALL_DDL: list[str] = [
     _DDL_LOCATIONS,
     _DDL_LOCATION_CONNECTIONS,
     _DDL_MOD_SCHEMA_VERSIONS,
+    _DDL_MOD_KV,
 ]
 
 # Canonical set of table names produced by create_universe_db
@@ -491,6 +505,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "Locations",
     "Location_Connections",
     "Mod_Schema_Versions",
+    "Mod_KV",
 })
 
 
@@ -513,7 +528,14 @@ _DDL_INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_mental_models_save_turn ON Mental_Models(save_id, updated_turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_session_lore_save ON Session_Lore(save_id);",
     "CREATE INDEX IF NOT EXISTS idx_item_instances_holder ON Item_Instances(save_id, holder_kind, holder_id);",
+    "CREATE INDEX IF NOT EXISTS idx_mod_kv_lookup ON Mod_KV (save_id, mod_id, key, to_step);",
 ]
+
+
+def ensure_mod_kv_table(conn: "sqlite3.Connection") -> None:
+    """Create the Mod_KV table + index on an open connection if missing."""
+    conn.execute(_DDL_MOD_KV)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mod_kv_lookup ON Mod_KV (save_id, mod_id, key, to_step);")
 
 
 def ensure_facts_table(conn: "sqlite3.Connection") -> None:

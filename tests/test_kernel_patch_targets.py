@@ -216,3 +216,77 @@ def test_equal_priority_follows_load_order(tgt):
         set_patch_mod_order([])
         a.cleanup()
         b.cleanup()
+
+
+def test_engine_patchable_entry_points():
+    """Verify that key engine functions are decorated with @patchable and can be patched."""
+    from axiom.kernel.patcher import ShortCircuit
+    from axiom.prompts import build_narrative_prompt
+    from axiom.db_helpers import get_spatial_context
+    from mods.axiom.time.time_prompts import build_timekeeper_prompt
+    from mods.axiom.time.time_system import get_time_of_day_context
+    from axiom.regenerate import regenerate_variant
+
+    ctx = ModContext("mod.engine_patches", KernelRegistry())
+
+    # 1. Patch get_time_of_day_context
+    ctx.patch("mods.axiom.time.time_system:get_time_of_day_context", PatchType.AFTER, lambda res, total: f"{res} [MODDED]")
+    assert get_time_of_day_context(0).endswith("[MODDED]")
+
+    # 2. Patch build_timekeeper_prompt
+    ctx.patch(
+        "mods.axiom.time.time_prompts:build_timekeeper_prompt",
+        PatchType.AFTER,
+        lambda msgs, action, narrative: msgs + [{"role": "system", "content": "EXTRA_TIMEKEEPER_RULE"}],
+    )
+    tk_msgs = build_timekeeper_prompt("run", "he ran")
+    assert any(m.get("content") == "EXTRA_TIMEKEEPER_RULE" for m in tk_msgs)
+
+    # 3. Patch build_narrative_prompt
+    ctx.patch(
+        "axiom.prompts:build_narrative_prompt",
+        PatchType.AFTER,
+        lambda msgs, *args, **kwargs: msgs + [{"role": "system", "content": "EXTRA_NARRATIVE_RULE"}],
+    )
+    narrative_msgs = build_narrative_prompt(
+        universe_system_prompt="sys",
+        entity_stats_block="",
+        rag_chunks=[],
+        history=[],
+        intents={"player": "look"},
+    )
+    assert any(m.get("content") == "EXTRA_NARRATIVE_RULE" for m in narrative_msgs)
+
+    # 4. Patch get_spatial_context
+    ctx.patch(
+        "axiom.db_helpers:get_spatial_context",
+        PatchType.AFTER,
+        lambda res, db_path, loc_id: {**res, "custom_landmark": "Ancient Monolith"},
+    )
+    spatial = get_spatial_context("", "loc_1")
+    assert spatial.get("custom_landmark") == "Ancient Monolith"
+
+    # 5. Patch regenerate_variant with ShortCircuit
+    ctx.patch(
+        "axiom.regenerate:regenerate_variant",
+        PatchType.BEFORE,
+        lambda *args, **kwargs: ShortCircuit("Short-circuited variant"),
+    )
+    reg_res = regenerate_variant(None, "", "s1", 1, [], "", "hello")
+    assert reg_res == "Short-circuited variant"
+
+    # Clean up all patches and verify full restoration
+    ctx.cleanup()
+    assert not get_time_of_day_context(0).endswith("[MODDED]")
+    assert not any(m.get("content") == "EXTRA_TIMEKEEPER_RULE" for m in build_timekeeper_prompt("run", "he ran"))
+    assert not any(
+        m.get("content") == "EXTRA_NARRATIVE_RULE"
+        for m in build_narrative_prompt(
+            universe_system_prompt="sys",
+            entity_stats_block="",
+            rag_chunks=[],
+            history=[],
+            intents={"player": "look"},
+        )
+    )
+    assert "custom_landmark" not in get_spatial_context("", "loc_1")

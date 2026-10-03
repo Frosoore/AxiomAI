@@ -7,21 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from axiom.facts import Fact, delete_fact, get_fact, insert_facts, update_fact
-from axiom.mental_models import (
+from axiom.schema import create_universe_db, get_connection
+from mods.axiom.living_memory.facts import Fact, delete_fact, get_fact, insert_facts, update_fact
+from mods.axiom.living_memory.mental_models import (
     delete_mental_model,
     get_mental_model,
     update_mental_model,
     upsert_mental_model,
 )
-from axiom.observations import (
+from mods.axiom.living_memory.observations import (
     Observation,
     delete_observation,
     get_observation,
     insert_observation,
     update_observation,
 )
-from axiom.schema import create_universe_db, get_connection
 
 
 @pytest.fixture

@@ -367,7 +367,9 @@ def test_single_bootstrap_per_process(mods_env):
 
 
 # ---------------------------------------------------------------------------
-# I11 — safe mode = no mod at all, no privilege by name prefix
+# I11 — safe mode: no privilege by name prefix. Owner decision 2026-10-03: safe mode
+# loads the recovery set only (interface + minimal chat), i.e. the mods SHIPPED with
+# Axiom that declare `[mod] safe_mode = true` — a third-party mod cannot opt in.
 # ---------------------------------------------------------------------------
 
 def test_safe_mode_loads_no_mod_even_axiom_prefixed(mods_env):
@@ -379,3 +381,24 @@ def test_safe_mode_loads_no_mod_even_axiom_prefixed(mods_env):
     state = get_load_state(reg)
     assert reg._services == {}
     assert {st.state for st in state.statuses.values()} == {"safe_mode"}
+
+
+def test_safe_mode_loads_only_the_shipped_recovery_set(mods_env, tmp_path):
+    from axiom.paths import get_mods_dir
+
+    flag = "safe_mode = true\n"
+    write_mod(mods_env, "shipped.ui", toml_extra=flag, main=HOOK_MAIN.format(svc="ui"))
+    write_mod(mods_env, "shipped.game", main=HOOK_MAIN.format(svc="game"))
+    user_dir = get_mods_dir()
+    user_dir.mkdir(parents=True, exist_ok=True)
+    write_mod(user_dir, "third.sneaky", toml_extra=flag, main=HOOK_MAIN.format(svc="sneaky"))
+    cfg = AppConfig()
+    cfg.mod_settings["shipped.ui"] = {"enabled": False}  # user choices are ignored in safe mode
+
+    set_safe_mode(True)
+    reg = bootstrap_all_mods(KernelRegistry(), cfg)
+    state = get_load_state(reg)
+    assert state.is_active("shipped.ui")
+    assert state.get_status("shipped.game").state == "safe_mode"
+    assert state.get_status("third.sneaky").state == "safe_mode"
+    assert set(reg._services) == {"ui"}

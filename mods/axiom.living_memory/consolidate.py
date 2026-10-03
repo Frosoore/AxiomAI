@@ -23,8 +23,12 @@ import json
 from dataclasses import dataclass, field
 
 from axiom.backends.base import LLMBackend, LLMMessage
-from axiom.facts import Fact
-from axiom.observations import Observation
+try:
+    from .facts import Fact
+    from .observations import Observation
+except (ImportError, ValueError):
+    from mods.axiom.living_memory.facts import Fact
+    from mods.axiom.living_memory.observations import Observation
 
 _ACTIONS = ("create", "update", "delete")
 _DEFAULT_MISSION = (

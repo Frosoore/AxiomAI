@@ -29,7 +29,6 @@ from chromadb import EmbeddingFunction, Documents, Embeddings
 from axiom.arbitrator import CORRECTION_EVENT, ArbitratorEngine, ArbitratorResult
 from axiom.rules import RulesEngine
 from axiom.events import EventSourcer
-from axiom.modifiers import ModifierProcessor
 from axiom.schema import create_universe_db
 from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 from axiom.memory import VectorMemory, _EmbeddingSingleton
@@ -172,11 +171,22 @@ class TestEffectiveStatsFreshness:
         )
         arb.process_turn("s1", 1, {"player1": "I wait."}, "sys", [])
 
-        # A modifier applied AFTER the turn must show up on the next stats fetch,
+        # A modifier applied AFTER the turn must show up on the next turn's gathered context,
         # not be masked by a stale snapshot cached during the turn.
+        from mods.core.stat_dynamics.modifiers import ModifierProcessor
         ModifierProcessor(db_path).add_modifier("s1", "player1", "HP", 50, minutes=60)
-        eff = arb._fetch_effective_stats("s1")
-        assert eff["player1"]["HP"] == "150"  # base 100 + modifier 50
+        from axiom.arbitrator import TurnContext
+        ctx = TurnContext(
+            save_id="s1",
+            step_id=2,
+            user_input="I wait.",
+            player_entity_id="player1",
+            verbosity="balanced",
+            db_path=db_path,
+            intents={"player1": "I wait."},
+        )
+        arb.step_1_gather_context(ctx)
+        assert ctx.all_stats["player1"]["HP"] == "150"  # base 100 + modifier 50
 
 
 @pytest.fixture
@@ -403,7 +413,6 @@ class TestCorrectionLoop:
         llm2 = _StubLLM(response2)
 
         es = EventSourcer(db_path)
-        mp = ModifierProcessor(db_path)
         re = RulesEngine([])
         arb = ArbitratorEngine(db_path, [])
         arb.configure(llm1, vm)
@@ -593,7 +602,6 @@ class TestStreamingCallback:
         )
         llm = self._StreamingStubLLM(response)
         from axiom.events import EventSourcer
-        from axiom.modifiers import ModifierProcessor
         from axiom.rules import RulesEngine
         from axiom.arbitrator import ArbitratorEngine
         arb = ArbitratorEngine(db_path, [])
@@ -645,7 +653,6 @@ class TestStreamingCallback:
 
         llm_s = self._StreamingStubLLM(response)
         from axiom.events import EventSourcer
-        from axiom.modifiers import ModifierProcessor
         from axiom.rules import RulesEngine
         from axiom.arbitrator import ArbitratorEngine
         arb_s = ArbitratorEngine(db2, [])
@@ -688,7 +695,6 @@ class TestDynamicStopSequences:
         llm = _SpyLLM(response)
 
         from axiom.events import EventSourcer
-        from axiom.modifiers import ModifierProcessor
         from axiom.rules import RulesEngine
         from axiom.arbitrator import ArbitratorEngine
         arb = ArbitratorEngine(db_path, [])
@@ -1120,7 +1126,7 @@ class TestInventoryQuantityValidation:
 class TestInventoryRewindEndToEnd:
     def test_item_given_by_narrator_is_undone_by_rewind(self, db_path, vm) -> None:
         from axiom.checkpoint import CheckpointManager
-        from axiom.inventory import inventory_at, list_instances
+        from mods.axiom.inventory.inventory import inventory_at, list_instances
         from axiom.schema import get_connection
 
         response = LLMResponse(
@@ -1198,7 +1204,11 @@ class TestTurnContextModularPipeline:
         arb.step_4_parse_response(ctx)
         assert ctx.game_state_tag == "tension"
         assert len(ctx.raw_state_changes) == 1
-        assert ctx.elapsed_minutes > 0
+        assert ctx.elapsed_minutes == 0  # the kernel turn never advances time itself
+        # axiom.time does, once the answer is parsed (no narrator value, no time
+        # model here: the scene pace default, "conversation" = 5 min).
+        arb.kernel_registry.invoke_hook("axiom.step:response_parsed", ctx)
+        assert ctx.elapsed_minutes == 5
 
         # Step 5
         arb.step_5_arbitrate_rules(ctx)
@@ -1208,5 +1218,4 @@ class TestTurnContextModularPipeline:
 
         # Step 6
         arb.step_6_stage_mutations(ctx)
-        assert len(ctx.write_batch.timeline_entries) == 1
-        assert len(ctx.write_batch.modifier_mutations) >= 2
+        assert len(ctx.write_batch.staged_ops) >= 1  # the Timeline row of axiom.time / tick

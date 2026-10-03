@@ -41,9 +41,7 @@ def test_community_survival_initialization() -> None:
     assert "SURVIVAL GUIDELINES" in section_data["text"]
 
     # 2. Verify after_step hook effectivity on sustained exertion
-    class DummyBatch:
-        def __init__(self):
-            self.timeline_entries = []
+    from axiom.turn_batch import TurnWriteBatch
 
     class DummyTurnCtx:
         def __init__(self, elapsed: int):
@@ -51,18 +49,22 @@ def test_community_survival_initialization() -> None:
             self.turn_id = 5
             self.new_time = 300
             self.elapsed_minutes = elapsed
-            self.write_batch = DummyBatch()
+            self.player_entity_id = "hero"
+            self.write_batch = TurnWriteBatch()
 
     # Short activity: no fatigue entry
     short_ctx = DummyTurnCtx(30)
     registry.execute_hook("axiom.step:after_step", short_ctx)
-    assert len(short_ctx.write_batch.timeline_entries) == 0
+    assert short_ctx.write_batch.events == []
 
     # Sustained activity (>= 120 mins): fatigue entry added
     long_ctx = DummyTurnCtx(150)
     registry.execute_hook("axiom.step:after_step", long_ctx)
-    assert len(long_ctx.write_batch.timeline_entries) == 1
-    assert "Survival" in long_ctx.write_batch.timeline_entries[0][3]
+    events = long_ctx.write_batch.events
+    assert len(events) == 1
+    assert events[0]["event_type"] == "mod.community.survival.fatigue"
+    assert events[0]["target_entity"] == "hero"
+    assert "Survival" in events[0]["payload"]["note"]
 
     # 3. Clean up and ensure unregistration (Rule D11)
     ctx.cleanup()

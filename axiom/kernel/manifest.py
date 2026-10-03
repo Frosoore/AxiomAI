@@ -152,6 +152,100 @@ class ModManifest:
         return self.description
 
 
+_HANDLER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Storage policies a mod can declare (DOC §10.2). "derived" is reserved to the kernel.
+STORAGE_POLICIES = ("events", "versioned_kv", "step_keyed_table", "custom")
+
+
+def _parse_storage_section(section: Any) -> dict[str, dict[str, Any]]:
+    """Validate `[storage]` and return {name: normalized declaration}.
+
+    - ``events``: the data is typed events in the kernel journal (``Event_Log``);
+    - ``versioned_kv``: the data is in the kernel ``Mod_KV`` table (``ctx.store``);
+    - ``step_keyed_table``: a SQL table of the mod, rewound/forked by its step column.
+      Keys: ``table`` (default: the entry name), ``step_column`` (default ``turn_id``),
+      ``columns`` (required: copied by the fork), ``id_column``, ``id_autoincrement``;
+    - ``custom``: the mod's own rewind/fork code. Either declared here as
+      ``rewind`` / ``fork`` / ``snapshot`` = ``"module:function"`` of the mod (e.g.
+      ``"storage:rewind_facts"``) — then the kernel runs them even while the mod is
+      disabled (only that module is loaded) —, or registered by ``init()`` through
+      ``ctx.register_storage`` / ``ctx.register_table_storage`` (active mod only).
+      ``table`` names its SQL table; without one the store is outside the database
+      (vector memory, files) and runs after the SQL commit.
+    A ``step_keyed_table`` may set ``fork_with = "<table>"``: copied at fork time by
+    that table's handler (ids shared inside JSON), rewound generically.
+
+    A ``custom`` entry can also expose its data to the save editor as a named
+    ``section`` (e.g. ``"inventory"``): ``state(conn, save_id, turn_id, present) ->
+    (rows, historical)``, ``load(conn, save_id, rows, turn_id, replace)`` and
+    ``diff(before_rows, after_rows) -> rows`` — run by the kernel's save tools
+    (materialize, TOML export/import, corrections), mod enabled or not.
+    """
+    if section in (None, {}):
+        return {}
+    if not isinstance(section, dict):
+        raise ManifestError("[storage] must be a table of {name = { policy = ... }}.")
+    storage: dict[str, dict[str, Any]] = {}
+    for name, spec in section.items():
+        if not isinstance(spec, dict):
+            raise ManifestError(f"[storage] '{name}': expected {{ policy = \"...\" }}, got {spec!r}.")
+        policy = spec.get("policy")
+        if policy not in STORAGE_POLICIES:
+            raise ManifestError(
+                f"[storage] '{name}': unknown policy {policy!r} "
+                f"(expected one of {', '.join(STORAGE_POLICIES)})."
+            )
+        entry: dict[str, Any] = {"policy": policy}
+        if policy == "step_keyed_table":
+            columns = spec.get("columns")
+            if not isinstance(columns, list) or not columns or not all(isinstance(c, str) for c in columns):
+                raise ManifestError(f"[storage] '{name}': step_keyed_table needs `columns` (list of column names).")
+            step_column = spec.get("step_column", "turn_id")
+            if not isinstance(step_column, str) or step_column not in columns:
+                raise ManifestError(f"[storage] '{name}': `step_column` {step_column!r} must be one of `columns`.")
+            id_column = spec.get("id_column")
+            if id_column is not None and id_column not in columns:
+                raise ManifestError(f"[storage] '{name}': `id_column` {id_column!r} must be one of `columns`.")
+            if "save_id" not in columns:
+                raise ManifestError(f"[storage] '{name}': a save table needs a `save_id` column.")
+            entry.update(
+                table=str(spec.get("table", name)),
+                step_column=step_column,
+                columns=list(columns),
+                id_column=id_column,
+                id_autoincrement=bool(spec.get("id_autoincrement", False)),
+                fork_with=str(spec["fork_with"]) if spec.get("fork_with") else None,
+            )
+        elif policy == "custom":
+            if "table" in spec:
+                entry["table"] = str(spec["table"])
+            for hook in ("rewind", "fork", "snapshot", "state", "load", "diff"):
+                ref = spec.get(hook)
+                if ref is None:
+                    continue
+                if not isinstance(ref, str) or not _HANDLER_RE.match(ref):
+                    raise ManifestError(
+                        f"[storage] '{name}': `{hook}` must be \"module:function\" of the mod, got {ref!r}."
+                    )
+                entry[hook] = ref
+            if "snapshot" in entry and "table" not in entry:
+                raise ManifestError(f"[storage] '{name}': `snapshot` needs a SQL `table`.")
+            if "section" in spec:
+                if not isinstance(spec["section"], str) or not spec["section"].isidentifier():
+                    raise ManifestError(f"[storage] '{name}': `section` must be a simple name.")
+                entry["section"] = spec["section"]
+            if any(h in entry for h in ("state", "load", "diff")) and "section" not in entry:
+                raise ManifestError(f"[storage] '{name}': `state`/`load`/`diff` need a `section` name.")
+        allowed = {"policy", "table", "step_column", "columns", "id_column", "id_autoincrement",
+                   "fork_with", "rewind", "fork", "snapshot", "section", "state", "load", "diff"}
+        unknown = set(spec) - allowed
+        if unknown:
+            raise ManifestError(f"[storage] '{name}': unknown key(s) {', '.join(sorted(unknown))}.")
+        storage[str(name)] = entry
+    return storage
+
+
 def parse_manifest_string(toml_str: str, locales: dict[str, dict[str, Any]] | None = None) -> ModManifest:
     """Parse and strictly validate a TOML string as a ModManifest."""
     try:
@@ -232,9 +326,8 @@ def parse_manifest_string(toml_str: str, locales: dict[str, dict[str, Any]] | No
     raw_code = bool(contrib_section.get("raw_code", False)) if isinstance(contrib_section, dict) else False
     contributes = ModContributes(hooks=hooks, slots=slots, patches=patches, raw_code=raw_code)
 
-    # Storage
-    storage_section = data.get("storage", {})
-    storage = dict(storage_section) if isinstance(storage_section, dict) else {}
+    # Storage (DOC §10.2): one declared policy per save data
+    storage = _parse_storage_section(data.get("storage", {}))
 
     # Provides slots (slot declarations)
     provides_slots_section = data.get("provides_slots", {})

@@ -79,33 +79,35 @@ def resolve_llm_backend(
 ) -> LLMBackend:
     """The narration backend of the modpack (single entry point for Session and UIs).
 
-    With the `axiom.providers` mod active, the backend comes from the exclusive slot
-    `axiom.turn:llm_backend` (or, for an auxiliary model, from the `providers`
-    service). Without it, falls back to `build_llm_from_config`.
+    The narration backend comes exclusively from the `axiom.providers` mod via the
+    exclusive slot `axiom.turn:llm_backend` (or the `providers` service for
+    auxiliary models). If no provider is available, raises a clear error.
     """
-    from axiom.config import build_llm_from_config, load_config
-
     if registry is None:
         try:
             from axiom.kernel.loader import get_kernel_registry
             registry = get_kernel_registry()
         except Exception:
-            logger.warning("Mod registry unavailable; building the LLM from the config.", exc_info=True)
             registry = None
+
     if registry is not None:
         try:
             if model_override is None:
                 backend = registry.get_slot("axiom.turn:llm_backend")
                 if callable(backend):
                     backend = backend()
-                if backend is not None:
+                if backend:
                     return backend
             providers = registry.get_service("providers")
             if providers is not None and hasattr(providers, "get_backend"):
                 return providers.get_backend(cfg, model_override=model_override)
-        except Exception:
-            logger.warning("LLM backend slot failed; building the LLM from the config.", exc_info=True)
-    return build_llm_from_config(cfg or load_config(), model_override=model_override)
+        except Exception as exc:
+            logger.warning("LLM provider resolution failed: %s", exc, exc_info=True)
+
+    raise RuntimeError(
+        "No AI provider available: the mod 'axiom.providers' is required for narration. "
+        "Please enable 'axiom.providers' in the mod settings."
+    )
 
 
 # One auto-canonize job at a time per save (a slow one is not stacked, the turn is skipped).
@@ -179,6 +181,13 @@ class Session:
             logger.exception(
                 "Schema migrate failed opening %s; session continues", self._db_path
             )
+        try:
+            from axiom.storage_registry import apply_registered_mod_migrations
+            apply_registered_mod_migrations(self._db_path)
+        except Exception:
+            logger.exception(
+                "Mod migrations failed opening %s; session continues", self._db_path
+            )
         self._llm = llm
         # Timekeeper backend: an explicit one wins; otherwise build it from the
         # configured "Time Model" (local model if Ollama, gemini_model if Gemini),
@@ -207,6 +216,8 @@ class Session:
             vector_base = paths.get_vector_dir()
             data_root = paths._data_root()
         self._data_root = data_root
+        # Only an injected data_dir scopes the external stores' paths (rewind/fork).
+        self._injected_data_root: Path | None = data_root if data_dir is not None else None
 
         from axiom.config import load_config
         _active_cfg = cfg or load_config()
@@ -221,6 +232,25 @@ class Session:
                 from axiom.kernel.loader import get_kernel_registry
                 kernel_registry = get_kernel_registry(_active_cfg)
         self._kernel_registry = kernel_registry
+
+        # The save records its modpack; opening it with another one warns (DOC §10.3, D15).
+        self.modpack_compatibility: dict[str, Any] = {"compatible": True}
+        self.modpack_warning: str = ""
+        try:
+            from axiom.kernel.loader import get_active_modpack
+            from axiom.savestore import check_save_modpack_compatibility, describe_modpack_differences
+            compat = check_save_modpack_compatibility(
+                self._db_path, get_active_modpack(self._kernel_registry)
+            )
+            self.modpack_compatibility = compat
+            if not compat["compatible"]:
+                self.modpack_warning = describe_modpack_differences(compat)
+                logger.warning(
+                    "Save '%s' was created with a different modpack:\n%s",
+                    self._save_id, self.modpack_warning,
+                )
+        except Exception:
+            logger.exception("Modpack check failed for save '%s'; session continues", self._save_id)
 
         if self._llm is None:
             # Backend of the modpack (axiom.providers -> slot axiom.turn:llm_backend).
@@ -248,10 +278,9 @@ class Session:
         self._vector_memory = vector_memory
 
         try:
-            # Only when core.stat_dynamics is really loaded (its hook is registered).
-            if self._kernel_registry.has_hook("axiom.turn:arbitrate_stats"):
-                from axiom.stat_dynamics import ensure_stat_dynamics
-                ensure_stat_dynamics(self._db_path, llm)
+            stat_svc = self._kernel_registry.get_service("stat_dynamics") if self._kernel_registry else None
+            if stat_svc and hasattr(stat_svc, "ensure_stat_dynamics"):
+                stat_svc.ensure_stat_dynamics(self._db_path, llm)
         except Exception:
             logger.debug("stat dynamics classify-on-start skipped", exc_info=True)
         self._events = EventSourcer(self._db_path)
@@ -476,28 +505,10 @@ class Session:
         Resynchronises `turn_id`. Returns the summary provided by
         `CheckpointManager.rewind` (which also bumps the save's epoch).
         """
-        summary = self._checkpoints.rewind(self._save_id, target_turn_id)
+        with paths.session_data_root(self._injected_data_root):
+            summary = self._checkpoints.rewind(self._save_id, target_turn_id)
         self._entity_names = None
         self._turn_id = get_max_turn_id(self._db_path, self._save_id)
-        # Les illustrations des tours annulés ne doivent pas réapparaître si on
-        # rejoue jusqu'au même numéro de tour (TICKET-048).
-        from axiom.savestore import truncate_assets_in
-        truncate_assets_in(self._data_root / "assets" / self._save_id, self._turn_id)
-
-        # Update last_updated in Saves table to current UTC time
-        try:
-            from datetime import datetime, timezone
-            from axiom.schema import get_connection
-            now_utc = datetime.now(timezone.utc).isoformat()
-            with get_connection(self._db_path) as conn:
-                conn.execute(
-                    "UPDATE Saves SET last_updated = ? WHERE save_id = ?;",
-                    (now_utc, self._save_id)
-                )
-                conn.commit()
-        except Exception as db_err:
-            logger.warning(f"Failed to update last_updated on rewind for save {self._save_id}: {db_err}")
-
         return summary
 
     def load(self, save_id: str) -> None:
@@ -519,13 +530,14 @@ class Session:
         from axiom.saves import fork_save
         target_turn = at_turn if at_turn is not None else self._turn_id
         name = player_name or kwargs.pop("new_save_name", None)
-        return fork_save(
-            self._db_path,
-            self._save_id,
-            at_turn=target_turn,
-            player_name=name,
-            **kwargs,
-        )
+        with paths.session_data_root(self._injected_data_root):
+            return fork_save(
+                self._db_path,
+                self._save_id,
+                at_turn=target_turn,
+                player_name=name,
+                **kwargs,
+            )
 
     def list_checkpoints(self) -> list[int]:
         """List the turns for which a checkpoint (snapshot) exists."""
@@ -769,32 +781,30 @@ class Session:
             stats[eid] = merged
 
         modifiers: list[dict] = []
-        try:
-            with get_connection(self._db_path) as conn:
-                for r in conn.execute(
-                    "SELECT entity_id, stat_key, delta, minutes_remaining "
-                    "FROM Active_Modifiers WHERE save_id = ? "
-                    "ORDER BY entity_id, stat_key;",
-                    (self._save_id,),
-                ):
-                    modifiers.append({
-                        "entity_id": r["entity_id"],
-                        "stat_key": r["stat_key"],
-                        "delta": r["delta"],
-                        "minutes_remaining": r["minutes_remaining"],
-                    })
-            for mod in modifiers:
-                eid = mod["entity_id"]
-                if eid not in stats:
-                    continue
-                key = resolve_stat_key(mod["stat_key"], stats[eid])
-                try:
-                    current = float(stats[eid].get(key, "0"))
-                    stats[eid][key] = fmt_num(current + float(mod["delta"]))
-                except (TypeError, ValueError):
-                    continue
-        except Exception:
-            modifiers = []
+        has_stats_mod = (
+            self._kernel_registry is not None
+            and (
+                self._kernel_registry.has_hook("axiom.turn:arbitrate_stats")
+                or self._kernel_registry.get_service("stat_dynamics") is not None
+            )
+        )
+        if has_stats_mod:
+            try:
+                stat_svc = self._kernel_registry.get_service("stat_dynamics")
+                if stat_svc is not None:
+                    modifiers = stat_svc.get_active_modifiers(self._db_path, self._save_id)
+                for mod in modifiers:
+                    eid = mod["entity_id"]
+                    if eid not in stats:
+                        continue
+                    key = resolve_stat_key(mod["stat_key"], stats[eid])
+                    try:
+                        current = float(stats[eid].get(key, "0"))
+                        stats[eid][key] = fmt_num(current + float(mod["delta"]))
+                    except (TypeError, ValueError):
+                        continue
+            except Exception:
+                modifiers = []
 
         player_entity_id = self.resolve_player_entity_id()
         player_stats = stats.get(player_entity_id) or stats.get("player") or {}

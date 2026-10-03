@@ -27,7 +27,5 @@ patches = []
 "axiom.world:custom_rules" = { rule = "collect" }
 
 [storage]
-entities = { policy = "versioned_kv" }
-entity_stats = { policy = "versioned_kv" }
-rules = { policy = "versioned_kv" }
-locations = { policy = "versioned_kv" }
+# Validated stat changes are events of the kernel journal (Event_Log).
+stat_changes = { policy = "events" }

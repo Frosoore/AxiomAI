@@ -114,10 +114,11 @@ def init(ctx: ModContext) -> None:
     ctx.contribute_slot("axiom.turn:output_fields", {"thirst_level": handle_output})
 
     # 3. Reversible surgical patch if needed (D11)
-    def patch_calc(orig_fn, *args, **kwargs):
-        res = orig_fn(*args, **kwargs)
-        return res * 1.5
-    ctx.patch("axiom.world:calculate_stamina", "around", patch_calc)
+    def patch_prompt(orig_fn, *args, **kwargs):
+        messages = orig_fn(*args, **kwargs)
+        messages[0]["content"] += "\n(Scorching Desert)"
+        return messages
+    ctx.patch("axiom.prompts:build_narrative_prompt", "around", patch_prompt)
 ```
 
 ---

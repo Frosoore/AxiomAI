@@ -23,7 +23,7 @@ import tempfile
 from typing import Any
 
 from axiom.backends.base import LLMBackend, LLMMessage
-from axiom.config import AppConfig, build_llm_from_config, load_config, resolve_extraction_model
+from axiom.config import AppConfig, load_config, resolve_extraction_model
 from axiom.kernel.api import KERNEL_API, PUBLIC_HOOKS, PUBLIC_SLOTS
 from axiom.kernel.manifest import _MOD_ID_REGEX, ModManifest, load_manifest
 from axiom.kernel.tester import ModTestResult, test_mod, validate_mod_static
@@ -62,6 +62,9 @@ slots = ["axiom.turn:prompt_sections"] # Slots contributed to (only names from t
 
 [dependencies]                  # Optional dependencies
 # "axiom.turn" = ">=1.0.0"
+
+[storage]                       # Save data of the mod (rewound/forked by Axiom, no code needed)
+# hunger = { policy = "versioned_kv" }   # read/written with ctx.store
 ```
 
 ### Public ModContext API (init(ctx: ModContext)):
@@ -75,6 +78,9 @@ slots = ["axiom.turn:prompt_sections"] # Slots contributed to (only names from t
 - `ctx.spawn_job(target: Callable, *args) -> Thread` (stop when `ctx.should_stop()`)
 - `ctx.patch(target: str, patch_type: PatchType, handler: Callable, priority: int = 100) -> None`
   (target 'module:function' or 'module:Class.method'; an unknown target is an error)
+- `ctx.store.get(turn_ctx, key, default)` / `ctx.store.set(turn_ctx, key, value)` /
+  `ctx.store.delete(turn_ctx, key)`: save data of this mod (JSON values), written with the
+  turn and rewound/forked with the save. Declare it in `[storage]` as `versioned_kv`.
 
 ### Official Hooks & Slots (any other `axiom.*` name is refused: it would never be called):
 __CATALOGUE__
@@ -97,23 +103,37 @@ def init(ctx: ModContext) -> None:
     ctx.register_hook("axiom.step:after_step", on_after_step)
 ```
 
-Example 2 (hunger system):
+Example 2 (hunger gauge that drops with time; mod.toml declares
+`[storage] hunger = { policy = "versioned_kv" }`):
 ```python
 # main.py
 from typing import Any
 from axiom.kernel.context import ModContext
 
-def on_hunger_delta(value: Any, turn_ctx: Any) -> None:
-    # Receives the parsed value of the 'hunger_delta' output field
-    pass
-
 def init(ctx: ModContext) -> None:
-    ctx.contribute_slot("axiom.turn:prompt_sections", {
-        "position": "system",
-        "text": "Track the player's hunger (0-100) and report changes in 'hunger_delta'.",
-        "depth": 50,
+    def hunger_section(turn_ctx: Any):
+        hunger = ctx.store.get(turn_ctx, "hunger", 100)
+        return ("system", 0, f"The player's hunger is {hunger}/100 (0 = starving).")
+
+    def on_hunger_delta(value: Any, turn_ctx: Any) -> None:
+        # Parsed value of the 'hunger_delta' field of the LLM output (eating, etc.)
+        hunger = ctx.store.get(turn_ctx, "hunger", 100)
+        ctx.store.set(turn_ctx, "hunger", max(0, min(100, hunger + int(value))))
+
+    def on_after_step(turn_ctx: Any) -> None:
+        # Time passes: -1 hunger per 30 in-game minutes
+        hunger = ctx.store.get(turn_ctx, "hunger", 100)
+        drop = int(getattr(turn_ctx, "elapsed_minutes", 0) or 0) // 30
+        ctx.store.set(turn_ctx, "hunger", max(0, hunger - drop))
+
+    ctx.contribute_slot("axiom.turn:prompt_sections", hunger_section)
+    ctx.contribute_slot("axiom.turn:output_fields", {
+        "name": "hunger_delta",
+        "schema": 0,
+        "instruction": "When the player eats or starves, report the hunger change (+/- integer).",
+        "handler": on_hunger_delta,
     })
-    ctx.contribute_slot("axiom.turn:output_fields", ("hunger_delta", on_hunger_delta))
+    ctx.register_hook("axiom.step:after_step", on_after_step)
 ```
 
 ### Output Format Requirement:
@@ -256,7 +276,8 @@ def generate_mod(
     if llm_backend is None:
         cfg = load_config()
         model = resolve_extraction_model(cfg)
-        llm_backend = build_llm_from_config(cfg, model_override=model)
+        from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
+        llm_backend = resolve_llm_backend(cfg, model_override=model)
 
     sys_content = system_prompt or build_system_prompt()
     messages: list[LLMMessage] = [

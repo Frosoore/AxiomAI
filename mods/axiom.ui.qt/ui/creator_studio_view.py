@@ -32,7 +32,6 @@ from .widgets.entity_editor import EntityEditorWidget
 from .widgets.lore_book_editor import LoreBookEditorWidget
 from .widgets.rule_editor import RuleEditorWidget
 from .widgets.stat_definition_editor import StatDefinitionEditorWidget
-from .widgets.scheduled_events_editor import ScheduledEventsEditorWidget
 from .widgets.story_setup_editor import StorySetupEditorWidget
 from .widgets.populate_tab import PopulateTabWidget
 from .widgets.map_editor import MapEditorWidget
@@ -51,6 +50,12 @@ def _meta_float(meta: dict, key: str, default: float) -> float:
         return float(meta.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _service(name: str):
+    """A service of the process modpack (None when its mod is off)."""
+    from axiom.kernel.loader import get_kernel_registry
+    return get_kernel_registry().get_service(name)
 
 
 class CreatorStudioView(QWidget):
@@ -103,7 +108,11 @@ class CreatorStudioView(QWidget):
         self._rule_editor = RuleEditorWidget()
         self._stat_editor = StatDefinitionEditorWidget()
         self._lore_book_editor = LoreBookEditorWidget()
-        self._scheduled_events_editor = ScheduledEventsEditorWidget()
+        # Scheduled events + calendar: the axiom.time mod's (absent when it is off).
+        self._scheduled_events_editor = None
+        if _service("time") is not None:
+            from .widgets.scheduled_events_editor import ScheduledEventsEditorWidget
+            self._scheduled_events_editor = ScheduledEventsEditorWidget()
         self._story_setup_editor = StorySetupEditorWidget()
         self._map_editor = MapEditorWidget()
         self._populate_tab = PopulateTabWidget()
@@ -114,7 +123,8 @@ class CreatorStudioView(QWidget):
         self._tabs.addTab(self._entity_editor, tr("tab_entities"))
         self._tabs.addTab(self._map_editor, tr("tab_map"))
         self._tabs.addTab(self._rule_editor, tr("tab_rules"))
-        self._tabs.addTab(self._scheduled_events_editor, tr("tab_events"))
+        if self._scheduled_events_editor is not None:
+            self._tabs.addTab(self._scheduled_events_editor, tr("tab_events"))
         self._tabs.addTab(self._story_setup_editor, tr("tab_setup"))
         self._tabs.addTab(self._lore_book_editor, tr("tab_lore"))
         self._tabs.addTab(self._populate_tab, tr("populate"))
@@ -209,6 +219,8 @@ class CreatorStudioView(QWidget):
         self._belief_missions_edit.setMinimumHeight(60)
         bm_layout.addWidget(self._belief_missions_edit)
         layout.addWidget(self._belief_missions_group)
+        # Memory styles drive the axiom.living_memory consolidator: shown with it only.
+        self._belief_missions_group.setVisible(_service("living_memory") is not None)
 
         self._tension_group = QGroupBox(tr("world_tension_level"))
         tension_form = QFormLayout(self._tension_group)
@@ -307,7 +319,8 @@ class CreatorStudioView(QWidget):
         self._rule_editor.retranslate_ui()
         self._stat_editor.retranslate_ui()
         self._lore_book_editor.retranslate_ui()
-        self._scheduled_events_editor.retranslate_ui()
+        if self._scheduled_events_editor is not None:
+            self._scheduled_events_editor.retranslate_ui()
         self._story_setup_editor.retranslate_ui()
         
         self._companion_group.setTitle(tr("companion_feature"))
@@ -356,7 +369,8 @@ class CreatorStudioView(QWidget):
         self._rule_editor.populate(data.get("rules", []))
         self._rule_editor.set_stat_definitions(sdefs)
         self._lore_book_editor.populate(data.get("lore_book", []))
-        self._scheduled_events_editor.set_events_and_calendar(data.get("scheduled_events", []), data.get("meta", {}))
+        if self._scheduled_events_editor is not None:
+            self._scheduled_events_editor.set_events_and_calendar(data.get("scheduled_events", []), data.get("meta", {}))
         self._story_setup_editor.populate(data.get("story_setup", []))
         self._map_editor.populate(data.get("locations", []), data.get("connections", []))
         self._on_meta_loaded(data.get("meta", {}))
@@ -376,7 +390,11 @@ class CreatorStudioView(QWidget):
     def _on_save_clicked(self) -> None:
         if not self._db_path: return
 
-        events, cal_meta = self._scheduled_events_editor.collect_data()
+        # Without the editor (axiom.time off), events and calendar are left untouched.
+        events, cal_meta = (
+            self._scheduled_events_editor.collect_data()
+            if self._scheduled_events_editor is not None else (None, {})
+        )
         locs, conns = self._map_editor.collect_data()
         from axiom.config import get_default_verbosity
 
@@ -391,13 +409,16 @@ class CreatorStudioView(QWidget):
             "llm_verbosity": self._verbosity_combo.currentData() or get_default_verbosity(),
             "companion_mode_enabled": "1" if self._companion_enabled_check.isChecked() else "0",
             "companion_hero_id": self._companion_hero_combo.currentData() or "",
-            "calendar_config": cal_meta.get("calendar_config", "{}"),
         }
+        if "calendar_config" in cal_meta:
+            meta["calendar_config"] = cal_meta["calendar_config"]
         # B-3: per-character memory styles → belief_missions JSON (empty = absent).
-        import json as _json
-        from axiom.missions import parse_missions_text
-        _bm = parse_missions_text(self._belief_missions_edit.toPlainText())
-        meta["belief_missions"] = _json.dumps(_bm, ensure_ascii=False) if _bm else ""
+        # Without axiom.living_memory the field is hidden and the stored value kept.
+        if _service("living_memory") is not None:
+            import json as _json
+            from mods.axiom.living_memory.missions import parse_missions_text
+            _bm = parse_missions_text(self._belief_missions_edit.toPlainText())
+            meta["belief_missions"] = _json.dumps(_bm, ensure_ascii=False) if _bm else ""
 
         data = {
             "meta": meta,
@@ -469,10 +490,11 @@ class CreatorStudioView(QWidget):
         self._system_prompt_edit.setPlainText(meta.get("system_prompt", ""))
         self._first_message_edit.setPlainText(meta.get("first_message", ""))
         # B-3: belief_missions JSON → "Name: mission" lines.
-        from axiom.missions import get_belief_missions_from_value, missions_to_text
-        self._belief_missions_edit.setPlainText(
-            missions_to_text(get_belief_missions_from_value(meta.get("belief_missions", "")))
-        )
+        if _service("living_memory") is not None:
+            from mods.axiom.living_memory.missions import get_belief_missions_from_value, missions_to_text
+            self._belief_missions_edit.setPlainText(
+                missions_to_text(get_belief_missions_from_value(meta.get("belief_missions", "")))
+            )
         # Meta values come from user-editable sources (universe.toml, imported
         # .axiom) — a malformed number must not crash the Studio.
         self._tension_spin.setValue(_meta_float(meta, "world_tension_level", 0.3))

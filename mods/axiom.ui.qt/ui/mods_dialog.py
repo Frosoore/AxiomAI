@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 
 from axiom.cli.mods_cmd import discover_installed_mods
 from axiom.config import load_config, save_config
-from axiom.kernel.loader import is_mod_enabled
+from axiom.kernel.loader import disable_mod_hot, is_mod_active, is_mod_enabled
 from axiom.kernel.manifest import ModManifest
 from core.localization import tr
 
@@ -47,23 +47,23 @@ def categorize_mod(manifest: ModManifest) -> tuple[str, str]:
     mid = manifest.id.lower()
 
     if "world" in mid or "world_model" in provides:
-        return (tr("category_world_model", default="Modèle de Monde"), "🌍")
+        return (tr("category_world_model"), "🌍")
     if "turn" in mid or "turn_pipeline" in provides:
-        return (tr("category_turn_pipeline", default="Pipeline de Tour"), "🔄")
+        return (tr("category_turn_pipeline"), "🔄")
     if "time" in mid or "time" in provides:
-        return (tr("category_time", default="Temps & Chronologie"), "⏳")
+        return (tr("category_time"), "⏳")
     if "inventory" in mid or "inventory" in provides:
-        return (tr("category_inventory", default="Inventaire & Objets"), "🎒")
+        return (tr("category_inventory"), "🎒")
     if "rag" in mid or "living_memory" in mid or "memory" in mid:
-        return (tr("category_memory", default="Mémoire & Cognition"), "🧠")
+        return (tr("category_memory"), "🧠")
     if "providers" in mid or "driver" in mid or "llm" in mid:
-        return (tr("category_providers", default="Fournisseur d'IA"), "🤖")
+        return (tr("category_providers"), "🤖")
     if "illustrations" in mid or "images" in mid or "art" in mid:
-        return (tr("category_illustrations", default="Illustrations & Art"), "🎨")
+        return (tr("category_illustrations"), "🎨")
     if "ui" in mid or "cli" in mid:
-        return (tr("category_ui", default="Interface Utilisateur"), "🖥️")
+        return (tr("category_ui"), "🖥️")
     if "stat_dynamics" in mid or "dynamics" in mid or "stats" in provides:
-        return (tr("category_mechanics", default="Mécaniques de Jeu"), "⚙️")
+        return (tr("category_mechanics"), "⚙️")
     if manifest.contributes.patches:
         return (tr("category_patches"), "⚡")
     if "data" in provides or "storage" in provides:
@@ -242,6 +242,12 @@ class ModsDialog(QDialog):
         self._badges_row.addStretch()
         content_layout.addLayout(self._badges_row)
 
+        self._notice_lbl = QLabel()
+        self._notice_lbl.setWordWrap(True)
+        self._notice_lbl.setStyleSheet("background: #45475a; color: #f9e2af; padding: 8px 12px; border-radius: 6px; font-weight: bold;")
+        self._notice_lbl.hide()
+        content_layout.addWidget(self._notice_lbl)
+
         # Description box
         desc_box = QFrame()
         desc_box.setFrameShape(QFrame.StyledPanel)
@@ -389,8 +395,37 @@ class ModsDialog(QDialog):
         self._content_widget.show()
         self._render_mod_details(manifest, path)
 
+    def _status_for(self, mod_id: str, enabled: bool, active: bool) -> tuple[str, str]:
+        """Displayed state and reason: the real status of this process, and for a change
+        not applied yet, the plan of the next launch (D13: never "enabled" for a mod
+        that will not load)."""
+        from axiom.kernel.loader import (
+            STATE_ACTIVE,
+            STATE_DISABLED,
+            STATE_ENABLED,
+            STATE_NEXT_LAUNCH,
+            get_mod_status,
+            plan_modpack,
+        )
+
+        current = get_mod_status(mod_id)
+        if enabled and active:
+            return "active", ""
+        if not enabled:
+            if active or (current is not None and current.state == STATE_NEXT_LAUNCH):
+                return "next_launch_off", ""
+            return "disabled", ""
+        # Enabled but not running: will it load at next launch, and if not, why?
+        if current is not None and current.state not in (STATE_DISABLED, STATE_ENABLED, STATE_ACTIVE):
+            return "not_loaded", current.reason
+        planned = plan_modpack(config=self._cfg).statuses.get(mod_id)
+        if planned is not None and planned.state != STATE_ENABLED:
+            return "not_loaded", planned.reason
+        return "next_launch_on", ""
+
     def _render_mod_details(self, manifest: ModManifest, path: Path) -> None:
         enabled = is_mod_enabled(manifest.id, self._cfg)
+        active = is_mod_active(manifest.id)
         cat_label, cat_icon = categorize_mod(manifest)
         mod_title = manifest.localized_name()
         mod_desc = manifest.localized_description()
@@ -411,12 +446,34 @@ class ModsDialog(QDialog):
         self._badge_version.setText(f"v{manifest.version}")
         self._badge_category.setText(f"{cat_icon} {cat_label}")
 
-        if enabled:
-            self._badge_status.setText(f"● {tr('mods_status_enabled')}")
-            self._badge_status.setStyleSheet("background: #1e3a2f; color: #a6e3a1; padding: 3px 8px; border-radius: 4px; font-weight: bold;")
+        state, reason = self._status_for(manifest.id, enabled, active)
+        badge_styles = {
+            "active": ("#1e3a2f", "#a6e3a1"),
+            "next_launch_on": ("#2b3d35", "#a6e3a1"),
+            "next_launch_off": ("#453823", "#f9e2af"),
+            "not_loaded": ("#45282d", "#f9e2af"),
+            "disabled": ("#3b282d", "#f38ba8"),
+        }
+        if state == "active":
+            text, notice = f"● {tr('mods_status_enabled')}", ""
+        elif state == "next_launch_on":
+            text = f"● {tr('mods_status_enabled')} ({tr('mods_next_launch')})"
+            notice = f"ℹ️ {tr('mods_enable_restart_notice')}"
+        elif state == "next_launch_off":
+            text = f"○ {tr('mods_status_disabled')} ({tr('mods_next_launch')})"
+            notice = f"⚠️ {tr('mods_restart_required_notice')}"
+        elif state == "not_loaded":
+            text = f"✕ {tr('mods_status_not_loaded')}"
+            notice = f"⚠️ {tr('mods_not_loaded_notice', reason=reason)}"
         else:
-            self._badge_status.setText(f"○ {tr('mods_status_disabled')}")
-            self._badge_status.setStyleSheet("background: #3b282d; color: #f38ba8; padding: 3px 8px; border-radius: 4px; font-weight: bold;")
+            text, notice = f"○ {tr('mods_status_disabled')}", ""
+        bg, fg = badge_styles[state]
+        self._badge_status.setText(text)
+        self._badge_status.setStyleSheet(
+            f"background: {bg}; color: {fg}; padding: 3px 8px; border-radius: 4px; font-weight: bold;"
+        )
+        self._notice_lbl.setText(notice)
+        self._notice_lbl.setVisible(bool(notice))
 
         # Description
         desc_text = mod_desc.strip() if mod_desc else tr("mods_no_description")
@@ -517,20 +574,18 @@ class ModsDialog(QDialog):
         self._cfg.mod_settings.setdefault(mod_id, {})["enabled"] = new_state
         save_config(self._cfg)
 
-        # Update active registry immediately so session and UI reflect mod state
-        from axiom.kernel.loader import bootstrap_all_mods
-        from axiom.kernel.patcher import remove_patches_by_mod
-        from axiom.kernel.registry import KernelRegistry, set_active_registry
-
         if not new_state:
-            try:
-                remove_patches_by_mod(mod_id)
-            except Exception as err:
-                logger.debug("Error removing patches for %s: %s", mod_id, err)
-
-        new_reg = KernelRegistry()
-        bootstrap_all_mods(registry=new_reg, config=self._cfg)
-        set_active_registry(new_reg)
+            from axiom.kernel.loader import get_load_state
+            state = get_load_state()
+            dependents = state.dependents_of(mod_id) if state is not None else []
+            disable_mod_hot(mod_id)
+            if dependents:
+                # D13 / §1.4: the mods that depend on it go down with it, and we say so.
+                QMessageBox.information(
+                    self,
+                    tr("mods_manager_title"),
+                    tr("mods_dependents_disabled", mod_id=mod_id, dependents=", ".join(dependents)),
+                )
 
         # Notify parent UI if available
         parent = self.parent()
@@ -548,6 +603,7 @@ class ModsDialog(QDialog):
     @Slot()
     def _open_mods_folder(self) -> None:
         """Open the mods directory in the system file explorer."""
-        mods_dir = Path("mods").resolve()
+        from axiom.kernel.loader import get_user_mods_dir
+        mods_dir = get_user_mods_dir()
         mods_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(mods_dir)))

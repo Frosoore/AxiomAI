@@ -78,41 +78,55 @@ def test_manifests_and_loading_ui_mods(tmp_path):
 
 
 def test_web_ui_side_panel_extension():
-    """2. Test slot 'axiom.ui.web:side_panel' contribution from a third-party mod."""
+    """2. axiom.ui.web slots contributed by a third-party mod are RENDERED by the
+    server for the SPA (text panels, action buttons, settings forms): a mod needs
+    no JavaScript. A faulty contribution disables its mod."""
     reg = KernelRegistry()
     cfg = AppConfig()
 
-    # Load web UI mod
     load_mod(Path("mods/axiom.ui.web"), reg, config=cfg)
     web_svc = reg.get_service("web_ui")
     assert web_svc is not None
-
-    # Initial side panels
     assert web_svc.get_side_panels() == []
 
-    # Contribute a third-party component to slot
-    reg.add_to_slot(
-        "axiom.ui.web:side_panel",
-        "thirdparty.hunger",
-        {
-            "id": "hunger_gauge",
-            "title": "Hunger",
-            "component": "HungerGaugeWidget",
-            "order": 10,
-        },
-    )
+    session = object()
+    reg.add_to_slot("axiom.ui.web:side_panel", "thirdparty.hunger", {
+        "id": "hunger_gauge", "title": "Hunger", "order": 10,
+        "render": lambda sess: "Hunger: 80/100" if sess is session else "?",
+    })
+    reg.add_to_slot("axiom.ui.web:side_panel", "thirdparty.static", {
+        "id": "note", "title": "Note", "text": "Static text", "order": 5,
+    })
+    reg.add_to_slot("axiom.ui.web:action_button", "thirdparty.hunger", {
+        "id": "eat", "label": "Eat", "on_click": lambda sess: "You eat.",
+    })
+    reg.add_to_slot("axiom.ui.web:settings_tab", "thirdparty.hunger", {
+        "id": "hunger_settings", "title": "Hunger",
+        "fields": [{"key": "rate", "label": "Rate", "type": "number", "default": 2},
+                   {"key": "enabled", "label": "On", "type": "bool", "default": True}],
+    })
 
-    panels = web_svc.get_side_panels()
-    assert len(panels) == 1
-    assert panels[0]["id"] == "hunger_gauge"
-    assert panels[0]["component"] == "HungerGaugeWidget"
+    assert web_svc.render_side_panels(session) == [
+        {"id": "note", "title": "Note", "text": "Static text"},
+        {"id": "hunger_gauge", "title": "Hunger", "text": "Hunger: 80/100"},
+    ]
+    assert web_svc.get_action_buttons() == [{"id": "eat", "label": "Eat"}]
+    assert web_svc.run_action("eat", session) == "You eat."
+    with pytest.raises(KeyError):
+        web_svc.run_action("nope", session)
 
-    # Enrich snapshot
-    snapshot = {"turn_id": 1, "entities": []}
-    enriched = web_svc.enrich_session_snapshot(snapshot)
-    assert "side_panels" in enriched
-    assert len(enriched["side_panels"]) == 1
-    assert enriched["side_panels"][0]["id"] == "hunger_gauge"
+    tabs = web_svc.get_settings_tabs(cfg)
+    assert tabs[0]["mod_id"] == "thirdparty.hunger"
+    assert [f["value"] for f in tabs[0]["fields"]] == [2, True]
+    web_svc.save_settings("hunger_settings", {"rate": "5", "enabled": False}, cfg)
+    assert cfg.mod_settings["thirdparty.hunger"] == {"rate": 5, "enabled": False}
+
+    # A panel that raises: its mod is disabled, the others still render.
+    def boom(sess):
+        raise RuntimeError("panel bug")
+    reg.add_to_slot("axiom.ui.web:side_panel", "thirdparty.buggy", {"id": "b", "title": "B", "render": boom})
+    assert [p["id"] for p in web_svc.render_side_panels(session)] == ["note", "hunger_gauge"]
+    assert "thirdparty.buggy" in reg.get_faulted_mods()
 
 
 def test_locales_slot_injection():
@@ -213,10 +227,10 @@ def test_cli_mods_management_and_safe_mode(tmp_path: Path, monkeypatch):
         # Enable safe mode
         set_safe_mode(True)
         assert is_safe_mode()
-        # Official mods stay enabled
-        assert is_mod_enabled("axiom.world", cfg)
-        assert is_mod_enabled("core.stat_dynamics", cfg)
-        # Thirdparty mod is disabled
+        # In safe mode, all mods are disabled (DOC §4.1, D2)
+        assert not is_mod_enabled("axiom.world", cfg)
+        assert not is_mod_enabled("core.stat_dynamics", cfg)
+        # Thirdparty mod is also disabled
         assert not is_mod_enabled("thirdparty.custom", cfg)
 
         # Loading a fake thirdparty mod directory is skipped in safe mode
@@ -245,7 +259,12 @@ name = "Third Party Test"
 
 
 def test_entrypoints_disabled_mods(tmp_path: Path, monkeypatch):
-    """Entrypoints main.py, main_web.py, and axiom play must refuse to start if their UI mod is disabled."""
+    """Entrypoints main.py, main_web.py, and axiom play must refuse to start if their UI mod is disabled.
+
+    Each entrypoint loads the process modpack once (D-4) and checks the real status of
+    its interface mod: the shared registry is reset between them, as between processes."""
+    from axiom.kernel.loader import reset_kernel_registry
+
     axiom.paths.configure(config_dir=tmp_path)
     try:
         cfg = AppConfig()
@@ -257,6 +276,7 @@ def test_entrypoints_disabled_mods(tmp_path: Path, monkeypatch):
         import PySide6.QtWidgets
         monkeypatch.setattr(PySide6.QtWidgets.QMessageBox, "critical", lambda *args, **kwargs: None)
 
+        reset_kernel_registry()
         import main
         ret = main.main()
         assert ret == 1
@@ -264,6 +284,7 @@ def test_entrypoints_disabled_mods(tmp_path: Path, monkeypatch):
         # 2. Test main_web.py with axiom.ui.web disabled
         cfg.mod_settings["axiom.ui.web"] = {"enabled": False}
         save_config(cfg)
+        reset_kernel_registry()
         import main_web
         ret_web = main_web.run_server(port=9999)
         assert ret_web == 1
@@ -271,10 +292,12 @@ def test_entrypoints_disabled_mods(tmp_path: Path, monkeypatch):
         # 3. Test axiom play with axiom.cli disabled
         cfg.mod_settings["axiom.cli"] = {"enabled": False}
         save_config(cfg)
+        reset_kernel_registry()
         from axiom.cli.play import run_play
         ret_cli = run_play(argparse.Namespace(universe="test.axiom"))
         assert ret_cli == 1
     finally:
+        reset_kernel_registry()
         axiom.paths.reset()
 
 

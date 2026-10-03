@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from axiom import missions
 from axiom.backends.base import LLMResponse
-from axiom.consolidate import consolidate
-from axiom.facts import Fact
 from axiom.schema import create_universe_db, get_connection
+from mods.axiom.living_memory import missions
+from mods.axiom.living_memory.consolidate import consolidate
+from mods.axiom.living_memory.facts import Fact
 
 
 @pytest.fixture

@@ -25,8 +25,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENGINE_IMPORTS = (
     "import axiom",
     "from axiom import Session, Universe",
-    "import axiom.session, axiom.arbitrator, axiom.chronicler, axiom.rules",
-    "import axiom.events, axiom.checkpoint, axiom.modifiers, axiom.memory",
+    "import axiom.session, axiom.arbitrator, axiom.rules",
+    "import axiom.events, axiom.checkpoint, axiom.memory",
     "import axiom.config, axiom.prompts, axiom.db_helpers",
     "import axiom.backends.base, axiom.backends.gemini",
     "import axiom.cli.main, axiom.cli.play",
@@ -56,3 +56,34 @@ def test_importing_engine_does_not_load_qt():
         f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
     )
     assert "OK headless" in result.stdout
+
+
+def test_engine_has_no_forbidden_imports():
+    """Vérifie via export_engine.check_headless qu'aucun import interdit (Qt, ui, workers, mods, etc.) n'existe dans axiom/."""
+    import export_engine
+    violations = export_engine.check_headless(export_engine.ENGINE_DIR)
+    assert not violations, f"Forbidden imports found in engine: {violations}"
+
+
+
+def test_kernel_holds_no_feature_data_logic():
+    """The moved features own their data: outside the table DDL (schema.py), the
+    kernel never queries the tables of inventory, modifiers or living memory
+    (audit 2026-10-03: saves.py had copies of the inventory/modifier code), and
+    names no feature module."""
+    import re
+
+    engine = _REPO_ROOT / "axiom"
+    query = re.compile(
+        r"\b(FROM|INTO|UPDATE|JOIN)\s+(Item_Instances|Inventory_Snapshots|Items_Inventory|"
+        r"Active_Modifiers|Modifier_Snapshots|Observations|Mental_Models|Facts)\b"
+    )
+    offenders = []
+    for path in engine.rglob("*.py"):
+        rel = path.relative_to(_REPO_ROOT).as_posix()
+        if rel in ("axiom/schema.py",) or rel.startswith("axiom/testing/"):
+            continue
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if query.search(line):
+                offenders.append(f"{rel}:{n}: {line.strip()}")
+    assert not offenders, "Feature SQL left in the kernel:\n" + "\n".join(offenders)

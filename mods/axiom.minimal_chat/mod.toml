@@ -1,0 +1,23 @@
+[mod]
+id = "axiom.minimal_chat"
+version = "1.0.0"
+axiom_api = 1
+name = "Chat Minimal"
+description = "Pipeline de conversation LLM minimaliste sans règles de jeu JDR, sans inventaire ni arbitre."
+author = "Vanilla"
+# Loaded in safe mode (recovery: interface + minimal chat, nothing else).
+safe_mode = true
+enabled_by_default = false
+
+[ordering]
+after = []
+before = []
+conflicts = ["axiom.turn"]
+provides = ["turn_pipeline"]
+
+[contributes]
+hooks = [
+    "axiom.kernel:execute_step"
+]
+slots = []
+patches = []

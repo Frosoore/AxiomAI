@@ -24,6 +24,7 @@ slots = [
 ]
 
 [storage]
-facts = { policy = "step_keyed_table", step_column = "turn_id" }
-observations = { policy = "step_keyed_table", step_column = "updated_turn_id" }
-mental_models = { policy = "step_keyed_table", step_column = "updated_turn_id" }
+facts = { policy = "step_keyed_table", table = "Facts", step_column = "turn_id", columns = ["fact_id", "save_id", "turn_id", "fact_type", "who", "what", "fact_when", "fact_where", "why", "entities", "statement"], id_column = "fact_id", id_autoincrement = true }
+# Beliefs and mental models keep a history and source ids: custom rewind/fork.
+observations = { policy = "custom", table = "Observations", rewind = "storage:rewind_observations", fork = "storage:fork_observations" }
+mental_models = { policy = "custom", table = "Mental_Models", rewind = "storage:rewind_mental_models", fork = "storage:fork_mental_models" }

@@ -10,11 +10,11 @@ from pathlib import Path
 import pytest
 
 from axiom.backends.base import LLMResponse
-from axiom.consolidate import ConsolidationAction, _scope_existing, consolidate
-from axiom.facts import Fact
-from axiom import observations
-from axiom.observations import Observation, apply_consolidation
 from axiom.schema import create_universe_db, get_connection
+from mods.axiom.living_memory import observations
+from mods.axiom.living_memory.consolidate import ConsolidationAction, _scope_existing, consolidate
+from mods.axiom.living_memory.facts import Fact
+from mods.axiom.living_memory.observations import Observation, apply_consolidation
 
 
 class _FakeLLM:

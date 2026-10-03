@@ -66,7 +66,7 @@ class TimelineView(QWidget):
             return
 
         try:
-            from axiom.db_helpers import get_time_of_day_context
+            from mods.axiom.time.time_system import get_time_of_day_context
         except ImportError:
             def get_time_of_day_context(m: int) -> str:
                 return f"{m}m"

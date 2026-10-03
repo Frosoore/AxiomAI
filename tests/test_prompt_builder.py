@@ -9,11 +9,11 @@ import json
 
 import pytest
 
+from mods.axiom.time.time_prompts import build_chronicler_prompt
 from axiom.prompts import (
     HISTORY_TURN_CAP,
     MINI_DICO_SYSTEM_PROMPT,
     NARRATIVE_TOOL_CALL_SCHEMA,
-    build_chronicler_prompt,
     build_mini_dico_prompt,
     build_narrative_prompt,
     build_populate_prompt,
@@ -187,7 +187,7 @@ class TestBuildChroniclerPrompt:
     def test_system_contains_base_prompt(self) -> None:
         """The chronicler base prompt is present in the system message."""
         result = build_chronicler_prompt([], 0.3)
-        from axiom.prompts import CHRONICLER_SYSTEM_PROMPT_BASE
+        from mods.axiom.time.time_prompts import CHRONICLER_SYSTEM_PROMPT_BASE
         assert "Chronicler" in result[0]["content"]
 
     def test_low_tension_guidance_injected(self) -> None:

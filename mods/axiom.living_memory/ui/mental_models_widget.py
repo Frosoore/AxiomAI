@@ -83,7 +83,7 @@ class MentalModelsWidget(QWidget):
             self._empty_label.setVisible(True)
             return
 
-        from axiom.mental_models import get_mental_models
+        from mods.axiom.living_memory.mental_models import get_mental_models
 
         try:
             models = get_mental_models(

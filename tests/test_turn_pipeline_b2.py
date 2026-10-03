@@ -392,3 +392,137 @@ def test_community_survival_is_off_by_default_and_can_be_enabled():
     plan2 = plan_modpack(installed, cfg)
     assert "community.survival" in plan2.load_order
     assert plan2.load_order.index("community.survival") > plan2.load_order.index("axiom.turn")
+
+
+# ---------------------------------------------------------------------------
+# 5. Prompt sections (DOC §7.1.3): documented format, strict validation, isolation
+# ---------------------------------------------------------------------------
+
+def test_malformed_prompt_section_disables_its_mod_not_the_turn(game, tmp_path):
+    """A section that does not follow the format (here (id, position, text), whose
+    "depth" is not an integer) used to raise outside the isolation and fail the turn."""
+    extra = tmp_path / "section_mods"
+    _write_probe_mod(
+        extra, "probe.badtuple",
+        """
+        def init(ctx):
+            ctx.contribute_slot("axiom.turn:prompt_sections",
+                                lambda c: ("probe.badtuple", "system", "never injected"))
+        """,
+        'slots = ["axiom.turn:prompt_sections"]',
+    )
+    _write_probe_mod(
+        extra, "probe.goodtuple",
+        """
+        def init(ctx):
+            ctx.contribute_slot("axiom.turn:prompt_sections",
+                                ("probe.goodtuple", "system", 0, "GOOD SECTION", 5))
+            ctx.contribute_slot("axiom.turn:prompt_sections",
+                                {"position": "in_chat", "depth": 1, "text": "IN CHAT NOTE"})
+        """,
+        'slots = ["axiom.turn:prompt_sections"]',
+    )
+    registry = bootstrap_all_mods(KernelRegistry(), AppConfig(), extra_dirs=[extra])
+    llm = _ScriptLLM(_resp("Fine."))
+    sess = _session(game, llm, registry)
+    llm.queue(_resp("Fine."))
+
+    result = sess.take_turn("Hello.", player_id="hero")
+
+    assert result.narrative_text == "Fine."
+    assert "probe.badtuple" in result.faulted_mods
+    assert "depth" in result.faulted_mods["probe.badtuple"]
+    prompt = llm.prompts[0]
+    assert "GOOD SECTION" in prompt[0]["content"]
+    assert "never injected" not in llm.prompt_text(0)
+    # in_chat depth 1: a system message just before the last message.
+    assert prompt[-2] == {"role": "system", "content": "IN CHAT NOTE"}
+
+
+def test_normalize_prompt_section_formats_and_errors():
+    import importlib
+    turn_main = importlib.import_module("mods.axiom.turn.main")
+    norm, err = turn_main.normalize_prompt_section, turn_main.PromptSectionError
+
+    assert norm("text") == {"position": "system", "depth": 0, "text": "text", "order": 0}
+    assert norm(("user", "t")) == {"position": "user", "depth": 0, "text": "t", "order": 0}
+    assert norm(("system", 50, "t"))["depth"] == 50
+    assert norm(("id", "rag", 2, "t")) == {"position": "rag", "depth": 2, "text": "t", "order": 0}
+    assert norm(("id", "system", 1, "t", 9))["order"] == 9
+    assert norm({"position": "system", "text": "t", "priority": 3})["order"] == 3
+    assert norm(None) is None and norm({"position": "system", "text": "  "}) is None
+    for bad in (("id", "system", "t"), ("nowhere", "t"), (1,), {"position": "system", "text": 3}, 42):
+        with pytest.raises(err):
+            norm(bad)
+
+
+def test_creator_hunger_example_works_in_real_turns_and_rewinds(game, tmp_path):
+    """The hunger gauge taught to the LLM mod creator (DOC §1.4 success scenario):
+    ctx.store values written with the turn, visible next turn, undone by a rewind."""
+    import re
+    from axiom.kernel.kv_store import ModStore
+    from axiom.kernel.llm_creator import build_system_prompt
+
+    code = re.search(
+        r"Example 2 .*?```python\n# main.py\n(.*?)```", build_system_prompt(), re.S
+    ).group(1)
+    extra = tmp_path / "creator_mods"
+    _write_probe_mod(
+        extra, "community.hunger", code,
+        'slots = ["axiom.turn:prompt_sections", "axiom.turn:output_fields"]\n'
+        'hooks = ["axiom.step:after_step"]\n\n'
+        '[storage]\nhunger = { policy = "versioned_kv" }',
+    )
+    registry = bootstrap_all_mods(KernelRegistry(), AppConfig(), extra_dirs=[extra])
+    llm = _ScriptLLM(_resp("x"))
+    sess = _session(game, llm, registry)
+    db, save_id = game
+    store = ModStore("community.hunger")
+
+    llm.queue(LLMResponse("You walk.", {"elapsed_minutes": 60}, "stop"))
+    sess.take_turn("I walk for an hour.", player_id="hero")
+    assert store.get_at(db, save_id, "hunger") == 98          # 100 - 60 // 30
+    assert "hunger_delta" in llm.prompt_text(0)                 # field requested from the LLM
+
+    llm.queue(LLMResponse("The fight leaves you famished.", {"elapsed_minutes": 30, "hunger_delta": -20}, "stop"))
+    sess.take_turn("I fight the wolves.", player_id="hero")
+    assert "hunger is 98/100" in llm.prompt_text(0)            # previous turn's value
+    assert store.get_at(db, save_id, "hunger") == 77          # 98 - 20 - 1
+
+    sess.rewind(1)
+    assert store.get_at(db, save_id, "hunger") == 98
+
+
+# ---------------------------------------------------------------------------
+# 6. Living memory recall reaches the narrator (audit 2026-10-03: the mod's section
+#    had dropped beliefs, took the 5 OLDEST facts and ignored the mode switch)
+# ---------------------------------------------------------------------------
+
+def test_living_memory_recall_reaches_the_turn_prompt(game, monkeypatch):
+    from axiom.config import AppConfig, save_config
+    from mods.axiom.living_memory.facts import Fact, insert_facts
+    from mods.axiom.living_memory.observations import Observation, insert_observation
+
+    db, save_id = game
+    cfg = AppConfig(memory_mode="living", memory_beliefs_enabled=True, rag_chunk_count=2)
+    save_config(cfg)
+    ids = insert_facts(db, save_id, 0, [Fact(statement="Old rumour"), Fact(statement="The well is dry")])
+    insert_facts(db, save_id, 0, [Fact(statement="Newest fact")])
+    insert_observation(db, save_id, Observation(
+        statement="Hero distrusts the mayor", subject="Hero",
+        sources=[{"fact_id": ids[0], "turn_id": 0}], created_turn_id=0, updated_turn_id=0,
+    ))
+    llm = _ScriptLLM(_resp("x"))
+    sess = _session(game, llm)
+    llm.queue(_resp("Fine."))
+    sess.take_turn("Hello.", player_id="hero")
+    prompt = llm.prompt_text(0)
+    assert "Belief: Hero distrusts the mayor" in prompt
+    assert "Known fact: Newest fact" in prompt          # most recent first...
+    assert "Known fact: Old rumour" not in prompt       # ...within rag_chunk_count (2)
+
+    # Lite mode: no living recall at all.
+    save_config(AppConfig(memory_mode="lite"))
+    llm.queue(_resp("Fine."))
+    sess.take_turn("Again.", player_id="hero")
+    assert "Known fact:" not in llm.prompt_text(0)

@@ -7,6 +7,7 @@ description = "Gère l'évolution temporelle, le repos, la saturation et le déc
 author = "Vanilla"
 
 [dependencies]
+"axiom.turn" = ">=1.0.0"
 
 [ordering]
 after = []
@@ -16,12 +17,17 @@ provides = ["stat_dynamics"]
 
 [contributes]
 hooks = [
+    "axiom.step:gather_context",
     "axiom.turn:arbitrate_stats",
     "axiom.step:after_step"
 ]
-slots = []
+slots = [
+    "axiom.turn:output_fields"
+]
 patches = []
 
 [storage]
-# Utilise la politique standardisée déclarée au registre du noyau
-modifiers = { policy = "step_keyed_table", table = "Modifier_Snapshots", step_column = "turn_id" }
+# Live modifiers + per-turn snapshots: rewound/forked/captured by storage.py, even
+# while the mod is disabled (only that module runs then).
+active_modifiers = { policy = "custom", table = "Active_Modifiers", rewind = "storage:rewind_modifiers", fork = "storage:fork_modifiers", snapshot = "storage:snapshot_modifiers", section = "modifiers", state = "storage:state_modifiers", load = "storage:load_modifiers", diff = "storage:diff_modifiers" }
+modifier_snapshots = { policy = "step_keyed_table", table = "Modifier_Snapshots", step_column = "turn_id", columns = ["save_id", "turn_id", "state_json"], fork_with = "Active_Modifiers" }

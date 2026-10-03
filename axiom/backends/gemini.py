@@ -437,7 +437,7 @@ class GeminiClient(LLMBackend):
     ) -> bytes | None:
         """Generate an image from a text prompt and return the raw bytes.
 
-        Used by the "gemini" image backend (axiom/image_generator.py) with an
+        Used by the "gemini" image backend (mods/axiom.illustrations/image_generator.py) with an
         image-capable model (e.g. "gemini-2.5-flash-image"). Goes through the
         same quota-resilience path as text calls (TICKET-031 pacing/429 retry,
         TICKET-033 status/cancellation hooks).

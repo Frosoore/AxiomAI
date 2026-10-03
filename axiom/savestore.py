@@ -36,12 +36,14 @@ from typing import Any
 from axiom.compile import hash_directory
 from axiom.fsutil import replace_with_retry, unlink_with_retry
 from axiom.library import universe_root_for
+from axiom.logger import logger
 from axiom.schema import create_universe_db
 
 from axiom.storage_registry import get_definition_copy_specs, get_runtime_copy_specs
 
 # Tables de définition copiées de l'univers vers chaque save db (dérivées du registre central).
 _DEFINITION_COPY: list[tuple[str, tuple[str, ...]]] = get_definition_copy_specs()
+_RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = get_runtime_copy_specs()
 
 _DDL_SAVE_META = """
 CREATE TABLE IF NOT EXISTS Save_Meta (
@@ -237,6 +239,7 @@ def create_save(
     EventSourcer(str(final_db)).rebuild_state_cache(actual_id)
     from axiom.storage_registry import apply_registered_mod_migrations
     apply_registered_mod_migrations(str(final_db))
+    record_save_modpack(final_db)
     return {"save_id": actual_id, "db_path": str(final_db)}
 
 
@@ -500,12 +503,114 @@ def refresh_save_definition(save_db: str | Path) -> bool:
     return True
 
 
+def record_save_modpack(save_db: str | Path, modpack: list[dict[str, str]] | None = None) -> None:
+    """Record in the save the modpack it is played with (DOC §10.3: ids + versions + hash).
+
+    ``modpack=None`` = the modpack loaded in this process. Nothing is recorded when no
+    modpack is loaded (an engine used without mods).
+    """
+    if modpack is None:
+        from axiom.kernel.loader import get_active_modpack
+        modpack = get_active_modpack()
+    if not modpack:
+        return
+    with closing(sqlite3.connect(str(save_db))) as conn, conn:
+        conn.execute(_DDL_SAVE_META)
+        conn.execute(
+            "INSERT OR REPLACE INTO Save_Meta (key, value) VALUES ('active_modpack', ?);",
+            (json.dumps(modpack),),
+        )
+
+
+def get_save_modpack(save_db: str | Path) -> list[dict[str, str]]:
+    """The modpack recorded in a save container ([] when none was recorded)."""
+    try:
+        with closing(sqlite3.connect(str(save_db))) as conn:
+            row = conn.execute("SELECT value FROM Save_Meta WHERE key = 'active_modpack';").fetchone()
+    except sqlite3.OperationalError:
+        return []  # no Save_Meta: a save embedded in a universe db (legacy)
+    if not row or not row[0]:
+        return []
+    try:
+        modpack = json.loads(row[0])
+    except ValueError:
+        logger.warning("Unreadable modpack record in %s; ignored.", save_db)
+        return []
+    return modpack if isinstance(modpack, list) else []
+
+
+def check_save_modpack_compatibility(
+    save_db: str | Path,
+    current_modpack: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Compare a save's recorded modpack with the loaded one (DOC §10.3, D15: warn, never block).
+
+    Returns a dict:
+      'compatible': bool (same modpack: nothing missing, added or changed),
+      'missing_mods': ids recorded in the save but not loaded now,
+      'version_mismatches': [{id, save_version, current_version}],
+      'changed_mods': ids with the same version but a different content (hash),
+      'extra_mods': ids loaded now but not recorded in the save.
+    A save without record (older save, engine without mods) is compatible.
+    """
+    result: dict[str, Any] = {
+        "compatible": True,
+        "missing_mods": [],
+        "version_mismatches": [],
+        "changed_mods": [],
+        "extra_mods": [],
+    }
+    save_modpack = get_save_modpack(save_db)
+    if not save_modpack:
+        return result
+    if current_modpack is None:
+        from axiom.kernel.loader import get_active_modpack
+        current_modpack = get_active_modpack()
+
+    curr = {m["id"]: m for m in current_modpack}
+    saved = {m["id"]: m for m in save_modpack if isinstance(m, dict) and "id" in m}
+    result["missing_mods"] = [mid for mid in saved if mid not in curr]
+    result["extra_mods"] = [mid for mid in curr if mid not in saved]
+    for mid, rec in saved.items():
+        if mid not in curr:
+            continue
+        if rec.get("version", "") != curr[mid].get("version", ""):
+            result["version_mismatches"].append({
+                "id": mid,
+                "save_version": rec.get("version", ""),
+                "current_version": curr[mid].get("version", ""),
+            })
+        elif rec.get("hash") and curr[mid].get("hash") and rec["hash"] != curr[mid]["hash"]:
+            result["changed_mods"].append(mid)
+    # DOC §10.3: warn on a missing, changed or ADDED mod.
+    result["compatible"] = not (
+        result["missing_mods"] or result["version_mismatches"]
+        or result["changed_mods"] or result["extra_mods"]
+    )
+    return result
+
+
+def describe_modpack_differences(compat: dict[str, Any]) -> str:
+    """One line per difference of :func:`check_save_modpack_compatibility` (empty if none)."""
+    lines = [f"- missing: {mid}" for mid in compat.get("missing_mods", [])]
+    lines += [
+        f"- {m['id']}: version {m['save_version']} in the save, {m['current_version']} now"
+        for m in compat.get("version_mismatches", [])
+    ]
+    lines += [f"- {mid}: same version, modified content" for mid in compat.get("changed_mods", [])]
+    lines += [f"- added: {mid}" for mid in compat.get("extra_mods", [])]
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Export / import d'une save (.axiomsave) — §7.6 « les deux exportables »
 # ---------------------------------------------------------------------------
 
-# Tables runtime copiées lors de l'extraction d'une save embarquée (legacy), dérivées du registre central.
-_RUNTIME_COPY: list[tuple[str, tuple[str, ...]]] = get_runtime_copy_specs()
+def _shared_columns(conn: sqlite3.Connection, table: str, other_schema: str) -> list[str]:
+    """Columns of ``table`` present in both ``main`` and ``other_schema`` (same order)."""
+    main_cols = [r[1] for r in conn.execute(f"PRAGMA main.table_info({table});").fetchall()]
+    other = {r[1] for r in conn.execute(f"PRAGMA {other_schema}.table_info({table});").fetchall()}
+    return [c for c in main_cols if c in other]
 
 _MANIFEST_NAME = "manifest.toml"
 _ARCHIVE_DB_NAME = "save.db"
@@ -536,8 +641,15 @@ def extract_save(universe_db: str | Path, save_id: str) -> Path:
                 "SELECT name FROM universe.sqlite_master WHERE type = 'table';"
             ).fetchall()
         }
-        for table, columns in _RUNTIME_COPY:
-            if table not in source_tables:
+        # Every per-save table of the registry (mods' tables included), read now.
+        from axiom.storage_registry import get_runtime_tables
+        lowered = {t.lower(): t for t in source_tables}
+        for wanted in reversed(get_runtime_tables()):  # parents first (Saves)
+            table = lowered.get(wanted.lower())
+            if table is None:
+                continue
+            columns = _shared_columns(conn, table, "universe")
+            if "save_id" not in columns:
                 continue
             cols = ", ".join(columns)
             conn.execute(
@@ -599,6 +711,10 @@ def pack_save(universe_db: str | Path, save_id: str, output_path: str | Path) ->
     with zipfile.ZipFile(str(output_path), "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(db_path, _ARCHIVE_DB_NAME)
         zf.writestr(_MANIFEST_NAME, manifest)
+        # Embed modpack manifest if present (K10)
+        modpack = get_save_modpack(db_path)
+        if modpack:
+            zf.writestr("modpack.json", json.dumps(modpack, indent=2))
         # Illustrations de tour (TICKET-048). Entrées supplémentaires ignorées
         # par les anciens lecteurs : le format reste compatible dans les deux sens.
         assets = assets_dir_for_save(save_id)
@@ -640,6 +756,8 @@ def unpack_save(
                 raise SaveStoreError("Invalid .axiomsave archive (missing save.db/manifest).")
             manifest = tomllib.loads(zf.read(_MANIFEST_NAME).decode("utf-8"))
             db_bytes = zf.read(_ARCHIVE_DB_NAME)
+            # Modpack the save was played with (K10): restored in Save_Meta.
+            modpack_json = zf.read("modpack.json").decode("utf-8") if "modpack.json" in names else None
             # Illustrations embarquées (TICKET-048) ; absentes des archives
             # antérieures, et seuls les noms `turn_<n>.png` plats sont acceptés.
             asset_bytes: dict[str, bytes] = {
@@ -687,6 +805,8 @@ def unpack_save(
         # source locale si elle existe.
         "definition_hash": "",
     }
+    if modpack_json is not None:
+        meta["active_modpack"] = modpack_json
     conn = sqlite3.connect(str(tmp))
     try:
         conn.execute(_DDL_SAVE_META)
@@ -715,7 +835,13 @@ def _reassign_save_id(db: Path, old_id: str, new_id: str) -> None:
     try:
         conn.execute("PRAGMA defer_foreign_keys=ON;")
         conn.execute("BEGIN;")
-        for table, _cols in _RUNTIME_COPY:
+        from axiom.storage_registry import get_runtime_tables
+        existing = {
+            r[0].lower() for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")
+        }
+        for table in get_runtime_tables():
+            if table.lower() not in existing:
+                continue
             if old_id:
                 conn.execute(
                     f"UPDATE {table} SET save_id = ? WHERE save_id = ?;",

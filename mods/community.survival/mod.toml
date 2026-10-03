@@ -22,3 +22,7 @@ hooks = [
 slots = [
     "axiom.turn:prompt_sections"
 ]
+
+[storage]
+# Fatigue episodes: typed events of this mod in the kernel journal (rewound/forked with the turn).
+fatigue = { policy = "events" }

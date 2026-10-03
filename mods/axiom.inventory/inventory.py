@@ -1,4 +1,6 @@
-"""Nested play inventory — instance tree, not a Creator catalog.
+"""mods/axiom.inventory/inventory.py
+
+Nested play inventory — instance tree, not a Creator catalog.
 
 Items appear from play (or the save editor). A holder is an entity, a
 location, or another instance (a purse, a drawer). Max nesting is 5.
@@ -12,6 +14,7 @@ import sqlite3
 import uuid
 from typing import Any
 
+from axiom.logger import logger
 from axiom.schema import get_connection
 
 MAX_NEST_DEPTH = 5
@@ -585,3 +588,51 @@ def format_inventory_prompt(tree: list[dict[str, Any]], names: dict[str, str] | 
         lines.append(header)
         _walk(root.get("contents") or [], 1)
     return "\n".join(lines) if lines else "(empty)"
+
+
+def entity_inventory(db_path: str, save_id: str, entity_id: str) -> list[dict]:
+    """Fetch the inventory for a specific entity in a save (flat, on-person)."""
+    inventory = []
+    try:
+        from axiom.schema import get_connection
+        with get_connection(db_path) as conn:
+            has_inst = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Item_Instances';"
+            ).fetchone()
+            if has_inst:
+                rows = conn.execute(
+                    """
+                    SELECT i.item_id,
+                           COALESCE(d.name, i.item_id) AS name,
+                           COALESCE(d.description, '') AS description,
+                           COALESCE(d.category, 'misc') AS category,
+                           COALESCE(d.weight, 0) AS weight,
+                           COALESCE(d.rarity, 'common') AS rarity,
+                           i.quantity
+                    FROM Item_Instances i
+                    LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
+                    WHERE i.save_id = ? AND i.holder_kind = 'entity' AND i.holder_id = ?;
+                    """,
+                    (save_id, entity_id),
+                ).fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
+            rows = conn.execute(
+                """
+                SELECT i.item_id,
+                       COALESCE(d.name, i.item_id) AS name,
+                       COALESCE(d.description, '') AS description,
+                       COALESCE(d.category, 'misc') AS category,
+                       COALESCE(d.weight, 0) AS weight,
+                       COALESCE(d.rarity, 'common') AS rarity,
+                       i.quantity
+                FROM Items_Inventory i
+                LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
+                WHERE i.save_id = ? AND i.entity_id = ?;
+                """,
+                (save_id, entity_id)
+            ).fetchall()
+            inventory = [dict(r) for r in rows]
+    except sqlite3.Error as e:
+        logger.error("[axiom.inventory] Error fetching inventory for %s: %s", entity_id, e)
+    return inventory

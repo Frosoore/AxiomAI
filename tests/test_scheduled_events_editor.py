@@ -1,7 +1,7 @@
 import pytest
 from PySide6.QtCore import Qt
 from mods.axiom.ui.qt.ui.widgets.scheduled_events_editor import ScheduledEventsEditorWidget
-from axiom.time_system import CalendarConfig
+from mods.axiom.time.time_system import CalendarConfig
 
 def test_scheduled_events_editor_reads_and_writes_start_time(qtbot):
     widget = ScheduledEventsEditorWidget()

@@ -18,8 +18,9 @@ Editable text format, `save_state.toml`::
     [save]      player_name / difficulty / player_persona
     [point]     turn_id / in_game_minutes   (informative at export)
     [state.<entity_id>]   stat = "value"    (effective entity state)
-    [[inventory]]         entity_id / item_id / quantity
-    [[modifiers]]         entity_id / stat_key / delta / minutes_remaining
+    [[inventory]]         item_id / quantity / holder_kind / holder_id   (axiom.inventory)
+    [[modifiers]]         entity_id / stat_key / delta / minutes_remaining   (core.stat_dynamics)
+    (sections of the mods, written and read by their storage code)
 """
 
 from __future__ import annotations
@@ -92,6 +93,55 @@ def _in_game_minutes_at(conn: sqlite3.Connection, save_id: str, turn_id: int) ->
 # Matérialisation de l'état (lecture)
 # ---------------------------------------------------------------------------
 
+def _materialize_sections(
+    conn: sqlite3.Connection, save_id: str, turn_id: int
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, bool]]:
+    """{section: rows} and {section: historical} of the mods' data at ``turn_id``."""
+    from axiom.storage_registry import _table_exists, get_state_sections
+
+    present = turn_id >= _max_turn(conn, save_id)
+    rows: dict[str, list[dict[str, Any]]] = {}
+    historical: dict[str, bool] = {}
+    for spec in get_state_sections():
+        if spec.custom_state is None or not _table_exists(conn, spec.table_name):
+            continue
+        rows[spec.section], historical[spec.section] = spec.custom_state(conn, save_id, turn_id, present)
+    return rows, historical
+
+
+def _load_sections(
+    conn: sqlite3.Connection, save_id: str, data: dict[str, Any], turn_id: int, *, replace_all: bool
+) -> bool:
+    """Hand each mod section of ``data`` to its storage code (import: replace; correction:
+    ``<section>_replace`` flags). Then capture the present turn again, so a later
+    rewind to it keeps the edit. Returns True if a section was written."""
+    from axiom.storage_registry import _table_exists, execute_snapshots, get_state_sections
+
+    written = False
+    for spec in get_state_sections():
+        if spec.custom_load is None or spec.section not in data or not _table_exists(conn, spec.table_name):
+            continue
+        replace = replace_all or bool(data.get(f"{spec.section}_replace"))
+        spec.custom_load(conn, save_id, list(data.get(spec.section) or []), turn_id, replace)
+        written = True
+    if written:
+        execute_snapshots(conn, save_id, _max_turn(conn, save_id))
+    return written
+
+
+def _toml_value_rows(rows: list[dict[str, Any]]) -> Any:
+    """A section as a TOML array of tables (empty / None / False values left out)."""
+    aot = tomlkit.aot()
+    for row in rows:
+        t = tomlkit.table()
+        for k, v in row.items():
+            if v is None or v == "" or v is False:
+                continue
+            t[k] = v
+        aot.append(t)
+    return aot
+
+
 def materialize_state(
     db_path: str,
     save_id: str,
@@ -104,19 +154,14 @@ def materialize_state(
     Per-entity stats = the universe's base stats (`Entity_Stats`) overlaid
     with the state replayed up to the point (logical `State_Cache`).
 
-    Session_Lore and modifiers are reconstructed at the point too (TICKET-095):
-    lore entries are filtered by `origin_turn <= turn_id`, and modifiers are
-    read live from `Active_Modifiers` when `turn_id` is the save's present
-    turn (nothing to reconstruct there), or otherwise from the same
-    `Modifier_Snapshots` table rewind restores from (see
-    `axiom.modifiers.modifiers_at`), read-only. Inventory at a past turn comes
-    from `Inventory_Snapshots` (`axiom.inventory.inventory_at`, the source
-    rewind restores from); a turn played before snapshots existed has none and
-    shows the save's **current** inventory (`historical["inventory"]` False).
-    The returned
-    `historical` dict flags, per facet, whether the value shown is truly the
-    point-in-time state (`True`) or the save's present state (`False`), so
-    callers can warn the user.
+    Session_Lore is reconstructed at the point too (TICKET-095): entries are
+    filtered by `origin_turn <= turn_id`. The data of the mods (e.g.
+    ``inventory``, ``modifiers``) are added as named sections by their storage
+    code (``[storage]`` ``section`` / ``state``), from the same snapshots a rewind
+    restores. The returned `historical` dict flags, per facet, whether the value
+    shown is truly the point-in-time state (`True`) or the save's present state
+    (`False`, e.g. an inventory turn played before snapshots existed), so callers
+    can warn the user.
     """
     turn_id = resolve_point(db_path, save_id, at_turn=at_turn, at_minute=at_minute)
     sourcer = EventSourcer(db_path)
@@ -138,40 +183,6 @@ def materialize_state(
             "JOIN Entities e ON e.entity_id = es.entity_id WHERE e.is_active = 1;"
         ):
             base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
-
-        from axiom.inventory import list_instances
-
-        inventory = list_instances(conn, save_id)
-        # TICKET-095: a past turn reads the per-turn inventory snapshot (same
-        # source rewind restores from); the present turn and turns captured
-        # before snapshots existed show the live inventory.
-        inventory_historical = turn_id >= _max_turn(conn, save_id)
-        from_snapshot = False
-        if not inventory_historical:
-            from axiom.inventory import inventory_at
-
-            past = inventory_at(conn, save_id, turn_id)
-            if past is not None:
-                inventory = [
-                    {**it, "entity_id": it["holder_id"]} if it.get("holder_kind") == "entity" else it
-                    for it in past
-                ]
-                inventory_historical = from_snapshot = True
-        if not inventory and not from_snapshot:
-            inventory = [
-                {
-                    "entity_id": r["entity_id"],
-                    "item_id": r["item_id"],
-                    "quantity": r["quantity"],
-                    "holder_kind": "entity",
-                    "holder_id": r["entity_id"],
-                }
-                for r in conn.execute(
-                    "SELECT entity_id, item_id, quantity FROM Items_Inventory WHERE save_id = ? "
-                    "ORDER BY entity_id, item_id;",
-                    (save_id,),
-                )
-            ]
 
         session_lore = []
         try:
@@ -210,33 +221,9 @@ def materialize_state(
                 }
         except sqlite3.Error:
             entity_meta = {}
-        # At the save's present turn, Active_Modifiers *is* the point-in-time
-        # state (nothing to reconstruct) — read it live so modifiers added
-        # outside a turn tick (e.g. `apply_correction`, an import, a GM
-        # command) show up immediately, without waiting for the next
-        # `snapshot_modifiers` call. Only a genuinely past turn needs the
-        # snapshot-based reconstruction (TICKET-095).
-        if turn_id >= _max_turn(conn, save_id):
-            modifiers = [
-                {
-                    "entity_id": r["entity_id"],
-                    "stat_key": r["stat_key"],
-                    "delta": r["delta"],
-                    "minutes_remaining": r["minutes_remaining"],
-                }
-                for r in conn.execute(
-                    "SELECT entity_id, stat_key, delta, minutes_remaining FROM Active_Modifiers "
-                    "WHERE save_id = ? ORDER BY entity_id, stat_key;",
-                    (save_id,),
-                )
-            ]
-        else:
-            from axiom.modifiers import modifiers_at
-
-            modifiers = sorted(
-                modifiers_at(conn, save_id, turn_id),
-                key=lambda m: (m["entity_id"], m["stat_key"]),
-            )
+        # Data sections of the mods (inventory, modifiers...): read by their
+        # storage code, mod enabled or not (owner decision 2026-10-03).
+        sections, sections_historical = _materialize_sections(conn, save_id, turn_id)
         in_game_minutes = _in_game_minutes_at(conn, save_id, turn_id)
 
     # Fusion base ⊕ état rejoué (le replay prévaut). Fold incoming keys onto
@@ -258,15 +245,9 @@ def materialize_state(
         "point": {"turn_id": turn_id, "in_game_minutes": in_game_minutes},
         "entities": entities,
         "entity_meta": entity_meta,
-        "inventory": inventory,
         "session_lore": session_lore,
-        "modifiers": modifiers,
-        "historical": {
-            "entities": True,
-            "session_lore": True,
-            "modifiers": True,
-            "inventory": inventory_historical,
-        },
+        **sections,
+        "historical": {"entities": True, "session_lore": True, **sections_historical},
     }
 
 
@@ -305,25 +286,6 @@ def export_save_state(
         state_tbl[eid] = ent
     doc["state"] = state_tbl
 
-    if state["inventory"]:
-        inv = tomlkit.aot()
-        for it in state["inventory"]:
-            t = tomlkit.table()
-            if it.get("instance_id"):
-                t["instance_id"] = it["instance_id"]
-            t["item_id"] = it["item_id"]
-            t["quantity"] = it["quantity"]
-            t["holder_kind"] = it.get("holder_kind") or "entity"
-            t["holder_id"] = it.get("holder_id") or it.get("entity_id") or ""
-            if it.get("entity_id"):
-                t["entity_id"] = it["entity_id"]
-            if it.get("is_container"):
-                t["is_container"] = True
-            if it.get("name"):
-                t["name"] = it["name"]
-            inv.append(t)
-        doc["inventory"] = inv
-
     if state.get("session_lore"):
         lore = tomlkit.aot()
         for entry in state["session_lore"]:
@@ -336,16 +298,10 @@ def export_save_state(
             lore.append(t)
         doc["session_lore"] = lore
 
-    if state["modifiers"]:
-        mods = tomlkit.aot()
-        for m in state["modifiers"]:
-            t = tomlkit.table()
-            t["entity_id"] = m["entity_id"]
-            t["stat_key"] = m["stat_key"]
-            t["delta"] = m["delta"]
-            t["minutes_remaining"] = m["minutes_remaining"]
-            mods.append(t)
-        doc["modifiers"] = mods
+    from axiom.storage_registry import get_state_sections
+    for spec in get_state_sections():
+        if state.get(spec.section):
+            doc[spec.section] = _toml_value_rows(state[spec.section])
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,8 +327,8 @@ def import_save_state(
     """Create a **new** playable save from a `save_state.toml`.
 
     Seeds the state through "genesis" events at turn 0 (entity_create +
-    stat_set), then materialises State_Cache, the inventory, the modifiers and
-    a Timeline entry. Empty vector memory. Returns the new save_id.
+    stat_set), then materialises State_Cache, the mods' sections (inventory,
+    modifiers...) and a Timeline entry. Empty vector memory. Returns the new save_id.
     """
     data = _load_state_toml(state_path)
     save_meta = data.get("save", {})
@@ -399,22 +355,10 @@ def import_save_state(
     in_game_minutes = int(data.get("point", {}).get("in_game_minutes", 0))
     try:
         with get_connection(db_path) as conn:
-            from axiom.inventory import replace_inventory
             from axiom.schema import migrate_schema
             migrate_schema(db_path)
-            replace_inventory(conn, save_id, list(data.get("inventory") or []))
             _replace_session_lore(conn, save_id, list(data.get("session_lore") or []), turn_id=0)
-            for m in data.get("modifiers", []):
-                conn.execute(
-                    "INSERT INTO Active_Modifiers "
-                    "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
-                    "VALUES (?, ?, ?, ?, ?, ?);",
-                    (str(uuid.uuid4()), save_id, m["entity_id"], m["stat_key"],
-                     float(m["delta"]), int(m.get("minutes_remaining", 0))),
-                )
-            _snapshot_modifiers_now(conn, save_id, 0)
-            from axiom.inventory import snapshot_inventory
-            snapshot_inventory(conn, save_id, 0)
+            _load_sections(conn, save_id, data, 0, replace_all=True)
             conn.execute(
                 "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
                 "VALUES (?, ?, ?, ?);",
@@ -443,15 +387,16 @@ def apply_correction(
 
     Stat changes become `manual_edit` events (at the chosen turn, default =
     last turn) — the journal stays consistent and append-only, the rewind is
-    preserved, and the edit is traceable. Inventory and modifiers (not
-    event-sourced) are written directly.
+    preserved, and the edit is traceable. The mods' sections (not
+    event-sourced: inventory, modifiers...) are written by their storage code.
 
     The `patch` dict has the shape::
 
         {
             "entities":  {entity_id: {stat_key: "value", ...}},
-            "inventory": [{entity_id, item_id, quantity}, ...],
-            "modifiers": [{entity_id, stat_key, delta, minutes_remaining}, ...],
+            "session_lore": [...],              # replaces the session lore
+            "<section>": [rows...],             # e.g. inventory, modifiers
+            "<section>_replace": True,          # replace the section instead of patching
         }
 
     Returns:
@@ -491,159 +436,17 @@ def apply_correction(
 
     try:
         with get_connection(db_path) as conn:
-            if patch.get("inventory_replace"):
-                from axiom.inventory import replace_inventory
-                replace_inventory(conn, save_id, list(patch.get("inventory") or []))
-            else:
-                for it in patch.get("inventory", []):
-                    _apply_inventory_row(conn, save_id, it)
             if "session_lore" in patch:
                 _replace_session_lore(
                     conn, save_id, list(patch.get("session_lore") or []), turn_id=turn_id
                 )
-            if patch.get("modifiers_replace"):
-                conn.execute("DELETE FROM Active_Modifiers WHERE save_id = ?;", (save_id,))
-            for m in patch.get("modifiers", []):
-                conn.execute(
-                    "INSERT INTO Active_Modifiers "
-                    "(modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
-                    "VALUES (?, ?, ?, ?, ?, ?);",
-                    (str(uuid.uuid4()), save_id, m["entity_id"], m["stat_key"],
-                     float(m["delta"]), int(m.get("minutes_remaining", 0))),
-                )
-            if patch.get("modifiers_replace") or "modifiers" in patch:
-                _snapshot_modifiers_now(conn, save_id, turn_id)
-            if patch.get("inventory_replace") or "inventory" in patch:
-                # Inventory is written live, i.e. as the save's present state:
-                # re-capture the present turn so a later rewind to it keeps the
-                # edit (TICKET-095).
-                from axiom.inventory import snapshot_present_inventory
-                snapshot_present_inventory(conn, save_id)
+            _load_sections(conn, save_id, patch, turn_id, replace_all=False)
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
         raise SaveError(f"Correction failed (invalid reference?): {exc}") from exc
 
     sourcer.rebuild_state_cache(save_id)
     return turn_id
-
-
-def _apply_inventory_row(conn: sqlite3.Connection, save_id: str, it: dict[str, Any]) -> None:
-    """Apply one inventory patch row. Quantity is absolute (0 = remove)."""
-    from axiom.inventory import ensure_item_definition
-
-    qty = int(it.get("quantity", 1) or 0)
-    holder_kind = it.get("holder_kind") or "entity"
-    holder_id = it.get("holder_id") or it.get("entity_id") or ""
-    item_id = it.get("item_id") or ""
-    instance_id = it.get("instance_id")
-    has_instances = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Item_Instances';"
-    ).fetchone()
-
-    if qty <= 0:
-        if has_instances:
-            if instance_id:
-                conn.execute(
-                    "DELETE FROM Item_Instances WHERE save_id = ? AND instance_id = ?;",
-                    (save_id, instance_id),
-                )
-            elif item_id and holder_id:
-                conn.execute(
-                    "DELETE FROM Item_Instances WHERE save_id = ? AND item_id = ? "
-                    "AND holder_kind = ? AND holder_id = ?;",
-                    (save_id, item_id, holder_kind, holder_id),
-                )
-        if holder_id and item_id:
-            conn.execute(
-                "DELETE FROM Items_Inventory WHERE save_id = ? AND entity_id = ? AND item_id = ?;",
-                (save_id, holder_id, item_id),
-            )
-        return
-
-    if has_instances and holder_id and item_id:
-        item_id = ensure_item_definition(
-            conn, item_id,
-            name=str(it.get("name") or ""),
-            is_container=bool(it.get("is_container")),
-        )
-        if instance_id:
-            exists = conn.execute(
-                "SELECT 1 FROM Item_Instances WHERE instance_id = ?;", (instance_id,)
-            ).fetchone()
-            if exists:
-                conn.execute(
-                    "UPDATE Item_Instances SET quantity = ?, holder_kind = ?, holder_id = ?, "
-                    "item_id = ? WHERE instance_id = ?;",
-                    (qty, holder_kind, holder_id, item_id, instance_id),
-                )
-                return
-        existing = conn.execute(
-            "SELECT instance_id FROM Item_Instances WHERE save_id = ? AND item_id = ? "
-            "AND holder_kind = ? AND holder_id = ? LIMIT 1;",
-            (save_id, item_id, holder_kind, holder_id),
-        ).fetchone()
-        if existing:
-            conn.execute(
-                "UPDATE Item_Instances SET quantity = ? WHERE instance_id = ?;",
-                (qty, existing[0]),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO Item_Instances "
-                "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
-                "VALUES (?, ?, ?, ?, ?, ?);",
-                (instance_id or str(uuid.uuid4()), save_id, item_id, qty, holder_kind, holder_id),
-            )
-        return
-    if holder_id and item_id:
-        conn.execute(
-            "INSERT OR REPLACE INTO Items_Inventory (save_id, entity_id, item_id, quantity) "
-            "VALUES (?, ?, ?, ?);",
-            (save_id, holder_id, item_id, qty),
-        )
-
-
-def _snapshot_modifiers_now(conn: sqlite3.Connection, save_id: str, turn_id: int) -> None:
-    """Write a Modifier_Snapshots row for `turn_id` from the current Active_Modifiers.
-
-    `materialize_state`/`axiom.modifiers.modifiers_at` (TICKET-095) reconstruct
-    past modifiers from `Modifier_Snapshots`, same as rewind. Import and
-    correction write `Active_Modifiers` directly (not through
-    `ModifierProcessor.add_modifier`/`snapshot_modifiers`), so without this the
-    edited modifiers would have no snapshot at their turn and look like "no
-    modifiers then" once read back through `materialize_state`. Called on the
-    caller's open transaction, after the Active_Modifiers writes, so it sees
-    them uncommitted.
-    """
-    from axiom.schema import ensure_modifier_snapshots_table
-
-    ensure_modifier_snapshots_table(conn)
-    rows = conn.execute(
-        "SELECT modifier_id, entity_id, stat_key, delta, minutes_remaining "
-        "FROM Active_Modifiers WHERE save_id = ?;",
-        (save_id,),
-    ).fetchall()
-    if rows:
-        state = [
-            {
-                "modifier_id": r[0],
-                "entity_id": r[1],
-                "stat_key": r[2],
-                "delta": r[3],
-                "minutes_remaining": r[4],
-            }
-            for r in rows
-        ]
-        conn.execute(
-            "INSERT OR REPLACE INTO Modifier_Snapshots (save_id, turn_id, state_json) "
-            "VALUES (?, ?, ?);",
-            (save_id, turn_id, json.dumps(state)),
-        )
-    else:
-        conn.execute(
-            "DELETE FROM Modifier_Snapshots WHERE save_id = ? AND turn_id = ?;",
-            (save_id, turn_id),
-        )
 
 
 def _replace_session_lore(
@@ -685,21 +488,20 @@ def apply_structured_state(
     save_id: str,
     payload: dict[str, Any],
 ) -> int:
-    """Apply a structured save-editor payload (full inventory / lore replace)."""
+    """Apply a structured save-editor payload (full replace of the given sections / lore)."""
     from axiom.schema import migrate_schema
 
     migrate_schema(db_path)
     patch: dict[str, Any] = {}
     if payload.get("entities"):
         patch["entities"] = payload["entities"]
-    if "inventory" in payload:
-        patch["inventory"] = payload["inventory"]
-        patch["inventory_replace"] = True
     if "session_lore" in payload:
         patch["session_lore"] = payload["session_lore"]
-    if "modifiers" in payload:
-        patch["modifiers"] = payload["modifiers"]
-        patch["modifiers_replace"] = True
+    from axiom.storage_registry import get_state_sections
+    for spec in get_state_sections():
+        if spec.section in payload:
+            patch[spec.section] = payload[spec.section]
+            patch[f"{spec.section}_replace"] = True
     if not patch:
         return resolve_point(db_path, save_id)
     return apply_correction(db_path, save_id, patch)
@@ -715,10 +517,8 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
 
     - stats: changed or added values (removing a stat does not exist in the
       correction model — ignored);
-    - inventory: changed/added quantities; a vanished line means quantity 0
-      (= removal);
-    - modifiers: only **new** ones are kept (a correction can only add
-      modifiers).
+    - the mods' sections: as their storage code's ``diff`` says (inventory:
+      changed/added/removed lines; modifiers: only new ones).
     """
     entities: dict[str, dict[str, str]] = {}
     state_before = before.get("state", {})
@@ -728,38 +528,15 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
         if changed:
             entities[eid] = changed
 
-    def _inv_key(i: dict) -> tuple:
-        if i.get("instance_id"):
-            return ("id", i["instance_id"])
-        holder = i.get("holder_id") or i.get("entity_id") or ""
-        kind = i.get("holder_kind") or "entity"
-        return ("stack", kind, holder, i.get("item_id"))
-
-    inv_before = {_inv_key(i): i for i in before.get("inventory", [])}
-    inv_after = {_inv_key(i): i for i in after.get("inventory", [])}
-    inventory: list[dict[str, Any]] = []
-    for key, it in inv_after.items():
-        prior = inv_before.get(key)
-        if prior is None or int(prior.get("quantity", 1)) != int(it.get("quantity", 1)) \
-                or (prior.get("holder_id") or prior.get("entity_id")) != (
-                    it.get("holder_id") or it.get("entity_id")):
-            inventory.append(it)
-    for key, it in inv_before.items():
-        if key not in inv_after:
-            gone = dict(it)
-            gone["quantity"] = 0
-            inventory.append(gone)
-
-    def _mod_key(m: dict) -> tuple:
-        return (m["entity_id"], m["stat_key"], float(m["delta"]),
-                int(m.get("minutes_remaining", 0)))
-
-    known = {_mod_key(m) for m in before.get("modifiers", [])}
-    modifiers = [m for m in after.get("modifiers", []) if _mod_key(m) not in known]
-
     lore_before = before.get("session_lore") or []
     lore_after = after.get("session_lore") or []
-    patch: dict[str, Any] = {"entities": entities, "inventory": inventory, "modifiers": modifiers}
+    patch: dict[str, Any] = {"entities": entities}
+    from axiom.storage_registry import get_state_sections
+    for spec in get_state_sections():
+        if spec.custom_diff is not None and (spec.section in before or spec.section in after):
+            patch[spec.section] = spec.custom_diff(
+                list(before.get(spec.section) or []), list(after.get(spec.section) or [])
+            )
     if lore_before != lore_after:
         patch["session_lore"] = lore_after
     return patch
@@ -768,78 +545,15 @@ def diff_save_states(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
 def apply_correction_file(db_path: str, save_id: str, patch_path: str | Path, *, at_turn: int | None = None) -> int:
     """Load a TOML file (same sections as save_state.toml) and apply it as a correction."""
     data = _load_state_toml(patch_path)
-    patch = {
-        "entities": data.get("state", {}),
-        "inventory": data.get("inventory", []),
-        "modifiers": data.get("modifiers", []),
-    }
-    if "session_lore" in data:
-        patch["session_lore"] = data.get("session_lore") or []
+    patch = {"entities": data.get("state", {})}
+    # session_lore and the mods' sections (inventory, modifiers...) as written.
+    patch.update({k: v for k, v in data.items() if k not in ("save", "point", "state")})
     return apply_correction(db_path, save_id, patch, at_turn=at_turn)
 
 
 # ---------------------------------------------------------------------------
 # Fork (découpe du journal à un point)
 # ---------------------------------------------------------------------------
-
-def _fork_item_instances(
-    conn: sqlite3.Connection, src_id: str, new_id: str, turn_id: int
-) -> None:
-    """Copy the nested inventory into a forked save (TICKET-095).
-
-    Uses the source's inventory snapshot at the fork turn when there is one
-    (else the present inventory, as before), and copies the snapshots up to
-    that turn so rewind keeps working inside the fork. Instance ids are
-    regenerated through ONE mapping shared by rows, holders and snapshots, so
-    a container's contents still point at the forked container.
-    """
-    from axiom.inventory import inventory_at, snapshot_inventory
-    from axiom.schema import ensure_inventory_snapshots_table
-
-    id_map: dict[str, str] = {}
-
-    def _new(old: str) -> str:
-        if old not in id_map:
-            id_map[old] = str(uuid.uuid4())
-        return id_map[old]
-
-    def _remap(row: dict[str, Any]) -> dict[str, Any]:
-        out = dict(row)
-        out["instance_id"] = _new(str(row["instance_id"]))
-        if row.get("holder_kind") == "instance":
-            out["holder_id"] = _new(str(row["holder_id"]))
-        return out
-
-    rows = inventory_at(conn, src_id, turn_id)
-    if rows is None:
-        rows = [
-            dict(r) for r in conn.execute(
-                "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
-                "FROM Item_Instances WHERE save_id = ?;",
-                (src_id,),
-            ).fetchall()
-        ]
-    conn.executemany(
-        "INSERT INTO Item_Instances "
-        "(instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
-        "VALUES (?, ?, ?, ?, ?, ?);",
-        [(m["instance_id"], new_id, m["item_id"], m["quantity"], m["holder_kind"],
-          m["holder_id"]) for m in map(_remap, rows)],
-    )
-
-    ensure_inventory_snapshots_table(conn)
-    for snap in conn.execute(
-        "SELECT turn_id, state_json FROM Inventory_Snapshots "
-        "WHERE save_id = ? AND turn_id <= ?;",
-        (src_id, turn_id),
-    ).fetchall():
-        conn.execute(
-            "INSERT OR REPLACE INTO Inventory_Snapshots (save_id, turn_id, state_json) "
-            "VALUES (?, ?, ?);",
-            (new_id, snap[0], json.dumps([_remap(r) for r in json.loads(snap[1] or "[]")])),
-        )
-    snapshot_inventory(conn, new_id, turn_id)
-
 
 def fork_save(
     db_path: str,

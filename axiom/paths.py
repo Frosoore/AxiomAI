@@ -5,6 +5,8 @@ Centralised path management for Axiom AI.
 Ensures cross-platform compatibility by using OS-specific standard directories.
 """
 
+import contextlib
+import contextvars
 import os
 import sys
 from pathlib import Path
@@ -88,7 +90,31 @@ def reset() -> None:
     _config_root_override = None
 
 
+# Data root of the Session currently rewinding/forking a save (this thread only):
+# the external stores of mods (images, vector memory...) follow a Session that
+# was given its own data_dir.
+_session_data_root: contextvars.ContextVar["Path | None"] = contextvars.ContextVar(
+    "axiom_session_data_root", default=None
+)
+
+
+@contextlib.contextmanager
+def session_data_root(root: "str | os.PathLike | None"):
+    """Within the block, the data root is ``root`` (no-op when None)."""
+    if root is None:
+        yield
+        return
+    token = _session_data_root.set(Path(root))
+    try:
+        yield
+    finally:
+        _session_data_root.reset(token)
+
+
 def _data_root() -> Path:
+    scoped = _session_data_root.get()
+    if scoped is not None:
+        return scoped
     if _data_root_override is not None:
         return _data_root_override
     env = os.environ.get("AXIOM_DATA_DIR")

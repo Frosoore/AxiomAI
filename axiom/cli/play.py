@@ -276,19 +276,15 @@ def play_loop(
 
 def run_play(args: argparse.Namespace) -> int:
     """Résout univers + save + LLM, construit la Session, lance la boucle."""
-    from axiom.config import load_config, build_llm_from_config
-    from axiom.kernel.loader import is_mod_enabled
+    from axiom.config import load_config
+    from axiom.kernel.loader import get_kernel_registry, interface_unavailable_message
 
     cfg = load_config()
-    if not is_mod_enabled("axiom.cli", cfg):
-        print(
-            "The terminal CLI interface mod ('axiom.cli') is currently disabled in your configuration.\n"
-            "To re-enable it, run:\n"
-            "    axiom mod enable axiom.cli\n\n"
-            "Or launch the desktop Qt interface:\n"
-            "    python main.py",
-            file=sys.stderr,
-        )
+    # The process modpack, loaded before anything else (saves record it, D-4).
+    get_kernel_registry(cfg)
+    err_msg = interface_unavailable_message("axiom.cli")
+    if err_msg is not None:
+        print(err_msg, file=sys.stderr)
         return 1
 
     from axiom.universe import Universe
@@ -338,7 +334,8 @@ def run_play(args: argparse.Namespace) -> int:
 
     # --- LLM ---
     cfg = load_config()
-    llm = build_llm_from_config(cfg)
+    from axiom.session import resolve_llm_backend
+    llm = resolve_llm_backend(cfg)
     if hasattr(llm, "is_available") and not llm.is_available():
         print(
             "Warning: the LLM backend is not responding (API key / local server?).",
@@ -346,6 +343,13 @@ def run_play(args: argparse.Namespace) -> int:
         )
 
     session = Session(db_path, save_id, llm=llm, mode=mode)
+    if session.modpack_warning:
+        print(
+            "Warning: this save was created with a different modpack:\n"
+            f"{session.modpack_warning}\n"
+            "You can keep playing, at your own risk.\n",
+            file=sys.stderr,
+        )
 
     play_loop(
         session,

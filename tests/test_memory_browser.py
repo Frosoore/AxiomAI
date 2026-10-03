@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from axiom.facts import Fact, get_fact, insert_facts
-from axiom.observations import Observation, insert_observation
 from axiom.schema import create_universe_db, get_connection
 from core.localization import tr
+from mods.axiom.living_memory.facts import Fact, get_fact, insert_facts
+from mods.axiom.living_memory.observations import Observation, insert_observation
 from mods.axiom.living_memory.ui.memory_browser import MemoryBrowserDialog
 
 
@@ -74,7 +74,7 @@ def test_world_belief_shown_with_world_label(qtbot, db_path: str) -> None:
 
 def test_edit_fact_via_engine_reload(qtbot, db_path: str) -> None:
     """Sanity: after engine update_fact, refresh shows new text."""
-    from axiom.facts import update_fact
+    from mods.axiom.living_memory.facts import update_fact
 
     ids = insert_facts(db_path, "s1", 1, [Fact(statement="Old text", entities=[])])
     fid = ids[0]

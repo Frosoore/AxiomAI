@@ -35,7 +35,7 @@ from axiom.compile import (
     _STRUCTURED_META_KEYS,
 )
 from axiom.schema import get_connection
-from axiom.time_system import CalendarConfig
+from axiom.universe_format import calendar_from_meta
 
 _GLOBAL_LORE_FILE = "lore/_global_lore.md"
 _FIRST_MESSAGE_FILE = "lore/_first_message.md"
@@ -249,15 +249,9 @@ def _build_universe_toml(meta: dict[str, str], src_dir: Path) -> None:
         doc["narrative"] = narrative
 
     if meta.get(_META_CALENDAR):
-        cfg = CalendarConfig.from_json(meta[_META_CALENDAR])
         cal = tomlkit.table()
-        cal["minutes_per_hour"] = cfg.minutes_per_hour
-        cal["hours_per_day"] = cfg.hours_per_day
-        cal["days_per_month"] = cfg.days_per_month
-        cal["month_names"] = cfg.month_names
-        cal["start_day"] = cfg.start_day
-        cal["start_hour"] = cfg.start_hour
-        cal["start_minute"] = cfg.start_minute
+        for key, value in calendar_from_meta(meta[_META_CALENDAR]).items():
+            cal[key] = value
         doc["calendar"] = cal
 
     if _META_COMPANION_ENABLED in meta or _META_COMPANION_HERO in meta:

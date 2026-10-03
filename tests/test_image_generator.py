@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from axiom.config import AppConfig
-from axiom.image_generator import ImageGenerator, MOCK_PNG_BASE64
+from mods.axiom.illustrations.image_generator import ImageGenerator, MOCK_PNG_BASE64
 from axiom.backends.base import LLMResponse, LLMBackend
 from axiom.session import Session
 from axiom.schema import create_universe_db
@@ -426,7 +426,7 @@ def test_image_generator_gemini_no_image_part_returns_none(
 
 
 def test_closest_aspect_ratio_mapping() -> None:
-    from axiom.image_generator import closest_aspect_ratio
+    from mods.axiom.illustrations.image_generator import closest_aspect_ratio
 
     assert closest_aspect_ratio(512, 512) == "1:1"
     assert closest_aspect_ratio(1024, 576) == "16:9"
@@ -460,19 +460,38 @@ def test_session_integration_image_generation(tmp_path: Path) -> None:
     save_id = create_new_save(db_path, player_name="Hero", difficulty="Normal")
 
     cfg = AppConfig(image_generation_enabled=True, image_backend="mock")
+    # The app's data root is elsewhere: the session's injected data_dir must win.
+    import axiom.paths
+    axiom.paths.configure(data_dir=tmp_path / "app_default")
 
-    with patch("axiom.config.load_config", return_value=cfg):
-        llm = _FakeLLM(response_text="The scene description.")
-        sess = Session(
-            db_path,
-            save_id,
-            llm=llm,
-            vector_memory=_DummyVectorMemory(),
-            data_dir=tmp_path,
-        )
+    try:
+        with patch("axiom.config.load_config", return_value=cfg):
+            llm = _FakeLLM(response_text="The scene description.")
+            sess = Session(
+                db_path,
+                save_id,
+                llm=llm,
+                time_llm=llm,  # no real Timekeeper backend (network) in a unit test
+                vector_memory=_DummyVectorMemory(),
+                data_dir=tmp_path,
+            )
 
-        result = sess.take_turn("Hello world")
+            result = sess.take_turn("Hello world")
 
-        assert result.image_path is not None
-        assert Path(result.image_path).exists()
-        assert Path(result.image_path).name == "turn_1.png"
+            assert result.image_path is not None
+            assert Path(result.image_path).exists()
+            assert Path(result.image_path).name == "turn_1.png"
+            # The session's injected data_dir is honoured (not the app default).
+            assert Path(result.image_path).parent == tmp_path / "assets" / save_id
+
+            # A fork keeps the illustrations of the turns it keeps (external store, after commit).
+            sess.take_turn("Again")
+            new_id = sess.fork(at_turn=1)
+            forked = tmp_path / "assets" / new_id
+            assert sorted(p.name for p in forked.glob("*.png")) == ["turn_1.png"]
+
+            # A rewind removes the illustrations of the undone turns.
+            sess.rewind(1)
+            assert sorted(p.name for p in (tmp_path / "assets" / save_id).glob("*.png")) == ["turn_1.png"]
+    finally:
+        axiom.paths.reset()

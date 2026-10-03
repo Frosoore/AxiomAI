@@ -30,20 +30,18 @@ def on_gather_context(data: dict[str, Any]) -> None:
 
 
 def on_after_step(ctx: Any) -> None:
-    """Hook invoked after step rules and narration have executed."""
+    """Sustained exertion (>= 2 h in one turn) is recorded as fatigue: a typed event of
+    this mod in the turn's journal (policy `events`: rewound/forked with the turn)."""
     elapsed = getattr(ctx, "elapsed_minutes", 0) or 0
     if elapsed >= 120:
-        write_batch = getattr(ctx, "write_batch", None)
-        if write_batch is not None and hasattr(write_batch, "timeline_entries"):
-            save_id = getattr(ctx, "save_id", "")
-            turn_id = getattr(ctx, "turn_id", 0)
-            new_time = getattr(ctx, "new_time", 0)
-            write_batch.timeline_entries.append((
-                save_id,
-                turn_id,
-                new_time,
-                f"[Survival] Sustained physical exertion ({elapsed} mins elapsed) causes noticeable fatigue."
-            ))
+        ctx.write_batch.stage_event(
+            "mod.community.survival.fatigue",
+            {
+                "elapsed_minutes": elapsed,
+                "note": f"[Survival] Sustained physical exertion ({elapsed} mins elapsed) causes noticeable fatigue.",
+            },
+            target_entity=getattr(ctx, "player_entity_id", "player"),
+        )
 
 
 def init(ctx: ModContext) -> None:

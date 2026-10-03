@@ -202,7 +202,7 @@ def canonize_story(
     preview=True stages a sandbox and returns diffs (nothing written).
     preview=False applies immediately and refreshes the save definition.
     """
-    from axiom.config import build_llm_from_config, load_config, resolve_extraction_model
+    from axiom.config import load_config, resolve_extraction_model
     from axiom.prompts import build_canonize_prompt
 
     def _status(msg: str) -> None:
@@ -222,7 +222,8 @@ def canonize_story(
     _status("Canonizing recent story...")
     if llm is None:
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+        from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
+        llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
     prompt = build_canonize_prompt(
         narrative_text, existing_entities, existing_lore, global_lore)
     resp = llm.complete(prompt, response_format="json")

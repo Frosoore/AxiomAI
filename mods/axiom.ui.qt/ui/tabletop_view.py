@@ -43,21 +43,24 @@ from axiom.db_helpers import get_max_turn_id, load_rules_for_session, load_saves
 from workers.db_worker import DbWorker
 from workers.hardcore_worker import HardcoreWorker
 from workers.vector_worker import VectorInitWorker
-from axiom.config import (
-    load_config,
-    build_llm_from_config,
-    memory_mode_is_living,
-    memory_beliefs_active,
-    memory_mental_models_active,
-)
-from axiom.time_system import TimeSystem, CalendarConfig
+from axiom.config import load_config, memory_mode_is_living, save_config
 from axiom.logger import logger
 from core.localization import tr, format_time
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
     from axiom.memory import VectorMemory
-    from workers.fact_worker import FactExtractWorker
+
+
+def _service(name: str):
+    """A service of the process modpack (None when its mod is off)."""
+    from axiom.kernel.loader import get_kernel_registry
+    return get_kernel_registry().get_service(name)
+
+
+def _time_service():
+    """The `time` service of the axiom.time mod in the process modpack (None if off)."""
+    return _service("time")
 
 
 class TabletopView(HardcoreMixin, QWidget):
@@ -88,7 +91,8 @@ class TabletopView(HardcoreMixin, QWidget):
         self._turn_id: int = 0
         self._current_time: int = 0
         self._last_chronicle_time: int = 0
-        self._time_system = TimeSystem()
+        # Calendar of the axiom.time mod (None without it: no in-game clock shown).
+        self._time_system = None
         self._universe_system_prompt: str = "You are the narrator of this world."
         self._global_lore: str = ""
         self._first_message: str = ""
@@ -113,15 +117,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._lore_worker: DbWorker | None = None
         self._vector_init_worker: VectorInitWorker | None = None
         self._hardcore_worker: HardcoreWorker | None = None
-        # Living memory (Phase 2 item 4): background fact extraction. The pending
-        # buffer accumulates each turn's narrative so a periodic run distils the
-        # whole window since the last extraction (no skipped turns); the counter
-        # fires every memory_fact_interval turns. Reset on rewind / new session.
-        self._fact_worker: "FactExtractWorker | None" = None
-        self._fact_turn_counter: int = 0
-        self._fact_pending: list[str] = []
-        # TICKET-030/042 : une seule canonisation à la fois (le « Canon auto »
-        # par tour ne doit pas écraser un worker encore en vol).
         self._canon_busy: bool = False
 
         # Multiplayer (hotseat) turn accumulation: each player submits an intent
@@ -215,8 +210,10 @@ class TabletopView(HardcoreMixin, QWidget):
         
         # TICKET-030 : canonisation de l'histoire vers l'univers (OFF par défaut).
         from PySide6.QtWidgets import QCheckBox
+        from axiom.session import get_auto_canonize
         self._canon_auto_check = doc(QCheckBox(tr("canon_auto")), "tabletop.canon_auto")
-        self._canon_auto_check.setChecked(False)
+        self._canon_auto_check.setChecked(get_auto_canonize(load_config()))
+        self._canon_auto_check.toggled.connect(self._on_canon_auto_toggled)
         right_layout.addWidget(self._canon_auto_check)
         self._canonize_btn = doc(QPushButton(tr("canonize_btn")), "tabletop.canonize")
         self._canonize_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -230,7 +227,7 @@ class TabletopView(HardcoreMixin, QWidget):
         right_layout.addSpacing(10)
 
         # Image generation button (axiom.illustrations)
-        self._image_btn = doc(QPushButton("🎨 " + tr("image_gen_btn", default="Illustration")), "tabletop.image")
+        self._image_btn = doc(QPushButton("🎨 " + tr("image_gen_btn")), "tabletop.image")
         self._image_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._image_btn.clicked.connect(self._on_generate_image_clicked)
         right_layout.addWidget(self._image_btn)
@@ -351,7 +348,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._canonize_btn.setText(tr("canonize_btn"))
         self._memory_btn.setText(tr("memory_browser_btn"))
         if hasattr(self, "_image_btn"):
-            self._image_btn.setText("🎨 " + tr("image_gen_btn", default="Illustration"))
+            self._image_btn.setText("🎨 " + tr("image_gen_btn"))
         # NB: les tooltips (doc intégrée) sont retraduits globalement par
         # ui.help_system.retranslate_tooltips() via MainWindow.retranslate_ui().
 
@@ -359,6 +356,21 @@ class TabletopView(HardcoreMixin, QWidget):
         if hasattr(self._sidebar, "retranslate_ui"): self._sidebar.retranslate_ui()
         if hasattr(self._chat, "retranslate_ui"): self._chat.retranslate_ui()
         if hasattr(self._mini_dico, "retranslate_ui"): self._mini_dico.retranslate_ui()
+
+    def _warn_if_other_modpack(self, db_path: str) -> None:
+        """A save opened with another modpack: warn, then let the player go on (DOC §10.3, D15)."""
+        from axiom.savestore import check_save_modpack_compatibility, describe_modpack_differences
+        try:
+            compat = check_save_modpack_compatibility(db_path)
+        except Exception:
+            logger.exception("Modpack check failed for %s", db_path)
+            return
+        if not compat["compatible"]:
+            QMessageBox.warning(
+                self,
+                tr("mods_manager_title"),
+                tr("modpack_mismatch_warning", details=describe_modpack_differences(compat)),
+            )
 
     def load_session(
         self,
@@ -370,6 +382,7 @@ class TabletopView(HardcoreMixin, QWidget):
         """Initialise the tabletop session; constructs workers, never blocks the UI."""
         self._db_path = db_path
         self._save_id = save_id
+        self._warn_if_other_modpack(db_path)
         # We no longer reset _turn_id and _history to 0/empty here;
         # the DB task load_session_history will provide them.
         self._last_chronicle_time = 0
@@ -378,8 +391,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._global_lore = ""
         self._lore_book = []
         self._first_message_shown = False
-        self._fact_pending = []
-        self._fact_turn_counter = 0
         # Multiplayer: never carry a half-filled intent pool across saves/sessions
         # (a failed turn could otherwise make the next save resolve instantly with
         # a previous player's queued action).
@@ -434,7 +445,8 @@ class TabletopView(HardcoreMixin, QWidget):
             return
 
         cfg = load_config()
-        self._llm = build_llm_from_config(cfg)
+        from axiom.session import resolve_llm_backend
+        self._llm = resolve_llm_backend(cfg)
         
         # Update MiniDico's references immediately
         self._mini_dico.configure(
@@ -488,8 +500,10 @@ class TabletopView(HardcoreMixin, QWidget):
         self._first_message = meta.get("first_message", "")
         
         # Load Calendar
-        cal_str = meta.get("calendar_config", "{}")
-        self._time_system = TimeSystem(CalendarConfig.from_json(cal_str))
+        time_svc = _time_service()
+        self._time_system = (
+            time_svc.time_system_from_meta(meta.get("calendar_config", "{}")) if time_svc else None
+        )
         
         # Refresh UI time label with potentially new calendar config
         self._time_label.setText(self._format_time(self._current_time))
@@ -568,7 +582,8 @@ class TabletopView(HardcoreMixin, QWidget):
 
             # Finalize backend objects (LLM)
             cfg = load_config()
-            self._llm = build_llm_from_config(cfg)
+            from axiom.session import resolve_llm_backend
+            self._llm = resolve_llm_backend(cfg)
             
             # Re-configure MiniDico
             self._mini_dico.configure(
@@ -863,13 +878,7 @@ class TabletopView(HardcoreMixin, QWidget):
 
         # Force a DB sync of the sidebar
         self._db_worker.load_full_game_state(self._save_id)
-
-        # TICKET-030 : toggle « Canon auto » (OFF par défaut) — l'histoire du
-        # tour vient enrichir la définition de l'univers, en silence.
-        self._maybe_auto_canonize(narrative_text)
-
-        # Living memory: queue this turn and (every N turns) distil to facts.
-        self._accumulate_and_maybe_extract(narrative_text)
+        # Living memory and « Canon auto » run in Session's post-turn pipeline.
 
     @Slot(int, int)
     def _on_variant_requested(self, turn_id: int, variant_index: int) -> None:
@@ -1094,10 +1103,6 @@ class TabletopView(HardcoreMixin, QWidget):
         self._rewind_in_progress = False
         if self._arbitrator is not None:
             self._arbitrator.invalidate_stats_cache()
-        # Rewound turns must not be re-distilled (their facts were rolled back
-        # atomically by CheckpointManager.rewind).
-        self._fact_pending = []
-        self._fact_turn_counter = 0
         self._resume_turn_id()
         self._db_worker.load_session_history(self._save_id)
         self._db_worker.load_stats(self._save_id)
@@ -1154,28 +1159,15 @@ class TabletopView(HardcoreMixin, QWidget):
         self._canonize_btn.setEnabled(True)
         self._main_window.on_status_update(tr("generation_cancelled"))
 
-    def _maybe_auto_canonize(self, narrative_text: str) -> None:
-        """Toggle « Canon auto » : canonise le dernier tour en silence."""
-        if not self._canon_auto_check.isChecked() or not narrative_text.strip():
-            return
-        if self._canon_busy:
-            return  # la précédente tourne encore (retries 429…) : on saute ce tour
-        self._canon_busy = True
-        self._canon_worker = DbWorker(self._db_path)
-        self._canon_worker.story_canonized.connect(self._on_story_canonized)
-        # Silencieux : une save non liée à un univers-dossier ne spamme pas
-        # d'erreur à chaque tour, juste la barre de statut.
-        self._canon_worker.error_occurred.connect(self._on_canon_silent_error)
-        self._canon_worker.generation_cancelled.connect(self._on_canon_cancelled)
-        self._canon_worker.canonize_story(narrative_text, preview=False)
+    def _on_canon_auto_toggled(self, checked: bool) -> None:
+        from axiom.session import set_auto_canonize
+        cfg = load_config()
+        set_auto_canonize(cfg, checked)
+        save_config(cfg)
 
     # ------------------------------------------------------------------
-    # Living memory — background fact extraction (Phase 2 item 4)
+    # Living memory (distillation runs in Session's post-turn pipeline)
     # ------------------------------------------------------------------
-
-    def _accumulate_and_maybe_extract(self, narrative_text: str) -> None:
-        """No-op: living memory accumulation is handled directly by Session._post_turn_pipeline."""
-        pass
 
     def open_memory_browser(self) -> None:
         """Open the read-only memory browser on the current session.
@@ -1184,11 +1176,10 @@ class TabletopView(HardcoreMixin, QWidget):
         by the current turn. Read-only, so it works even outside living mode (an
         old save may already hold memory to inspect).
         """
-        try:
-            from mods.axiom.living_memory.ui.memory_browser import MemoryBrowserDialog
-            MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
-        except ImportError:
-            pass
+        if _service("living_memory") is None:  # the browser is the axiom.living_memory mod's
+            return
+        from mods.axiom.living_memory.ui.memory_browser import MemoryBrowserDialog
+        MemoryBrowserDialog(self._db_path, self._save_id, self._turn_id, self).exec()
 
     def extract_facts_now(self) -> None:
         """Manual trigger (the settings 'extract now' button).
@@ -1201,76 +1192,12 @@ class TabletopView(HardcoreMixin, QWidget):
         cfg = load_config()
         if not memory_mode_is_living(cfg):
             return
-        from axiom.living_memory import get_living_memory_accumulator
-        get_living_memory_accumulator().run_extract_now(
-            self._db_path,
-            self._save_id,
-            turn_id=self._turn_id,
-            llm=self._llm,
-            force_catchup=True,
-        )
-
-    def _run_fact_extraction(self, cfg) -> None:
-        """Start the background fact worker for the buffered narrative."""
-        if not self._fact_pending or self._llm is None:
-            # Nothing new to distil (or no backend yet): still reset the counter
-            # so the next window starts fresh.
-            self._fact_turn_counter = 0
+        memory = _service("living_memory")
+        if memory is None:
             return
-        if self._fact_worker is not None and self._fact_worker.isRunning():
-            # A previous distillation is still in flight — keep buffering, don't
-            # start a second one. The counter resets so we retry next interval.
-            self._fact_turn_counter = 0
-            return
-
-        # Prefer memory_fact_model, else extraction_model (JSON helper), else
-        # the game narrator. Narrator/reasoning models often return empty JSON
-        # for living-memory distillation (CoT eats the token budget).
-        from axiom.config import resolve_memory_fact_model
-        override = resolve_memory_fact_model(cfg)
-        llm = self._llm
-        if override:
-            try:
-                llm = build_llm_from_config(cfg, model_override=override)
-            except Exception:
-                llm = self._llm
-
-        narrative = "\n\n".join(self._fact_pending)
-        known = [e["name"] for e in self._entities if e.get("name")]
-        when_hint = self._format_time(self._current_time)
-
-        # Drain the buffer and reset the counter now: facts already in flight
-        # must not be re-extracted if more turns arrive meanwhile.
-        self._fact_pending = []
-        self._fact_turn_counter = 0
-
-        from workers.fact_worker import FactExtractWorker
-        self._fact_worker = FactExtractWorker(
-            llm,
-            self._db_path,
-            self._save_id,
-            self._turn_id,
-            narrative,
-            known_entities=known,
-            when_hint=when_hint,
-            consolidate_beliefs=memory_beliefs_active(cfg),
-            refresh_mental_models=memory_mental_models_active(cfg),
+        memory.extract_now(
+            self._db_path, self._save_id, self._turn_id, llm=self._llm, force_catchup=True
         )
-        self._fact_worker.facts_extracted.connect(self._on_facts_extracted)
-        self._fact_worker.status_update.connect(self._main_window.on_status_update)
-        self._fact_worker.error_occurred.connect(self._main_window.on_status_update)
-        self._fact_worker.start()
-
-    @Slot(int)
-    def _on_facts_extracted(self, count: int) -> None:
-        """Report the outcome of a background extraction in the status bar."""
-        if count > 0:
-            self._main_window.on_status_update(tr("memory_extracted_fmt", count=count))
-
-    @Slot(str)
-    def _on_canon_silent_error(self, message: str) -> None:
-        self._canon_busy = False
-        self._main_window.on_status_update(message)
 
     @Slot(dict)
     def _on_story_canonized(self, info: dict) -> None:
@@ -1377,5 +1304,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._last_chronicle_time = current_time
 
     def _format_time(self, total_minutes: int) -> str:
-        """Format total minutes into localized custom calendar string."""
+        """Format total minutes into localized custom calendar string ("" without axiom.time)."""
+        if self._time_system is None:
+            return ""
         return format_time(self._time_system, total_minutes)

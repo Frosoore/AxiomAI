@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from axiom.chronicler import ChroniclerEngine, ChroniclerResult
+from mods.axiom.time.chronicler import ChroniclerEngine, ChroniclerResult
 from axiom.events import EventSourcer
 from axiom.schema import create_universe_db
 from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse

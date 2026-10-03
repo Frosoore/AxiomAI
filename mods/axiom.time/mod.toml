@@ -17,14 +17,15 @@ provides = ["time_system"]
 
 [contributes]
 hooks = [
+    "axiom.step:gather_context",
+    "axiom.step:response_parsed",
     "axiom.step:after_step"
 ]
 slots = [
     "axiom.turn:output_fields",
-    "axiom.turn:prompt_sections",
     "axiom.ui.qt:sidebar_widget"
 ]
 
 [storage]
-timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id" }
-events = { policy = "step_keyed_table", table = "Scheduled_Events", step_column = "trigger_minute" }
+timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id", columns = ["event_id", "save_id", "turn_id", "in_game_time", "description"], id_column = "event_id", id_autoincrement = true }
+fired_events = { policy = "step_keyed_table", table = "Fired_Scheduled_Events", step_column = "fired_turn_id", columns = ["save_id", "event_id", "fired_turn_id"] }

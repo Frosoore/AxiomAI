@@ -63,10 +63,14 @@ def run_save_show(args: argparse.Namespace) -> int:
         print(f"  {eid}:")
         for k, v in stats.items():
             print(f"    {k} = {v}")
-    if state["inventory"]:
-        print("  Inventory:")
-        for it in state["inventory"]:
-            print(f"    {it['entity_id']} × {it['quantity']} {it['item_id']}")
+    # The mods' sections (inventory, modifiers...), as their storage code gives them.
+    kernel_keys = {"save", "point", "entities", "entity_meta", "session_lore", "historical"}
+    for name, rows in state.items():
+        if name in kernel_keys or not isinstance(rows, list) or not rows:
+            continue
+        print(f"  {name.replace('_', ' ').capitalize()}:")
+        for row in rows:
+            print("    " + ", ".join(f"{k}={v}" for k, v in row.items() if v not in (None, "", False)))
     return 0
 
 

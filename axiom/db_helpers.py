@@ -21,6 +21,7 @@ from pathlib import Path
 
 from axiom.logger import logger
 from axiom.schema import get_connection
+from axiom.kernel.patcher import patchable
 
 def apply_stat_preset(db_path: str, preset_name: str) -> int:
     """Apply a stat preset to a universe database.
@@ -377,80 +378,7 @@ def get_current_time(db_path: str, save_id: str) -> int:
         return 0
 
 
-def get_time_of_day_context(total_minutes: int) -> str:
-    """Convert total minutes into a descriptive Day, Time, and Phase string.
-
-    Args:
-        total_minutes: Cumulative in-game minutes.
-
-    Returns:
-        Formatted string: "Day X, HH:MM (Phase)"
-    """
-    days = (total_minutes // 1440) + 1
-    hours = (total_minutes % 1440) // 60
-    mins = total_minutes % 60
-
-    # Determine Phase
-    if 5 <= hours < 8:
-        phase = "Dawn"
-    elif 8 <= hours < 12:
-        phase = "Morning"
-    elif 12 <= hours < 17:
-        phase = "Afternoon"
-    elif 17 <= hours < 21:
-        phase = "Dusk"
-    else:
-        phase = "Night"
-
-    return f"Day {days}, {hours:02d}:{mins:02d} ({phase})"
-
-def get_inventory(db_path: str, save_id: str, entity_id: str) -> list[dict]:
-    """Fetch the inventory for a specific entity in a save (flat, on-person)."""
-    inventory = []
-    try:
-        from axiom.schema import get_connection
-        with get_connection(db_path) as conn:
-            has_inst = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='Item_Instances';"
-            ).fetchone()
-            if has_inst:
-                rows = conn.execute(
-                    """
-                    SELECT i.item_id,
-                           COALESCE(d.name, i.item_id) AS name,
-                           COALESCE(d.description, '') AS description,
-                           COALESCE(d.category, 'misc') AS category,
-                           COALESCE(d.weight, 0) AS weight,
-                           COALESCE(d.rarity, 'common') AS rarity,
-                           i.quantity
-                    FROM Item_Instances i
-                    LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
-                    WHERE i.save_id = ? AND i.holder_kind = 'entity' AND i.holder_id = ?;
-                    """,
-                    (save_id, entity_id),
-                ).fetchall()
-                if rows:
-                    return [dict(r) for r in rows]
-            rows = conn.execute(
-                """
-                SELECT i.item_id,
-                       COALESCE(d.name, i.item_id) AS name,
-                       COALESCE(d.description, '') AS description,
-                       COALESCE(d.category, 'misc') AS category,
-                       COALESCE(d.weight, 0) AS weight,
-                       COALESCE(d.rarity, 'common') AS rarity,
-                       i.quantity
-                FROM Items_Inventory i
-                LEFT JOIN Item_Definitions d ON i.item_id = d.item_id
-                WHERE i.save_id = ? AND i.entity_id = ?;
-                """,
-                (save_id, entity_id)
-            ).fetchall()
-            inventory = [dict(r) for r in rows]
-    except Exception as e:
-        logger.error(f"[DB_HELPERS] Error fetching inventory for {entity_id}: {e}")
-    return inventory
-
+@patchable("axiom.db_helpers:get_spatial_context")
 def get_spatial_context(db_path: str, location_id: str) -> dict:
     """Fetch the breadcrumb path and immediate neighbors for a location.
 
@@ -547,3 +475,75 @@ def create_player_entity(db_path: str, name: str, description: str = "") -> str:
             )
         conn.commit()
     return eid
+
+
+# ---------------------------------------------------------------------------
+# Entity / stat resolution shared by the turn and the mods (LLM aliases)
+# ---------------------------------------------------------------------------
+
+def load_entity_meta(db_path: str) -> dict[str, dict[str, str]]:
+    """entity_id -> {name, entity_type, entity_role} of the active entities."""
+    if not db_path:
+        return {}
+    try:
+        with get_connection(db_path) as conn:
+            cols = {c[1] for c in conn.execute("PRAGMA table_info(Entities);")}
+            role_sel = "entity_role" if "entity_role" in cols else "entity_type"
+            rows = conn.execute(
+                f"SELECT entity_id, name, entity_type, {role_sel} AS entity_role "
+                "FROM Entities WHERE is_active = 1;"
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {
+        r["entity_id"]: {
+            "name": r["name"] or "",
+            "entity_type": r["entity_type"] or "",
+            "entity_role": r["entity_role"] or r["entity_type"] or "",
+        }
+        for r in rows
+    }
+
+
+def resolve_entity_id(
+    raw: str,
+    all_stats: dict[str, dict[str, str]],
+    meta: dict[str, dict[str, str]] | None = None,
+) -> str:
+    """Map an LLM alias (any case, the entity's name, 'player') onto the real entity_id."""
+    raw = str(raw or "").strip()
+    meta = meta or {}
+    if not raw:
+        return raw
+    if raw in all_stats or raw in meta:
+        return raw
+    lower = raw.lower()
+    for eid in list(all_stats) + [k for k in meta if k not in all_stats]:
+        if eid.lower() == lower:
+            return eid
+    for eid, info in meta.items():
+        if (info.get("name") or "").lower() == lower:
+            return eid
+    if lower == "player":
+        players = [
+            eid for eid, info in meta.items()
+            if info.get("entity_role") == "player" or info.get("entity_type") == "player"
+        ]
+        if len(players) == 1:
+            return players[0]
+        if "player" in all_stats or "player" in meta:
+            return "player"
+    return raw
+
+
+def load_defined_stat_names(db_path: str) -> set[str]:
+    """Lowercased names and ids of the universe's stat definitions."""
+    if not db_path:
+        return set()
+    try:
+        with get_connection(db_path) as conn:
+            rows = conn.execute("SELECT name, stat_id FROM Stat_Definitions;").fetchall()
+    except sqlite3.Error:
+        return set()
+    return {str(r[0]).lower() for r in rows if r[0]} | {str(r[1]).lower() for r in rows if r[1]}
+

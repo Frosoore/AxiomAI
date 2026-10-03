@@ -1,42 +1,67 @@
 """mods/axiom.time/main.py
 
 Official mod: axiom.time (Diegetic Time System, Calendar & Off-Screen Chronicler)
-Provides:
-1. Calendar formatting and in-game time calculation.
-2. Slot contribution to axiom.turn:output_fields ("time_elapsed_minutes").
-3. Slot contribution to axiom.turn:prompt_sections (dynamic in-game date & time).
-4. Hook axiom.step:after_step:
-   - Stages Timeline row in TurnWriteBatch
-   - Detects and triggers Scheduled_Events
-   - Triggers Chronicler off-screen world simulation if interval reached
-5. Service "time" registration for UI and engine queries.
+
+All of the in-game time of a turn lives here; without this mod no time passes:
+1. `axiom.step:gather_context`: time of day and scheduled events due now (injected
+   in the narration prompt by the turn).
+2. Output field `elapsed_minutes` (sub-schema + instruction contributed to the
+   turn's JSON block) and, at `axiom.step:response_parsed`, the fallback when the
+   narrator did not say: the Timekeeper (time model), then a default per scene pace.
+3. `axiom.step:after_step`: Timeline row and fired scheduled events staged in the
+   turn's write batch; the Chronicler (off-screen simulation) after the commit.
+4. Service "time" for the UIs (formatting with the universe calendar).
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from axiom.kernel.context import ModContext
 from axiom.logger import logger
+from mods.axiom.time.time_prompts import build_timekeeper_prompt
+from mods.axiom.time.time_system import CalendarConfig, TimeSystem, get_time_of_day_context
 
-try:
-    from mods.axiom.time.time_system import CalendarConfig, TimeSystem
-except (ImportError, ValueError):
-    from axiom.time_system import CalendarConfig, TimeSystem
+#: Minutes of a turn when neither the narrator nor the Timekeeper said (per scene pace).
+PACE_DEFAULT_MINUTES = {
+    "combat": 2,
+    "dialogue": 5,
+    "conversation": 5,
+    "exploration": 15,
+    "travel": 60,
+    "deliberate": 15,
+    "montage": 60,
+    "tension": 10,
+}
 
 
 class TimeService:
     """Public service exposed by axiom.time to the engine and UIs."""
 
     @staticmethod
-    def format_time(db_path: str, minute: int) -> str:
+    def get_calendar(db_path: str) -> CalendarConfig:
         from axiom.schema import get_connection
+        with get_connection(db_path) as conn:
+            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'calendar_config';").fetchone()
+        return CalendarConfig.from_json(row[0] if row and row[0] else "{}")
+
+    @classmethod
+    def time_system(cls, db_path: str) -> TimeSystem:
+        return TimeSystem(cls.get_calendar(db_path))
+
+    @staticmethod
+    def time_system_from_meta(calendar_json: str | None) -> TimeSystem:
+        """TimeSystem of a universe from its stored calendar (Universe_Meta['calendar_config'])."""
+        return TimeSystem(CalendarConfig.from_json(calendar_json or "{}"))
+
+    @classmethod
+    def format_time(cls, db_path: str, minute: int) -> str:
         try:
-            with get_connection(db_path) as conn:
-                row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'calendar';").fetchone()
-                cal_str = row[0] if row and row[0] else "{}"
-            return TimeSystem(CalendarConfig.from_json(cal_str)).get_time_string(minute)
+            return cls.time_system(db_path).get_time_string(minute)
         except Exception:
+            logger.exception("[axiom.time] Could not format minute %s", minute)
             return str(minute)
 
     @staticmethod
@@ -45,118 +70,150 @@ class TimeService:
         return get_current_time(db_path, save_id)
 
     @staticmethod
-    def get_calendar(db_path: str) -> Any:
-        from axiom.schema import get_connection
-        with get_connection(db_path) as conn:
-            row = conn.execute("SELECT value FROM Universe_Meta WHERE key = 'calendar';").fetchone()
-            cal_str = row[0] if row and row[0] else "{}"
-        return CalendarConfig.from_json(cal_str)
+    def time_of_day(minute: int) -> str:
+        return get_time_of_day_context(minute)
+
+
+# ---------------------------------------------------------------------------
+# Turn
+# ---------------------------------------------------------------------------
+
+def on_gather_context(ctx: Any) -> None:
+    """Time of day and the scheduled events due now (narrated this turn, fired with it)."""
+    ctx.time_ctx = get_time_of_day_context(ctx.total_mins)
+    ctx.triggered_events = []
+    db_path = getattr(ctx, "db_path", "")
+    if not db_path:
+        return
+    from axiom.schema import get_connection
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT e.event_id, e.title, e.description
+            FROM Scheduled_Events e
+            LEFT JOIN Fired_Scheduled_Events f ON e.event_id = f.event_id AND f.save_id = ?
+            WHERE e.trigger_minute <= ? AND f.event_id IS NULL;
+            """,
+            (ctx.save_id, ctx.total_mins),
+        ).fetchall()
+    ctx.triggered_events = [dict(r) for r in rows]
 
 
 def on_time_elapsed(val: Any, ctx: Any) -> None:
-    """Handler for output_fields 'time_elapsed_minutes' / 'elapsed_minutes'."""
+    """Output field `elapsed_minutes`: the narrator's own estimate."""
     try:
-        mins = int(val)
-        if mins < 0:
-            mins = 0
-        ctx.elapsed_minutes = mins
-        ctx.new_time = ctx.total_mins + mins
+        mins = max(0, int(val))
     except (ValueError, TypeError):
-        pass
+        return
+    ctx.elapsed_minutes = mins
+    ctx.new_time = ctx.total_mins + mins
+    ctx.time_from_narrator = True
 
 
-def build_time_prompt_section(ctx: Any) -> dict[str, str]:
-    """Generates prompt section with current in-game time and instructions."""
-    db_path = getattr(ctx, "db_path", "")
-    current_time = getattr(ctx, "total_mins", 0)
-    formatted = TimeService.format_time(db_path, current_time) if db_path else str(current_time)
-    text = (
-        f"IN-GAME TIME: Current date/time is {formatted} (minute {current_time}).\n"
-        f"In your tool_call JSON, include \"time_elapsed_minutes\": <int> to specify how "
-        f"many minutes of in-game time elapsed during the actions in this turn."
-    )
-    return {
-        "position": "system",
-        "text": text,
-        "depth": 5,
-    }
+def _ask_timekeeper(ctx: Any) -> int | None:
+    llm = getattr(ctx, "time_llm", None) or getattr(ctx, "llm", None)
+    if llm is None:
+        return None
+    prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
+    try:
+        resp = llm.complete(prompt, max_tokens=150, temperature=0.1)
+    except Exception as err:
+        logger.error("[axiom.time] Timekeeper failed: %s", err)
+        return None
+    data = getattr(resp, "tool_call", None) or {}
+    if not data:
+        match = re.search(r"\{.*\}", getattr(resp, "narrative_text", str(resp)) or "", re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                data = {}
+    try:
+        return int(data["elapsed_minutes"]) if isinstance(data, dict) and "elapsed_minutes" in data else None
+    except (TypeError, ValueError):
+        return None
+
+
+def on_response_parsed(ctx: Any) -> None:
+    """The narrator gave no time: ask the Timekeeper, else use the scene pace default."""
+    if getattr(ctx, "time_from_narrator", False):
+        return
+    legacy = (getattr(ctx, "parsed_tool_call", None) or {}).get("time_elapsed_minutes")
+    if legacy is not None:  # key asked by older prompts; read, not requested anymore
+        on_time_elapsed(legacy, ctx)
+        if getattr(ctx, "time_from_narrator", False):
+            return
+    from axiom.config import load_config
+    elapsed = _ask_timekeeper(ctx) if load_config().timekeeper_enabled else None
+    if elapsed is None:
+        elapsed = PACE_DEFAULT_MINUTES.get(ctx.scene_pace, 15)
+    ctx.elapsed_minutes = max(0, elapsed)
+    ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
 
 
 def on_after_step(ctx: Any) -> None:
-    """Hook: axiom.step:after_step.
-    
-    1. Stages Timeline entry.
-    2. Checks Scheduled_Events.
-    3. Triggers off-screen Chronicler simulation if scheduled.
-    """
-    # 1. Timeline row
-    timeline_desc = getattr(ctx, "travel_note", None) or f"Turn advanced by {ctx.elapsed_minutes} mins"
-    ctx.write_batch.timeline_entries.append((ctx.save_id, ctx.turn_id, ctx.new_time, timeline_desc))
+    """Timeline row, fired scheduled events (staged with the turn), Chronicler."""
+    description = getattr(ctx, "travel_note", None) or f"Turn advanced by {ctx.elapsed_minutes} mins"
+    new_time = ctx.new_time
+    fired = [str(ev["event_id"]) for ev in getattr(ctx, "triggered_events", []) or []]
 
-    # 2. Check and stage Scheduled_Events
-    db_path = getattr(ctx, "db_path", "")
-    if db_path:
-        try:
-            from axiom.schema import get_connection
-            with get_connection(db_path) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT e.event_id
-                    FROM Scheduled_Events e
-                    LEFT JOIN Fired_Scheduled_Events f ON e.event_id = f.event_id AND f.save_id = ?
-                    WHERE e.trigger_minute <= ? AND f.event_id IS NULL;
-                    """,
-                    (ctx.save_id, ctx.new_time),
-                ).fetchall()
-                for r in rows:
-                    eid = str(r[0])
-                    if eid not in ctx.write_batch.fired_scheduled_events:
-                        ctx.write_batch.fired_scheduled_events.append(eid)
-        except Exception as err:
-            logger.debug("axiom.time: Scheduled_Events query skipped: %s", err)
-
-    # 3. Off-screen world simulation (Chronicler)
-    if db_path:
-        try:
-            from axiom.config import load_config
-            cfg = load_config()
-            interval = getattr(cfg, "chronicler_minutes_interval", 60)
-            from axiom.chronicler import ChroniclerEngine
-            from axiom.events import EventSourcer
-
-            chronicler = ChroniclerEngine(
-                llm=getattr(ctx, "llm", None),
-                event_sourcer=EventSourcer(db_path),
-                db_path=db_path,
-                trigger_interval=interval,
+    def write(conn: Any, save_id: str, turn_id: int) -> None:
+        conn.execute(
+            "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) VALUES (?, ?, ?, ?);",
+            (save_id, turn_id, new_time, description),
+        )
+        if fired:
+            from axiom.schema import ensure_fired_event_turn_column
+            ensure_fired_event_turn_column(conn)
+            conn.executemany(
+                "INSERT OR IGNORE INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id) "
+                "VALUES (?, ?, ?);",
+                [(save_id, eid, turn_id) for eid in fired],
             )
-            if chronicler.should_trigger(ctx.new_time, ctx.total_mins):
-                ctx.write_batch.post_commit_callbacks.append(
-                    lambda: chronicler.run(ctx.save_id, ctx.turn_id)
-                )
-        except Exception as err:
-            logger.debug("axiom.time: Chronicler check skipped: %s", err)
+
+    ctx.write_batch.stage_op(write)
+
+    # Off-screen world simulation, after the commit.
+    db_path = getattr(ctx, "db_path", "")
+    if not db_path:
+        return
+    from axiom.config import load_config
+    from axiom.events import EventSourcer
+    from mods.axiom.time.chronicler import ChroniclerEngine
+
+    chronicler = ChroniclerEngine(
+        llm=getattr(ctx, "llm", None),
+        event_sourcer=EventSourcer(db_path),
+        db_path=db_path,
+        trigger_interval=getattr(load_config(), "chronicler_minutes_interval", 60),
+    )
+    if chronicler.should_trigger(ctx.new_time, ctx.total_mins):
+        save_id, turn_id = ctx.save_id, ctx.turn_id
+        ctx.write_batch.post_commit_callbacks.append(lambda: chronicler.run(save_id, turn_id))
+
+
+ELAPSED_FIELD = {
+    "name": "elapsed_minutes",
+    "schema": 5,
+    "instruction": (
+        "Give the in-game minutes this turn took (integer: a short exchange 1-5, "
+        "an action scene 10-30, a journey 60+)."
+    ),
+    "handler": on_time_elapsed,
+}
 
 
 def init(ctx: ModContext) -> None:
     """Mod entry point."""
-    # Expose public service
     ctx.register_service("time", TimeService())
-
-    # Output fields routing
-    ctx.contribute_slot("axiom.turn:output_fields", ("time_elapsed_minutes", on_time_elapsed))
-    ctx.contribute_slot("axiom.turn:output_fields", ("elapsed_minutes", on_time_elapsed))
-
-    # Dynamic prompt sections
-    ctx.contribute_slot("axiom.turn:prompt_sections", build_time_prompt_section)
-
-    # Lifecycle hook
+    ctx.contribute_slot("axiom.turn:output_fields", ELAPSED_FIELD)
+    ctx.register_hook("axiom.step:gather_context", on_gather_context)
+    ctx.register_hook("axiom.step:response_parsed", on_response_parsed)
     ctx.register_hook("axiom.step:after_step", on_after_step)
 
     # Contribute sidebar widget to axiom.ui.qt
     try:
         from mods.axiom.time.ui.timeline_view import TimelineView
         ctx.contribute_slot("axiom.ui.qt:sidebar_widget", TimelineView)
-    except Exception as exc:
-        logger.debug("[axiom.time] Could not load TimelineView: %s", exc)
-
+    except ImportError as exc:
+        logger.debug("[axiom.time] Qt timeline view unavailable: %s", exc)

@@ -32,7 +32,8 @@
 | TICKET-103| **`fork_save --turn` copie `Fired_Scheduled_Events` et `Session_Lore` postérieurs au point de fork** | ouvert — arbitrage mods 2026-09-26, mineur |
 | TICKET-104| **`regenerate.py` : `.replace` d'une consigne absente** → bloc JSON stocké dans les variantes et renvoyé au LLM | ouvert — arbitrage mods 2026-09-26, mineur, reproduit |
 | TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ouvert — arbitrage mods 2026-09-26, mineur |
-| TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | ✅ résolu (2026-09-30) — tous les mods officiels contiennent leur code et se détachent totalement du noyau |
+| TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | 🔄 rouvert (audit 2026-10-03 : résolu à tort en sept.) → ✅ résolu Phase 2 vrai déplacement |
+| TICKET-107| **11 clés de traduction manquantes dans les réglages et éditeurs Qt** (`settings_dialog`, `stat_editor`, `entity_editor`) | ouvert — i18n, repéré audit oct. 2026 |
 
 Tickets 100→106 : issus du cadrage du système de mods (`Mods/`). Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -531,14 +532,34 @@ vit sur `self._pending_correction` (`axiom/arbitrator.py:152,450,465,1731-1734`)
 Un mod officiel ne doit pas seulement masquer des éléments d'interface via un toggle ou des conditions `if is_mod_enabled(...)` dans le code du noyau.
 Le mod doit **contenir** l'intégralité de son code fonctionnel, et sa désactivation doit signifier le **détachement total** du code du noyau (zero overhead, aucun listener ou hook résiduel sur l'application hôte).
 
-**État :** ✅ **RÉSOLU (2026-09-30)**
-- `axiom.sillytavern` : suppression du fallback doublon dans `core/st_parser.py`, délégation stricte au mod.
-- `axiom.illustrations` : implémentation canonique `ImageGenerator` transférée dans `mods/axiom.illustrations/image_generator.py`.
-- `axiom.inventory` : implémentation canonique déplacée dans `mods/axiom.inventory/inventory.py`.
-- `axiom.time` : calendrier et dynamique diegétique déplacés dans `mods/axiom.time/time_system.py`.
-- `core.stat_dynamics` : dynamique des statistiques déplacée dans `mods/core.stat_dynamics/stat_dynamics.py`.
-- `axiom.living_memory` : accumulateur cognitif déplacé dans `mods/axiom.living_memory/living_memory.py`.
-- Shims de rétrocompatibilité dans `axiom/` utilisant des imports dynamiques `importlib` (étanchéité headless `check_headless` validée à 0 violation).
-- Archives `.axmod` et SHA-256 synchronisés dans `dist/mods/store_index.json`.
-- Suivi et documentation : `maintenance/Mods/audit-and-fix-mods-decoupling/`.
+**Historique et rectification (2026-10-03) :**
+- Marqué « RÉSOLU » le 2026-09-30 à tort : le code avait en fait été rapatrié dans `axiom/` avec de faux shims `importlib`, et le noyau continuait d'exécuter l'inventaire, les modificateurs et le temps en dur.
+- **RÉELLEMENT RÉSOLU (Phase 2 vrai déplacement — octobre 2026) :**
+  - Code fonctionnel extrait intégralement dans `mods/` (`axiom.illustrations`, `axiom.time`, `core.stat_dynamics`, `axiom.inventory`, `axiom.living_memory`).
+  - Zéro import de mod dans le noyau (`axiom/`) : `tests/test_engine_headless.py` vérifié avec 0 violation `check_headless`.
+  - Politiques `[storage]` `custom` : gestionnaires `rewind` / `fork` / `snapshot` exécutés depuis `storage.py` pour tout mod installé, même décoché, garantissant l'intégrité des sauvegardes.
+  - Décoché = zéro hook, zéro slot, zéro prompt exécuté au tour.
+  - `axiom.providers` seule source d'IA (safe mode inclus, message clair sans fallback noyau).
+  - Suivi : `maintenance/Mods/phase-2-vrai-deplacement/`.
+
+---
+
+## TICKET-107 — 11 clés de traduction manquantes dans les réglages et éditeurs Qt
+
+**Découvert lors de l'audit réel du 2026-10-03** :
+Onze clés appelées par `tr("...")` dans l'interface Qt ne figurent pas dans `core/locales/en.toml` (et sont donc absentes dans l'ensemble des 10 langues gérées). Elles s'affichent brutes ou causent des avertissements.
+
+**Clés identifiées (11, vérifiées dans le code le 2026-10-03) :**
+- `mods/axiom.ui.qt/ui/settings_dialog.py` (liste des modèles) — **affichées brutes** : `select_model`,
+  `filter_models_placeholder`, `model_list_error`, `unknown_error`.
+- Avec un texte de repli en dur dans le code (jamais traduites, avertissement au log) :
+  `apply_preset_tooltip` (`widgets/stat_definition_editor.py`), `select_stats` (`widgets/entity_editor.py`),
+  `dice_box_title` (`widgets/dice_box.py`), `importing_st` / `importing_universe` (`hub_view.py`),
+  `question` (`widgets/story_setup_editor.py`), `quantity` (`mods/axiom.inventory/ui/inventory_view.py`).
+- Plusieurs manquaient déjà sur `main` (hors chantier mods).
+
+**Action requise :**
+Ajouter ces 11 clés avec leurs textes de référence dans `core/locales/en.toml`, puis propager dans les 9 autres langues (`fr.toml`, `de.toml`, `es.toml`, etc.).
+**Priorité :** moyenne (qualité visuelle et i18n de l'application Qt).
+
 

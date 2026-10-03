@@ -30,5 +30,5 @@ patches = []
 "axiom.turn:llm_backend" = { rule = "exclusive" }
 
 [storage]
-event_log = { policy = "events" }
-timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id" }
+# Narration, player input and correction hints are events of the kernel journal.
+journal = { policy = "events" }

@@ -5,9 +5,9 @@ helper that picks which subjects a consolidation batch touched. No network.
 """
 
 from axiom.backends.base import LLMResponse
-from axiom.consolidate import ConsolidationAction
-from axiom.observations import Observation
-from axiom.reflect import MIN_BELIEFS_FOR_MODEL, affected_subjects, reflect
+from mods.axiom.living_memory.consolidate import ConsolidationAction
+from mods.axiom.living_memory.observations import Observation
+from mods.axiom.living_memory.reflect import MIN_BELIEFS_FOR_MODEL, affected_subjects, reflect
 
 
 class _FakeLLM:

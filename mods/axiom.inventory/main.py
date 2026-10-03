@@ -12,33 +12,20 @@ Provides:
 from __future__ import annotations
 
 from typing import Any
+import sqlite3
 
-try:
-    from mods.axiom.inventory.inventory import (
-        _holder_exists,
-        _slug_item_id,
-        add_item,
-        ensure_item_definition,
-        format_inventory_prompt,
-        list_instances,
-        load_inventory_tree,
-        move_item,
-        remove_item,
-        snapshot_present_inventory,
-    )
-except (ImportError, ValueError):
-    from axiom.inventory import (
-        _holder_exists,
-        _slug_item_id,
-        add_item,
-        ensure_item_definition,
-        format_inventory_prompt,
-        list_instances,
-        load_inventory_tree,
-        move_item,
-        remove_item,
-        snapshot_present_inventory,
-    )
+from mods.axiom.inventory.inventory import (
+    _holder_exists,
+    _slug_item_id,
+    add_item,
+    ensure_item_definition,
+    format_inventory_prompt,
+    list_instances,
+    load_inventory_tree,
+    move_item,
+    remove_item,
+    snapshot_present_inventory,
+)
 from axiom.kernel.context import ModContext
 from axiom.kernel.registry import SlotRule
 from axiom.logger import logger
@@ -47,6 +34,12 @@ from axiom.schema import get_connection
 
 class InventoryService:
     """Public service exposed by axiom.inventory to the engine and UIs."""
+
+    @staticmethod
+    def entity_items(db_path: str, save_id: str, entity_id: str) -> list[dict[str, Any]]:
+        """Items carried by one entity (flat, on-person)."""
+        from mods.axiom.inventory.inventory import entity_inventory
+        return entity_inventory(db_path, save_id, entity_id)
 
     @staticmethod
     def load_tree(db_path: str, save_id: str) -> list[dict[str, Any]]:
@@ -216,18 +209,107 @@ def handle_inventory_changes(raw_changes: Any, ctx: Any) -> None:
     save_id = getattr(ctx, "save_id", "")
     default_player = getattr(ctx, "player_entity_id", "player")
 
+    rejections: list[str] = []
+    valid_changes: list[dict[str, Any]] = []
     for change in raw_changes:
         if not isinstance(change, dict):
             continue
         valid, reason = validate_inventory_change(db_path, save_id, change, default_player)
         if valid:
-            ctx.write_batch.inventory_mutations.append(dict(change))
+            valid_changes.append(dict(change))
+            ctx.inventory_changes.append(change)
             action = change.get("action", "")
             target = change.get("item_id", "")
-            ctx.write_batch.events.append((ctx.save_id, ctx.turn_id, f"inventory_{action}", target, change))
-            ctx.inventory_changes.append(change)
+            if hasattr(ctx, "write_batch") and hasattr(ctx.write_batch, "stage_event"):
+                ctx.write_batch.stage_event(
+                    f"inventory_{action}",
+                    change,
+                    target_entity=target or "system",
+                )
+            elif hasattr(ctx, "write_batch") and hasattr(ctx.write_batch, "events"):
+                ctx.write_batch.events.append((ctx.save_id, ctx.turn_id, f"inventory_{action}", target, change))
         else:
+            msg = f"Inventory change rejected: {reason}"
+            rejections.append(msg)
             logger.debug("[axiom.inventory] Change rejected: %s (%s)", change, reason)
+
+    if valid_changes and hasattr(ctx, "write_batch") and hasattr(ctx.write_batch, "stage_op"):
+        def _apply_inventory_op(conn: sqlite3.Connection, sid: str, tid: int) -> None:
+            from mods.axiom.inventory.inventory import (
+                InventoryError,
+                add_item,
+                inventory_at,
+                move_item,
+                remove_item,
+                snapshot_inventory,
+            )
+            if tid >= 1:
+                if inventory_at(conn, sid, tid - 1) is None:
+                    snapshot_inventory(conn, sid, tid - 1)
+            for ch in valid_changes:
+                action = ch.get("action")
+                item_id = ch.get("item_id")
+                quantity = int(ch.get("quantity", 1))
+                holder_kind = ch.get("holder_kind") or "entity"
+                holder_id = ch.get("holder_id") or ch.get("entity_id") or ""
+                try:
+                    pending = ch.pop("_pending_container", None)
+                    if pending:
+                        inst = add_item(
+                            conn,
+                            sid,
+                            pending["item_id"],
+                            quantity=1,
+                            holder_kind=pending["holder_kind"],
+                            holder_id=pending["holder_id"],
+                            name=pending["name"],
+                            is_container=True,
+                        )
+                        holder_kind, holder_id = "instance", inst
+                        ch["holder_kind"] = holder_kind
+                        ch["holder_id"] = holder_id
+                    if action == "add":
+                        add_item(
+                            conn,
+                            sid,
+                            item_id,
+                            quantity=quantity,
+                            holder_kind=holder_kind,
+                            holder_id=holder_id,
+                            name=str(ch.get("name") or ""),
+                            is_container=bool(ch.get("is_container")),
+                        )
+                    elif action == "remove":
+                        remove_item(
+                            conn,
+                            sid,
+                            item_id=item_id,
+                            holder_kind=holder_kind,
+                            holder_id=holder_id,
+                            quantity=quantity,
+                        )
+                    elif action == "move":
+                        dest_kind = str(ch.get("dest_holder_kind") or holder_kind)
+                        dest_id = str(ch.get("dest_holder_id") or holder_id)
+                        instance_id = ch.get("instance_id")
+                        if instance_id:
+                            move_item(
+                                conn,
+                                sid,
+                                instance_id,
+                                dest_kind,
+                                dest_id,
+                                quantity=quantity,
+                            )
+                except InventoryError as exc:
+                    logger.warning("[axiom.inventory] Inventory apply failed: %s", exc)
+
+        ctx.write_batch.stage_op(_apply_inventory_op)
+
+    if rejections:
+        queue = getattr(ctx, "queue_correction", None)
+        if callable(queue):
+            queue("; ".join(rejections))
 
 
 def build_inventory_prompt_section(ctx: Any) -> dict[str, str] | None:
@@ -259,8 +341,33 @@ def init(ctx: ModContext) -> None:
     # Declare slots
     ctx.declare_slot("axiom.inventory:actions", SlotRule.COLLECT)
 
-    # Contribute to axiom.turn slots
-    ctx.contribute_slot("axiom.turn:output_fields", ("inventory_changes", handle_inventory_changes))
+    # Contribute to axiom.turn slots (M5 structured output)
+    ctx.contribute_slot(
+        "axiom.turn:output_fields",
+        {
+            "name": "inventory_changes",
+            "schema": [
+                {
+                    "entity_id": "...",
+                    "item_id": "...",
+                    "action": "add",
+                    "quantity": 1,
+                    "container_name": "",
+                    "location_id": "",
+                    "is_container": False,
+                }
+            ],
+            "instruction": (
+                "When a character picks up, buys, is given, stores, or loses a physical object, "
+                "emit inventory_changes. Use action \"add\", \"remove\", or \"move\", a snake_case item_id, "
+                "and quantity. New items are allowed — invent a short item_id from the object name. "
+                "Put carried items on the entity (entity_id). Put stashed items in a container "
+                "(container_name like \"purse\" or \"nightstand_drawer\") and/or a location_id. "
+                "Mark bags, purses, drawers, boxes with is_container true."
+            ),
+            "handler": handle_inventory_changes,
+        },
+    )
     ctx.contribute_slot("axiom.turn:prompt_sections", build_inventory_prompt_section)
 
     # Contribute sidebar widget to axiom.ui.qt

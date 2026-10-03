@@ -19,7 +19,7 @@ import pytest
 from axiom.compile import CompileError, compile_universe, hash_directory
 from axiom.decompile import decompile_universe, read_definition
 from axiom.schema import create_universe_db
-from axiom.time_system import CalendarConfig
+from mods.axiom.time.time_system import CalendarConfig
 
 
 # ---------------------------------------------------------------------------

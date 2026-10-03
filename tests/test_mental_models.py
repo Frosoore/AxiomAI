@@ -10,14 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from axiom import mental_models as mm
+from mods.axiom.living_memory import recall
+
 from axiom.config import (
     AppConfig,
     memory_beliefs_active,
     memory_mental_models_active,
 )
-from axiom.mental_models import MentalModel
 from axiom.schema import create_universe_db, get_connection
+from mods.axiom.living_memory import mental_models as mm
+from mods.axiom.living_memory.mental_models import MentalModel
 
 
 @pytest.fixture
@@ -112,23 +114,17 @@ class TestRewindIntegration:
 
 
 class TestArbitratorModelInjection:
-    def _arb(self, db_path: str):
-        from axiom.arbitrator import ArbitratorEngine
-        return ArbitratorEngine(db_path, [])
-
     def test_prioritises_on_scene_then_recent_and_bounds_turn(self, db_path: str) -> None:
         mm.upsert_mental_model(db_path, "s1", "Merchant", "Resents the player.", 4)
         mm.upsert_mental_model(db_path, "s1", "", "The city is tense.", 6)
         mm.upsert_mental_model(db_path, "s1", "Guard", "Loyal future profile.", 12)
-        lines = self._arb(db_path)._fetch_relevant_mental_models(
-            "s1", max_turn_id=10, on_scene=["Merchant"], limit=5)
+        lines = recall.relevant_mental_models(db_path, "s1", max_turn_id=10, on_scene=["Merchant"], limit=5)
         assert lines[0] == "Merchant: Resents the player."
         assert "The city is tense." in lines  # world model has no label
         assert all("Loyal future profile." not in s for s in lines)  # turn 12 bound
 
     def test_empty_when_none(self, db_path: str) -> None:
-        assert self._arb(db_path)._fetch_relevant_mental_models(
-            "s1", max_turn_id=10, on_scene=["X"], limit=5) == []
+        assert recall.relevant_mental_models(db_path, "s1", max_turn_id=10, on_scene=["X"], limit=5) == []
 
 
 class TestConfigGate:

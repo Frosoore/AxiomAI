@@ -5,9 +5,11 @@ axiom_api = 1
 name = "Interface Terminal CLI"
 description = "Expérience de jeu textuelle interactive dans le terminal."
 author = "Vanilla"
+# Loaded in safe mode (recovery: interface + minimal chat, nothing else).
+safe_mode = true
 
 [dependencies]
-"axiom.turn" = ">=1.0.0"
+"turn_pipeline" = ">=1.0.0"
 
 [ordering]
 provides = ["user_interface"]

@@ -1,5 +1,5 @@
 """
-axiom/image_generator.py
+mods/axiom.illustrations/image_generator.py
 
 Image generator engine for Axiom AI.
 Translates game/narrative context into visual prompts using the LLM and calls

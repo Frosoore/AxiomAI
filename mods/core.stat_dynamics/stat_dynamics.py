@@ -1,4 +1,4 @@
-"""Temporary-stat dynamics — authored profiles the engine ticks itself.
+"""mods/core.stat_dynamics/stat_dynamics.py — temporary-stat dynamics, authored profiles the engine ticks itself.
 
 A stat is temporary when the author checks it, or when play-start inference
 classifies it. The profile lives in ``Stat_Definitions.parameters`` (no new
@@ -24,6 +24,7 @@ from typing import Any
 
 from axiom.events import resolve_stat_key
 from axiom.schema import get_connection
+from axiom.universe_format import fold_stat_parameters
 
 KINDS = ("heal", "buildup", "duration")
 PACES = ("fast", "medium", "slow")
@@ -98,26 +99,9 @@ def _tags(raw: Any) -> list[str]:
 
 
 def fold_into_parameters(entry: dict[str, Any]) -> dict[str, Any]:
-    """Lift top-level TOML ``temporary`` / ``dynamics`` into ``parameters``."""
-    params = _as_dict(entry.get("parameters"))
-    if "temporary" in entry:
-        params["temporary"] = bool(entry["temporary"])
-    dyn = params.get("dynamics")
-    if not isinstance(dyn, dict):
-        dyn = {}
-    if isinstance(entry.get("dynamics"), dict):
-        dyn = {**dyn, **entry["dynamics"]}
-    for key in (
-        "kind", "pace", "resting", "heal_minutes", "peak_hold_minutes",
-        "crash_on", "extend_on", "basis",
-    ):
-        if key in entry:
-            dyn[key] = entry[key]
-    if dyn:
-        params["dynamics"] = dyn
-        if "temporary" not in params:
-            params["temporary"] = True
-    return params
+    """Lift top-level TOML ``temporary`` / ``dynamics`` into ``parameters``
+    (the universe format, owned by the kernel compiler)."""
+    return fold_stat_parameters(entry)
 
 
 def parse_dynamics(parameters: Any) -> dict[str, Any] | None:

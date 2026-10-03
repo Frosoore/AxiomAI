@@ -12,28 +12,11 @@ from typing import Any
 from axiom.kernel.context import ModContext
 from axiom.rules import RulesEngine
 from axiom.schema import get_connection
+from axiom.db_helpers import load_defined_stat_names, load_entity_meta, resolve_entity_id
 from axiom.textfmt import fmt_num
 
 
 NATIVE_ENTITY_TYPES = ["player", "npc", "faction", "world"]
-
-
-def _load_defined_stats(db_path: str) -> set[str]:
-    """Load canonical lowercase stat names and IDs defined in universe."""
-    if not db_path:
-        return set()
-    try:
-        with get_connection(db_path) as conn:
-            rows = conn.execute("SELECT stat_id, name FROM Stat_Definitions;").fetchall()
-        defined = set()
-        for r in rows:
-            if r["stat_id"]:
-                defined.add(str(r["stat_id"]).lower())
-            if r["name"]:
-                defined.add(str(r["name"]).lower())
-        return defined
-    except Exception:
-        return set()
 
 
 def _load_rules(db_path: str) -> list[dict[str, Any]]:
@@ -47,65 +30,16 @@ def _load_rules(db_path: str) -> list[dict[str, Any]]:
         return []
 
 
-def _load_entity_meta(db_path: str) -> dict[str, dict[str, str]]:
-    """entity_id -> {name, entity_type, entity_role} of active entities (alias resolution)."""
-    if not db_path:
-        return {}
-    try:
-        with get_connection(db_path) as conn:
-            cols = {c[1] for c in conn.execute("PRAGMA table_info(Entities);")}
-            role_sel = "entity_role" if "entity_role" in cols else "entity_type"
-            rows = conn.execute(
-                f"SELECT entity_id, name, entity_type, {role_sel} AS entity_role "
-                "FROM Entities WHERE is_active = 1;"
-            ).fetchall()
-        return {
-            r["entity_id"]: {
-                "name": r["name"] or "",
-                "entity_type": r["entity_type"] or "",
-                "entity_role": r["entity_role"] or r["entity_type"] or "",
-            }
-            for r in rows
-        }
-    except sqlite3.Error:
-        return {}
-
-
-def _resolve_entity_id(
-    raw_id: str,
-    all_stats: dict[str, dict[str, str]],
-    meta: dict[str, dict[str, str]] | None = None,
-) -> str:
-    """Map LLM aliases (case, display name, 'player') onto the real entity_id."""
-    meta = meta or {}
-    raw = str(raw_id or "").strip()
-    if not raw:
-        return raw
-    if raw in all_stats or raw in meta:
-        return raw
-    lower = raw.lower()
-    for eid in list(all_stats) + [k for k in meta if k not in all_stats]:
-        if eid.lower() == lower:
-            return eid
-    for eid, info in meta.items():
-        if (info.get("name") or "").lower() == lower:
-            return eid
-    if lower == "player":
-        players = [
-            eid for eid, info in meta.items()
-            if info.get("entity_role") == "player" or info.get("entity_type") == "player"
-        ]
-        if len(players) == 1:
-            return players[0]
-        if "player" in all_stats or "player" in meta:
-            return "player"
-    return raw
-
-
 def _resolve_stat_key(raw_key: str, entity_stats: dict[str, str]) -> str:
     """Prefer the entity's authored key (Sample) over a definition id (sample)."""
     from axiom.events import resolve_stat_key
     return resolve_stat_key(str(raw_key or "").strip(), entity_stats)
+
+
+# Alias resolution shared with the turn and the other mods (kernel helpers).
+_load_defined_stats = load_defined_stat_names
+_load_entity_meta = load_entity_meta
+_resolve_entity_id = resolve_entity_id
 
 
 def _stat_allowed_for_entity(db_path: str, entity_id: str, stat_key: str) -> bool:

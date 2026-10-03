@@ -2,9 +2,10 @@
 axiom/turn_batch.py
 
 Transactional turn write batch for Axiom AI.
-Stages all turn mutations in memory (events, timeline, lore, inventory,
-modifiers, scheduled events, state cache) and commits them atomically
-to SQLite at the very end of the turn.
+Stages all turn mutations in memory (events, session lore, the mods' own
+writes via ``stage_op``, mods' key-values) and commits them atomically to
+SQLite at the very end of the turn, followed by the end-of-turn snapshots of
+every declared storage.
 """
 
 from __future__ import annotations
@@ -29,13 +30,49 @@ class TurnWriteBatch:
 
     events: list[Any] = field(default_factory=list)
     stat_changes: list[dict[str, Any]] = field(default_factory=list)
-    inventory_mutations: list[Any] = field(default_factory=list)
-    timeline_entries: list[Any] = field(default_factory=list)
     lore_entries: list[Any] = field(default_factory=list)
-    modifier_mutations: list[dict[str, Any]] = field(default_factory=list)
-    fired_scheduled_events: list[str] = field(default_factory=list)
+    # Writes of mods into their own tables: fn(conn, save_id, turn_id), run in order
+    # inside the turn's transaction (all-or-nothing with the rest of the turn).
+    staged_ops: list[Callable[[sqlite3.Connection, str, int], None]] = field(default_factory=list)
     post_commit_callbacks: list[Callable[[], None]] = field(default_factory=list)
+    # Mods' versioned key-values (ctx.store): (mod_id, key, value_json | None, step).
+    kv_writes: list[tuple[str, str, str | None, int]] = field(default_factory=list)
     committed: bool = False
+
+    def stage_op(self, op: Callable[[sqlite3.Connection, str, int], None]) -> None:
+        """Stage a write ``op(conn, save_id, turn_id)``, run inside the turn's transaction."""
+        self.staged_ops.append(op)
+
+    def stage_kv(self, mod_id: str, key: str, value_json: str | None, step: int) -> None:
+        """Stage a ``Mod_KV`` write (``value_json=None`` deletes), committed with the turn."""
+        self.kv_writes.append((mod_id, key, value_json, int(step)))
+
+    def get_staged_kv(self, mod_id: str, key: str) -> Any:
+        """Last value staged for (mod, key) in this batch: JSON text, the deletion
+        marker of :mod:`axiom.kernel.kv_store`, or None when nothing is staged."""
+        from axiom.kernel.kv_store import _DELETED
+        for m, k, value_json, _step in reversed(self.kv_writes):
+            if m == mod_id and k == key:
+                return _DELETED if value_json is None else value_json
+        return None
+
+    def stage_event(
+        self,
+        event_type: str,
+        payload: Any = None,
+        target_entity: str = "system",
+        *,
+        save_id: str | None = None,
+        turn_id: int | None = None,
+    ) -> None:
+        """Stage an event to be written into Event_Log at commit time."""
+        self.events.append({
+            "save_id": save_id,
+            "turn_id": turn_id,
+            "event_type": event_type,
+            "target_entity": target_entity,
+            "payload": payload if payload is not None else {},
+        })
 
     def commit_all(self, conn: sqlite3.Connection, save_id: str, turn_id: int) -> None:
         """Atomically commit all staged mutations inside a single transaction."""
@@ -43,26 +80,6 @@ class TurnWriteBatch:
             return
 
         with conn:
-            # 1. Timeline entries
-            for entry in self.timeline_entries:
-                if isinstance(entry, dict):
-                    conn.execute(
-                        "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
-                        "VALUES (?, ?, ?, ?);",
-                        (
-                            entry.get("save_id", save_id),
-                            entry.get("turn_id", turn_id),
-                            entry["in_game_time"],
-                            entry["description"],
-                        ),
-                    )
-                elif isinstance(entry, (tuple, list)):
-                    conn.execute(
-                        "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
-                        "VALUES (?, ?, ?, ?);",
-                        entry,
-                    )
-
             # 2. Session_Lore entries
             for entry in self.lore_entries:
                 if isinstance(entry, dict):
@@ -89,185 +106,9 @@ class TurnWriteBatch:
                         entry,
                     )
 
-            # 3. Inventory mutations
-            if turn_id >= 1:
-                from axiom.inventory import inventory_at, snapshot_inventory
-                if inventory_at(conn, save_id, turn_id - 1) is None:
-                    snapshot_inventory(conn, save_id, turn_id - 1)
-
-            from axiom.inventory import (
-                InventoryError,
-                add_item,
-                ensure_item_definition,
-                move_item,
-                remove_item,
-                snapshot_inventory,
-            )
-
-            for change in self.inventory_mutations:
-                if callable(change):
-                    change(conn)
-                    continue
-                if not isinstance(change, dict):
-                    continue
-                action = change.get("action")
-                item_id = change.get("item_id")
-                quantity = int(change.get("quantity", 1))
-                holder_kind = change.get("holder_kind") or "entity"
-                holder_id = change.get("holder_id") or change.get("entity_id") or ""
-                try:
-                    pending = change.pop("_pending_container", None)
-                    if pending:
-                        inst = add_item(
-                            conn,
-                            save_id,
-                            pending["item_id"],
-                            quantity=1,
-                            holder_kind=pending["holder_kind"],
-                            holder_id=pending["holder_id"],
-                            name=pending["name"],
-                            is_container=True,
-                        )
-                        holder_kind, holder_id = "instance", inst
-                        change["holder_kind"] = holder_kind
-                        change["holder_id"] = holder_id
-                    if action == "add":
-                        add_item(
-                            conn,
-                            save_id,
-                            item_id,
-                            quantity=quantity,
-                            holder_kind=holder_kind,
-                            holder_id=holder_id,
-                            name=str(change.get("name") or ""),
-                            is_container=bool(change.get("is_container")),
-                        )
-                    elif action == "remove":
-                        remove_item(
-                            conn,
-                            save_id,
-                            item_id=item_id,
-                            holder_kind=holder_kind,
-                            holder_id=holder_id,
-                            quantity=quantity,
-                        )
-                    elif action == "move":
-                        dest_kind = str(change.get("dest_holder_kind") or holder_kind)
-                        dest_id = str(change.get("dest_holder_id") or holder_id)
-                        instance_id = change.get("instance_id")
-                        if instance_id:
-                            move_item(
-                                conn,
-                                save_id,
-                                instance_id,
-                                dest_kind,
-                                dest_id,
-                                quantity=quantity,
-                            )
-                except InventoryError as exc:
-                    logger.warning("[TurnWriteBatch] Inventory apply failed: %s", exc)
-
-            snapshot_inventory(conn, save_id, turn_id)
-
-            # 4. Modifiers
-            for mod in self.modifier_mutations:
-                mtype = mod.get("type")
-                if mtype == "clear":
-                    stat_key = mod.get("stat_key")
-                    entity_id = mod.get("entity_id")
-                    if stat_key:
-                        rows = conn.execute(
-                            "SELECT modifier_id, stat_key FROM Active_Modifiers "
-                            "WHERE save_id = ? AND entity_id = ?;",
-                            (save_id, entity_id),
-                        ).fetchall()
-                        want = stat_key.lower()
-                        ids = [r[0] for r in rows if str(r[1]).lower() == want]
-                        if ids:
-                            placeholders = ",".join("?" * len(ids))
-                            conn.execute(
-                                f"DELETE FROM Active_Modifiers WHERE modifier_id IN ({placeholders});",
-                                ids,
-                            )
-                    else:
-                        conn.execute(
-                            "DELETE FROM Active_Modifiers WHERE save_id = ? AND entity_id = ?;",
-                            (save_id, entity_id),
-                        )
-                elif mtype == "add":
-                    mid = mod.get("modifier_id") or str(uuid.uuid4())
-                    conn.execute(
-                        """
-                        INSERT INTO Active_Modifiers
-                            (modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining)
-                        VALUES (?, ?, ?, ?, ?, ?);
-                        """,
-                        (
-                            mid,
-                            save_id,
-                            mod["entity_id"],
-                            mod["stat_key"],
-                            mod["delta"],
-                            mod["minutes"],
-                        ),
-                    )
-                elif mtype == "tick":
-                    elapsed = int(mod.get("elapsed_minutes", 1))
-                    conn.execute(
-                        """
-                        UPDATE Active_Modifiers
-                        SET minutes_remaining = minutes_remaining - ?
-                        WHERE save_id = ?;
-                        """,
-                        (elapsed, save_id),
-                    )
-                    conn.execute(
-                        """
-                        DELETE FROM Active_Modifiers
-                        WHERE minutes_remaining <= 0 AND save_id = ?;
-                        """,
-                        (save_id,),
-                    )
-                elif mtype == "snapshot":
-                    from axiom.schema import ensure_modifier_snapshots_table
-                    ensure_modifier_snapshots_table(conn)
-                    rows = conn.execute(
-                        """
-                        SELECT modifier_id, entity_id, stat_key, delta, minutes_remaining
-                        FROM Active_Modifiers
-                        WHERE save_id = ?;
-                        """,
-                        (save_id,),
-                    ).fetchall()
-                    if rows:
-                        state = [
-                            {
-                                "modifier_id": row[0],
-                                "entity_id": row[1],
-                                "stat_key": row[2],
-                                "delta": row[3],
-                                "minutes_remaining": row[4],
-                            }
-                            for row in rows
-                        ]
-                        conn.execute(
-                            "INSERT OR REPLACE INTO Modifier_Snapshots (save_id, turn_id, state_json) "
-                            "VALUES (?, ?, ?);",
-                            (save_id, turn_id, json.dumps(state)),
-                        )
-
-            # 5. Fired scheduled events
-            if self.fired_scheduled_events:
-                from axiom.schema import ensure_fired_event_turn_column
-                ensure_fired_event_turn_column(conn)
-                for event_id in self.fired_scheduled_events:
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO Fired_Scheduled_Events (save_id, event_id, fired_turn_id)
-                        VALUES (?, ?, ?);
-                        """,
-                        (save_id, event_id, turn_id),
-                    )
+            # 5. Mods' own tables (timeline, fired events...), in staging order
+            for op in self.staged_ops:
+                op(conn, save_id, turn_id)
 
             # 6. Events batch into Event_Log & State_Cache update
             event_tuples: list[tuple[str, int, str, str, Any]] = []
@@ -275,9 +116,11 @@ class TurnWriteBatch:
                 if isinstance(ev, (tuple, list)):
                     event_tuples.append(tuple(ev))
                 elif isinstance(ev, dict):
+                    s = ev.get("save_id") or save_id
+                    t = ev.get("turn_id") if ev.get("turn_id") is not None else turn_id
                     event_tuples.append((
-                        ev.get("save_id", save_id),
-                        ev.get("turn_id", turn_id),
+                        s,
+                        t,
                         ev["event_type"],
                         ev.get("target_entity", "system"),
                         ev.get("payload", {}),
@@ -303,6 +146,19 @@ class TurnWriteBatch:
 
                 # Update State_Cache
                 _apply_events_to_state_cache(conn, save_id, event_tuples)
+
+            # 7. Mods' versioned key-values (ctx.store), same transaction as the turn
+            if self.kv_writes:
+                from axiom.kernel.kv_store import _kv_write
+                from axiom.schema import ensure_mod_kv_table
+                ensure_mod_kv_table(conn)
+                for mod_id, key, value_json, step in self.kv_writes:
+                    _kv_write(conn, save_id, mod_id, key, value_json, step)
+
+            # 8. End-of-turn captures of every declared storage (snapshots), the
+            # disabled mods' included: a later rewind to this turn finds its state.
+            from axiom.storage_registry import execute_snapshots
+            execute_snapshots(conn, save_id, turn_id)
 
         self.committed = True
 
@@ -349,6 +205,20 @@ def _apply_events_to_state_cache(
     ).fetchall()
     for r in rows:
         cache.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
+
+    # When a stat has not been materialized in State_Cache yet, seed it from
+    # the universe base stats (Entity_Stats) so a delta starts from the base value.
+    try:
+        base_rows = conn.execute(
+            f"SELECT entity_id, stat_key, stat_value FROM Entity_Stats "
+            f"WHERE entity_id IN ({placeholders});",
+            (*entity_ids,),
+        ).fetchall()
+        for r in base_rows:
+            cache.setdefault(r["entity_id"], {}).setdefault(r["stat_key"], str(r["stat_value"]))
+    except sqlite3.OperationalError:
+        # Table Entity_Stats might not exist in some minimal test databases
+        pass
 
     for event in relevant:
         cache = EventSourcer._apply_event(event, cache)

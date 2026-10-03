@@ -57,7 +57,7 @@ def _run_populate(db: str, llm: _FakeLLM, monkeypatch) -> int:
     import axiom.config as config_mod
     from workers.db_tasks import PopulateEntitiesTask
 
-    monkeypatch.setattr(config_mod, "build_llm_from_config", lambda *a, **k: llm)
+    monkeypatch.setattr("axiom.session.resolve_llm_backend", lambda *a, **k: llm)  # via axiom.providers
     return PopulateEntitiesTask(db, mode="auto").execute()
 
 

@@ -109,7 +109,7 @@ def _runtime_free_cache_copy(cache_db: Path, tmp_dir: Path) -> Path:
         conn.execute("PRAGMA foreign_keys=OFF;")
         for table in get_runtime_tables():
             row = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;", (table,)
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ? COLLATE NOCASE;", (table,)
             ).fetchone()
             if row:
                 conn.execute(f"DELETE FROM {table};")

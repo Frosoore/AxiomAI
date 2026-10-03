@@ -28,6 +28,18 @@ from database.backup_manager import create_auto_backup
 set_rewind_backup_handler(create_auto_backup)
 
 
+
+def _service(name: str) -> Any:
+    """A service of the process modpack (None when its mod is off)."""
+    from axiom.kernel.loader import get_kernel_registry
+    return get_kernel_registry().get_service(name)
+
+
+def _entity_items(db_path: str, save_id: str, entity_id: str) -> list[dict]:
+    """Items of an entity, from the axiom.inventory mod (none when it is off)."""
+    inventory = _service("inventory")
+    return inventory.entity_items(db_path, save_id, entity_id) if inventory is not None else []
+
 class TaskSignals(QObject):
     """Signals for QRunnable tasks."""
     result = Signal(object)
@@ -688,8 +700,9 @@ class CanonizeStoryTask(BaseDbTask):
         raise ValueError(tr("uac_folder_required"))
 
     def execute(self) -> dict:
-        from axiom.config import build_llm_from_config, load_config, resolve_extraction_model
+        from axiom.config import load_config, resolve_extraction_model
         from axiom.prompts import build_canonize_prompt
+        from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
         from axiom.savestore import refresh_save_definition
 
         universe_db = self._resolve_universe_db()
@@ -705,7 +718,7 @@ class CanonizeStoryTask(BaseDbTask):
 
         self.signals.status.emit("Canonizing recent story...")
         cfg = load_config()
-        llm = build_llm_from_config(cfg, model_override=resolve_extraction_model(cfg))
+        llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
         # TICKET-033 : compte à rebours de retry visible + annulation.
         llm.on_status = self.signals.status.emit
         llm.cancel_event = self.cancel_event
@@ -739,9 +752,8 @@ class TickModifiersTask(BaseDbTask):
         self.elapsed_minutes = elapsed_minutes
 
     def execute(self) -> list[str]:
-        from axiom.modifiers import ModifierProcessor
-        mp = ModifierProcessor(self.db_path)
-        return mp.tick_modifiers(self.save_id, self.elapsed_minutes)
+        stats_svc = _service("stat_dynamics")
+        return stats_svc.tick(self.db_path, self.save_id, self.elapsed_minutes) if stats_svc else []
 
 
 # ---------------------------------------------------------------------------
@@ -836,7 +848,6 @@ class LoadInventoryTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> dict:
-        from axiom.db_helpers import get_inventory
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT entity_id FROM Entities WHERE is_active = 1;"
@@ -845,7 +856,7 @@ class LoadInventoryTask(BaseDbTask):
         inventory_map = {}
         for row in rows:
             eid = row[0]
-            inv = get_inventory(self.db_path, self.save_id, eid)
+            inv = _entity_items(self.db_path, self.save_id, eid)
             if inv:
                 inventory_map[eid] = inv
         return inventory_map
@@ -889,11 +900,6 @@ class LoadStatsAndInventoryTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> tuple[list[dict], dict]:
-        from axiom.db_helpers import get_inventory
-        from axiom.modifiers import ModifierProcessor
-        from axiom.events import EventSourcer
-        from axiom.schema import get_connection
-
         # 1. Load Stats (with modifiers)
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
@@ -902,7 +908,7 @@ class LoadStatsAndInventoryTask(BaseDbTask):
         
         entities = [dict(r) for r in rows]
         sourcer = EventSourcer(self.db_path)
-        processor = ModifierProcessor(self.db_path)
+        stats_svc = _service("stat_dynamics")  # active modifiers overlay (None when off)
         
         stats_list = []
         inventory_map = {}
@@ -910,7 +916,10 @@ class LoadStatsAndInventoryTask(BaseDbTask):
         for ent in entities:
             eid = ent["entity_id"]
             base_stats = sourcer.get_current_stats(self.save_id, eid)
-            effective = processor.apply_modifiers(self.save_id, eid, base_stats)
+            effective = (
+                stats_svc.apply_modifiers(self.db_path, self.save_id, eid, base_stats)
+                if stats_svc else base_stats
+            )
             
             stats_list.append({
                 "entity_id": eid,
@@ -920,7 +929,7 @@ class LoadStatsAndInventoryTask(BaseDbTask):
             })
             
             # 2. Load Inventory
-            inv = get_inventory(self.db_path, self.save_id, eid)
+            inv = _entity_items(self.db_path, self.save_id, eid)
             if inv:
                 inventory_map[eid] = inv
         
@@ -945,11 +954,6 @@ class LoadFullGameStateTask(BaseDbTask):
         self.save_id = save_id
 
     def execute(self) -> tuple[list[dict], dict, list[dict]]:
-        from axiom.db_helpers import get_inventory
-        from axiom.modifiers import ModifierProcessor
-        from axiom.events import EventSourcer
-        from axiom.schema import get_connection
-
         # 1. Load Entities and Stats
         with get_connection(self.db_path) as conn:
             rows = conn.execute(
@@ -958,7 +962,7 @@ class LoadFullGameStateTask(BaseDbTask):
         
         entities = [dict(r) for r in rows]
         sourcer = EventSourcer(self.db_path)
-        processor = ModifierProcessor(self.db_path)
+        stats_svc = _service("stat_dynamics")  # active modifiers overlay (None when off)
         
         stats_list = []
         inventory_map = {}
@@ -966,7 +970,10 @@ class LoadFullGameStateTask(BaseDbTask):
         for ent in entities:
             eid = ent["entity_id"]
             base_stats = sourcer.get_current_stats(self.save_id, eid)
-            effective = processor.apply_modifiers(self.save_id, eid, base_stats)
+            effective = (
+                stats_svc.apply_modifiers(self.db_path, self.save_id, eid, base_stats)
+                if stats_svc else base_stats
+            )
             
             stats_list.append({
                 "entity_id": eid,
@@ -975,7 +982,7 @@ class LoadFullGameStateTask(BaseDbTask):
                 "stats": effective
             })
             
-            inv = get_inventory(self.db_path, self.save_id, eid)
+            inv = _entity_items(self.db_path, self.save_id, eid)
             if inv:
                 inventory_map[eid] = inv
         
@@ -1150,8 +1157,9 @@ class SaveFullUniverseTask(BaseDbTask):
             for l in self.lore_book:
                 conn.execute("INSERT INTO Lore_Book (entry_id, category, name, content) VALUES (?, ?, ?, ?);", (l["entry_id"], l.get("category", ""), l.get("name", ""), l.get("content", "")))
 
-            conn.execute("DELETE FROM Scheduled_Events;")
-            if self.scheduled_events:
+            # None = not edited (the editor is the axiom.time mod's): leave them as they are.
+            if self.scheduled_events is not None:
+                conn.execute("DELETE FROM Scheduled_Events;")
                 for ev in self.scheduled_events:
                     conn.execute("INSERT INTO Scheduled_Events (event_id, trigger_minute, title, description) VALUES (?, ?, ?, ?);",
                                (ev["event_id"], int(ev["trigger_minute"]), ev["title"], ev["description"]))

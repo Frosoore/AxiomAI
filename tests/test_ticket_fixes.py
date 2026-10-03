@@ -17,7 +17,7 @@ import pytest
 from axiom.compile import compile_universe
 from axiom.db_helpers import create_new_save
 from axiom.events import EventSourcer
-from axiom.modifiers import ModifierProcessor
+from mods.core.stat_dynamics.modifiers import ModifierProcessor
 from axiom.schema import create_universe_db, get_connection, migrate_active_modifiers_table
 from axiom.universe import Universe
 

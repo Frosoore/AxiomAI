@@ -384,9 +384,8 @@ def test_transactional_turn_atomicity_on_cancellation(isolated_harness_env):
 
 
 def test_session_epoch_bump_and_stale_worker_discard(isolated_harness_env):
-    """Vérifie l'incrémentation de session.epoch et l'invalidation des workers asynchrones obsolètes."""
-    from axiom.living_memory import distil_narrative_to_memory
-    from axiom.facts import get_facts
+    from mods.axiom.living_memory.living_memory import distil_narrative_to_memory
+    from mods.axiom.living_memory.facts import get_facts
 
     env = isolated_harness_env
     save_info = create_save(env["uni_db"], "Hero", "Normal")

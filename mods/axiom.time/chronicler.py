@@ -1,5 +1,5 @@
 """
-core/chronicler.py
+mods/axiom.time/chronicler.py
 
 The Chronicler Engine — Axiom AI's macro-simulation agent.
 
@@ -26,7 +26,7 @@ from axiom.logger import logger
 from axiom.events import EventSourcer
 from axiom.schema import get_connection
 from axiom.backends.base import LLMBackend, LLMMessage
-from axiom.prompts import build_chronicler_prompt
+from mods.axiom.time.time_prompts import build_chronicler_prompt
 
 
 _DEFAULT_TENSION: float = 0.3

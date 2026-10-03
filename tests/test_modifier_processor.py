@@ -12,7 +12,7 @@ import pytest
 
 from axiom.schema import create_universe_db
 from axiom.events import EventSourcer
-from axiom.modifiers import ModifierProcessor
+from mods.core.stat_dynamics.modifiers import ModifierProcessor
 
 
 # ---------------------------------------------------------------------------

@@ -12,15 +12,12 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from axiom.facts import get_facts
 from axiom.kernel.context import ModContext
-try:
-    from mods.axiom.living_memory.living_memory import get_living_memory_accumulator
-except (ImportError, ValueError):
-    from axiom.living_memory import get_living_memory_accumulator
 from axiom.logger import logger
-from axiom.mental_models import get_mental_models
-from axiom.observations import get_observations
+from mods.axiom.living_memory.facts import get_facts
+from mods.axiom.living_memory.living_memory import get_living_memory_accumulator
+from mods.axiom.living_memory.mental_models import get_mental_models
+from mods.axiom.living_memory.observations import get_observations
 
 
 class LivingMemoryService:
@@ -28,6 +25,10 @@ class LivingMemoryService:
 
     def __init__(self) -> None:
         self.accumulator = get_living_memory_accumulator()
+
+    def set_context(self, ctx: Any) -> None:
+        if hasattr(self.accumulator, "set_context"):
+            self.accumulator.set_context(ctx)
 
     def get_facts(self, db_path: str, save_id: str, max_turn_id: int | None = None) -> list[Any]:
         return get_facts(db_path, save_id, max_turn_id=max_turn_id)
@@ -90,61 +91,19 @@ def get_living_memory_service() -> LivingMemoryService:
 
 
 def build_living_memory_prompt_section(ctx: Any) -> dict[str, Any] | None:
-    """Slot handler for axiom.turn:prompt_sections (priority 45, depth 7).
-    Injects recent facts and mental models of entities currently on scene.
-    """
-    db_path = getattr(ctx, "db_path", "")
-    save_id = getattr(ctx, "save_id", "")
-    turn_id = getattr(ctx, "turn_id", 0)
-    if not db_path or not save_id:
+    """Slot handler for axiom.turn:prompt_sections: in living mode, the character
+    profiles, beliefs (with trend) and facts relevant to this scene join the memory
+    block of the prompt (see recall.py). Errors are reported by the turn (the mod is
+    disabled), never hidden."""
+    if not getattr(ctx, "db_path", "") or not getattr(ctx, "save_id", ""):
         return None
+    from axiom.config import load_config
+    from mods.axiom.living_memory.recall import recall_lines
 
-    try:
-        svc = get_living_memory_service()
-        recent_facts = svc.get_facts(db_path, save_id, max_turn_id=turn_id)[-5:]
-
-        # Find entities on scene from ctx
-        relevant_ids = set()
-        if hasattr(ctx, "relevant_stats") and ctx.relevant_stats:
-            relevant_ids.update(ctx.relevant_stats.keys())
-        if hasattr(ctx, "intents") and ctx.intents:
-            relevant_ids.update(ctx.intents.keys())
-
-        id_to_name = getattr(ctx, "id_to_name", {}) or {}
-        on_scene_names = {id_to_name.get(eid, eid).strip().lower() for eid in relevant_ids}
-
-        all_models = svc.get_models(db_path, save_id, max_turn_id=turn_id)
-        relevant_models = [
-            m for m in all_models
-            if (m.subject and m.subject.strip().lower() in on_scene_names)
-            or not on_scene_names
-        ][:3]
-
-        if not recent_facts and not relevant_models:
-            return None
-
-        lines = ["LIVING MEMORY (Recent Facts & Entity Models):"]
-        if recent_facts:
-            lines.append("Recent Facts:")
-            for f in recent_facts:
-                stmt = getattr(f, "statement", str(f))
-                lines.append(f"- {stmt}")
-        if relevant_models:
-            lines.append("Entity Profiles:")
-            for m in relevant_models:
-                subj = getattr(m, "subject", "Entity")
-                summary = getattr(m, "summary", "")
-                lines.append(f"- [{subj}]: {summary}")
-
-        return {
-            "position": "system",
-            "text": "\n".join(lines),
-            "priority": 45,
-            "depth": 7,
-        }
-    except Exception as exc:
-        logger.debug("[axiom.living_memory] Failed to build prompt section: %s", exc)
+    lines = recall_lines(ctx, load_config())
+    if not lines:
         return None
+    return {"position": "rag", "text": "\n".join(lines)}
 
 
 def on_after_step(ctx: Any) -> None:
@@ -192,6 +151,7 @@ def on_after_step(ctx: Any) -> None:
 def init(ctx: ModContext) -> None:
     """Entry point for axiom.living_memory mod."""
     svc = get_living_memory_service()
+    svc.set_context(ctx)
     ctx.register_service("living_memory", svc)
 
     # Register prompt section contribution

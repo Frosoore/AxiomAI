@@ -22,12 +22,13 @@ from axiom.prompts import (
     build_narrative_prompt,
 )
 from axiom.schema import get_connection
+from axiom.kernel.patcher import patchable
 
 # Replaces the state-change JSON instructions of the turn prompt: a variant is
 # prose only (no rule or stat is re-evaluated).
 _VARIANT_INSTRUCTION = (
-    "You are writing an alternative version of this turn's narration. "
-    "Write prose only: do NOT output any JSON block, code fence or tool call."
+    "You are generating a new variant. Do NOT output any JSON tool calls: "
+    "write prose only, no code fence, JSON block or tool call."
 )
 
 # A trailing JSON block, fenced (~~~json / ```json / ~~~ / ```, closed or not).
@@ -58,6 +59,7 @@ def history_to_messages(history: list[dict]) -> list[dict]:
     return messages
 
 
+@patchable("axiom.regenerate:regenerate_variant")
 def regenerate_variant(
     llm: LLMBackend,
     db_path: str,
@@ -91,10 +93,15 @@ def regenerate_variant(
     # Pas de tool-call sur une régénération : on ne veut que du texte. On retire
     # la vraie consigne JSON du prompt de tour (TICKET-104).
     for msg in prompt:
-        if msg["role"] == "system" and NARRATIVE_TOOL_CALL_SCHEMA in msg["content"]:
-            msg["content"] = msg["content"].replace(
-                NARRATIVE_TOOL_CALL_SCHEMA, _VARIANT_INSTRUCTION
-            )
+        if msg["role"] == "system":
+            if NARRATIVE_TOOL_CALL_SCHEMA in msg["content"]:
+                msg["content"] = msg["content"].replace(
+                    NARRATIVE_TOOL_CALL_SCHEMA, _VARIANT_INSTRUCTION
+                )
+            if "You MUST end your response with a JSON block" in msg["content"]:
+                msg["content"] = msg["content"].replace(
+                    "You MUST end your response with a JSON block", _VARIANT_INSTRUCTION
+                )
 
     stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>",
              f"\n{player_id}:", f"\n[{player_id}]"]

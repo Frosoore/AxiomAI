@@ -25,4 +25,8 @@ slots = [
 "axiom.inventory:actions" = { rule = "collect" }
 
 [storage]
-item_instances = { policy = "step_keyed_table", table = "Inventory_Snapshots", step_column = "turn_id" }
+# Instances hold their container ids: rewound/forked by inventory code (snapshot-based).
+item_instances = { policy = "custom", table = "Item_Instances", rewind = "storage:rewind_inventory", fork = "storage:fork_item_instances", snapshot = "storage:snapshot_inventory", section = "inventory", state = "storage:state_inventory", load = "storage:load_inventory", diff = "storage:diff_inventory" }
+inventory_snapshots = { policy = "step_keyed_table", table = "Inventory_Snapshots", step_column = "turn_id", columns = ["save_id", "turn_id", "state_json"], fork_with = "Item_Instances" }
+# Legacy flat bag of old saves (not turn-keyed): copied at fork time.
+legacy_bag = { policy = "custom", table = "Items_Inventory", fork = "storage:fork_legacy_inventory" }

@@ -5,9 +5,11 @@ axiom_api = 1
 name = "Interface Bureau Qt"
 description = "Interface graphique native PySide6 (Tabletop, Creator Studio, Hub, Dialogues de réglages)."
 author = "Vanilla"
+# Loaded in safe mode (recovery: interface + minimal chat, nothing else).
+safe_mode = true
 
 [dependencies]
-"axiom.turn" = ">=1.0.0"
+"turn_pipeline" = ">=1.0.0"
 # Optional: the UI hides help buttons/tooltips when the help mod is disabled.
 # Its files must still be installed (the UI imports them; see corrections-2026-10/B2-TOUR.md).
 "axiom.help_system" = { version = ">=1.0.0", optional = true }

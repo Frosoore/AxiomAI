@@ -12,10 +12,22 @@ import threading
 from typing import Any, Callable
 
 from axiom.backends.base import LLMBackend
-from axiom.consolidate import consolidate
-from axiom.factextract import extract_facts
-from axiom.facts import insert_facts
-from axiom.observations import apply_consolidation, get_observations
+try:
+    from .consolidate import consolidate
+    from .factextract import extract_facts
+    from .facts import get_facts, insert_facts
+    from .observations import apply_consolidation, get_observations
+    from .missions import get_belief_missions, get_universe_mission
+    from .mental_models import stale_subjects, upsert_mental_model
+    from .reflect import affected_subjects, reflect
+except (ImportError, ValueError):
+    from mods.axiom.living_memory.consolidate import consolidate
+    from mods.axiom.living_memory.factextract import extract_facts
+    from mods.axiom.living_memory.facts import get_facts, insert_facts
+    from mods.axiom.living_memory.observations import apply_consolidation, get_observations
+    from mods.axiom.living_memory.missions import get_belief_missions, get_universe_mission
+    from mods.axiom.living_memory.mental_models import stale_subjects, upsert_mental_model
+    from mods.axiom.living_memory.reflect import affected_subjects, reflect
 
 # Cap on how many subjects get a (costly LLM) mental-model refresh in one pass.
 _MAX_MODEL_REFRESH = 3
@@ -186,7 +198,6 @@ def distil_turns_to_memory(
 
     if consolidate_beliefs and totals["facts_stored"] > 0:
         try:
-            from axiom.facts import get_facts
 
             # Consolidate only the freshly written window (recent facts).
             recent = get_facts(
@@ -229,8 +240,6 @@ def consolidate_facts_to_beliefs(
     exist and Beliefs/Profiles are still empty (e.g. prior pass stored facts
     then soft-failed on consolidation).
     """
-    from axiom.facts import get_facts
-
     facts = get_facts(db_path, save_id, max_turn_id=turn_id, limit=max_facts)
     # get_facts is most-recent-first; consolidator is fine with that order.
     if not facts:
@@ -275,7 +284,6 @@ def _run_consolidation(
         if not stored:
             return 0, 0
         existing = get_observations(db_path, save_id, max_turn_id=turn_id)
-        from axiom.missions import get_belief_missions, get_universe_mission
 
         mission = get_universe_mission(db_path) or None
         missions = get_belief_missions(db_path)
@@ -319,9 +327,6 @@ def _run_consolidation(
 def _refresh_models(llm, db_path, save_id, turn_id, actions, mission, *, epoch: int | None = None, epoch_checker: Callable[[], int] | None = None) -> int:
     """Refresh mental models for affected subjects. Returns how many written."""
     try:
-        from axiom.mental_models import stale_subjects, upsert_mental_model
-        from axiom.reflect import affected_subjects, reflect
-
         subjects = affected_subjects(actions)
         seen = {s.strip().lower() for s in subjects}
         for s in stale_subjects(db_path, save_id, max_turn_id=turn_id):
@@ -432,6 +437,10 @@ class LivingMemoryAccumulator:
         self._pending: dict[str, list[str]] = {}
         self._counters: dict[str, int] = {}
         self._busy: set[str] = set()
+        self._mod_ctx: Any | None = None
+
+    def set_context(self, ctx: Any) -> None:
+        self._mod_ctx = ctx
 
     def reset(self, save_id: str | None = None) -> None:
         """Clear pending buffer and turn counter (for a save or all saves)."""
@@ -536,9 +545,9 @@ class LivingMemoryAccumulator:
                     from axiom.config import load_config
                     cfg = load_config()
                 if llm is None:
-                    from axiom.config import build_llm_from_config, resolve_memory_fact_model
-                    override = resolve_memory_fact_model(cfg)
-                    llm = build_llm_from_config(cfg, model_override=override)
+                    from axiom.config import resolve_memory_fact_model
+                    from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
+                    llm = resolve_llm_backend(cfg, model_override=resolve_memory_fact_model(cfg))
 
                 from axiom.config import memory_beliefs_active, memory_mental_models_active
                 turn_pairs: list[tuple[int, str]] = []
@@ -588,6 +597,8 @@ class LivingMemoryAccumulator:
                     self._busy.discard(save_id)
 
         if run_async:
+            if getattr(self, "_mod_ctx", None) is not None:
+                return self._mod_ctx.spawn_job(_job, name=f"axiom.living_memory:{save_id}:{turn_id}")
             thread = threading.Thread(target=_job, daemon=True)
             thread.start()
             return thread
@@ -625,8 +636,8 @@ class LivingMemoryAccumulator:
             memory_mental_models_active,
             memory_mode_is_living,
             resolve_memory_fact_model,
-            build_llm_from_config,
         )
+        from axiom.session import resolve_llm_backend  # axiom.providers only (M8)
         if not memory_mode_is_living(cfg):
             return {
                 "status": "skipped",
@@ -647,7 +658,7 @@ class LivingMemoryAccumulator:
         override = resolve_memory_fact_model(cfg)
         if llm is None:
             try:
-                llm = build_llm_from_config(cfg, model_override=override)
+                llm = resolve_llm_backend(cfg, model_override=override)
             except Exception as exc:
                 return {
                     "status": "error",
@@ -655,7 +666,6 @@ class LivingMemoryAccumulator:
                     "facts_stored": 0,
                 }
 
-        from axiom.observations import get_observations
         if turn_pairs:
             result = distil_turns_to_memory(
                 llm,

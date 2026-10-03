@@ -32,14 +32,14 @@ from axiom.backends.base import LLMBackend, LLMMessage, LLMResponse
 from axiom.db_helpers import (
     get_current_time,
     get_spatial_context,
-    get_time_of_day_context,
+    load_defined_stat_names,
+    load_entity_meta,
+    resolve_entity_id,
 )
 from axiom.events import EventSourcer, resolve_stat_key
-from axiom.modifiers import ModifierProcessor
 from axiom.prompts import (
     HISTORY_TURN_CAP,
     build_narrative_prompt,
-    build_timekeeper_prompt,
     format_entity_stats_block,
 )
 from axiom.schema import get_connection
@@ -131,6 +131,13 @@ class TurnContext:
     rejected_changes_detailed: list[dict[str, Any]] = field(default_factory=list)
     inventory_changes: list[dict[str, Any]] = field(default_factory=list)
     applied_modifiers: list[dict[str, Any]] = field(default_factory=list)
+    # Per-entity notes of mods shown in the entity block ({eid: {"modifiers": [...],
+    # "dyn_notes": {...}}}) and extra text after it (core.stat_dynamics).
+    entity_annotations: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Memory lines contributed by mods (prompt sections at position "rag"), shown
+    # in the [MEMORY] block of the narration prompt.
+    memory_lines: list[str] = field(default_factory=list)
+    stats_prompt_notes: list[str] = field(default_factory=list)
     rule_chain_warning: bool = False
     stat_events: list[dict[str, Any]] = field(default_factory=list)
     session_lore_changes: list[dict[str, Any]] = field(default_factory=list)
@@ -138,10 +145,14 @@ class TurnContext:
     raw_inventory_changes: list[dict[str, Any]] = field(default_factory=list)
     raw_modifier_changes: list[dict[str, Any]] = field(default_factory=list)
     db_path: str = ""
+    # Data root of the session (illustrations, vector memory...): None = app default.
+    data_root: Any = None
     #: Narrator hints queued by validators (rejected changes); staged as save data.
     correction_hints: list[str] = field(default_factory=list)
     #: Narration backend, session epoch and epoch reader, for post-commit jobs of mods.
     llm: Any = None
+    #: Auxiliary "time model" (Timekeeper, Chronicler); the narration backend if unset.
+    time_llm: Any = None
     epoch: int | None = None
     epoch_checker: Callable[[], int] | None = None
 
@@ -232,7 +243,6 @@ class ArbitratorEngine:
     ) -> None:
         self._db_path = db_path
         self._event_sourcer = EventSourcer(db_path)
-        self._modifier_processor = ModifierProcessor(db_path)
         self.kernel_registry = kernel_registry
 
         # Dependencies to be injected via configure()
@@ -450,14 +460,13 @@ class ArbitratorEngine:
             if eid in relevant_entity_ids
         }
 
+        # In-game clock read from the Timeline (constant without axiom.time); the
+        # time of day and the scheduled events are set by axiom.time at gather_context.
         ctx.total_mins = get_current_time(self._db_path, ctx.save_id)
-        ctx.time_ctx = get_time_of_day_context(ctx.total_mins)
 
         player_loc_id = ctx.relevant_stats.get(player_entity_id, {}).get("Location")
         if player_loc_id:
             ctx.spatial_context = get_spatial_context(self._db_path, player_loc_id) or {}
-
-        ctx.triggered_events = self._fetch_triggered_events(ctx.save_id, ctx.total_mins)
 
         ctx.local_character_names = []
         if player_loc:
@@ -471,59 +480,11 @@ class ArbitratorEngine:
 
         ctx.lore_book_subset = self._fetch_relevant_lore(ctx.save_id, ctx.combined_intents_text)
 
-        from axiom.config import memory_beliefs_active, memory_mental_models_active, memory_mode_is_living
-        has_living_memory = self._has_service("living_memory")
-        if memory_mode_is_living(cfg) and has_living_memory:
-            fact_lines = self._fetch_relevant_facts(
-                ctx.save_id,
-                max_turn_id=ctx.turn_id,
-                on_scene=ctx.local_character_names,
-                limit=cfg.rag_chunk_count,
-            )
-            prefix: list[str] = []
-            if memory_mental_models_active(cfg):
-                model_lines = self._fetch_relevant_mental_models(
-                    ctx.save_id,
-                    max_turn_id=ctx.turn_id,
-                    on_scene=ctx.local_character_names,
-                    limit=min(cfg.rag_chunk_count, 4),
-                )
-                prefix += [f"Profile: {s}" for s in model_lines]
-            if memory_beliefs_active(cfg):
-                belief_lines = self._fetch_relevant_beliefs(
-                    ctx.save_id,
-                    max_turn_id=ctx.turn_id,
-                    on_scene=ctx.local_character_names,
-                    limit=cfg.rag_chunk_count,
-                )
-                prefix += [f"Belief: {s}" for s in belief_lines]
-            prefix += [f"Known fact: {s}" for s in fact_lines]
-            if prefix:
-                ctx.rag_chunks = prefix + ctx.rag_chunks
-
         # Fired once per turn, here (the axiom.turn orchestrator does not fire it again).
         self._fire("axiom.step:gather_context", ctx)
 
     def step_2_build_prompt(self, ctx: TurnContext) -> None:
         """Step 2: Assemblage des sections de prompt (lore, persona, consignes, état du monde)."""
-        active_modifiers = self._load_active_modifiers(ctx.save_id)
-        dyn_table = {}
-        dyn_prompt = ""
-        has_stat_dyn = self._has_hook("axiom.turn:arbitrate_stats")
-        if has_stat_dyn:
-            try:
-                from axiom.stat_dynamics import (
-                    dynamics_by_key,
-                    format_dynamics_prompt,
-                    lookup_dynamics,
-                    peak_hold_note,
-                )
-                dyn_table = dynamics_by_key(self._db_path)
-                dyn_prompt = format_dynamics_prompt(self._db_path)
-            except Exception:
-                pass
-
-        now_minutes = ctx.total_mins
         entity_block = format_entity_stats_block(
             [
                 {
@@ -531,21 +492,14 @@ class ArbitratorEngine:
                     "name": ctx.id_to_name.get(eid, eid),
                     "entity_type": ctx.id_to_type.get(eid, "unknown"),
                     "stats": stats,
-                    "modifiers": active_modifiers.get(eid, []),
-                    "dyn_notes": {
-                        k: peak_hold_note(stats, k, dyn, now_minutes)
-                        for k, dyn in (
-                            (key, lookup_dynamics(key, dyn_table))
-                            for key in stats
-                        )
-                        if dyn and "peak_hold_note" in locals() and peak_hold_note(stats, k, dyn, now_minutes)
-                    } if dyn_table else {},
+                    **ctx.entity_annotations.get(eid, {}),
                 }
                 for eid, stats in ctx.relevant_stats.items()
             ]
         )
-        if dyn_prompt:
-            entity_block = f"{entity_block}\n\n{dyn_prompt}"
+        for note in ctx.stats_prompt_notes:
+            if note:
+                entity_block = f"{entity_block}\n\n{note}"
 
         named_intents = {ctx.id_to_name.get(eid, eid): intent for eid, intent in (ctx.intents or {}).items()}
         hero_name_str = ctx.id_to_name.get(ctx.hero_entity_id, ctx.hero_entity_id) if ctx.hero_entity_id else None
@@ -556,8 +510,8 @@ class ArbitratorEngine:
         ctx.prompt_messages = build_narrative_prompt(
             universe_system_prompt=ctx.universe_system_prompt,
             entity_stats_block=entity_block,
-            # Memories are rendered by the prompt sections of the memory mods.
-            rag_chunks=[],
+            # Memories come from the memory mods' prompt sections ("rag" position).
+            rag_chunks=ctx.memory_lines,
             history=ctx.history,
             intents=named_intents,
             pending_correction=self._load_pending_correction(ctx.save_id, ctx.turn_id),
@@ -572,6 +526,7 @@ class ArbitratorEngine:
             local_character_names=ctx.local_character_names,
             basic_prompt=getattr(cfg, "basic_prompt", ""),
             negative_prompt=getattr(cfg, "negative_prompt", ""),
+            tool_call_schema=getattr(ctx, "tool_call_schema", None),
         )
 
     def step_3_execute_inference(
@@ -613,8 +568,6 @@ class ArbitratorEngine:
         if isinstance(tool_call, dict):
             ctx.raw_state_changes = tool_call.get("state_changes", []) or []
             ctx.raw_inventory_changes = tool_call.get("inventory_changes", []) or []
-            ctx.raw_modifier_changes = tool_call.get("modifiers", []) or []
-            ctx.stat_events = tool_call.get("stat_events", []) or []
             ctx.session_lore_changes = (
                 tool_call.get("session_lore")
                 or tool_call.get("lore")
@@ -624,131 +577,22 @@ class ArbitratorEngine:
                 ctx.raw_state_changes = []
             if not isinstance(ctx.raw_inventory_changes, list):
                 ctx.raw_inventory_changes = []
-            if not isinstance(ctx.raw_modifier_changes, list):
-                ctx.raw_modifier_changes = []
-            if not isinstance(ctx.stat_events, list):
-                ctx.stat_events = []
             if not isinstance(ctx.session_lore_changes, list):
                 ctx.session_lore_changes = []
             ctx.game_state_tag = str(tool_call.get("game_state_tag", "exploration")).strip().lower()
             ctx.scene_pace = str(tool_call.get("scene_pace", "deliberate")).strip().lower()
 
-        from axiom.config import load_config
-        cfg = load_config()
-
-        has_time_mod = self._has_service("time")
-
-        if not has_time_mod:
-            ctx.elapsed_minutes = 0
-            ctx.new_time = ctx.total_mins
-        else:
-            elapsed_minutes: int | None = None
-            raw_elapsed = tool_call.get("elapsed_minutes") if "elapsed_minutes" in tool_call else tool_call.get("time_elapsed_minutes")
-            if raw_elapsed is not None:
-                try:
-                    elapsed_minutes = int(raw_elapsed)
-                except (ValueError, TypeError):
-                    elapsed_minutes = None
-
-            if elapsed_minutes is None and cfg.timekeeper_enabled:
-                prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
-                try:
-                    time_llm = getattr(self, "_time_llm", self._llm)
-                    tk_resp = time_llm.complete(prompt, max_tokens=150, temperature=0.1)
-                    tk_data = getattr(tk_resp, "tool_call", {}) or {}
-                    if not tk_data:
-                        tk_text = getattr(tk_resp, "narrative_text", str(tk_resp))
-                        match = re.search(r'\{.*\}', tk_text, re.DOTALL)
-                        if match:
-                            try:
-                                tk_data = json.loads(match.group(0))
-                            except json.JSONDecodeError:
-                                pass
-                    if tk_data and "elapsed_minutes" in tk_data:
-                        elapsed_minutes = int(tk_data["elapsed_minutes"])
-                except Exception as e:
-                    logger.error(f"[ARBITRATOR] Timekeeper failed: {e}")
-
-            if elapsed_minutes is None:
-                pace_defaults = {
-                    "combat": 2,
-                    "dialogue": 5,
-                    "conversation": 5,
-                    "exploration": 15,
-                    "travel": 60,
-                    "deliberate": 15,
-                    "montage": 60,
-                    "tension": 10,
-                }
-                elapsed_minutes = pace_defaults.get(ctx.scene_pace, 15)
-
-            ctx.elapsed_minutes = elapsed_minutes
-            ctx.new_time = ctx.total_mins + ctx.elapsed_minutes
+        # No time passes unless a mod says so (axiom.time: the elapsed_minutes
+        # output field, then its Timekeeper fallback at axiom.step:response_parsed).
+        ctx.elapsed_minutes = 0
+        ctx.new_time = ctx.total_mins
 
     def step_5_arbitrate_rules(self, ctx: TurnContext) -> None:
         """Step 5: arbitrage (hooks des mods monde/stats), modificateurs et lore de session."""
-        defined_stats = self._load_defined_stats() if ctx.raw_modifier_changes else set()
-        entity_meta = self._load_entity_meta()
-
         # Stat validation, travel and creator rules: axiom.world (rejections queue
         # their own correction hints on ctx).
         self._fire("axiom.step:arbitrate_mutations", ctx)
         self._fire("axiom.turn:arbitrate_stats", ctx)
-
-        for mod in ctx.raw_modifier_changes:
-            if not isinstance(mod, dict):
-                continue
-            entity_id = self._resolve_entity_id(
-                mod.get("entity_id", ""), ctx.all_stats, entity_meta
-            )
-            stat_key = self._resolve_stat_key(
-                str(mod.get("stat_key", "")), ctx.all_stats.get(entity_id, {})
-            )
-            clear = bool(mod.get("clear"))
-            if clear:
-                if not entity_id or not stat_key:
-                    ctx.queue_correction("Modifier clear missing entity_id or stat_key")
-                    continue
-                ctx.write_batch.modifier_mutations.append({
-                    "type": "clear",
-                    "entity_id": entity_id,
-                    "stat_key": stat_key,
-                })
-                ctx.applied_modifiers.append({
-                    "entity_id": entity_id,
-                    "stat_key": stat_key,
-                    "clear": True,
-                })
-                continue
-            try:
-                delta = float(mod.get("delta"))
-            except (TypeError, ValueError):
-                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: delta must be a number")
-                continue
-            minutes_raw = mod.get("minutes", mod.get("minutes_remaining", 0))
-            try:
-                minutes = int(minutes_raw)
-            except (TypeError, ValueError):
-                minutes = 0
-            if minutes < 1:
-                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: minutes must be >= 1")
-                continue
-            if defined_stats and stat_key.lower() not in defined_stats:
-                ctx.queue_correction(f"Modifier {entity_id}.{stat_key}: unknown stat")
-                continue
-            ctx.write_batch.modifier_mutations.append({
-                "type": "add",
-                "entity_id": entity_id,
-                "stat_key": stat_key,
-                "delta": delta,
-                "minutes": minutes,
-            })
-            ctx.applied_modifiers.append({
-                "entity_id": entity_id,
-                "stat_key": stat_key,
-                "delta": delta,
-                "minutes": minutes,
-            })
 
         if ctx.session_lore_changes:
             for entry in ctx.session_lore_changes:
@@ -784,8 +628,6 @@ class ArbitratorEngine:
             ctx.save_id, ctx.turn_id, "narrative_text", "system",
             {"active": 0, "variants": [text_to_log]},
         ))
-
-        ctx.write_batch.fired_scheduled_events.extend([ev["event_id"] for ev in ctx.triggered_events])
 
         if ctx.auto_commit:
             with get_connection(self._db_path) as conn:
@@ -889,73 +731,22 @@ class ArbitratorEngine:
         return resp
 
     def _fetch_effective_stats(self, save_id: str) -> dict[str, dict[str, str]]:
-        """Fetch all active entity stats and apply modifier overlays.
-
-        Uses two global queries (one for all stats, one for all modifiers) in a
-        single connection instead of per-entity round-trips.
-
-        Args:
-            save_id: The active save identifier.
-
-        Returns:
-            Dict mapping entity_id -> effective stats dict.
-
-        """
-        from axiom.textfmt import fmt_num
+        """Stats of every entity at this point of the save: universe definition values
+        overridden by State_Cache. Mods add their overlays at ``gather_context``
+        (core.stat_dynamics: active temporary modifiers)."""
         with get_connection(self._db_path) as conn:
             stat_rows = conn.execute(
                 "SELECT entity_id, stat_key, stat_value FROM State_Cache WHERE save_id = ?;",
                 (save_id,),
             ).fetchall()
-            mod_rows = conn.execute(
-                """
-                SELECT entity_id, stat_key, delta
-                FROM Active_Modifiers
-                WHERE save_id = ?;
-                """,
-                (save_id,),
-            ).fetchall()
 
         from axiom.db_helpers import load_definition_stats
-        base: dict[str, dict[str, str]] = {
-            eid: dict(stats) for eid, stats in load_definition_stats(self._db_path).items()
+        stats: dict[str, dict[str, str]] = {
+            eid: dict(values) for eid, values in load_definition_stats(self._db_path).items()
         }
         for r in stat_rows:
-            base.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
-
-        effective = {eid: dict(stats) for eid, stats in base.items()}
-        for r in mod_rows:
-            if r["entity_id"] in effective:
-                stat_key = resolve_stat_key(r["stat_key"], effective[r["entity_id"]])
-                current_raw = effective[r["entity_id"]].get(stat_key, "0")
-                try:
-                    current = float(current_raw)
-                    effective[r["entity_id"]][stat_key] = fmt_num(current + r["delta"])
-                except ValueError:
-                    pass
-        return effective
-
-    def _load_active_modifiers(self, save_id: str) -> dict[str, list[dict[str, Any]]]:
-        """Active temporary modifiers grouped by entity_id (for the turn prompt)."""
-        try:
-            with get_connection(self._db_path) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT entity_id, stat_key, delta, minutes_remaining
-                    FROM Active_Modifiers WHERE save_id = ?;
-                    """,
-                    (save_id,),
-                ).fetchall()
-        except sqlite3.Error:
-            return {}
-        out: dict[str, list[dict[str, Any]]] = {}
-        for r in rows:
-            out.setdefault(r["entity_id"], []).append({
-                "stat_key": r["stat_key"],
-                "delta": r["delta"],
-                "minutes_remaining": r["minutes_remaining"],
-            })
-        return out
+            stats.setdefault(r["entity_id"], {})[r["stat_key"]] = r["stat_value"]
+        return stats
 
     def _identify_relevant_entities(
         self,
@@ -1022,187 +813,6 @@ class ArbitratorEngine:
                     npc_count_per_loc[entity_loc] = npc_count_per_loc.get(entity_loc, 0) + 1
 
         return relevant
-
-    def _fetch_triggered_events(self, save_id: str, current_minute: int) -> list[dict]:
-        """Fetch global scheduled events that have triggered but not yet fired for this save."""
-        events = []
-        try:
-            with get_connection(self._db_path) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT e.event_id, e.title, e.description
-                    FROM Scheduled_Events e
-                    LEFT JOIN Fired_Scheduled_Events f ON e.event_id = f.event_id AND f.save_id = ?
-                    WHERE e.trigger_minute <= ? AND f.event_id IS NULL;
-                    """,
-                    (save_id, current_minute)
-                ).fetchall()
-                events = [dict(r) for r in rows]
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Error fetching scheduled events: {e}")
-        return events
-
-    def _fetch_relevant_facts(
-        self,
-        save_id: str,
-        max_turn_id: int,
-        on_scene: list[str],
-        limit: int,
-    ) -> list[str]:
-        """Return up to `limit` fact statements for the living-mode prompt.
-
-        Prioritises facts that mention an on-scene character (what we *know*
-        about who's here), then fills the remainder with the most recent facts.
-        Bounded by `max_turn_id` so a rewound turn never resurfaces a future
-        fact. Degrades to an empty list on any error (never breaks a turn).
-        """
-        if limit <= 0:
-            return []
-        try:
-            from axiom import facts as facts_mod
-
-            # One fetch (most-recent-first), then prioritise in memory — instead
-            # of one full-table query per on-scene name (TICKET-079).
-            all_facts = facts_mod.get_facts(
-                self._db_path, save_id, max_turn_id=max_turn_id
-            )
-            names = {n.strip().lower() for n in (on_scene or []) if n}
-
-            seen: set[str] = set()
-            ordered: list[str] = []
-
-            def _add_if(predicate) -> None:
-                for f in all_facts:
-                    if len(ordered) >= limit:
-                        break
-                    if not f.statement or f.statement in seen or not predicate(f):
-                        continue
-                    seen.add(f.statement)
-                    ordered.append(f.statement)
-
-            # Pass 1: facts mentioning a character on scene (what we *know* about
-            # who's here). Pass 2: fill the remainder with the most recent.
-            if names:
-                _add_if(lambda f: any(e.strip().lower() in names for e in f.entities))
-            _add_if(lambda f: True)
-
-            return ordered[:limit]
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Error fetching living-mode facts: {e}")
-            return []
-
-    def _fetch_relevant_beliefs(
-        self,
-        save_id: str,
-        max_turn_id: int,
-        on_scene: list[str],
-        limit: int,
-    ) -> list[str]:
-        """Return up to `limit` belief statements for the living-mode prompt.
-
-        Prioritises beliefs about an on-scene character (what this scene's people
-        *think/remember*), then fills with the most recently updated beliefs.
-        Bounded by `max_turn_id` (a rewound turn never resurfaces a future
-        belief). Each statement is tagged with its trend when it carries a signal
-        (e.g. "… (strengthening)"), so the narrator can tell an intensifying
-        belief from a fading one (TICKET-081). Degrades to an empty list on any
-        error (never breaks a turn).
-        """
-        if limit <= 0:
-            return []
-        try:
-            from axiom import observations as obs_mod
-
-            # One fetch (most-recently-updated first), then prioritise in memory
-            # instead of one full-table query per on-scene name (TICKET-079).
-            all_obs = obs_mod.get_observations(
-                self._db_path, save_id, max_turn_id=max_turn_id
-            )
-            names = {n.strip().lower() for n in (on_scene or []) if n}
-
-            # Annotate only the directional trends — strengthening/weakening/stale
-            # carry narrative signal; stable/new are the quiet default, left plain
-            # to keep the prompt lean.
-            _SIGNAL_TRENDS = (
-                obs_mod.TREND_STRENGTHENING,
-                obs_mod.TREND_WEAKENING,
-                obs_mod.TREND_STALE,
-            )
-
-            def _format(o) -> str:
-                trend = o.trend(max_turn_id)
-                return f"{o.statement} ({trend})" if trend in _SIGNAL_TRENDS else o.statement
-
-            seen: set[str] = set()
-            ordered: list[str] = []
-
-            def _add_if(predicate) -> None:
-                for o in all_obs:
-                    if len(ordered) >= limit:
-                        break
-                    if not o.statement or o.statement in seen or not predicate(o):
-                        continue
-                    seen.add(o.statement)
-                    ordered.append(_format(o))
-
-            # Pass 1: beliefs about a character on scene. Pass 2: most recent.
-            if names:
-                _add_if(lambda o: o.subject.strip().lower() in names)
-            _add_if(lambda o: True)
-
-            return ordered[:limit]
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Error fetching living-mode beliefs: {e}")
-            return []
-
-    def _fetch_relevant_mental_models(
-        self,
-        save_id: str,
-        max_turn_id: int,
-        on_scene: list[str],
-        limit: int,
-    ) -> list[str]:
-        """Return up to `limit` mental-model summaries for the living-mode prompt.
-
-        Mental models are the most synthetic recall layer (§7.8): one curated
-        profile per subject. Prioritises models about an on-scene character (whose
-        profile the scene most needs), then fills with the most recently refreshed.
-        Bounded by `max_turn_id` (a rewound turn never resurfaces a future model).
-        Degrades to an empty list on any error (never breaks a turn).
-        """
-        if limit <= 0:
-            return []
-        try:
-            from axiom import mental_models as mm_mod
-
-            all_models = mm_mod.get_mental_models(
-                self._db_path, save_id, max_turn_id=max_turn_id
-            )
-            names = {n.strip().lower() for n in (on_scene or []) if n}
-
-            seen: set[str] = set()
-            ordered: list[str] = []
-
-            def _add_if(predicate) -> None:
-                for m in all_models:
-                    if len(ordered) >= limit:
-                        break
-                    summary = (m.summary or "").strip()
-                    if not summary or summary in seen or not predicate(m):
-                        continue
-                    seen.add(summary)
-                    label = m.subject.strip()
-                    ordered.append(f"{label}: {summary}" if label else summary)
-
-            # Pass 1: profiles of a character on scene. Pass 2: most recent.
-            if names:
-                _add_if(lambda m: m.subject.strip().lower() in names)
-            _add_if(lambda m: True)
-
-            return ordered[:limit]
-        except Exception as e:
-            logger.error(f"[ARBITRATOR] Error fetching living-mode mental models: {e}")
-            return []
 
     def _fetch_relevant_lore(self, save_id: str, user_message: str, k: int = 5) -> list[dict]:
         """Fetch Lore Book entries relevant to the current turn.
@@ -1374,25 +984,8 @@ class ArbitratorEngine:
         return [entry for _score, entry in scored[:k]]
 
     def _load_entity_meta(self) -> dict[str, dict[str, str]]:
-        """entity_id → {name, entity_type, entity_role} for alias resolution."""
-        try:
-            with get_connection(self._db_path) as conn:
-                cols = {c[1] for c in conn.execute("PRAGMA table_info(Entities);")}
-                role_sel = "entity_role" if "entity_role" in cols else "entity_type"
-                rows = conn.execute(
-                    f"SELECT entity_id, name, entity_type, {role_sel} AS entity_role "
-                    "FROM Entities WHERE is_active = 1;"
-                ).fetchall()
-            return {
-                r["entity_id"]: {
-                    "name": r["name"] or "",
-                    "entity_type": r["entity_type"] or "",
-                    "entity_role": r["entity_role"] or r["entity_type"] or "",
-                }
-                for r in rows
-            }
-        except sqlite3.Error:
-            return {}
+        """entity_id -> {name, entity_type, entity_role} for alias resolution."""
+        return load_entity_meta(self._db_path)
 
     @staticmethod
     def _resolve_entity_id(
@@ -1401,27 +994,7 @@ class ArbitratorEngine:
         meta: dict[str, dict[str, str]],
     ) -> str:
         """Map LLM aliases (name, 'player') onto the real entity_id."""
-        if not raw:
-            return raw
-        if raw in all_stats or raw in meta:
-            return raw
-        lower = raw.lower()
-        for eid in list(all_stats) + [k for k in meta if k not in all_stats]:
-            if eid.lower() == lower:
-                return eid
-        for eid, info in meta.items():
-            if (info.get("name") or "").lower() == lower:
-                return eid
-        if lower == "player":
-            players = [
-                eid for eid, info in meta.items()
-                if info.get("entity_role") == "player" or info.get("entity_type") == "player"
-            ]
-            if len(players) == 1:
-                return players[0]
-            if "player" in all_stats or "player" in meta:
-                return "player"
-        return raw
+        return resolve_entity_id(raw, all_stats, meta)
 
     @staticmethod
     def _resolve_stat_key(raw: str, entity_stats: dict[str, str]) -> str:
@@ -1429,19 +1002,8 @@ class ArbitratorEngine:
         return resolve_stat_key(raw, entity_stats)
 
     def _load_defined_stats(self) -> set[str]:
-        """Return the set of defined stat names (lowercased) for this universe.
-
-        Read once per turn and passed to `_validate_change` so the stat-restriction
-        rule no longer issues one query per proposed change (former N+1).
-        """
-        try:
-            with get_connection(self._db_path) as conn:
-                rows = conn.execute("SELECT name, stat_id FROM Stat_Definitions;").fetchall()
-            names = {str(r[0]).lower() for r in rows if r[0]}
-            ids = {str(r[1]).lower() for r in rows if r[1]}
-            return names | ids
-        except sqlite3.Error:
-            return set()
+        """Lowercased names and ids of the universe's stat definitions."""
+        return load_defined_stat_names(self._db_path)
 
     def _load_pending_correction(self, save_id: str, turn_id: int) -> str | None:
         """Narrator hint staged by the previous turn (correction loop), if any.

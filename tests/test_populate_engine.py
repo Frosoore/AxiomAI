@@ -185,7 +185,7 @@ def test_cli_populate(db, monkeypatch, capsys):
     from axiom.cli.main import main
 
     llm = _FakeLLM({"lore_entries": [{"category": "General", "name": "X", "content": "y"}]})
-    monkeypatch.setattr(config_mod, "build_llm_from_config", lambda *a, **k: llm)
+    monkeypatch.setattr("axiom.session.resolve_llm_backend", lambda *a, **k: llm)  # via axiom.providers
 
     assert main(["populate", db, "-t", "lore"]) == 0
     assert "lore : 1" in capsys.readouterr().out

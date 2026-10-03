@@ -49,6 +49,13 @@ from axiom.paths import UNIVERSES_DIR, get_settings_file, get_config_dir
 from core.localization import get_translations_dict, tr
 from core.st_parser import parse_st_card
 
+try:
+    from database.backup_manager import create_auto_backup
+    from axiom.checkpoint import set_rewind_backup_handler
+    set_rewind_backup_handler(create_auto_backup)
+except ImportError:
+    pass
+
 # Active session reference
 ACTIVE_SESSION = None
 ACTIVE_SESSION_LOCK = threading.Lock()
@@ -347,7 +354,10 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         db = ACTIVE_SESSION._db_path
         sid = ACTIVE_SESSION._save_id
         try:
-            from axiom.facts import Fact, delete_fact, insert_facts, update_fact
+            from mods.axiom.living_memory.facts import Fact, delete_fact, insert_facts, update_fact
+        except ImportError:
+            self.send_error_json(404, "Living memory mod not loaded")
+            return
 
             if action == "create":
                 statement = (payload.get("statement") or "").strip()
@@ -407,7 +417,10 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         db = ACTIVE_SESSION._db_path
         sid = ACTIVE_SESSION._save_id
         try:
-            from axiom.observations import delete_observation, update_observation
+            from mods.axiom.living_memory.observations import delete_observation, update_observation
+        except ImportError:
+            self.send_error_json(404, "Living memory mod not loaded")
+            return
 
             if action == "update":
                 oid = payload.get("observation_id")
@@ -447,7 +460,10 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         db = ACTIVE_SESSION._db_path
         sid = ACTIVE_SESSION._save_id
         try:
-            from axiom.mental_models import delete_mental_model, update_mental_model
+            from mods.axiom.living_memory.mental_models import delete_mental_model, update_mental_model
+        except ImportError:
+            self.send_error_json(404, "Living memory mod not loaded")
+            return
 
             if action == "update":
                 mid = payload.get("model_id")
@@ -785,14 +801,12 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "No active session loaded")
                 return
             try:
-                inv_service = ACTIVE_SESSION.kernel_registry.get_service("inventory") if getattr(ACTIVE_SESSION, "kernel_registry", None) else None
-                if inv_service and hasattr(inv_service, "load_tree"):
-                    tree = inv_service.load_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
-                else:
-                    from axiom.inventory import load_inventory_tree
-                    from axiom.schema import migrate_schema
-                    migrate_schema(ACTIVE_SESSION._db_path)
-                    tree = load_inventory_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
+                # The axiom.inventory mod's (an empty tree when it is off).
+                inv_service = ACTIVE_SESSION.kernel_registry.get_service("inventory")
+                tree = (
+                    inv_service.load_tree(ACTIVE_SESSION._db_path, ACTIVE_SESSION._save_id)
+                    if inv_service is not None else []
+                )
                 names = {}
                 with get_connection(ACTIVE_SESSION._db_path) as conn:
                     for r in conn.execute("SELECT entity_id, name FROM Entities;"):
@@ -903,18 +917,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     for r in meta_rows:
                         data["metadata"][r["key"]] = r["value"]
                         if r["key"] == "calendar_config":
-                            try:
-                                cal_data = json.loads(r["value"])
-                                data["calendar"] = {
-                                    "minutes_per_hour": cal_data.get("mph", 60),
-                                    "hours_per_day": cal_data.get("hpd", 24),
-                                    "start_day": cal_data.get("sd", 1),
-                                    "start_hour": cal_data.get("sh", 0),
-                                    "start_minute": cal_data.get("sm", 0),
-                                    "month_names": cal_data.get("months", [])
-                                }
-                            except Exception:
-                                pass
+                            from axiom.universe_format import calendar_from_meta
+                            data["calendar"] = calendar_from_meta(r["value"])
                         
                     # Stats
                     applies: dict[str, list[str]] = {}
@@ -1165,6 +1169,21 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 return
             self._pack_save_file(uni_path, save_id)
 
+        elif path == "/api/mods/web-extensions":
+            # Panels, buttons and settings tabs contributed by mods (axiom.ui.web slots).
+            web = _web_ui_service()
+            if web is None:
+                self.send_json({"side_panels": [], "action_buttons": [], "settings_tabs": []})
+                return
+            try:
+                self.send_json({
+                    "side_panels": web.render_side_panels(ACTIVE_SESSION) if ACTIVE_SESSION else [],
+                    "action_buttons": web.get_action_buttons() if ACTIVE_SESSION else [],
+                    "settings_tabs": web.get_settings_tabs(load_config()),
+                })
+            except Exception as exc:
+                self.send_error_json(500, str(exc))
+
         elif path == "/api/session/integrity":
             if not ACTIVE_SESSION:
                 self.send_error_json(400, "No active session loaded")
@@ -1187,7 +1206,11 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
 
         if path == "/api/settings":
             try:
-                # Save config
+                # Save config. The mods' settings are owned by the server (mods page,
+                # mod settings tabs, Canon auto...): the browser's copy may be stale,
+                # never let it overwrite them.
+                payload = dict(payload)
+                payload["mod_settings"] = load_config().mod_settings
                 cfg = AppConfig(**payload)
                 save_config(cfg)
 
@@ -1644,11 +1667,49 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     logger.exception("Living-memory session catch-up failed to start")
 
                 snapshot = ACTIVE_SESSION.get_state_snapshot()
-                if hasattr(ACTIVE_SESSION, "_kernel_registry") and ACTIVE_SESSION._kernel_registry:
-                    panels = ACTIVE_SESSION._kernel_registry.get_slot_contributions("axiom.ui.web:side_panel")
-                    if panels:
-                        snapshot["side_panels"] = panels
+                from axiom.session import get_auto_canonize
+                snapshot["auto_canonize"] = get_auto_canonize(cfg)
+                snapshot["modpack_warning"] = ACTIVE_SESSION.modpack_warning
                 self.send_json(snapshot)
+            except Exception as exc:
+                self.send_error_json(500, str(exc))
+
+        elif path == "/api/mods/action":
+            web = _web_ui_service()
+            if web is None or not ACTIVE_SESSION:
+                self.send_error_json(400, "No active session or web UI mod")
+                return
+            try:
+                message = web.run_action(str(payload.get("id", "")), ACTIVE_SESSION)
+                self.send_json({"status": "success", "message": message})
+            except KeyError:
+                self.send_error_json(404, "Unknown mod action")
+            except Exception as exc:
+                self.send_error_json(500, str(exc))
+
+        elif path == "/api/mods/web-settings":
+            web = _web_ui_service()
+            if web is None:
+                self.send_error_json(400, "Web UI mod not loaded")
+                return
+            try:
+                cfg = load_config()
+                web.save_settings(str(payload.get("id", "")), dict(payload.get("values") or {}), cfg)
+                save_config(cfg)
+                self.send_json({"status": "success"})
+            except KeyError:
+                self.send_error_json(404, "Unknown settings tab")
+            except (TypeError, ValueError) as exc:
+                self.send_error_json(400, str(exc))
+
+        elif path == "/api/session/auto-canonize":
+            try:
+                enabled = bool(payload.get("enabled", False))
+                from axiom.session import set_auto_canonize
+                cfg = load_config()
+                set_auto_canonize(cfg, enabled)
+                save_config(cfg)
+                self.send_json({"status": "success", "auto_canonize": enabled})
             except Exception as exc:
                 self.send_error_json(500, str(exc))
 
@@ -2031,12 +2092,15 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             hint = str(payload.get("world_hint") or "")
             try:
                 from axiom.config import resolve_extraction_model
+                from axiom.kernel.loader import get_kernel_registry
                 from axiom.session import resolve_llm_backend
-                from axiom.stat_dynamics import infer_stat_dynamics
+                stats_svc = get_kernel_registry().get_service("stat_dynamics")
+                if stats_svc is None:
+                    self.send_error_json(409, "Temporary stats need the core.stat_dynamics mod.")
+                    return
                 cfg = load_config()
                 llm = resolve_llm_backend(cfg, model_override=resolve_extraction_model(cfg))
-                merged = infer_stat_dynamics(stats, llm, world_hint=hint)
-                self.send_json({"stats": merged})
+                self.send_json({"stats": stats_svc.infer(stats, llm, world_hint=hint)})
             except Exception as exc:
                 self.send_error_json(500, str(exc))
 
@@ -2064,16 +2128,21 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                     # Sync Calendar
                     cal = payload.get("calendar", {})
                     if cal:
-                        cal_config_val = json.dumps({
-                            "mph": int(cal.get("minutes_per_hour", 60)),
-                            "hpd": int(cal.get("hours_per_day", 24)),
-                            "dpm": [30] * len(cal.get("month_names", [])),
-                            "months": cal.get("month_names", []),
-                            "sd": int(cal.get("start_day", 1)),
-                            "sh": int(cal.get("start_hour", 0)),
-                            "sm": int(cal.get("start_minute", 0))
-                        })
-                        conn.execute("INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('calendar_config', ?);", (cal_config_val,))
+                        from axiom.universe_format import calendar_from_meta, calendar_to_meta
+                        row = conn.execute(
+                            "SELECT value FROM Universe_Meta WHERE key = 'calendar_config';"
+                        ).fetchone()
+                        merged = {**calendar_from_meta(row[0] if row else None), **cal}
+                        months = merged["month_names"]
+                        if "days_per_month" not in cal or len(merged["days_per_month"]) != len(months):
+                            # The editor does not send month lengths: keep the stored ones
+                            # (30 days for an added month) instead of resetting them all.
+                            kept = list(merged["days_per_month"])[: len(months)]
+                            merged["days_per_month"] = kept + [30] * (len(months) - len(kept))
+                        conn.execute(
+                            "INSERT OR REPLACE INTO Universe_Meta (key, value) VALUES ('calendar_config', ?);",
+                            (calendar_to_meta(merged),),
+                        )
                         
                     # Sync types then stats (FK order)
                     for t in payload.get("entity_types") or []:
@@ -2093,7 +2162,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
 
                     conn.execute("DELETE FROM Stat_Type_Links;")
                     conn.execute("DELETE FROM Stat_Definitions;")
-                    from axiom.stat_dynamics import fold_into_parameters
+                    from axiom.universe_format import fold_stat_parameters as fold_into_parameters
                     for s in payload.get("stats", []):
                         params = fold_into_parameters(s)
                         conn.execute("INSERT INTO Stat_Definitions (stat_id, name, value_type, description, parameters) VALUES (?, ?, ?, ?, ?);",
@@ -2562,36 +2631,12 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_error_json(500, str(exc))
 
-def get_time_system(db_path: str):
-    """Build or retrieve TimeSystem / time service from a universe's Universe_Meta.calendar_config."""
-    if ACTIVE_SESSION and getattr(ACTIVE_SESSION, "kernel_registry", None):
-        time_svc = ACTIVE_SESSION.kernel_registry.get_service("time")
-        if time_svc:
-            return time_svc
-    from axiom.time_system import TimeSystem, CalendarConfig
-    try:
-        with get_connection(db_path) as conn:
-            row = conn.execute(
-                "SELECT value FROM Universe_Meta WHERE key='calendar_config';"
-            ).fetchone()
-        cal_str = row["value"] if row else "{}"
-    except Exception:
-        cal_str = "{}"
-    return TimeSystem(CalendarConfig.from_json(cal_str))
-
-
 def reset_living_memory_buffer() -> None:
     """Clear the pending narrative buffer (e.g. on new session / hardcore wipe)."""
-    if ACTIVE_SESSION and ACTIVE_SESSION._kernel_registry:
-        lm_svc = ACTIVE_SESSION._kernel_registry.get_service("living_memory")
-        if lm_svc:
-            lm_svc.reset()
-        return
-    try:
-        from axiom.living_memory import get_living_memory_accumulator
-        get_living_memory_accumulator().reset()
-    except Exception:
-        pass
+    from axiom.kernel.loader import get_kernel_registry
+    lm_svc = get_kernel_registry().get_service("living_memory")  # None when the mod is off
+    if lm_svc is not None:
+        lm_svc.reset()
 
 
 def schedule_living_memory_after_turn(narrative_text: str) -> None:
@@ -2815,6 +2860,12 @@ def player_name_from_save(db_path: str, save_id: str) -> str:
         return "Alice"
 
 # URL parameter parsing helpers
+def _web_ui_service():
+    """The `web_ui` service of the axiom.ui.web mod in the process modpack (None if absent)."""
+    from axiom.kernel.loader import get_kernel_registry
+    return get_kernel_registry().get_service("web_ui")
+
+
 def query_params_from_url(url: str) -> dict:
     parsed = urllib.parse.urlparse(url)
     params = urllib.parse.parse_qs(parsed.query)
@@ -2822,27 +2873,17 @@ def query_params_from_url(url: str) -> dict:
 
 def run_server(port=8000):
     from axiom.config import load_config
-    from axiom.kernel.loader import is_mod_enabled
+    from axiom.kernel.loader import get_kernel_registry, interface_unavailable_message
     cfg = load_config()
 
-    if not is_mod_enabled("axiom.ui.web", cfg):
-        err_msg = (
-            "The web interface mod ('axiom.ui.web') is currently disabled in your configuration.\n"
-            "To re-enable it, run:\n"
-            "    axiom mod enable axiom.ui.web\n\n"
-            "Or launch the desktop Qt interface:\n"
-            "    python main.py"
-        )
+    # The process modpack: bootstrapped once, shared by every Session (D-4). The web
+    # interface is a mod: it starts only if it really loaded, turn pipeline included.
+    get_kernel_registry(cfg)
+    err_msg = interface_unavailable_message("axiom.ui.web")
+    if err_msg is not None:
         logger.error(err_msg)
         print(f"\n[Axiom AI] ERROR: {err_msg}\n", file=sys.stderr)
         return 1
-
-    try:
-        # The process modpack: bootstrapped once, shared by every Session (D-4).
-        from axiom.kernel.loader import get_kernel_registry
-        get_kernel_registry(cfg)
-    except Exception:
-        logger.exception("Failed to bootstrap mods at web server startup")
 
     server = ThreadingHTTPServer(("127.0.0.1", port), AxiomWebHandler)
     url = f"http://127.0.0.1:{port}/"
@@ -2865,7 +2906,7 @@ if __name__ == "__main__":
     if "--safe-mode" in sys.argv:
         from axiom.kernel.loader import set_safe_mode
         set_safe_mode(True)
-        print("Axiom AI Safe Mode active: no mod is loaded.")
+        print("Axiom AI Safe Mode active: interface + minimal chat only.")
     port = 8000
     for arg in sys.argv[1:]:
         if arg.isdigit():

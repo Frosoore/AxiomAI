@@ -82,6 +82,10 @@ def temp_universe_db(tmp_path: Path) -> Path:
                 }),
             )
         )
+        conn.execute("INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES (?, ?, ?, ?);",
+                     ("save_test", "Hero", "Normal", "2026-01-01T00:00:00"))
+        conn.execute("INSERT INTO Entities (entity_id, entity_type, name, is_active) VALUES (?, ?, ?, ?);",
+                     ("player", "player", "Hero", 1))
         conn.commit()
 
     return db_path
@@ -103,9 +107,10 @@ class TestCoreStatDynamicsMod:
         assert manifest.axiom_api == 1
         assert "axiom.turn:arbitrate_stats" in manifest.contributes.hooks
         assert "axiom.step:after_step" in manifest.contributes.hooks
-        assert "modifiers" in manifest.storage
-        assert manifest.storage["modifiers"]["policy"] == "step_keyed_table"
-        assert manifest.storage["modifiers"]["table"] == "Modifier_Snapshots"
+        assert manifest.storage["active_modifiers"]["policy"] == "custom"
+        assert manifest.storage["active_modifiers"]["table"] == "Active_Modifiers"
+        assert manifest.storage["modifier_snapshots"]["policy"] == "step_keyed_table"
+        assert manifest.storage["modifier_snapshots"]["table"] == "Modifier_Snapshots"
 
     def test_load_from_directory(self) -> None:
         """Verify mod loads directly from unpacked directory."""
@@ -189,13 +194,19 @@ class TestCoreStatDynamicsMod:
 
         assert ctx.all_stats["player"]["Panic"] == "0"
         assert any(c["reason"] == "crash" for c in ctx.applied_changes)
-        assert any(
-            m.get("type") == "clear" and m.get("stat_key") == "Panic"
-            for m in ctx.write_batch.modifier_mutations
-        )
+        assert len(ctx.write_batch.staged_ops) >= 1
+        with get_connection(str(temp_universe_db)) as conn:
+            conn.execute(
+                "INSERT INTO Active_Modifiers (modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
+                "VALUES ('m1', 'save_test', 'player', 'Panic', 10, 60);"
+            )
+            for op in ctx.write_batch.staged_ops:
+                op(conn, "save_test", 2)
+            rem = conn.execute("SELECT COUNT(*) FROM Active_Modifiers WHERE save_id = 'save_test';").fetchone()[0]
+            assert rem == 0
 
-    def test_hook_after_step_modifier_mutations(self) -> None:
-        """Verify axiom.step:after_step registers tick and snapshot mutations in TurnWriteBatch."""
+    def test_hook_after_step_modifier_mutations(self, temp_universe_db: Path) -> None:
+        """Verify axiom.step:after_step registers tick mutations in TurnWriteBatch."""
         registry = KernelRegistry()
         load_mod_from_dir(self.MOD_DIR, registry)
 
@@ -206,14 +217,21 @@ class TestCoreStatDynamicsMod:
             player_entity_id="player",
             verbosity="balanced",
             elapsed_minutes=45,
+            db_path=str(temp_universe_db),
         )
 
         registry.execute_hook("axiom.step:after_step", ctx)
 
-        mutations = ctx.write_batch.modifier_mutations
-        assert len(mutations) == 2
-        assert mutations[0] == {"type": "tick", "elapsed_minutes": 45}
-        assert mutations[1] == {"type": "snapshot", "turn_id": 4}
+        assert len(ctx.write_batch.staged_ops) == 1
+        with get_connection(str(temp_universe_db)) as conn:
+            conn.execute(
+                "INSERT INTO Active_Modifiers (modifier_id, save_id, entity_id, stat_key, delta, minutes_remaining) "
+                "VALUES ('m1', 'save_test', 'player', 'Buff', 10, 60);"
+            )
+            for op in ctx.write_batch.staged_ops:
+                op(conn, "save_test", 4)
+            mins = conn.execute("SELECT minutes_remaining FROM Active_Modifiers WHERE modifier_id = 'm1';").fetchone()[0]
+            assert mins == 15  # 60 - 45
 
     def test_mod_deactivation_reversibility_rule_d11(self, temp_universe_db: Path) -> None:
         """Verify Rule D11: When mod is deactivated, turn executes without crash and without decay."""
@@ -247,4 +265,4 @@ class TestCoreStatDynamicsMod:
         assert len(ctx.applied_changes) == 0
 
         # No modifier tick or snapshot mutations staged
-        assert len(ctx.write_batch.modifier_mutations) == 0
+        assert len(ctx.write_batch.staged_ops) == 0

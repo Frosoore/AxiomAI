@@ -46,7 +46,8 @@ _VERSION_RE = re.compile(r'^__version__\s*=\s*"(\d+)\.(\d+)\.(\d+)"[ \t]*$', re.
 
 # Imports interdits dans le moteur (= dépendances vers l'app Qt, l'interface web ou les mods de jeu).
 _FORBIDDEN_IMPORT_RE = re.compile(
-    r"^\s*(?:from|import)\s+(PySide6|PyQt[456]?|ui|workers|core|database|mods|web)\b",
+    r"(?:^\s*(?:from|import)\s+(PySide6|PyQt[456]?|ui|workers|core|database|mods|web)\b"
+    r"|(?:import_module|__import__)\(\s*['\"](?:mods|core|database|ui|web|workers)(?:\.|['\"]))",
     re.MULTILINE,
 )
 
