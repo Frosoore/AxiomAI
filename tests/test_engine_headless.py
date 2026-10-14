@@ -68,15 +68,15 @@ def test_engine_has_no_forbidden_imports():
 
 def test_kernel_holds_no_feature_data_logic():
     """The moved features own their data: outside the table DDL (schema.py), the
-    kernel never queries the tables of inventory, modifiers or living memory
-    (audit 2026-10-03: saves.py had copies of the inventory/modifier code), and
+    kernel never queries the tables of inventory, modifiers, living memory or time
+    (audit 2026-10-03: saves.py had copies of the inventory/modifier/time code), and
     names no feature module."""
     import re
 
     engine = _REPO_ROOT / "axiom"
     query = re.compile(
         r"\b(FROM|INTO|UPDATE|JOIN)\s+(Item_Instances|Inventory_Snapshots|Items_Inventory|"
-        r"Active_Modifiers|Modifier_Snapshots|Observations|Mental_Models|Facts)\b"
+        r"Active_Modifiers|Modifier_Snapshots|Observations|Mental_Models|Facts|Timeline)\b"
     )
     offenders = []
     for path in engine.rglob("*.py"):

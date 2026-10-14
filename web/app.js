@@ -1598,10 +1598,21 @@ function startFastTypewriter(fullText, textDiv, chatHistory, onDone) {
   let index = 0;
   let lastFormatAt = 0;
 
+  const isAtBottom = () => (chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight) <= 35;
+  let autoScroll = isAtBottom();
+  const onScroll = () => {
+    autoScroll = isAtBottom();
+  };
+  chatHistory.addEventListener('scroll', onScroll, { passive: true });
+
   const finish = () => {
+    chatHistory.removeEventListener('scroll', onScroll);
+    document.removeEventListener('visibilitychange', onVis);
     stopTypewriter();
     textDiv.innerHTML = formatMarkdown(fullText);
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    if (autoScroll) {
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
     onDone();
   };
 
@@ -1613,7 +1624,6 @@ function startFastTypewriter(fullText, textDiv, chatHistory, onDone) {
 
   const tick = (now) => {
     if (document.hidden) {
-      document.removeEventListener('visibilitychange', onVis);
       finish();
       return;
     }
@@ -1631,12 +1641,13 @@ function startFastTypewriter(fullText, textDiv, chatHistory, onDone) {
     } else {
       textDiv.textContent = fullText.slice(0, index);
     }
-    chatHistory.scrollTop = chatHistory.scrollHeight;
+    if (autoScroll) {
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
 
     if (index < len) {
       STATE.typewriterRaf = requestAnimationFrame(tick);
     } else {
-      document.removeEventListener('visibilitychange', onVis);
       finish();
     }
   };

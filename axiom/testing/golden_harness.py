@@ -417,11 +417,16 @@ class SessionStateCanonicalizer:
         belief sources, belief -> mental model sources, item instances ->
         containers and inventory snapshots, modifier ids in snapshots).
         """
-        from axiom.storage_registry import CORE_STORAGE_REGISTRY, StoragePolicy
+        from axiom.storage_registry import (
+            CORE_STORAGE_REGISTRY,
+            StoragePolicy,
+            _ensure_mod_storage,
+        )
 
+        _ensure_mod_storage()
         specs = [
             s for s in CORE_STORAGE_REGISTRY
-            if s.is_runtime and s.save_scoped and not s.external and s.columns
+            if s.is_runtime and s.save_scoped and not s.external
             and s.table_name != "Event_Log"  # canonicalized above (payloads normalized)
         ]
         out: dict[str, Any] = {}
@@ -435,7 +440,14 @@ class SessionStateCanonicalizer:
                 if spec.table_name not in present:
                     raw[spec.table_name] = []
                     continue
-                cols = [c for c in spec.columns if c in cls._table_columns(conn, spec.table_name)]
+                available_cols = cls._table_columns(conn, spec.table_name)
+                if spec.columns:
+                    cols = [c for c in spec.columns if c in available_cols]
+                else:
+                    cols = sorted(available_cols)
+                if not cols:
+                    raw[spec.table_name] = []
+                    continue
                 sql = f"SELECT {', '.join(cols)} FROM {spec.table_name} WHERE save_id = ?"
                 params: list[Any] = [save_id]
                 if spec.policy in (StoragePolicy.EVENTS, StoragePolicy.STEP_KEYED) and spec.step_column:

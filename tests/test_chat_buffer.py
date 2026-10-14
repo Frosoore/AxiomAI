@@ -153,3 +153,102 @@ def test_append_image_clears_pending_placeholder(qapp):
     widget.append_image("/nonexistent/turn_999.png")
     assert widget._img_placeholder_range is None
     assert tr("generating_image") not in widget._narrative_display.toPlainText()
+
+
+def test_chat_auto_scroll_follows_streaming_when_at_bottom(qapp):
+    """When the user is at the bottom of the chat, incoming LLM tokens auto-scroll to bottom."""
+    widget = ChatDisplayWidget()
+    widget.resize(300, 200)
+    widget.show()
+    sb = widget._narrative_display.verticalScrollBar()
+
+    # Stream enough lines so the document overflows and creates a scroll range
+    for i in range(50):
+        widget.append_token(f"Line {i} of streaming narrative text.\n")
+    widget.flush_final_buffer()
+
+    assert sb.maximum() > 0
+    assert widget.is_at_bottom() is True
+    assert sb.value() == sb.maximum()
+
+
+def test_chat_auto_scroll_disabled_when_user_scrolled_up(qapp):
+    """When the user scrolls up, auto-scroll is disabled and user position is preserved."""
+    widget = ChatDisplayWidget()
+    widget.resize(300, 200)
+    widget.show()
+    sb = widget._narrative_display.verticalScrollBar()
+
+    for i in range(50):
+        widget.append_token(f"Line {i} of streaming narrative text.\n")
+    widget.flush_final_buffer()
+
+    initial_max = sb.maximum()
+    assert initial_max > 100
+
+    # User scrolls up to view older lines
+    user_pos = 50
+    sb.setValue(user_pos)
+    assert widget.is_at_bottom() is False
+    assert widget._auto_scroll is False
+
+    # New LLM tokens arrive while user is reading above
+    for i in range(50, 80):
+        widget.append_token(f"New line {i} streaming from LLM.\n")
+    widget.flush_final_buffer()
+
+    # The maximum grew, but user's scroll position was NOT forced down
+    assert sb.maximum() > initial_max
+    assert sb.value() == user_pos
+    assert widget._auto_scroll is False
+
+
+def test_chat_auto_scroll_reenabled_when_user_scrolls_back_to_bottom(qapp):
+    """Scrolling back to bottom manually re-enables auto-scroll for subsequent tokens."""
+    widget = ChatDisplayWidget()
+    widget.resize(300, 200)
+    widget.show()
+    sb = widget._narrative_display.verticalScrollBar()
+
+    for i in range(40):
+        widget.append_token(f"Line {i} of narrative.\n")
+    widget.flush_final_buffer()
+
+    # Scroll up -> disabled
+    sb.setValue(20)
+    assert widget._auto_scroll is False
+
+    # Scroll back down -> re-enabled
+    sb.setValue(sb.maximum())
+    assert widget.is_at_bottom() is True
+    assert widget._auto_scroll is True
+
+    # Next tokens follow the bottom
+    for i in range(40, 60):
+        widget.append_token(f"Subsequent line {i}.\n")
+    widget.flush_final_buffer()
+
+    assert sb.value() == sb.maximum()
+    assert widget._auto_scroll is True
+
+
+def test_append_user_message_forces_scroll_to_bottom(qapp):
+    """Submitting a user message forces scrolling to bottom and re-enables auto-scroll."""
+    widget = ChatDisplayWidget()
+    widget.resize(300, 200)
+    widget.show()
+    sb = widget._narrative_display.verticalScrollBar()
+
+    for i in range(40):
+        widget.append_token(f"Line {i} of narrative.\n")
+    widget.flush_final_buffer()
+
+    # User scrolled up
+    sb.setValue(10)
+    assert widget._auto_scroll is False
+
+    # User posts a new action
+    widget.append_user_message("I explore the dark hallway.")
+    assert sb.value() == sb.maximum()
+    assert widget._auto_scroll is True
+

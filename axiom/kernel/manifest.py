@@ -235,10 +235,16 @@ def _parse_storage_section(section: Any) -> dict[str, dict[str, Any]]:
                 if not isinstance(spec["section"], str) or not spec["section"].isidentifier():
                     raise ManifestError(f"[storage] '{name}': `section` must be a simple name.")
                 entry["section"] = spec["section"]
-            if any(h in entry for h in ("state", "load", "diff")) and "section" not in entry:
-                raise ManifestError(f"[storage] '{name}': `state`/`load`/`diff` need a `section` name.")
+        if "time_provider" in spec:
+            ref = spec["time_provider"]
+            if not isinstance(ref, str) or not _HANDLER_RE.match(ref):
+                raise ManifestError(
+                    f"[storage] '{name}': `time_provider` must be \"module:function\" of the mod, got {ref!r}."
+                )
+            entry["time_provider"] = ref
         allowed = {"policy", "table", "step_column", "columns", "id_column", "id_autoincrement",
-                   "fork_with", "rewind", "fork", "snapshot", "section", "state", "load", "diff"}
+                   "fork_with", "rewind", "fork", "snapshot", "section", "state", "load", "diff",
+                   "time_provider"}
         unknown = set(spec) - allowed
         if unknown:
             raise ManifestError(f"[storage] '{name}': unknown key(s) {', '.join(sorted(unknown))}.")

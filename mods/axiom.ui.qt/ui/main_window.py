@@ -91,8 +91,11 @@ class MainWindow(QMainWindow):
 
         # TICKET-057 : honour the "doc tooltips on hover" settings toggle.
         from PySide6.QtWidgets import QApplication
-        from mods.axiom.help_system.ui.help_system import install_tooltip_gate
-        install_tooltip_gate(QApplication.instance())
+        try:
+            from mods.axiom.help_system.ui.help_system import install_tooltip_gate
+            install_tooltip_gate(QApplication.instance())
+        except (ImportError, ModuleNotFoundError):
+            pass
         self.update_mod_visibility()
 
     def _setup_volume_slider(self) -> None:

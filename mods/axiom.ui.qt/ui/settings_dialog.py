@@ -616,10 +616,8 @@ class SettingsDialog(QDialog):
 
         backend = build_llm_from_config(cfg)
         is_cloud = cfg.llm_backend in CLOUD_BACKENDS
-        self._test_worker = ConnectionTestWorker(
-            backend, parent=self, probe_model=is_cloud
-        )
-        self._test_worker.test_finished.connect(
+        self._test_worker = ConnectionTestWorker(backend, probe_model=is_cloud)
+        self._test_worker.result_ready.connect(
             lambda ok, err, lbl=status_label, btn=test_btn: self._on_test_finished(ok, err, lbl, btn)
         )
         self._test_worker.start()

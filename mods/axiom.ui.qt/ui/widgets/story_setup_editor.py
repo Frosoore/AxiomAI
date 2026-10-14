@@ -23,8 +23,12 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
     QSpinBox,
+    QApplication,
+    QTextEdit,
+    QPlainTextEdit,
 )
 from core.localization import tr
+from .table_context import selected_rows, set_cell_widget
 
 
 class StorySetupEditorWidget(QWidget):
@@ -144,7 +148,7 @@ class StorySetupEditorWidget(QWidget):
         type_combo.addItems(self._TYPES)
         type_combo.setCurrentText(s.get("type", "text"))
         type_combo.currentIndexChanged.connect(lambda _: self.changed.emit())
-        self._table.setCellWidget(row, 2, type_combo)
+        set_cell_widget(self._table, row, 2, type_combo)
         
         self._table.setItem(row, 3, QTableWidgetItem(json.dumps(s.get("options", []))))
         self._table.setItem(row, 4, QTableWidgetItem(str(s.get("max_selections", 1))))
@@ -152,8 +156,7 @@ class StorySetupEditorWidget(QWidget):
 
     @Slot()
     def _on_add_clicked(self) -> None:
-        sid = self._in_id.text().strip()
-        if not sid: return
+        sid = self._in_id.text().strip() or f"setup_{uuid.uuid4().hex[:6]}"
         
         new_s = {
             "setup_id": sid,
@@ -170,10 +173,34 @@ class StorySetupEditorWidget(QWidget):
 
     @Slot()
     def _on_delete_clicked(self) -> None:
-        rows = sorted(set(index.row() for index in self._table.selectedIndexes()), reverse=True)
-        for r in rows:
+        for r in reversed(selected_rows(self._table)):
             self._table.removeRow(r)
         self.changed.emit()
 
+    def context_targets(self):
+        return [(self._table, self._on_delete_clicked)]
+
+    def context_add(self, under=None) -> None:
+        self._on_add_clicked()
+
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         self.changed.emit()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Delete:
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                super().keyPressEvent(event)
+                return
+            if selected_rows(self._table):
+                self._on_delete_clicked()
+                return
+            super().keyPressEvent(event)
+        elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if self._in_id.hasFocus() or self._in_question.hasFocus():
+                self._on_add_clicked()
+            else:
+                super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+

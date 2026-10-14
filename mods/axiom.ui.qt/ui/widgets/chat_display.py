@@ -196,6 +196,32 @@ class ChatDisplayWidget(QWidget):
         # text *after* the placeholder before we replace it.
         self._img_placeholder_range: tuple[int, int] | None = None
 
+        # Auto-scroll management: follow streaming LLM text only when the player
+        # is already at the bottom of the chat; disable when scrolled up.
+        self._auto_scroll = True
+        sb = self._narrative_display.verticalScrollBar()
+        sb.valueChanged.connect(self._on_scroll_value_changed)
+        sb.rangeChanged.connect(self._on_scroll_range_changed)
+
+    def is_at_bottom(self) -> bool:
+        """Return True if the chat vertical scrollbar is near or at the bottom."""
+        sb = self._narrative_display.verticalScrollBar()
+        return sb.value() >= (sb.maximum() - 25)
+
+    def _on_scroll_value_changed(self, val: int) -> None:
+        self._auto_scroll = self.is_at_bottom()
+
+    def _on_scroll_range_changed(self, min_val: int, max_val: int) -> None:
+        if self._auto_scroll:
+            self._narrative_display.verticalScrollBar().setValue(max_val)
+
+    def scroll_to_bottom(self, force: bool = False) -> None:
+        """Scroll to the bottom of the chat. If force is True, reactivate auto-scroll."""
+        if force or self._auto_scroll:
+            sb = self._narrative_display.verticalScrollBar()
+            sb.setValue(sb.maximum())
+            self._auto_scroll = True
+
     def retranslate_ui(self):
         self._input_box.setPlaceholderText(tr("type_message"))
         self._send_button.setText(tr("send"))
@@ -273,6 +299,7 @@ class ChatDisplayWidget(QWidget):
             
         cursor.insertText("\n\n")
         self._reset_states()
+        self.scroll_to_bottom(force=True)
 
     def append_hero_intent(self, text: str, turn_id: int | None = None):
         """Display the AI Hero's intended action in a distinct style."""
@@ -297,6 +324,7 @@ class ChatDisplayWidget(QWidget):
             
         cursor.insertText("\n\n")
         self._reset_states()
+        self.scroll_to_bottom(force=False)
 
     def append_player_prep(self, name: str, text: str):
         """Display a queued player action in multiplayer (before resolution)."""
@@ -492,6 +520,10 @@ class ChatDisplayWidget(QWidget):
         if suffix:
             self._process_text_to_cursor(suffix, cursor)
 
+        if self._auto_scroll:
+            sb = self._narrative_display.verticalScrollBar()
+            sb.setValue(sb.maximum())
+
     def append_variants_nav(self, turn_id: int, active_index: int, total_variants: int, is_latest: bool = False):
         cursor = self._narrative_display.textCursor()
         cursor.movePosition(QTextCursor.End)
@@ -637,9 +669,7 @@ class ChatDisplayWidget(QWidget):
         )
         self._img_placeholder_range = (start, cursor.position())
         self._reset_states()
-        self._narrative_display.verticalScrollBar().setValue(
-            self._narrative_display.verticalScrollBar().maximum()
-        )
+        self.scroll_to_bottom(force=False)
 
     def clear_image_placeholder(self):
         """Remove the 'generating illustration…' vignette if present.
@@ -683,7 +713,5 @@ class ChatDisplayWidget(QWidget):
         cursor.insertBlock(reset_fmt)
         self._narrative_display.setCurrentCharFormat(self._get_current_format())
         
-        # Scroll to bottom
-        self._narrative_display.verticalScrollBar().setValue(
-            self._narrative_display.verticalScrollBar().maximum()
-        )
+        # Scroll to bottom if user is following
+        self.scroll_to_bottom(force=False)

@@ -178,6 +178,8 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `fix-json-leak-and-image-prompt` | 🔄 en cours | Fix fuite JSON dans le chat + amélioration prompting images (négatifs + refresh) |
 | `feature-universe-description` | ✅ (indexé a posteriori le 2026-09-22) | Description d'univers (compile/decompile, Hub, Studio, i18n ×10) — commit `c326aa1` ; régression export Hub corrigée par `qa-post-17h59` |
 | `web-ui-continuation` | 🔄 (indexé a posteriori le 2026-09-22) | Interface web alpha (`main_web.py` + `web/`) — commits `d491365`/`4967506` ; dette sécurité TICKET-093/094 soldée le 2026-09-22 |
+| `qol-creator-studio` | 🔄 en cours | Ergonomie Creator Studio : suppression ligne sur sélection colonne/cellule, clic droit contextuel, sélection automatique au clic |
+| `fix-tabletop-image-button-crash` | ✅ | Fix crash clic bouton Illustration dans le chat (`_active_save_id` / worker asynchrone) |
 
 ### site/
 | Sous-dossier | Statut | Description |

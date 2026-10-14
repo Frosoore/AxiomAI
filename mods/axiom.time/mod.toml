@@ -27,5 +27,5 @@ slots = [
 ]
 
 [storage]
-timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id", columns = ["event_id", "save_id", "turn_id", "in_game_time", "description"], id_column = "event_id", id_autoincrement = true }
+timeline = { policy = "step_keyed_table", table = "Timeline", step_column = "turn_id", columns = ["event_id", "save_id", "turn_id", "in_game_time", "description"], id_column = "event_id", id_autoincrement = true, time_provider = "storage:TimelineStorage" }
 fired_events = { policy = "step_keyed_table", table = "Fired_Scheduled_Events", step_column = "fired_turn_id", columns = ["save_id", "event_id", "fired_turn_id"] }

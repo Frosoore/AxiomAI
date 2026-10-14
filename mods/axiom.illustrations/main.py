@@ -49,11 +49,12 @@ class IllustrationsService:
         game_state_tag: str = "",
         cfg: AppConfig | None = None,
         llm: Any = None,
+        force: bool = False,
     ) -> Path | None:
         from mods.axiom.illustrations.image_generator import ImageGenerator
 
         config = cfg or axiom_config.load_config()
-        if not getattr(config, "image_generation_enabled", False):
+        if not force and not getattr(config, "image_generation_enabled", False):
             return None
 
         try:
@@ -66,7 +67,8 @@ class IllustrationsService:
             )
             assets_dir = self._root_for(save_id) / "assets" / save_id
             filename = f"turn_{turn_id}.png"
-            return img_gen.generate_image(visual_prompt, assets_dir, filename)
+            res = img_gen.generate_image(visual_prompt, assets_dir, filename)
+            return Path(res) if res else None
         except Exception as exc:
             logger.warning("[axiom.illustrations] Image generation failed: %s", exc)
             return None

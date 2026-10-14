@@ -27,8 +27,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
     QInputDialog,
+    QApplication,
+    QTextEdit,
+    QPlainTextEdit,
 )
 from core.localization import tr
+from .table_context import selected_rows, set_cell_widget
 
 
 class EntityEditorWidget(QWidget):
@@ -259,7 +263,7 @@ class EntityEditorWidget(QWidget):
         it_desc = QTableWidgetItem(ent.get("description", ""))
         
         self._table.setItem(row, 0, it_id)
-        self._table.setCellWidget(row, 1, type_combo)
+        set_cell_widget(self._table, row, 1, type_combo)
         self._table.setItem(row, 2, it_name)
         self._table.setItem(row, 3, it_desc)
 
@@ -329,7 +333,7 @@ class EntityEditorWidget(QWidget):
             stat_names.insert(0, key)
         key_combo.addItems(stat_names)
         key_combo.setCurrentText(key)
-        self._stats_table.setCellWidget(r, 0, key_combo)
+        set_cell_widget(self._stats_table, r, 0, key_combo)
         key_combo.currentTextChanged.connect(lambda t: self._update_stat_value_widget(r, t))
         
         self._update_stat_value_widget(r, key, value)
@@ -337,7 +341,7 @@ class EntityEditorWidget(QWidget):
     def _update_stat_value_widget(self, row: int, stat_name: str, initial_val: str = None) -> None:
         sdef = next((s for s in self._stat_defs if s["name"] == stat_name), None)
         if not sdef:
-            self._stats_table.setCellWidget(row, 1, QLineEdit(str(initial_val or "")))
+            set_cell_widget(self._stats_table, row, 1, QLineEdit(str(initial_val or "")))
             return
 
         vtype = sdef.get("value_type", "numeric")
@@ -356,13 +360,13 @@ class EntityEditorWidget(QWidget):
                 val = float(params.get("min", 0))
                 
             spin.setValue(val)
-            self._stats_table.setCellWidget(row, 1, spin)
+            set_cell_widget(self._stats_table, row, 1, spin)
         elif vtype == "categorical":
             cb = QComboBox()
             options = params.get("options", [])
             cb.addItems(options)
             if initial_val in options: cb.setCurrentText(initial_val)
-            self._stats_table.setCellWidget(row, 1, cb)
+            set_cell_widget(self._stats_table, row, 1, cb)
 
     def _sync_stats_from_ui(self) -> None:
         """Save current stats table into the active entity dict."""
@@ -420,19 +424,41 @@ class EntityEditorWidget(QWidget):
 
     @Slot()
     def _on_remove_stat_row(self) -> None:
-        r = self._stats_table.currentRow()
-        if r >= 0: self._stats_table.removeRow(r)
+        for r in reversed(selected_rows(self._stats_table)):
+            self._stats_table.removeRow(r)
         self.changed.emit()
 
     @Slot()
     def _on_delete_entity(self) -> None:
-        indices = self._table.selectionModel().selectedRows()
-        rows = sorted([i.row() for i in indices], reverse=True) if indices else [self._table.currentRow()]
-        for r in rows:
-            if 0 <= r < len(self._entities_data):
+        self._sync_stats_from_ui()
+        rows = selected_rows(self._table)
+        if not rows:
+            return
+        # Block signals: removeRow would fire currentCellChanged and make
+        # _on_row_selected flush the old stats into the wrong entity.
+        self._table.blockSignals(True)
+        for r in reversed(rows):
+            if r < len(self._entities_data):
                 del self._entities_data[r]
-                self._table.removeRow(r)
+            self._table.removeRow(r)
+        self._table.blockSignals(False)
+        self._selected_row = -1
+        if self._table.rowCount():
+            self._table.setCurrentCell(min(rows[0], self._table.rowCount() - 1), 2)
+        self._on_row_selected()
         self.changed.emit()
+
+    def context_targets(self):
+        return [
+            (self._table, self._on_delete_entity),
+            (self._stats_table, self._on_remove_stat_row),
+        ]
+
+    def context_add(self, under=None) -> None:
+        if under is not None and self._stats_group.isAncestorOf(under):
+            self._on_add_stat_row()
+        else:
+            self._on_add_clicked()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         """Handle bulk editing: if multiple cells are selected, apply change to all."""
@@ -455,34 +481,20 @@ class EntityEditorWidget(QWidget):
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Delete:
-            selected_items = self._table.selectedItems()
-            if not selected_items:
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                super().keyPressEvent(event)
                 return
 
-            # If whole rows are selected, delete them
-            # Otherwise, just clear cell contents
-            rows = set()
-            for item in selected_items:
-                rows.add(item.row())
-
-            # Check if all columns in these rows are selected
-            all_cols_selected = True
-            for r in rows:
-                for c in range(self._table.columnCount()):
-                    if self._table.item(r, c) not in selected_items:
-                        all_cols_selected = False
-                        break
-                if not all_cols_selected: break
-
-            if all_cols_selected:
-                self._on_delete_entity()
+            if self._stats_table.hasFocus() or self._stats_table.isAncestorOf(focus_widget):
+                if selected_rows(self._stats_table):
+                    self._on_remove_stat_row()
+                    return
             else:
-                self._table.blockSignals(True)
-                for item in selected_items:
-                    if item.column() != 1: # Don't clear type
-                        item.setText("")
-                self._table.blockSignals(False)
-                self.changed.emit()
+                if selected_rows(self._table):
+                    self._on_delete_entity()
+                    return
+            super().keyPressEvent(event)
         elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             # If focusing an input field, trigger add
             if self._in_id.hasFocus() or self._in_name.hasFocus():
@@ -491,3 +503,4 @@ class EntityEditorWidget(QWidget):
                 super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
+

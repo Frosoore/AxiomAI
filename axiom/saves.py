@@ -72,21 +72,14 @@ def resolve_point(
         if at_turn is not None:
             return int(at_turn)
         if at_minute is not None:
-            row = conn.execute(
-                "SELECT MAX(turn_id) FROM Timeline WHERE save_id = ? AND in_game_time <= ?;",
-                (save_id, int(at_minute)),
-            ).fetchone()
-            return int(row[0]) if row and row[0] is not None else 0
+            from axiom.storage_registry import get_turn_at_minute
+            return get_turn_at_minute(conn, save_id, int(at_minute))
         return _max_turn(conn, save_id)
 
 
 def _in_game_minutes_at(conn: sqlite3.Connection, save_id: str, turn_id: int) -> int:
-    row = conn.execute(
-        "SELECT in_game_time FROM Timeline WHERE save_id = ? AND turn_id <= ? "
-        "ORDER BY turn_id DESC LIMIT 1;",
-        (save_id, turn_id),
-    ).fetchone()
-    return int(row[0]) if row and row[0] is not None else 0
+    from axiom.storage_registry import get_in_game_minutes_at
+    return get_in_game_minutes_at(conn, save_id, turn_id)
 
 
 # ---------------------------------------------------------------------------
@@ -359,11 +352,8 @@ def import_save_state(
             migrate_schema(db_path)
             _replace_session_lore(conn, save_id, list(data.get("session_lore") or []), turn_id=0)
             _load_sections(conn, save_id, data, 0, replace_all=True)
-            conn.execute(
-                "INSERT INTO Timeline (save_id, turn_id, in_game_time, description) "
-                "VALUES (?, ?, ?, ?);",
-                (save_id, 0, in_game_minutes, "Save imported"),
-            )
+            from axiom.storage_registry import record_initial_time
+            record_initial_time(conn, save_id, in_game_minutes, "Save imported")
             conn.commit()
     except (sqlite3.Error, KeyError) as exc:
         raise SaveError(f"Import failed (invalid reference?): {exc}") from exc

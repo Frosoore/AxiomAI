@@ -20,8 +20,7 @@ def _resolve_llm(step_context: KernelStepContext, mod_ctx: ModContext) -> Any:
     if step_context.llm is not None:
         return step_context.llm
     from axiom.session import resolve_llm_backend
-    registry = getattr(mod_ctx, "registry", None) or getattr(mod_ctx, "_registry", None)
-    return resolve_llm_backend(registry=registry)
+    return resolve_llm_backend(registry=mod_ctx)
 
 
 def on_execute_step(step_context: KernelStepContext, mod_ctx: ModContext) -> None:

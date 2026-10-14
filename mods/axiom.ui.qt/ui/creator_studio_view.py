@@ -13,6 +13,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
+    QMenu,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -35,6 +37,7 @@ from .widgets.stat_definition_editor import StatDefinitionEditorWidget
 from .widgets.story_setup_editor import StorySetupEditorWidget
 from .widgets.populate_tab import PopulateTabWidget
 from .widgets.map_editor import MapEditorWidget
+from .widgets.table_context import select_row_at
 from .widgets.universe_files_tab import UniverseFilesTabWidget
 from workers.db_worker import DbWorker
 from axiom.config import load_config
@@ -267,6 +270,39 @@ class CreatorStudioView(QWidget):
         layout.addWidget(self._tension_group)
         layout.addStretch()
         return tab
+
+    # ------------------------------------------------------------------
+    # Global right-click menu (Delete on an item, Add for the current tab)
+    # ------------------------------------------------------------------
+
+    def contextMenuEvent(self, event) -> None:
+        """Editors opt in via context_targets()/context_add() (table_context.py).
+
+        Tabs that handle right-click themselves (map) or have no editor
+        (populate, files) never reach here with an opted-in widget.
+        """
+        editor = self._tabs.currentWidget()
+        has_add = hasattr(editor, "context_add")
+        targets = editor.context_targets() if hasattr(editor, "context_targets") else []
+        if not has_add and not targets:
+            return super().contextMenuEvent(event)
+
+        gp = event.globalPos()
+        under = QApplication.widgetAt(gp)
+        menu = QMenu(self)
+        delete_fn = None
+        for view, fn in targets:
+            if under is not None and (view is under or view.isAncestorOf(under)):
+                if select_row_at(view, gp):
+                    delete_fn = fn
+                break
+        if delete_fn is not None:
+            menu.addAction(tr("delete")).triggered.connect(delete_fn)
+        if has_add:
+            label = f"{tr('add')} : {self._tabs.tabText(self._tabs.currentIndex())}"
+            menu.addAction(label).triggered.connect(lambda: editor.context_add(under))
+        menu.exec(gp)
+        event.accept()
 
     # ------------------------------------------------------------------
     # Public API

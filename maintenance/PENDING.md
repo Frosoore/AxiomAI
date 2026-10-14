@@ -34,6 +34,19 @@
 | TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ouvert — arbitrage mods 2026-09-26, mineur |
 | TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | 🔄 rouvert (audit 2026-10-03 : résolu à tort en sept.) → ✅ résolu Phase 2 vrai déplacement |
 | TICKET-107| **11 clés de traduction manquantes dans les réglages et éditeurs Qt** (`settings_dialog`, `stat_editor`, `entity_editor`) | ouvert — i18n, repéré audit oct. 2026 |
+| TICKET-108| **Robustesse petits LLM (Gemma 4B / KoboldCPP)** : dernier message ignoré (message system trailing) + règle universelle concise d'asymétrie d'information (secrets, lore, mystères) | ouvert — prompt engineering & ergonomie modèles légers |
+| TICKET-109| **Export d'univers `.axiom` sans modpack recommandé/requis** (`axiom/package.py`) | ouvert — intégrité des univers moddés |
+| TICKET-110| **`axiom.minimal_chat` : violation d'encapsulation via accès à `mod_ctx._registry`** | ✅ résolu (interface publique ModContext utilisée) |
+| TICKET-111| **Noyau neutre (K12) : résidus JDR et imports LLM dans `axiom/kernel/`** (`KernelStepContext`, `registry.py`, `context.py`, `llm_creator.py`) | ouvert — découplage architectural |
+| TICKET-112| **Harnais Golden : `_canonical_tables` omet les tables déclarées par les mods si appelé isolément** (`golden_harness.py:422`) | ✅ résolu (`_ensure_mod_storage()` appelé au préalable) |
+| TICKET-113| **Manifeste de mod : section déclarative `[schema]` du `mod.toml` ignorée au parsing** (`manifest.py`) | ouvert — complétude spec 0e |
+| TICKET-114| **Harnais Golden : omission des tables de stockage `custom` (`Observations`, `Mental_Models`, `Item_Instances`, `Active_Modifiers`)** (`golden_harness.py:429`) | ✅ résolu (tables sans `columns` préétabli canonicalisées via colonnes de la DB) |
+| TICKET-115| **`Mod_KV` : crash `UNIQUE constraint failed` sur réinsertion après delete + écritures anti-chronologiques permises** (`kv_store.py:46-85`) | ✅ résolu (suivi de la frontière temporelle maximale et mise à jour sécurisée au même tour) |
+| TICKET-116| **Tabletop Qt : désynchronisation de l'UI (`_turn_id` incrémenté, historique et chat pollués) en cas de tour échoué** (`tabletop_view.py:760-770`, `1329`) | ✅ résolu (décrément de `_turn_id`, nettoyage d'historique et reconstruction du chat dans `_on_worker_error`) |
+| TICKET-117| **Tabletop Qt : import inconditionnel de `axiom.help_system` faisant crasher l'app au lancement si le mod est absent** (`main_window.py:94`) | ✅ résolu (import encapsulé dans try/except ImportError dans MainWindow) |
+| TICKET-118| **`axiom.minimal_chat` : absence de bascule automatique lors de la désactivation de `axiom.world`** (`minimal_chat/mod.toml`, `loader.py`) | ✅ résolu (promotion automatique de `axiom.minimal_chat` comme repli transparent de `turn_pipeline`) |
+| TICKET-119| **Noyau : requêtes SQL directes sur la table `Timeline` d'`axiom.time` dans `axiom/saves.py` et `axiom/db_helpers.py`** | ouvert — violation découplage M1 |
+| TICKET-120| **CLI : absence de gestionnaire de sauvegarde automatique (`set_rewind_backup_handler`) lors du rewind** (`play.py`, `saves_cmd.py`) | ouvert — frontière architecturale headless |
 
 Tickets 100→106 : issus du cadrage du système de mods (`Mods/`). Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -562,4 +575,233 @@ Onze clés appelées par `tr("...")` dans l'interface Qt ne figurent pas dans `c
 Ajouter ces 11 clés avec leurs textes de référence dans `core/locales/en.toml`, puis propager dans les 9 autres langues (`fr.toml`, `de.toml`, `es.toml`, etc.).
 **Priorité :** moyenne (qualité visuelle et i18n de l'application Qt).
 
+---
 
+## TICKET-108 — Robustesse des petits modèles (Gemma 4B / KoboldCPP) : message utilisateur ignoré & règle universelle d'asymétrie d'information
+
+**Constat et contexte (remontée utilisateur 2026-10-04) :**
+Sur des modèles compacts (ex: `Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf` exécuté sous KoboldCPP) avec des univers riches en lore et complexité narrative :
+1. **Dernier message du joueur souvent ignoré ou écrasé :**
+   - Dans `axiom/prompts.py:807-834`, un message `role: "system"` (`final_instr` : rappels de verbosité, consignes de focalisation) est injecté *après* le message `role: "user"`.
+   - Les chat-templates des petits LLMs et des backends comme KoboldCPP gèrent mal les rôles système placés après l'utilisateur. Le modèle subit un effet de récence disproportionné (l'attention se concentre sur les derniers tokens de consignes de sortie et « écrase » l'action du joueur juste avant).
+   - De plus, en mode solo, l'enveloppe technique `[SIMULTANEOUS ACTIONS FOR THIS TICK]\n[player] INTENT: ...` dilue l'action dans du métalangage inutile.
+2. **Fuite des secrets, mystères et identités cachées (omniscience naïve des petits modèles) :**
+   - Lorsqu'une information confidentielle (ex: identité secrète d'un PNJ, complot, vérité cachée) est inscrite dans le `global_lore` ou le `lore_book`, les petits modèles (qui ont une Théorie de l'Esprit limitée) considèrent naïvement que tous les personnages de la scène la connaissent et la divulguent spontanément.
+   - Les règles actuelles (`axiom/prompts.py:712-726`) n'imposent aucune barrière épistémique sur les connaissances des PNJ.
+
+**Objectif & Approche architecturale (Directives claires) :**
+- **Refus des rustines spécifiques au cas par cas :** Ne PAS alourdir le prompt système avec des règles séparées pour les « identités secrètes », puis pour les « mystères », puis pour les « complots » (ce qui saturerait la fenêtre d'attention des modèles 4B et augmenterait le coût en tokens).
+- **Règle universelle et concise :** Formuler **une seule phrase ou directive forte** dans les `NARRATOR RULES` (ou le cadre de narration) couvrant l'asymétrie d'information de manière générale et universelle.
+  - *Exemple de principe :* Les PNJ n'agissent et ne s'expriment qu'en fonction de ce qu'ils ont personnellement perçu ou appris directement en jeu ; toute information de fond (secrets, identités cachées, mystères, mobiles dissimulés) reste strictement inconnue d'eux tant qu'elle n'est pas expressément découverte ou révélée dans la scène.
+- **Assainissement de la fin de prompt :**
+  - Fusionner les rappels finaux de verbosité soit dans le message système initial, soit à la fin du message utilisateur, évitant ainsi le rôle `system` traînant après le `user`.
+  - Alléger le gabarit `[SIMULTANEOUS ACTIONS FOR THIS TICK]` en mode solo.
+
+**Priorité :** moyenne (qualité d'expérience majeure pour les modèles légers locaux).
+
+---
+
+## TICKET-109 — Export d'univers `.axiom` sans modpack recommandé/requis (`axiom/package.py`)
+
+**Constat (audit d'octobre 2026) :**
+Alors que les sauvegardes (`.axiomsave`) incluent désormais un manifeste d'intégrité `modpack.json` avec les hash SHA-256 et avertissent à l'ouverture en cas de divergence, l'export/import d'univers `.axiom` (`axiom/package.py`) ne sérialise aucun modpack recommandé ou requis dans l'archive.
+Un univers conçu pour fonctionner avec des mods de mécanique (ex: `axiom.inventory`, `community.survival`, ou des mods tiers) peut être importé et joué sur une instance où ces mods sont absents ou désactivés, sans avertissement.
+
+**Piste :**
+Inclure un fichier optionnel ou une section `[modpack]` dans `universe.toml` / l'archive `.axiom`, et vérifier lors de la sélection ou de la création de partie la présence des mods requis.
+**Priorité :** basse-moyenne.
+
+---
+
+## TICKET-110 — `axiom.minimal_chat` : violation d'encapsulation via accès à `mod_ctx._registry`
+
+**Constat (audit d'octobre 2026) :**
+Dans `mods/axiom.minimal_chat/main.py:23`, la résolution du LLM backend effectuait :
+```python
+registry = getattr(mod_ctx, "registry", None) or getattr(mod_ctx, "_registry", None)
+```
+`ModContext` ne possède pas d'attribut public `registry`, et l'accès à son attribut privé `_registry` violait la règle d'encapsulation et le principe selon lequel les mods officiels doivent consommer la même API publique que les mods tiers (Règle D2).
+
+**Résolution (2026-10-04) :**
+`resolve_llm_backend(registry=mod_ctx)` est désormais appelé directement. `ModContext` implémente publiquement `get_slot` et `get_service`, ce qui satisfait l'interface attendue sans aucun accès à l'attribut privé. Validé par `tests/test_minimal_chat_mod.py`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-111 — Noyau neutre (K12) : résidus JDR et imports LLM dans `axiom/kernel/`
+
+**Constat (audit d'octobre 2026) :**
+Malgré la réussite du déplacement de Phase 2 (zéro import `mods.` dans `axiom/`), le noyau (`axiom/kernel/`) n'est pas encore 100% neutre :
+1. `axiom/kernel/registry.py:23` importe `GenerationCancelled` depuis `axiom.backends.base` (un concept propre aux LLM) pour le propager hors des hooks.
+2. `axiom/kernel/context.py:15` importe `AppConfig` depuis `axiom.config` (qui porte des clés d'API LLM et réglages JDR).
+3. `axiom/kernel/step_context.py:18` (`KernelStepContext`) possède des champs hardcodés spécifiques au JDR narratif (`llm`, `time_llm`, `vector_memory`, `hero_entity_id`, `intents`).
+4. `axiom/kernel/llm_creator.py` est toujours situé dans `axiom/kernel/` au lieu d'un mod dédié (`axiom.creator_studio` ou `axiom.mod_creator`).
+
+**Piste :**
+- Définir une exception générique de cancellation dans le noyau (ex: `StepCancelled`) et la faire hériter ou mapper.
+- Passer un dictionnaire ou une interface de configuration abstraite au `ModContext`.
+- Rendre `KernelStepContext` purement agnostique (stocker les données métier dans `payload` ou `extras`).
+- Déplacer `llm_creator.py` dans un mod (TICKET-C4).
+**Priorité :** moyenne (achèvement de la vision du noyau neutre K12).
+
+---
+
+## TICKET-112 — Harnais Golden : `_canonical_tables` omet les tables déclarées par les mods si appelé isolément (`golden_harness.py:422`)
+
+**Constat (audit d'octobre 2026) :**
+Dans `axiom/testing/golden_harness.py:422`, la liste des tables à canonicaliser filtrait `CORE_STORAGE_REGISTRY` directement. Si `canonicalize_save` ou `compare_saves` était exécuté dans un processus de test sans qu'une fonction comme `get_runtime_tables()` ou un bootstrap de modpack n'ait été appelé au préalable, `_ensure_mod_storage()` n'avait pas tourné et les tables déclarées par les mods (`Facts`, `Observations`, `Item_Instances`, etc.) étaient omises.
+
+**Résolution (2026-10-04) :**
+Ajout d'un appel explicite à `_ensure_mod_storage()` au début de `_canonical_tables` dans `golden_harness.py`. Validé par `tests/test_golden_step.py`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-113 — Manifeste de mod : section déclarative `[schema]` du `mod.toml` ignorée au parsing (`manifest.py`)
+
+**Constat (audit d'octobre 2026) :**
+Bien que les migrations de base de données dynamiques fonctionnent via `ctx.register_migrations(...)` et soient appliquées à la création/ouverture de save, le parseur de manifeste `axiom/kernel/manifest.py` ne lit ni ne valide la table déclarative `[schema]` éventuellement spécifiée dans `mod.toml` (contrairement à `[storage]`).
+
+**Piste :**
+Ajouter `_parse_schema_section(data.get("schema", {}))` dans `axiom/kernel/manifest.py` et mapper les migrations de versions déclaratives vers le gestionnaire de migrations.
+**Priorité :** basse.
+
+---
+
+## TICKET-114 — Harnais Golden : omission des tables de stockage `custom` (`Observations`, `Mental_Models`, `Item_Instances`, `Active_Modifiers`)
+
+**Constat (audit d'octobre 2026) :**
+Dans `axiom/testing/golden_harness.py:428-430`, `_canonical_tables` filtre :
+```python
+specs = [
+    s for s in CORE_STORAGE_REGISTRY
+    if s.is_runtime and s.save_scoped and not s.external and s.columns
+    and s.table_name != "Event_Log"
+]
+```
+Or, toutes les tables enregistrées via `declare_mod_storage` sous la politique `StoragePolicy.CUSTOM` (`Observations`, `Mental_Models` pour `axiom.living_memory` ; `Item_Instances`, `Items_Inventory` pour `axiom.inventory` ; `Active_Modifiers` pour `core.stat_dynamics`) n'ont pas de champ `columns` défini (`columns is None`).
+Par conséquent, `s.columns` est falsy et ces tables sont **systématiquement et totalement omises** de la canonicalisation du Golden Harness. Le test golden step ne vérifie donc ni les croyances et modèles mentaux de la mémoire vivante, ni les objets de l'inventaire, ni les modificateurs de statistiques, contredisant l'affirmation de « vérification complète » dans `TODO.md` (0a).
+
+**Piste :**
+Pour les tables `custom` ayant une table SQL associée (`save_scoped and not external`), inspecter dynamiquement les colonnes de la table via `PRAGMA table_info` ou définir `columns` dans la déclaration de stockage, afin que le Golden Harness compare réellement l'intégralité de l'état runtime.
+**Résolution (2026-10-14) :**
+Dans `axiom/testing/golden_harness.py:428-445`, la condition de filtrage a été allégée pour inclure toutes les tables `is_runtime and save_scoped and not external`. Pour les tables sans `spec.columns` explicite, les colonnes disponibles de la table sont lues dynamiquement via `PRAGMA table_info`. Toutes les tables (`Observations`, `Mental_Models`, `Item_Instances`, `Items_Inventory`, `Active_Modifiers`) sont désormais canonicalisées et comparées. Validé par `tests/test_golden_step.py`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-115 — `Mod_KV` : crash `UNIQUE constraint failed` sur réinsertion après delete + écritures anti-chronologiques permises
+
+**Constat (audit d'octobre 2026) :**
+Dans `axiom/kernel/kv_store.py:46-85`, `_kv_write` recherche la ligne active avec :
+```python
+active = conn.execute(
+    "SELECT from_step FROM Mod_KV "
+    "WHERE save_id = ? AND mod_id = ? AND key = ? AND to_step IS NULL;",
+    (save_id, mod_id, key),
+).fetchone()
+```
+1. **Crash `UNIQUE constraint failed` :** Si une clé a été supprimée au tour N (ce qui positionne `to_step = N`), `active` devient `None`. Si le mod tente ultérieurement d'écrire une valeur pour cette clé au même step N, le code tente un `INSERT INTO Mod_KV ... VALUES (..., from_step=N, to_step=NULL)`. Comme la clé primaire est `(save_id, mod_id, key, from_step)`, SQLite lève immédiatement `sqlite3.IntegrityError: UNIQUE constraint failed`.
+2. **Écritures dans le passé non détectées après suppression :** La vérification `if active is not None and step < active[0]` ne s'applique que si `active` n'est pas None. Si une clé a été supprimée au tour 3, une écriture ultérieure au tour 1 est acceptée sans erreur, insérant `(from_step=1, to_step=NULL)` qui chevauche l'intervalle historique `(from_step=2, to_step=3)`.
+
+**Piste :**
+Rechercher le dernier `from_step` existant (actif ou historique : `SELECT MAX(from_step), to_step FROM Mod_KV WHERE save_id = ? AND mod_id = ? AND key = ?`). Vérifier que `step >= max_from_step` et traiter correctement la réactivation/mise à jour sur le même step.
+**Résolution (2026-10-14) :**
+Dans `axiom/kernel/kv_store.py:45-89`, `_kv_write` vérifie désormais la frontière temporelle maximale `max(from_step, to_step)` sur l'historique complet pour interdire formellement toute écriture anti-chronologique, même après suppression. Si une ligne existe déjà pour le step courant (active ou clôturée par une suppression antérieure au même tour), elle est mise à jour avec `to_step = NULL` évitant le conflit d'unicité. Validé par sondes unitaires et `tests/test_turn_pipeline_b2.py`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-116 — Tabletop Qt : désynchronisation de l'UI (`_turn_id` incrémenté, historique et chat pollués) en cas de tour échoué
+
+**Constat (audit d'octobre 2026) :**
+Dans `mods/axiom.ui.qt/ui/tabletop_view.py:760-770`, lors de la soumission d'une action joueur :
+```python
+self._turn_id += 1
+self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
+self._chat.append_user_message(text, turn_id=self._turn_id)
+self._history.append({"turn_id": self._turn_id, "event_type": "user_input", "payload": text})
+```
+L'état local de l'UI Qt est avancé *avant* l'exécution du tour en arrière-plan.
+En cas d'échec du worker (`_on_worker_error` l.1329), la transaction SQL est annulée dans la base de données, mais côté Qt :
+- `self._turn_id` n'est jamais décrémenté.
+- `_turn_label` n'est pas restauré.
+- Le message utilisateur reste dans `self._chat`.
+- L'entrée `user_input` orpheline reste dans `self._history`.
+À la tentative suivante, `self._turn_id` est de nouveau incrémenté (+2 au total) et deux entrées utilisateur consécutives polluent l'historique UI. Il s'agit du bug exact de TICKET-101 non résolu sur la couche Tabletop Qt.
+
+**Piste :**
+Dans `_on_worker_error`, restaurer `self._turn_id -= 1`, retirer la dernière entrée de `self._history` et de `self._chat`, et rafraîchir `_turn_label`.
+**Résolution (2026-10-14) :**
+Dans `mods/axiom.ui.qt/ui/tabletop_view.py:1335-1345`, `_on_worker_error` retire l'entrée orpheline de `self._history`, décrémente `self._turn_id`, met à jour `_turn_label` et reconstruit l'affichage via `self._chat.rebuild_from_history()`. Validé par `tests/test_turn_pipeline_b2.py::test_qt_worker_shows_llm_unreachable_message`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-117 — Tabletop Qt : import inconditionnel de `axiom.help_system` provoquant un crash si le mod est désinstallé
+
+**Constat (audit d'octobre 2026) :**
+Dans `mods/axiom.ui.qt/ui/main_window.py:94` :
+```python
+from mods.axiom.help_system.ui.help_system import install_tooltip_gate
+install_tooltip_gate(QApplication.instance())
+```
+Cet import est inconditionnel et direct. Pourtant, `mods/axiom.ui.qt/mod.toml` déclare explicitement :
+`"axiom.help_system" = { version = ">=1.0.0", optional = true }`.
+Si le mod `axiom.help_system` n'est pas installé sur la machine ou a été supprimé des dossiers de mods, `MainWindow.__init__` lève un `ModuleNotFoundError` fatal et l'application Qt ne peut pas démarrer.
+
+**Piste :**
+Entourer l'import et l'installation du tooltip gate d'un `try/except (ImportError, ModuleNotFoundError)` ou vérifier la présence du service/mod via le registre du noyau avant d'installer la porte de tooltip.
+**Résolution (2026-10-14) :**
+Dans `mods/axiom.ui.qt/ui/main_window.py:92-98`, l'import et l'appel à `install_tooltip_gate` sont entourés d'un bloc `try/except (ImportError, ModuleNotFoundError)` empêchant tout crash au démarrage si le mod d'aide n'est pas présent.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-118 — `axiom.minimal_chat` : absence de bascule automatique lors de la désactivation de `axiom.world`
+
+**Constat (audit d'octobre 2026) :**
+`mods/axiom.minimal_chat/mod.toml` est configuré avec `enabled_by_default = false`.
+Si un utilisateur désactive `axiom.world` dans ses réglages :
+1. `axiom.turn` est rejeté par le résolveur car sa dépendance requise `axiom.world` est inactive.
+2. `turn_pipeline` n'a plus aucun fournisseur actif (puisque `minimal_chat` est désactivé par défaut).
+3. `axiom.ui.qt` est rejeté car sa dépendance `turn_pipeline` est introuvable.
+4. L'application Qt/CLI échoue au démarrage avec un message d'erreur bloquant.
+Le passage sur `axiom.minimal_chat` ne se produit que si l'utilisateur lance explicitement l'exécutable avec l'argument `--safe-mode`. L'affirmation que « tout décoché » bascule de manière transparente sur le chat minimal en mode normal n'est pas vérifiée.
+
+**Piste :**
+Si `axiom.turn` ne peut pas être satisfait mais que l'interface a besoin d'un `turn_pipeline`, le résolveur devrait automatiquement promouvoir un mod de secours compatible fournissant `turn_pipeline` (tel que `axiom.minimal_chat`) ou clarifier l'activation dans l'UI des réglages.
+**Résolution (2026-10-14) :**
+Dans `axiom/kernel/loader.py:309-335`, `plan_modpack` vérifie si `turn_pipeline` est présent dans le plan d'ordre de chargement. Si absent (ex: `axiom.world` décoché), `axiom.minimal_chat` est automatiquement promu comme repli transparent (sauf si explicitement désactivé par l'utilisateur). `load_mod` supporte `force_enabled=True` pendant le bootstrap pour initialiser le mod promu. Validé par `tests/test_minimal_chat_mod.py`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-119 — Noyau : requêtes SQL directes sur la table `Timeline` d'`axiom.time` dans `axiom/saves.py` et `axiom/db_helpers.py`
+
+**Constat (audit d'octobre 2026) :**
+Bien que la Phase 2 ait extrait le code des 5 fonctionnalités hors de `axiom/`, `axiom/saves.py` (l.76, 85, 363) et `axiom/db_helpers.py` (l.373) exécutent toujours des requêtes SQL directes sur la table `Timeline` (`SELECT MAX(in_game_time) FROM Timeline`, `INSERT INTO Timeline`, etc.).
+Le test de non-régression `test_kernel_holds_no_feature_data_logic` dans `tests/test_engine_headless.py` réussit uniquement parce que `Timeline` a été volontairement omis de son expression régulière de vérification.
+
+**Piste :**
+Déléguer la résolution du temps en jeu et l'initialisation de la chronologie aux gestionnaires de stockage déclarés par le mod `axiom.time` via l'interface `[storage]`, sans requête SQL en dur dans le noyau.
+**Résolution (2026-10-14) :**
+Extraction complète réalisée :
+1. Création de `mods/axiom.time/storage.py` implémentant le fournisseur `TimelineStorage` (`get_current_time`, `get_turn_at_minute`, `get_in_game_minutes_at`, `record_initial_time`).
+2. Déclaration dans `mods/axiom.time/mod.toml` sous `[storage.timeline]` de `time_provider = "storage:TimelineStorage"`.
+3. Support de `time_provider` dans `axiom/kernel/manifest.py`, `axiom/kernel/loader.py` et `axiom/storage_registry.py` (via `TableStorageSpec.time_provider`).
+4. Remplacement de toutes les requêtes SQL directes sur `Timeline` dans `axiom/saves.py` (l.76, 85, 363) et `axiom/db_helpers.py` (l.373) par les appels au fournisseur via `axiom.storage_registry`.
+5. Ajout de `Timeline` dans l'expression régulière de garde de `test_kernel_holds_no_feature_data_logic` dans `tests/test_engine_headless.py`. 0 violation restante.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-120 — CLI : absence de gestionnaire de sauvegarde automatique (`set_rewind_backup_handler`) lors du rewind
+
+**Constat (audit d'octobre 2026) :**
+Lors d'un rewind via `workers/db_tasks.py` (Qt) ou `main_web.py` (Web), `set_rewind_backup_handler(create_auto_backup)` est configuré, assurant la création d'un point de restauration de secours avant toute modification de la base.
+En revanche, les points d'entrée CLI (`axiom/cli/play.py` et `axiom/cli/saves_cmd.py`) n'enregistrent aucun gestionnaire de backup avant d'invoquer `Session.rewind` ou `CheckpointManager.rewind`. Un rewind en CLI s'exécute donc sans filet de sécurité.
+
+**Piste :**
+`axiom/cli/` fait partie du package moteur headless `axiom/` vérifié par `export_engine.check_headless` (qui interdit tout import de `database/`, `core/`, `ui/`, `workers/`). Pour disposer de backups automatiques en CLI sans violer la frontière headless, soit déplacer `backup_manager.py` dans le moteur (`axiom/backup.py`) en le rendant agnostique, soit injecter le handler via un lanceur d'application.
+**Statut :** ouvert — frontière architecturale headless.

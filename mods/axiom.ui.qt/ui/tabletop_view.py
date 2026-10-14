@@ -117,6 +117,7 @@ class TabletopView(HardcoreMixin, QWidget):
         self._lore_worker: DbWorker | None = None
         self._vector_init_worker: VectorInitWorker | None = None
         self._hardcore_worker: HardcoreWorker | None = None
+        self._image_worker = None
         self._canon_busy: bool = False
 
         # Multiplayer (hotseat) turn accumulation: each player submits an intent
@@ -288,15 +289,97 @@ class TabletopView(HardcoreMixin, QWidget):
         cfg = getattr(self, "_config", None) or load_config()
         if not is_mod_enabled("axiom.illustrations", cfg):
             return
-        if not self._active_save_id:
+        if not self._save_id:
             return
+        if getattr(self, "_image_worker", None) is not None and self._image_worker.isRunning():
+            return
+
         from axiom.kernel.registry import get_active_registry
         reg = get_active_registry()
         if not reg:
             return
         illus_svc = reg.get_service("illustrations")
-        if illus_svc and hasattr(self, "_chat"):
-            self.show_image_placeholder()
+        if not illus_svc:
+            return
+
+        narrative = ""
+        target_turn_id = self._turn_id
+        for entry in reversed(self._history):
+            if entry.get("event_type") == "narrative_text":
+                target_turn_id = entry.get("turn_id", self._turn_id)
+                payload = entry.get("payload", {})
+                if isinstance(payload, dict):
+                    variants = payload.get("variants", [])
+                    active = payload.get("active", 0)
+                    if variants:
+                        narrative = variants[min(active, len(variants) - 1)]
+                        break
+                elif isinstance(payload, str):
+                    narrative = payload
+                    break
+
+        if not narrative.strip():
+            if hasattr(self, "_main_window") and hasattr(self._main_window, "on_status_update"):
+                self._main_window.on_status_update(tr("no_narrative_to_illustrate", default="No scene to illustrate."))
+            return
+
+        llm = self._llm
+        if llm is None:
+            try:
+                from axiom.session import resolve_llm_backend
+                llm = resolve_llm_backend(cfg)
+            except Exception:
+                llm = None
+
+        if hasattr(self, "_chat"):
+            self._chat.show_image_placeholder()
+        if hasattr(self, "_image_btn"):
+            self._image_btn.setEnabled(False)
+        if hasattr(self, "_main_window") and hasattr(self._main_window, "on_status_update"):
+            self._main_window.on_status_update(tr("generating_image", default="Generating illustration..."))
+
+        from workers.image_worker import ImageWorker
+        from axiom import paths
+
+        data_root = None
+        if hasattr(paths, "_data_root"):
+            data_root = paths._data_root()
+
+        self._image_worker = ImageWorker(
+            illus_svc=illus_svc,
+            save_id=self._save_id,
+            turn_id=target_turn_id,
+            narrative_text=narrative,
+            cfg=cfg,
+            llm=llm,
+            data_root=data_root,
+        )
+        self._image_worker.image_generated.connect(self._on_image_generated)
+        self._image_worker.error_occurred.connect(self._on_image_error)
+        self._image_worker.start()
+
+    @Slot(object)
+    def _on_image_generated(self, image_path: object) -> None:
+        """Handle completion of on-demand image generation."""
+        if hasattr(self, "_image_btn"):
+            self._image_btn.setEnabled(True)
+        if hasattr(self, "_chat"):
+            if image_path:
+                self._chat.append_image(image_path)
+            else:
+                self._chat.clear_image_placeholder()
+        if hasattr(self, "_main_window") and hasattr(self._main_window, "on_status_update"):
+            self._main_window.on_status_update(tr("ready"))
+
+    @Slot(str)
+    def _on_image_error(self, message: str) -> None:
+        """Handle failure during on-demand image generation."""
+        if hasattr(self, "_image_btn"):
+            self._image_btn.setEnabled(True)
+        if hasattr(self, "_chat"):
+            self._chat.clear_image_placeholder()
+        if hasattr(self, "_main_window") and hasattr(self._main_window, "on_status_update"):
+            self._main_window.on_status_update(f"{tr('error')}: {message}")
 
     def update_mod_visibility(self, config=None) -> None:
         """Dynamically update visibility of UI elements based on active mods."""
@@ -329,6 +412,11 @@ class TabletopView(HardcoreMixin, QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def _active_save_id(self) -> str:
+        """Alias for _save_id (backward compatibility)."""
+        return self._save_id
 
     def retranslate_ui(self) -> None:
         """Refresh all UI text for the current language."""
@@ -1247,6 +1335,14 @@ class TabletopView(HardcoreMixin, QWidget):
             self._pending_intents.clear()
             if self._player_selector.count() > 0:
                 self._player_selector.setCurrentIndex(0)
+
+        # Roll back UI state that was advanced optimistically for this failed turn
+        if self._history and self._history[-1].get("turn_id") == self._turn_id:
+            self._history.pop()
+        self._turn_id = max(0, self._turn_id - 1)
+        self._turn_label.setText(tr("turn_fmt", count=self._turn_id))
+        self._chat.rebuild_from_history(self._history)
+
         self._main_window.on_status_update(tr("error") + ": " + message)
 
         lowered = message.lower()

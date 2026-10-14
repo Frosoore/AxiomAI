@@ -307,6 +307,33 @@ def plan_modpack(
         unavailable[manifest.id] = st.reason
 
     report = resolve_load_order(candidates, user_order=user_order, unavailable=unavailable)
+
+    # Fallback promotion (M3 / TICKET-118): if no mod in the resolved load order provides
+    # 'turn_pipeline', promote axiom.minimal_chat if installed and not explicitly disabled
+    # by the user.
+    has_turn_pipeline = any(
+        "turn_pipeline" in candidates[mid].ordering.provides or mid == "turn_pipeline"
+        for mid in report.load_order
+        if mid in candidates
+    )
+    if not has_turn_pipeline and not is_safe_mode():
+        for manifest, path in installed:
+            if manifest.id == "axiom.minimal_chat":
+                explicitly_disabled = False
+                if config is not None:
+                    if hasattr(config, "disabled_mods") and config.disabled_mods and "axiom.minimal_chat" in config.disabled_mods:
+                        explicitly_disabled = True
+                    settings = (getattr(config, "mod_settings", {}) or {}).get("axiom.minimal_chat", {})
+                    if isinstance(settings, dict) and settings.get("enabled") is False:
+                        explicitly_disabled = True
+                if not explicitly_disabled:
+                    candidates["axiom.minimal_chat"] = manifest
+                    unavailable.pop("axiom.minimal_chat", None)
+                    plan.statuses["axiom.minimal_chat"].state = STATE_ENABLED
+                    plan.statuses["axiom.minimal_chat"].reason = "Promoted as turn pipeline fallback."
+                    report = resolve_load_order(candidates, user_order=user_order, unavailable=unavailable)
+                break
+
     for mod_id, reason in report.disabled_mods.items():
         st = plan.statuses[mod_id]
         st.state, st.reason = STATE_REJECTED, reason
@@ -447,6 +474,9 @@ def declare_mod_storage(manifest: ModManifest, root: Path) -> list[Any]:
                 continue  # registered by init() (checked once it has run)
             table = decl.get("table") or name
             existing = find_storage_spec(table)
+            time_provider = None
+            if "time_provider" in decl:
+                time_provider = _resolve_storage_handler(manifest, root, decl["time_provider"])
             if policy == "step_keyed_table":
                 if existing is not None and existing.owner is None and existing.policy is StoragePolicy.STEP_KEYED \
                         and (existing.step_column or "").lower() == decl["step_column"].lower():
@@ -456,6 +486,7 @@ def declare_mod_storage(manifest: ModManifest, root: Path) -> list[Any]:
                     policy=StoragePolicy.STEP_KEYED,
                     step_column=decl["step_column"],
                     columns=tuple(decl["columns"]),
+                    time_provider=time_provider,
                     id_column=decl["id_column"],
                     id_autoincrement=decl["id_autoincrement"],
                     fork_with=decl.get("fork_with"),
@@ -477,6 +508,7 @@ def declare_mod_storage(manifest: ModManifest, root: Path) -> list[Any]:
                     custom_state=handlers.get("state"),
                     custom_load=handlers.get("load"),
                     custom_diff=handlers.get("diff"),
+                    time_provider=time_provider,
                     save_scoped=not external,
                     external=external,
                     owner=manifest.id,
@@ -545,6 +577,8 @@ def load_mod_from_dir(
     dir_path: Path | str,
     registry: KernelRegistry,
     config: AppConfig | None = None,
+    *,
+    force_enabled: bool = False,
 ) -> tuple[ModManifest, ModContext | None, Any]:
     """Load and initialize a mod from an unpacked directory.
 
@@ -561,13 +595,13 @@ def load_mod_from_dir(
         raise ModLoadError(f"Missing mod.toml in {path}")
 
     manifest = parse_manifest_file(manifest_file)
-    if not _precheck(manifest, config):
+    if not _precheck(manifest, config, force_enabled=force_enabled):
         return manifest, None, None
     return _load_mod_root(path, manifest, registry, config, f"directory {path}")
 
 
-def _precheck(manifest: ModManifest, config: AppConfig | None) -> bool:
-    if not is_mod_enabled(manifest.id, config, manifest):
+def _precheck(manifest: ModManifest, config: AppConfig | None, *, force_enabled: bool = False) -> bool:
+    if not force_enabled and not is_mod_enabled(manifest.id, config, manifest):
         logger.info("Mod '%s' is disabled (safe_mode=%s), skipping.", manifest.id, is_safe_mode())
         return False
     if manifest.axiom_api != KERNEL_API:
@@ -629,6 +663,8 @@ def load_mod_from_archive(
     archive_path: Path | str,
     registry: KernelRegistry,
     config: AppConfig | None = None,
+    *,
+    force_enabled: bool = False,
 ) -> tuple[ModManifest, ModContext | None, Any]:
     """Load and initialize a mod from a .axmod (ZIP) archive.
 
@@ -641,7 +677,7 @@ def load_mod_from_archive(
         raise ModLoadError(f"Mod archive not found: {path}")
 
     manifest = load_manifest_from_archive(path)
-    if not _precheck(manifest, config):
+    if not _precheck(manifest, config, force_enabled=force_enabled):
         return manifest, None, None
     try:
         root = _extract_archive(path, manifest)
@@ -654,13 +690,15 @@ def load_mod(
     path: Path | str,
     registry: KernelRegistry,
     config: AppConfig | None = None,
+    *,
+    force_enabled: bool = False,
 ) -> tuple[ModManifest, ModContext | None, Any]:
     """Load and initialize a mod from either a directory or a .axmod archive."""
     p = Path(path).resolve()
     if p.is_dir():
-        return load_mod_from_dir(p, registry, config)
+        return load_mod_from_dir(p, registry, config, force_enabled=force_enabled)
     elif p.is_file() and p.suffix in (".axmod", ".zip"):
-        return load_mod_from_archive(p, registry, config)
+        return load_mod_from_archive(p, registry, config, force_enabled=force_enabled)
     raise ModLoadError(f"Invalid mod path (must be directory or .axmod archive): {path}")
 
 
@@ -835,7 +873,7 @@ def bootstrap_all_mods(
             logger.error("Mod '%s' not loaded: %s", mod_id, st.reason)
             continue
         try:
-            _m, ctx, module = load_mod(st.path, registry, config)
+            _m, ctx, module = load_mod(st.path, registry, config, force_enabled=True)
         except Exception as err:
             st.state, st.reason = STATE_FAILED, str(err)
             logger.error("Failed to load mod '%s': %s", mod_id, err, exc_info=True)

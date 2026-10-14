@@ -198,14 +198,30 @@ def test_safe_mode_is_interface_plus_minimal_chat():
         set_safe_mode(False)
 
 
-def test_unchecking_the_world_tells_why_the_interface_cannot_start():
-    """Unchecking axiom.world takes the turn pipeline down: the launcher must say so
-    (and how to repair) instead of opening an interface where every turn fails."""
+def test_unchecking_the_world_promotes_minimal_chat_as_fallback():
+    """Unchecking axiom.world promotes axiom.minimal_chat as transparent turn_pipeline
+    fallback so interfaces (Qt, Web, CLI) continue running in minimal chat mode."""
     from axiom.config import AppConfig
     from axiom.kernel.loader import bootstrap_all_mods, interface_unavailable_message
 
     cfg = AppConfig()
     cfg.mod_settings["axiom.world"] = {"enabled": False}
+    reg = bootstrap_all_mods(KernelRegistry(), cfg)
+    msg = interface_unavailable_message("axiom.ui.qt", reg)
+    assert msg is None
+    assert "axiom.minimal_chat" in reg.load_state.load_order
+    assert "axiom.ui.qt" in reg.load_state.load_order
+
+
+def test_disabling_world_and_minimal_chat_tells_why_interface_cannot_start():
+    """When both the world/turn pipeline and minimal chat are disabled, the launcher
+    must say why turn_pipeline is missing instead of opening an unusable UI."""
+    from axiom.config import AppConfig
+    from axiom.kernel.loader import bootstrap_all_mods, interface_unavailable_message
+
+    cfg = AppConfig()
+    cfg.mod_settings["axiom.world"] = {"enabled": False}
+    cfg.mod_settings["axiom.minimal_chat"] = {"enabled": False}
     reg = bootstrap_all_mods(KernelRegistry(), cfg)
     msg = interface_unavailable_message("axiom.ui.qt", reg)
     assert msg is not None

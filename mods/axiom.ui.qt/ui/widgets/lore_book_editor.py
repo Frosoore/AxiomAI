@@ -24,8 +24,12 @@ from PySide6.QtWidgets import (
     QMenu,
     QInputDialog,
     QMessageBox,
+    QApplication,
+    QTextEdit,
+    QPlainTextEdit,
 )
 from core.localization import tr
+from .table_context import selected_rows, set_cell_widget
 
 
 class LoreBookEditorWidget(QWidget):
@@ -171,7 +175,7 @@ class LoreBookEditorWidget(QWidget):
         cat_combo = QComboBox()
         cat_combo.addItems(self._categories)
         cat_combo.setCurrentText(ent.get("category", "General"))
-        self._table.setCellWidget(row, 0, cat_combo)
+        set_cell_widget(self._table, row, 0, cat_combo)
         cat_combo.currentTextChanged.connect(lambda _: self.changed.emit())
         
         it_name = QTableWidgetItem(ent.get("name", ""))
@@ -216,12 +220,15 @@ class LoreBookEditorWidget(QWidget):
 
     @Slot()
     def _on_delete_clicked(self) -> None:
-        indices = self._table.selectionModel().selectedRows()
-        rows = sorted([i.row() for i in indices], reverse=True) if indices else [self._table.currentRow()]
-        for r in rows:
-            if 0 <= r < self._table.rowCount():
-                self._table.removeRow(r)
+        for r in reversed(selected_rows(self._table)):
+            self._table.removeRow(r)
         self.changed.emit()
+
+    def context_targets(self):
+        return [(self._table, self._on_delete_clicked)]
+
+    def context_add(self, under=None) -> None:
+        self._on_add_clicked()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._table.signalsBlocked():
@@ -243,45 +250,14 @@ class LoreBookEditorWidget(QWidget):
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Delete:
-            selected_items = self._table.selectedItems()
-            if not selected_items:
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                super().keyPressEvent(event)
                 return
-
-            rows = set()
-            for item in selected_items:
-                rows.add(item.row())
-
-            all_cols_selected = True
-            for r in rows:
-                for c in range(self._table.columnCount()):
-                    if self._table.item(r, c) not in selected_items:
-                        # For column 0, item() might be None because it's a cellWidget
-                        # So we check if the row is effectively selected
-                        pass 
-                
-            # If any cell in a row is selected, and we want spreadsheet behavior, 
-            # we check if the whole row selection was intended.
-            # Simplified: if multiple rows worth of cells are selected, we might clear them.
-            # If they selected from headers (SelectRows), we delete.
-            
-            # Let's use a consistent logic: if all items in row are in selected_items -> delete row.
-            # Note: cellWidget columns (like col 0) don't have items.
-            is_full_row_delete = True
-            for r in rows:
-                for c in range(1, self._table.columnCount()):
-                    if self._table.item(r, c) not in selected_items:
-                        is_full_row_delete = False
-                        break
-                if not is_full_row_delete: break
-            
-            if is_full_row_delete:
+            if selected_rows(self._table):
                 self._on_delete_clicked()
-            else:
-                self._table.blockSignals(True)
-                for item in selected_items:
-                    item.setText("")
-                self._table.blockSignals(False)
-                self.changed.emit()
+                return
+            super().keyPressEvent(event)
         elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if self._in_name.hasFocus():
                 self._on_add_clicked()
@@ -289,3 +265,4 @@ class LoreBookEditorWidget(QWidget):
                 super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
+

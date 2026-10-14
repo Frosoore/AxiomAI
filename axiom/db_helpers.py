@@ -358,7 +358,7 @@ def get_max_turn_id(db_path: str, save_id: str) -> int:
 
 
 def get_current_time(db_path: str, save_id: str) -> int:
-    """Read the highest in_game_time from Timeline for a save.
+    """Read the highest in_game_time for a save via the registered storage provider.
 
     Args:
         db_path:  Path to the universe .db file.
@@ -367,15 +367,8 @@ def get_current_time(db_path: str, save_id: str) -> int:
     Returns:
         The maximum in_game_time in minutes, or 0 if no timeline exists.
     """
-    try:
-        with get_connection(db_path) as conn:
-            row = conn.execute(
-                "SELECT MAX(in_game_time) FROM Timeline WHERE save_id = ?",
-                (save_id,)
-            ).fetchone()
-            return row[0] if row and row[0] is not None else 0
-    except (sqlite3.Error, FileNotFoundError):
-        return 0
+    from axiom.storage_registry import get_current_time as _get_time
+    return _get_time(db_path, save_id)
 
 
 @patchable("axiom.db_helpers:get_spatial_context")

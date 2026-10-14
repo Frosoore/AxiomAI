@@ -43,16 +43,25 @@ def _kv_write(
     transaction. Steps must not go backwards: a value is never written before the
     current one (rewind first)."""
     step = int(step)
+    latest = conn.execute(
+        "SELECT from_step, to_step FROM Mod_KV "
+        "WHERE save_id = ? AND mod_id = ? AND key = ? "
+        "ORDER BY from_step DESC LIMIT 1;",
+        (save_id, mod_id, key),
+    ).fetchone()
+    if latest is not None:
+        latest_frontier = max(latest[0], latest[1] or 0)
+        if step < latest_frontier:
+            raise ValueError(
+                f"Mod_KV '{mod_id}:{key}': write at step {step} before the current value "
+                f"(step {latest_frontier}); rewind the save first."
+            )
+
     active = conn.execute(
         "SELECT from_step FROM Mod_KV "
         "WHERE save_id = ? AND mod_id = ? AND key = ? AND to_step IS NULL;",
         (save_id, mod_id, key),
     ).fetchone()
-    if active is not None and step < active[0]:
-        raise ValueError(
-            f"Mod_KV '{mod_id}:{key}': write at step {step} before the current value "
-            f"(step {active[0]}); rewind the save first."
-        )
     if value_json is None:
         if active is None:
             return
@@ -69,13 +78,20 @@ def _kv_write(
                 (step, save_id, mod_id, key),
             )
         return
-    if active is not None and active[0] == step:
+
+    existing_step_row = conn.execute(
+        "SELECT to_step FROM Mod_KV "
+        "WHERE save_id = ? AND mod_id = ? AND key = ? AND from_step = ?;",
+        (save_id, mod_id, key, step),
+    ).fetchone()
+    if existing_step_row is not None:
         conn.execute(
-            "UPDATE Mod_KV SET value = ? "
+            "UPDATE Mod_KV SET value = ?, to_step = NULL "
             "WHERE save_id = ? AND mod_id = ? AND key = ? AND from_step = ?;",
             (value_json, save_id, mod_id, key, step),
         )
         return
+
     if active is not None:
         conn.execute(
             "UPDATE Mod_KV SET to_step = ? "

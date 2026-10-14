@@ -23,8 +23,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QGroupBox,
     QSpinBox,
+    QApplication,
+    QTextEdit,
+    QPlainTextEdit,
 )
 from core.localization import tr
+from .table_context import selected_rows, set_cell_widget
 
 
 class RuleEditorWidget(QWidget):
@@ -279,14 +283,14 @@ class RuleEditorWidget(QWidget):
         if val_stat and val_stat not in stat_names: stat_names.insert(0, val_stat)
         stat_combo.addItems(stat_names)
         stat_combo.setCurrentText(val_stat)
-        self._cond_table.setCellWidget(r, 0, stat_combo)
+        set_cell_widget(self._cond_table, r, 0, stat_combo)
         stat_combo.currentTextChanged.connect(lambda _: self.changed.emit())
         
         # Comparator
         comp_combo = QComboBox()
         comp_combo.addItems(self._COMPARATORS)
         comp_combo.setCurrentText(clause.get("comparator", "=="))
-        self._cond_table.setCellWidget(r, 1, comp_combo)
+        set_cell_widget(self._cond_table, r, 1, comp_combo)
         comp_combo.currentTextChanged.connect(lambda _: self.changed.emit())
         
         # Value
@@ -302,7 +306,7 @@ class RuleEditorWidget(QWidget):
         for atype in self._ACTION_TYPES:
             type_combo.addItem(tr(f"action_{atype}"), atype)
         type_combo.setCurrentIndex(max(0, type_combo.findData(action.get("type", "stat_change"))))
-        self._act_table.setCellWidget(r, 0, type_combo)
+        set_cell_widget(self._act_table, r, 0, type_combo)
         type_combo.currentIndexChanged.connect(lambda _: self.changed.emit())
         
         # Target
@@ -316,7 +320,7 @@ class RuleEditorWidget(QWidget):
         if val_stat and val_stat not in stat_names: stat_names.insert(0, val_stat)
         stat_combo.addItems(stat_names)
         stat_combo.setCurrentText(val_stat)
-        self._act_table.setCellWidget(r, 2, stat_combo)
+        set_cell_widget(self._act_table, r, 2, stat_combo)
         stat_combo.currentTextChanged.connect(lambda _: self.changed.emit())
         
         # Value
@@ -374,8 +378,8 @@ class RuleEditorWidget(QWidget):
 
     @Slot()
     def _on_rem_cond_row(self) -> None:
-        r = self._cond_table.currentRow()
-        if r >= 0: self._cond_table.removeRow(r)
+        for r in reversed(selected_rows(self._cond_table)):
+            self._cond_table.removeRow(r)
         self.changed.emit()
 
     @Slot()
@@ -385,19 +389,44 @@ class RuleEditorWidget(QWidget):
 
     @Slot()
     def _on_rem_act_row(self) -> None:
-        r = self._act_table.currentRow()
-        if r >= 0: self._act_table.removeRow(r)
+        for r in reversed(selected_rows(self._act_table)):
+            self._act_table.removeRow(r)
         self.changed.emit()
 
     @Slot()
     def _on_delete_rule(self) -> None:
-        indices = self._table.selectionModel().selectedRows()
-        rows = sorted([i.row() for i in indices], reverse=True) if indices else [self._table.currentRow()]
-        for r in rows:
-            if 0 <= r < len(self._rules_data):
+        self._sync_subtables_from_ui()
+        rows = selected_rows(self._table)
+        if not rows:
+            return
+        # Block signals: removeRow would fire currentCellChanged and make
+        # _on_row_selected flush the old sub-tables into the wrong rule.
+        self._table.blockSignals(True)
+        for r in reversed(rows):
+            if r < len(self._rules_data):
                 del self._rules_data[r]
-                self._table.removeRow(r)
+            self._table.removeRow(r)
+        self._table.blockSignals(False)
+        self._selected_row = -1
+        if self._table.rowCount():
+            self._table.setCurrentCell(min(rows[0], self._table.rowCount() - 1), 0)
+        self._on_row_selected()
         self.changed.emit()
+
+    def context_targets(self):
+        return [
+            (self._table, self._on_delete_rule),
+            (self._cond_table, self._on_rem_cond_row),
+            (self._act_table, self._on_rem_act_row),
+        ]
+
+    def context_add(self, under=None) -> None:
+        if under is not None and self._cond_table.isAncestorOf(under):
+            self._on_add_cond_row()
+        elif under is not None and self._act_table.isAncestorOf(under):
+            self._on_add_act_row()
+        else:
+            self._on_add_clicked()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._table.signalsBlocked():
@@ -417,30 +446,23 @@ class RuleEditorWidget(QWidget):
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Delete:
-            selected_items = self._table.selectedItems()
-            if not selected_items:
+            focus_widget = QApplication.focusWidget()
+            if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                super().keyPressEvent(event)
                 return
-
-            rows = set()
-            for item in selected_items:
-                rows.add(item.row())
-
-            all_cols_selected = True
-            for r in rows:
-                for c in range(self._table.columnCount()):
-                    if self._table.item(r, c) not in selected_items:
-                        all_cols_selected = False
-                        break
-                if not all_cols_selected: break
-
-            if all_cols_selected:
-                self._on_delete_rule()
+            if self._cond_table.hasFocus() or self._cond_table.isAncestorOf(focus_widget):
+                if selected_rows(self._cond_table):
+                    self._on_rem_cond_row()
+                    return
+            elif self._act_table.hasFocus() or self._act_table.isAncestorOf(focus_widget):
+                if selected_rows(self._act_table):
+                    self._on_rem_act_row()
+                    return
             else:
-                self._table.blockSignals(True)
-                for item in selected_items:
-                    item.setText("")
-                self._table.blockSignals(False)
-                self.changed.emit()
+                if selected_rows(self._table):
+                    self._on_delete_rule()
+                    return
+            super().keyPressEvent(event)
         elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if self._in_id.hasFocus() or self._in_target.hasFocus():
                 self._on_add_clicked()
@@ -448,3 +470,4 @@ class RuleEditorWidget(QWidget):
                 super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
+
