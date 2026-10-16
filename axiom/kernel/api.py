@@ -127,7 +127,10 @@ def _simple_match(version: str, op: str, target: str) -> bool:
     if op == "<":
         return a < b
     if op == "~=":
-        prefix = _vtuple(target)[:-1]
+        vt = _vtuple(target)
+        if len(vt) < 2:
+            return False
+        prefix = vt[:-1]
         return a >= b and a[: len(prefix)] == prefix
     return False
 
@@ -146,8 +149,11 @@ def validate_version_spec(spec: str) -> None:
     except Exception as err:
         raise ValueError(f"Invalid version specifier '{spec}': {err}") from err
     for part in spec.split(","):
-        if not _SIMPLE_SPEC.match(part.strip()):
+        m = _SIMPLE_SPEC.match(part.strip())
+        if not m:
             raise ValueError(f"Invalid version specifier '{spec}'.")
+        if m.group(1) == "~=" and len(_vtuple(m.group(2))) < 2:
+            raise ValueError(f"Invalid version specifier '{spec}': ~= requires at least two version segments.")
 
 
 def version_satisfies(version: str, spec: str) -> bool:
@@ -159,7 +165,7 @@ def version_satisfies(version: str, spec: str) -> bool:
         from packaging.specifiers import SpecifierSet
         from packaging.version import Version
         return SpecifierSet(spec).contains(Version(version), prereleases=True)
-    except ImportError:
+    except (ImportError, Exception):
         pass
     for part in spec.split(","):
         m = _SIMPLE_SPEC.match(part.strip())

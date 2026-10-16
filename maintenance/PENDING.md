@@ -22,17 +22,17 @@
 | TICKET-083| **Croyances : fuite temporelle au rewind** (`created_turn_id = min(tours des sources)` → une croyance survit à un rembobinage avant qu'elle ait été consolidée) | ouvert — QA Hindsight 2 (2026-06-19), sévérité basse-moyenne |
 | TICKET-084| **Budget de prompt `living` = jusqu'à 3× `rag_chunk_count`** (croyances + faits + chunks narratifs cumulés) | ouvert — QA Hindsight 2 (2026-06-19), coût tokens |
 | TICKET-085| **Cache BM25 : `collection.get()` plein corpus tourne encore au cache-hit** (seul le build d'index est caché) | ouvert — QA Hindsight 2 (2026-06-19), micro-opt mineure |
-| TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ouvert — QA fs 2026-06-21, même classe que 086 (inventaire + ses snapshots désormais copiés au fork, TICKET-095) |
-| TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models **+ `Item_Instances`/`Session_Lore`** (données de partie d'une save embarquée peuvent fuir dans un `.axiom` « définition seule ») | ouvert — QA fs 2026-06-21, basse sévérité |
+| TICKET-088| **`fork_save` ne copie pas** Facts/Observations/Mental_Models/Snapshots/Modifier_Snapshots (mémoire living + snapshots de rewind perdus au fork d'une save embarquée) | ✅ résolu (IDs entiers, remappage sources, summary filtré, fork externe unifié) |
+| TICKET-089| **`package._RUNTIME_TABLES` omet** Facts/Observations/Mental_Models **+ `Item_Instances`/`Session_Lore`** (données de partie d'une save embarquée peuvent fuir dans un `.axiom` « définition seule ») | ✅ résolu (`all_runtime_table_names()` utilisé) |
 | TICKET-090| **`paths` : pas de `get_universes_dir()`**, `UNIVERSES_DIR` figé à l'import (insensible à `AXIOM_DATA_DIR`/`configure`) alors que saves/vector le sont → isolation asymétrique | ouvert — QA fs 2026-06-21, archi/cohérence |
 | TICKET-099| **Clés Fireworks intégrées expirées (2026-06-30) mais `BUILTIN_KEYS_ENABLED = True`** → un nouvel utilisateur est configuré par défaut sur des clés mortes | ouvert — **décision utilisateur** (couper l'interrupteur ou renouveler le pool) |
-| TICKET-100| **Rewind web/CLI ne rembobine pas ChromaDB** + ids `uuid4` → rejouer un tour **ajoute un doublon** (le RAG voit le « futur annulé ») | ouvert — arbitrage mods 2026-09-26, **important** |
-| TICKET-101| **Tour échoué ou annulé → `user_input` orphelin + `turn_id` décalé** (2 messages joueur d'affilée au tour suivant) | ouvert — arbitrage mods 2026-09-26, **important**, reproduit |
-| TICKET-102| **Job mémoire living web sans verrou** : un rewind pendant l'appel LLM laisse des faits de tours annulés | ouvert — arbitrage mods 2026-09-26, probable (course) |
-| TICKET-103| **`fork_save --turn` copie `Fired_Scheduled_Events` et `Session_Lore` postérieurs au point de fork** | ouvert — arbitrage mods 2026-09-26, mineur |
-| TICKET-104| **`regenerate.py` : `.replace` d'une consigne absente** → bloc JSON stocké dans les variantes et renvoyé au LLM | ouvert — arbitrage mods 2026-09-26, mineur, reproduit |
-| TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ouvert — arbitrage mods 2026-09-26, mineur |
-| TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | 🔄 rouvert (audit 2026-10-03 : résolu à tort en sept.) → ✅ résolu Phase 2 vrai déplacement |
+| TICKET-100| **Rewind web/CLI ne rembobine pas ChromaDB** + ids `uuid4` → rejouer un tour **ajoute un doublon** (le RAG voit le « futur annulé ») | ✅ résolu (handlers déclarés dans `mod.toml` et implémentés dans `storage.py` pour RAG et illustrations) |
+| TICKET-101| **Tour échoué ou annulé → `user_input` orphelin + `turn_id` décalé** (2 messages joueur d'affilée au tour suivant) | ✅ résolu (`resolve_tick` restaure l'état et l'UI Qt décrémente `_turn_id`) |
+| TICKET-102| **Job mémoire living web sans verrou** : un rewind pendant l'appel LLM laisse des faits de tours annulés | ✅ résolu (`guarded_write` et vérification d'époque dans `_maybe_auto_canonize`) |
+| TICKET-103| **`fork_save --turn` copie `Fired_Scheduled_Events` et `Session_Lore` postérieurs au point de fork** | ✅ résolu (filtrage tour N, `fork_item_instances` isolé du futur au tour 0) |
+| TICKET-104| **`regenerate.py` : `.replace` d'une consigne absente** → bloc JSON stocké dans les variantes et renvoyé au LLM | ✅ résolu (strip JSON, prompt sections des mods et format `minimal_chat`) |
+| TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ✅ résolu (`correction_hint` dans `Event_Log`, rembobinable) |
+| TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | ✅ résolu (Phase 2 vrai déplacement) |
 | TICKET-107| **11 clés de traduction manquantes dans les réglages et éditeurs Qt** (`settings_dialog`, `stat_editor`, `entity_editor`) | ouvert — i18n, repéré audit oct. 2026 |
 | TICKET-108| **Robustesse petits LLM (Gemma 4B / KoboldCPP)** : dernier message ignoré (message system trailing) + règle universelle concise d'asymétrie d'information (secrets, lore, mystères) | ouvert — prompt engineering & ergonomie modèles légers |
 | TICKET-109| **Export d'univers `.axiom` sans modpack recommandé/requis** (`axiom/package.py`) | ouvert — intégrité des univers moddés |
@@ -40,13 +40,19 @@
 | TICKET-111| **Noyau neutre (K12) : résidus JDR et imports LLM dans `axiom/kernel/`** (`KernelStepContext`, `registry.py`, `context.py`, `llm_creator.py`) | ouvert — découplage architectural |
 | TICKET-112| **Harnais Golden : `_canonical_tables` omet les tables déclarées par les mods si appelé isolément** (`golden_harness.py:422`) | ✅ résolu (`_ensure_mod_storage()` appelé au préalable) |
 | TICKET-113| **Manifeste de mod : section déclarative `[schema]` du `mod.toml` ignorée au parsing** (`manifest.py`) | ouvert — complétude spec 0e |
-| TICKET-114| **Harnais Golden : omission des tables de stockage `custom` (`Observations`, `Mental_Models`, `Item_Instances`, `Active_Modifiers`)** (`golden_harness.py:429`) | ✅ résolu (tables sans `columns` préétabli canonicalisées via colonnes de la DB) |
-| TICKET-115| **`Mod_KV` : crash `UNIQUE constraint failed` sur réinsertion après delete + écritures anti-chronologiques permises** (`kv_store.py:46-85`) | ✅ résolu (suivi de la frontière temporelle maximale et mise à jour sécurisée au même tour) |
-| TICKET-116| **Tabletop Qt : désynchronisation de l'UI (`_turn_id` incrémenté, historique et chat pollués) en cas de tour échoué** (`tabletop_view.py:760-770`, `1329`) | ✅ résolu (décrément de `_turn_id`, nettoyage d'historique et reconstruction du chat dans `_on_worker_error`) |
-| TICKET-117| **Tabletop Qt : import inconditionnel de `axiom.help_system` faisant crasher l'app au lancement si le mod est absent** (`main_window.py:94`) | ✅ résolu (import encapsulé dans try/except ImportError dans MainWindow) |
-| TICKET-118| **`axiom.minimal_chat` : absence de bascule automatique lors de la désactivation de `axiom.world`** (`minimal_chat/mod.toml`, `loader.py`) | ✅ résolu (promotion automatique de `axiom.minimal_chat` comme repli transparent de `turn_pipeline`) |
-| TICKET-119| **Noyau : requêtes SQL directes sur la table `Timeline` d'`axiom.time` dans `axiom/saves.py` et `axiom/db_helpers.py`** | ouvert — violation découplage M1 |
+| TICKET-114| **Harnais Golden : omission des tables de stockage `custom` (`Observations`, `Mental_Models`, `Item_Instances`, `Active_Modifiers`)** (`golden_harness.py:429`) | ✅ résolu (13 tables peuplées et comparées, fork tour 8, mock 3e réponse, fix CHECK modifiers expirés) |
+| TICKET-115| **`Mod_KV` : crash `UNIQUE constraint failed` sur réinsertion après delete + écritures anti-chronologiques permises** (`kv_store.py:46-85`) | ✅ résolu (frontière temporelle max et update sécurisé) |
+| TICKET-116| **Tabletop Qt : désynchronisation de l'UI (`_turn_id` incrémenté, historique et chat pollués) en cas de tour échoué** (`tabletop_view.py:760-770`, `1329`) | ✅ résolu (restauration UI dans `_on_worker_error`) |
+| TICKET-117| **Tabletop Qt : import inconditionnel de `axiom.help_system` faisant crasher l'app au lancement si le mod est absent** (`main_window.py:94`) | ✅ résolu (pont `help_bridge.py` créé, 27 imports non protégés éliminés, fallback default tr) |
+| TICKET-118| **`axiom.minimal_chat` : absence de bascule automatique lors de la désactivation de `axiom.world`** (`minimal_chat/mod.toml`, `loader.py`) | ✅ résolu (promotion automatique de repli, cascade STATE_NEXT_LAUNCH pour mods non-hot) |
+| TICKET-119| **Noyau : requêtes SQL directes sur la table `Timeline` d'`axiom.time` dans `axiom/saves.py` et `axiom/db_helpers.py`** | ✅ résolu (time_provider délégué au mod) |
 | TICKET-120| **CLI : absence de gestionnaire de sauvegarde automatique (`set_rewind_backup_handler`) lors du rewind** (`play.py`, `saves_cmd.py`) | ouvert — frontière architecturale headless |
+| TICKET-121| **UI Web : 100% de code mort dans les routes de mutation de la mémoire vivante (`main_web.py:356-495`)** | ✅ résolu (désindentation hors du except ImportError, tests passants) |
+| TICKET-122| **UI Web : `/api/session/inventory/move` échoue systématiquement en HTTP 400 (`main_web.py:1601` vs `web/app.js:1079`)** | ✅ résolu (compatibilité dest_holder_kind / dest_holder_id, test web validé) |
+| TICKET-123| **Pipeline du tour : injection des sections de prompt M6 erronée (`pos == "user"` écrase le reminder système, `"system"` collé après le JSON)** | ✅ résolu (ciblage vrai message user, system avant json, positions de prompt complètes) |
+| TICKET-124| **UI Qt : widgets des mods ignorés par `continue` dans `settings_dialog.py:312` et `constants_sidebar.py:131`** | ouvert — intégration slots UI |
+| TICKET-125| **Providers : `ProvidersService` incomplet pour 5 providers cloud (`claude`, `venice`, `fireworks`, `openai`, `openrouter`)** | ✅ résolu (drivers cloud enregistrés dans ProvidersService) |
+| TICKET-126| **Paquet PyPI `export_engine.py` inutilisable sans `mods/` et vulnérabilité Zip Slip dans `store.py:290`** | ouvert — intégrité export/store |
 
 Tickets 100→106 : issus du cadrage du système de mods (`Mods/`). Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -805,3 +811,99 @@ En revanche, les points d'entrée CLI (`axiom/cli/play.py` et `axiom/cli/saves_c
 **Piste :**
 `axiom/cli/` fait partie du package moteur headless `axiom/` vérifié par `export_engine.check_headless` (qui interdit tout import de `database/`, `core/`, `ui/`, `workers/`). Pour disposer de backups automatiques en CLI sans violer la frontière headless, soit déplacer `backup_manager.py` dans le moteur (`axiom/backup.py`) en le rendant agnostique, soit injecter le handler via un lanceur d'application.
 **Statut :** ouvert — frontière architecturale headless.
+
+---
+
+## TICKET-121 — UI Web : 100% de code mort dans les routes de mutation de la mémoire vivante (`main_web.py:356-495`)
+
+**Constat (audit d'octobre 2026) :**
+Dans `main_web.py:356-408` (`_handle_memory_fact_mutation`), `419-451` (`_handle_memory_belief_mutation`) et `462-494` (`_handle_memory_model_mutation`), les blocs `if action == "create": ...`, `if action == "update": ...` et `if action == "delete": ...` sont tous indentés à l'intérieur du bloc `except ImportError:` après l'instruction `return` :
+```python
+try:
+    from mods.axiom.living_memory.facts import Fact, delete_fact, insert_facts, update_fact
+except ImportError:
+    self.send_error_json(404, "Living memory mod not loaded")
+    return
+
+    if action == "create":  # <-- INDENTÉ DANS LE EXCEPT APRÈS RETURN !
+```
+Quand le mod `axiom.living_memory` est chargé, l'import réussit, le bloc `except` est sauté, et les méthodes retournent `None` sans rien faire et sans envoyer aucune réponse HTTP. L'édition de la mémoire vivante en Web est 100% inopérante.
+
+**Piste :**
+Désindenter le code métier pour qu'il s'exécute normalement après le bloc `try/except ImportError`.
+**Priorité :** critique (fonctionnalité web complètement cassée).
+
+---
+
+## TICKET-122 — UI Web : `/api/session/inventory/move` échoue systématiquement en HTTP 400 (`main_web.py:1601` vs `web/app.js:1079`)
+
+**Constat (audit d'octobre 2026) :**
+Dans `web/app.js:1078-1081`, le déplacement d'un item envoie :
+```javascript
+body: JSON.stringify({
+  instance_id: n.instance_id,
+  dest_holder_kind: parts[0],
+  dest_holder_id: parts.slice(1).join(':')
+})
+```
+Or `main_web.py:1601-1604` vérifie :
+```python
+dest_kind = payload.get("dest_kind")
+dest_id = payload.get("dest_id")
+if not instance_id or not dest_kind or not dest_id:
+    self.send_error_json(400, "Missing required parameters")
+```
+Les clés ne correspondent pas (`dest_kind` vs `dest_holder_kind`). Tout déplacement d'objet dans l'interface Web est rejeté en erreur 400.
+
+**Piste :**
+Accepter `dest_kind or payload.get("dest_holder_kind")` et `dest_id or payload.get("dest_holder_id")` dans `main_web.py`.
+**Priorité :** haute (bug UX bloquant).
+
+---
+
+## TICKET-123 — Pipeline du tour : injection des sections de prompt M6 erronée (`mods/axiom.turn/main.py:191-206`)
+
+**Constat (audit d'octobre 2026) :**
+1. Pour `pos == "user"` (l.200-201), `messages[-1]["content"] += f"\n\n{text}"` injecte la section dans le dernier message qui est le message `system` `CRITICAL REMINDER` (`axiom/prompts.py:834`), au lieu du message `user` (`messages[-2]`).
+2. Pour `pos == "system"`, le texte est concaténé à la fin de `messages[0]["content"]`, après le bloc de schéma `~~~json` final.
+3. Les positions `after_lore`, `pre_history`, `post_history` définies par la spécification M6 manquent dans `SECTION_POSITIONS` (l.86) et lèvent `PromptSectionError`.
+
+**Piste :**
+Cibler le message d'index -2 pour `user` (ou chercher le dernier message `role == "user"`), insérer les sections `system` avant le bloc JSON, et ajouter les positions manquantes.
+**Priorité :** haute (qualité d'assemblage du prompt LLM).
+
+---
+
+## TICKET-124 — UI Qt : widgets des mods ignorés par `continue` dans `settings_dialog.py:312` et `constants_sidebar.py:131`
+
+**Constat (audit d'octobre 2026) :**
+Cinq widgets développés dans les mods (`InventoryTreeView`, `TimelineView`, `UniversalLLMSettingsTab`, `CloudSettingsTab`, `ImageSettingsTab`, `MemorySettingsTab`) sont enregistrés dans les slots d'interface Qt `axiom.ui.qt:sidebar_widget` et `axiom.ui.qt:settings_tab`.
+Cependant, l'UI Qt filtre explicitement ces identifiants par un `continue` pour conserver ses propres vues codées en dur, laissant le code extrait dans les mods à l'état de code mort.
+
+**Piste :**
+Supprimer le contournement ou intégrer harmonieusement les widgets contribués pour honorer l'architecture de slots.
+**Priorité :** moyenne.
+
+---
+
+## TICKET-125 — Providers : `ProvidersService` incomplet pour 5 providers cloud (`mods/axiom.providers/main.py:150-156`)
+
+**Constat (audit d'octobre 2026) :**
+`ProvidersService` n'enregistre que 3 drivers (`gemini`, `ollama`, `universal`). Pour `claude`, `venice`, `fireworks`, `openai`, `openrouter`, `get_driver()` renvoie `None`, ce qui fait que `test_connection()` renvoie `True` sans rien tester, et `list_models()` renvoie `[]`. De plus, `SettingsDialog` contourne le service et appelle directement `build_llm_from_config`.
+
+**Piste :**
+Enregistrer des drivers pour les 5 backends cloud dans `ProvidersService` et router les tests de connexion et listes de modèles via le service.
+**Priorité :** moyenne.
+
+---
+
+## TICKET-126 — Paquet PyPI `export_engine.py` inutilisable sans `mods/` et vulnérabilité Zip Slip dans `store.py:290`
+
+**Constat (audit d'octobre 2026) :**
+1. `export_engine.py` exclut `mods/`, mais `Session.take_turn()`, `resolve_llm_backend()` et `axiom play` exigent respectivement `axiom.turn`, `axiom.providers` et `axiom.cli`. Sans ces composants, le paquet wheel exporté crashe à chaque tentative d'utilisation.
+2. Dans `axiom/kernel/store.py:289-290`, `zf.extractall(staging_extract)` extrait une archive `.axmod` sans vérifier si les noms des fichiers contiennent des séquences `../` (vulnérabilité Zip Slip / Path Traversal).
+
+**Piste :**
+Valider les membres ZIP avec `_safe_relative_path` avant extraction dans `store.py`, et fournir une solution headless autonome (ex: repli de pipeline ou inclusion des mods officiels de base dans le wheel).
+**Priorité :** haute (sécurité et viabilité de la distribution PyPI).
+

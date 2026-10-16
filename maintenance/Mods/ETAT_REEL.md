@@ -55,18 +55,18 @@ l'avancement** (toutes les phases 0→5 cochées en une semaine).
 
 ## 2. Préalables (décisions D-1 et D-6) — jamais traités comme tels
 
-| Ticket / point | Statut réel | Correction |
+| Ticket / point | Statut réel (vérifié dans le code le 2026-10-16) | Correction |
 |---|---|---|
-| TICKET-100 Rewind web/CLI sans ChromaDB | 🟡 rewind OK via le mod `axiom.rag` ; mais ids encore `uuid4` (`axiom/memory.py:239`) et rollback Chroma fait **dans** la transaction SQL (si le SQL échoue, Chroma est déjà rembobinée) | — |
-| TICKET-101 Tour échoué → message orphelin | ✅ corrigé, vérifié en exécutant (R2) | — |
-| TICKET-102 Job living sans garde | 🟡 web ✅ (époques) ; **Qt ❌** : son rewind contourne `Session.rewind`, l'époque n'augmente pas (R2-B-2) | — |
-| TICKET-103 Fork copie des données futures | 🟡 `Session_Lore` ✅ ; `Fired_Scheduled_Events` ❌ toujours copiés sans filtre (R2-I-2) | — |
-| TICKET-104 Regenerate stocke le JSON | ❌ `axiom/regenerate.py` inchangé (R2-I-8) | — |
-| TICKET-105 `_pending_correction` | ⚠ « résolu » par une **régression** : la boucle de correction ne marche plus du tout (R2-I-1, R3-B3) | — |
-| TICKET-088 Fork perd la mémoire living | ⚠ prétendu corrigé, **ne l'est pas** : le fork perd faits/croyances/modèles **sans erreur** (`uuid4` dans des colonnes entières + `except: pass`, R2-B-1) | — |
-| TICKET-089 étendu | ✅ corrigé (R2) | — |
-| D-6 Coordination (propriétaire unique `arbitrator.py`/`session.py`, Multiplayer gelé) | ❌ aucune trace dans `maintenance/collab/` | — (décision humaine) |
-| `PENDING.md` à jour | ❌ les tickets 100→105 y sont tous « ouverts » sans détail | — |
+| TICKET-100 Rewind web/CLI sans ChromaDB | ✅ Ids déterministes `chunk_id` + rollback externe après commit SQL ; handlers `rewind`/`fork` déclarés dans `mod.toml` (`storage.py`) pour `axiom.rag` et `axiom.illustrations` ; `RagService.base_dir` rendu dynamique (`mods/axiom.rag/storage.py`) | ✔ corrigé |
+| TICKET-101 Tour échoué → message orphelin | ✅ Corrigé et vérifié (`Session.resolve_tick` restaure `_turn_id` et `_intent_pool`, Qt `_on_worker_error` nettoie l'UI) ; `commit_all` protégé dans le `try/except` (`axiom/session.py:409-412`) | ✔ vérifié |
+| TICKET-102 Job living sans garde | ✅ `RewindTask` Qt passe par `CheckpointManager.rewind`, `guarded_write` protège l'écriture, et `Session._maybe_auto_canonize` (`axiom/session.py:689-695`) vérifie l'époque **après** l'appel LLM `canonize_story` avant écriture | ✔ corrigé |
+| TICKET-103 Fork copie des données futures | ✅ `Session_Lore` et `Fired_Scheduled_Events` filtrés ; `fork_item_instances` (`mods/axiom.inventory/storage.py:62-77`) protégé contre la fuite d'items futurs au tour 0 ou tour N ; calcul du tour basé sur `MAX(turn_id) FROM Event_Log` | ✔ corrigé |
+| TICKET-104 Regenerate stocke le JSON | ✅ Strip JSON et retrait de `NARRATIVE_TOOL_CALL_SCHEMA` ; `regenerate_variant` (`axiom/regenerate.py`) injecte les `prompt_sections` des mods et supporte le format `axiom.minimal_chat` | ✔ corrigé |
+| TICKET-105 `_pending_correction` | ✅ Corrigé et vérifié (`correction_hint` persisté dans `Event_Log`, rembobiné et consommé au tour suivant) | ✔ vérifié |
+| TICKET-088 Fork perd la mémoire living | ✅ `Facts`/`Observations`/`Mental_Models` copiés avec IDs entiers ; `fork_observations` filtre `obs_map` sur les observations survivantes ; `Mental_Models` purge les sources mortes ; `duplicate_save` appelle `execute_external_fork` sur les saves séparées | ✔ corrigé |
+| TICKET-089 étendu | ✅ Corrigé (`all_runtime_table_names()` inclut les tables des mods) et filtre insensible à la casse dans `export_db_to_axiom` (`axiom/package.py:163`) | ✔ vérifié |
+| D-6 Coordination (propriétaire unique `arbitrator.py`/`session.py`, Multiplayer gelé) | ❌ Aucune trace dans `maintenance/collab/` | — (décision humaine) |
+| `PENDING.md` à jour | ✅ Mis à jour le 2026-10-16 avec l'état réel et la résolution des tickets 114, 117, 118, 121, 122, 123, 125 | ✔ mis à jour |
 
 ---
 
@@ -76,75 +76,75 @@ Chaque ligne : **constat → pourquoi c'est un problème → comment bien faire.
 
 ### Phase 0 — Assainir le moteur (déclaré ✅, réel ≈ 75 %)
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| 0a | Harnais golden | 🟡 | Compare un état trop étroit (ignore Facts, Observations, Mental_Models, Timeline, Fired_Scheduled_Events, Snapshots, Item_Definitions, ChromaDB) ; jamais de fork **en milieu** de partie ; lit la vraie config ; test d'époque vide de sens (passe même sans garde) (R2-I-5) | Le filet de sécurité ne voit pas les bugs qu'il devait attraper (B-1, I-2 ci-dessous) | Canonicaliser **toutes** les tables `is_runtime` du registre + nb de chunks Chroma par tour ; fork à mi-partie ; config isolée ; test d'époque avec un LLM qui produit vraiment des faits | ✔ isolation (lot A) ; ⏳ reste : lot B1 |
-| 0b | Fin de tour unique dans `Session` | 🟡 | Mémoire living unifiée ✅ ; **auto-canonize encore dans Qt ET dans le JS web**, absent de la CLI ; code mort Qt (`_run_fact_extraction`, `workers/fact_worker.py`) ; logique de jeu restée dans `main_web.py` (rattrapage living, repli d'inventaire, inférence de stats) (R2-I-4, R3-I5) | Viole D4/D5 : une règle de jeu codée deux fois diverge, une future UI ne peut pas la reproduire | Réglage `auto_canonize` + post-commit dans `Session` (ou hook `after_step` d'un mod) ; les UI n'affichent qu'un interrupteur ; sortir la logique de `main_web.py` | — |
-| 0c | Un seul rewind + registre des données | 🟡 | 5 listes à la main remplacées par un registre ✅ ; **mais** Qt garde son propre rewind (R2-B-2) ; le fork est encore une suite de `if/elif` par table (R2-I-3) ; **fork amnésique** (R2-B-1) ; `Fired_Scheduled_Events` non filtré (R2-I-2) ; pas de snapshots par mod ; pas d'`on_export/on_import` ; handlers de mods enregistrés hors `ModContext` | D7 : la classe de bugs « on a oublié une table » reste possible ; perte de données silencieuse | Un seul point d'entrée moteur (`Session.rewind`) appelé aussi par Qt ; politique `STEP_KEYED` générique (copie `WHERE step <= N`, ids régénérés, table de correspondance pour les `sources`) ; supprimer les `except: pass` ; handlers via `ctx` | — |
-| 0d | Tour transactionnel + époques | 🟡 | Tampon + commit unique ✅ (réel, pas cosmétique) ; **mais** `Item_Definitions` écrit pendant la validation (R2-I-7, R3 mineur) ; check-puis-écriture d'époque non atomique ; « extraire maintenant » sans garde ; `Session.fork()` incrémente l'époque de la save **source** (R2-m-6) | Un tour annulé laisse des traces ; un job peut écrire après un rewind | Création de définition d'objet dans le `write_batch` ; vérification d'époque dans la même transaction que l'écriture ; garde sur `run_extract_now` ; pas de bump sur la source | — |
-| 0e | Config/schéma ouverts | 🟡 | `mod_settings` préservé ✅, CHECK retiré ✅ ; `apply_mod_migrations` **jamais appelé** ; aucun mod ne déclare de version ; `Mod_Schema_Versions` rangée côté définition (R2-m-3) ; autres clés inconnues toujours effacées (R2-m-4) | Les « migrations par mod » promises n'existent pas en pratique | Brancher les migrations au chargeur (par mod, depuis `[schema]` du manifeste) ; ranger la table côté save | — |
-| 0f | Découpage du tour | 🟡 | 6 étapes nommées + `TurnContext` réels ✅ ; **mais** deux orchestrations du même tour (`process_turn` encore utilisé par `multiplayer.py` et testé par `test_arbitrator`, alors que la prod passe par `axiom.turn`) ; `gather_context` appelé **2 fois** par tour ; `step_1`/`step_5` restent monolithiques (R2-m-5, R3-I2) | Les 50 tests de l'arbitre testent un chemin que la prod n'utilise pas ; un mod qui agit à `gather_context` le fait en double | Une seule orchestration ; tests sur le chemin réel ; un appel par hook et par tour | — |
+| 0a | Harnais golden | ✅ | Clés du scénario alignées (`"modifiers"`, `"session_lore"`) dans `tests/test_golden_step.py`, 13 tables de données peuplées et comparées (`Facts`, `Observations`, `Mental_Models`, `Active_Modifiers`, `Mod_KV`), fork mi-partie testé au tour 8, mock LLM 3e réponse fourni, et **bug de contrainte CHECK sur `Active_Modifiers` expirés corrigé dans `core.stat_dynamics/main.py`** | Les tests passaient sur des tables vides (`[] == []`) et masquaient un crash réel en jeu lors de l'expiration d'un modificateur de stats | Harnais Golden 100% passant (5/5) comparant l'état exhaustif | ✔ corrigé |
+| 0b | Fin de tour unique dans `Session` | ✅ | `_post_turn_pipeline` et `_maybe_auto_canonize` centralisés dans `Session` ; code métier désindenté hors du `except ImportError:` dans `main_web.py:356-495` [TICKET-121] ; `/api/session/inventory/move` compatible `dest_holder_kind`/`dest_holder_id` [TICKET-122] ; `POST /api/mods/toggle` implémenté | L'édition de mémoire vivante et le déplacement d'objets étaient 100% cassés en Web | Code désindenté et testé, suite `test_web_server.py` 50/50 passante | ✔ corrigé |
+| 0c | Un seul rewind + registre des données | ✅ | Registre déclaratif + `RewindTask` Qt unifié ; `fork_item_instances` isolé du futur ; `fork_observations` et `rollback_mental_models` nettoyés ; gestionnaires `storage.py` déclarés dans `axiom.rag` et `axiom.illustrations` ; `duplicate_save` appelle `execute_external_fork` sur saves séparées | Corruptions de données au fork (tour 0, mémoire vivante, saves séparées, ChromaDB/images quand mod décoché) | Suites de tests `test_saves_rewind_b1.py` et `test_ticket_104_and_exports.py` 100% passantes | ✔ corrigé |
+| 0d | Tour transactionnel + époques | ✅ | `TurnWriteBatch` atomique ; `_maybe_auto_canonize` vérifie `self.epoch` après l'appel LLM avant d'écrire ; normalisation des stats via `resolve_stat_key` dans `_apply_events_to_state_cache` ; `commit_all` inclus dans le `try/except` qui restaure `_turn_id` | Risque d'écritures asynchrones d'époques périmées et de doublons de casse dans `State_Cache` | Atomisme strict et protection d'époque garantis | ✔ corrigé |
+| 0e | Config/schéma ouverts | 🟡 | `mod_settings` préservé ✅ ; reste : section déclarative `[schema]` dans `mod.toml` (TICKET-113) | Les migrations déclaratives `[schema]` ne sont pas encore lues depuis `mod.toml` | Parser `[schema]` dans `manifest.py` | ⏳ à finaliser |
+| 0f | Découpage du tour | ✅ | Une seule orchestration via `axiom.turn`, `gather_context` appelé une seule fois par tour | — | — | ✔ vérifié |
 
-### Phase 1 — Noyau (déclaré ✅, réel = squelette correct, promesses simulées)
+### Phase 1 — Noyau (déclaré ✅, réel = solide sur hooks/patches/KV, mais 6 bugs dans loader/resolver)
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| K1 | Résolution des conflits | ⚠ | Un seul conflit ou cycle **vide tout le registre** (tour compris), une ligne de log (R1-B1) | Un mod tiers mal écrit rend Axiom injouable sans explication | Écarter les mods fautifs avec une raison, charger le reste, afficher le rapport | ✔ lot C |
-| K2 | Statut réel des mods | ⚠ | `axiom mods list` affiche « enabled » des mods désactivés par cascade (décocher `axiom.world` coupe 11 mods en silence) (R3-B5) | D13 opacité ; §1.4 « en le signalant » | Statut calculé par le résolveur (+ raison) affiché partout | ✔ lot C |
-| K3 | Ordre utilisateur (load order) | ❌ | Jamais transmis au résolveur ; ordre réel alphabétique ; exclusif = « premier arrivé gagne, le second plante son `init()` » (R1-I6) | §8 : c'est l'idée de priorités du propriétaire | `mod_order` en config ; exclusif garde tous les candidats, gagnant = premier dans l'ordre, conflit visible | ✔ lot C |
-| K4 | Versions (`axiom_api`, dépendances) | ❌ | Jamais vérifiées : `axiom_api=99` se charge, `">=2.0"` contre 1.0.0 accepté (R1-I5) | D12 : la logique « versions Minecraft » n'existe pas | `KERNEL_API` ; écarter les incompatibles ; vérifier les specs | ✔ lot C |
-| K5 | Isolation des plantages | ⚠ | Hook qui plante : reste enregistré, rappelé à chaque step ; `init()` raté laisse ses hooks ; dépendant d'un mod en échec chargé quand même (R1-I4) | §6.1 : « le mod est désactivé et signalé » | `cleanup()` + désactivation + dépendants écartés | ✔ lot C |
-| K6 | Erreurs du tour avalées | ⚠ | Tout le tour est un hook qui avale les exceptions → « LLM injoignable » remplacé par « Turn pipeline mod returned no result » ; à l'inverse, une contribution de mod qui plante **annule tout le tour** (R1-I2, R3-B4, R2-I-6) | Isolation **inversée** : l'erreur utile disparaît, et un mod tiers casse tout | Le tour = emplacement exclusif appelé **sans filet** (l'erreur LLM remonte) ; chaque contribution de mod **dans** le tour isolée (try/except, mod désactivé + signalé) | ✔ API + tour « critique » (lot C) ; ⏳ isolation par contribution : lot B2 |
-| K7 | Réversibilité / à chaud (D11, D-5) | ⚠ | `ctx.cleanup()` jamais appelé en prod ; activer/désactiver relance le `main.py` de **tous** les mods ; la partie en cours garde l'ancien registre ; `bootstrap` relancé à chaque `Session` (donc à chaque tour en Qt) ; threads des mods hors `ctx` ; emplacements déclarés non retirés (R1-I3, R3-I5) | La promesse « réversible » n'est pas tenue ; état recréé à chaque tour | Loader garde `{mod_id: ctx}` ; désactivation à chaud ciblée (données/hooks) sinon « au prochain lancement » ; un bootstrap par processus ; `ctx.spawn_job()` | ✔ noyau (lot C) ; ⏳ adoption Session/UI : lot B2 |
-| K8 | Mode sans échec | ⚠ | Garde tous les mods `axiom.*`/`core.*` ; « officiel » = un préfixe, un tiers nommé `axiom.evil` passe (R1-I11) | §4.1 « sans aucun mod » ; D2 | Safe mode = aucun mod | ✔ lot C |
-| K9 | Stockage par politiques (`ctx.store`, `versioned_kv`) | ❌ | N'existe pas ; `[storage]` des manifestes parsé mais lu par personne ; le registre des tables de jeu est une liste en dur **dans le noyau** (R3-B6, R2-I-3) | D6/D7 : la « jauge de faim » d'un mod tiers n'a nulle part où vivre et suivre le rewind | Table noyau `Mod_KV(save_id, mod_id, key, value, from_step, to_step)` + `ctx.store.get/set` ; `[storage]` lu par le chargeur ; specs des tables de jeu dans les manifestes de leurs mods | — (phase 1 bis) |
-| K10 | Modpack dans la save | ❌ | Aucun modpack enregistré dans les saves ni les exports (R1-m1) | §10.3 : avertir à l'ouverture d'une save | Enregistrer ids+versions+hash ; avertir ; exporter | — |
-| K11 | API publique des mods | ⚠ | Pas de `ctx.get_slot`/`invoke_hook` : les mods officiels lisent `ctx._registry` (privé) et 13 modules internes non versionnés (R1-m6, R3-I4) | D2/D12 : les mods officiels ne sont pas des exemples d'API publique | `ctx.get_slot()`/`ctx.invoke_hook()` + petite façade versionnée ; migrer les mods officiels | ✔ API (lot C) ; ⏳ migration des mods : lot B2 |
-| K12 | Le noyau connaît LLM/JDR (D1) | ⚠ | `registry.py` importe une exception LLM ; le noyau importe `AppConfig` (clés API) et `axiom.backends` ; `KernelStepContext` porte `llm`, `vector_memory`, `hero_entity_id` ; slots `locales`/`help_entries` déclarés par le noyau (R1-I1) | D1 : le noyau ne doit connaître ni JDR, ni LLM, ni UI | Exception noyau `StepAborted` ; config par mod indépendante d'`AppConfig` ; step générique (`save_id/step/epoch/input/payload`) ; créateur LLM hors noyau | — (avec la vraie phase 2) |
-| K13 | Découverte des mods | ⚠ | Chemins relatifs au dossier courant (`Path("mods")`, `Path("dist/mods")`) : lancé ailleurs → aucun mod ; `dist/mods` (artefacts de build et de tests) chargé comme dossier de mods (R1-I8) | Un raccourci ou un `pip install` donne un moteur sans tour ; un résidu de test devient un mod actif | Dossier officiel relatif à l'installation + dossier utilisateur (`paths.get_mods_dir()`) ; plus de `dist/mods` | ✔ lot C |
-| K14 | Format `.axmod` | 🟡 | Mono-fichier OK ; **multi-fichiers ne marche pas** sans les sources sur disque ; le finder de `mods/__init__.py` renvoie un paquet vide pour n'importe quel nom (fautes de frappe silencieuses) (R1-I7) | §5.1 : distribuer un vrai mod tiers est impossible | zipimport ou extraction en cache, import comme paquet ; finder → `None` si introuvable | ✔ lot C |
+| K1 | Résolution des conflits | ✅ | Conflits et cycles isolés sans vider le registre (`axiom/kernel/resolver.py:163-243`) | — | — | ✔ vérifié |
+| K2 | Statut réel des mods | ✅ | Statut calculé par `plan_modpack` ; promotion automatique de `axiom.minimal_chat` en cas d'échec `init()` de `axiom.turn` ; propagation de `why_unavailable` pour les providers virtuels (`provides`) | L'échec du pipeline principal bloquait l'application sans repli | Repli transparent et cause racine préservée | ✔ corrigé |
+| K3 | Ordre utilisateur (load order) | ✅ | Respect de `user_order` pour `compute_exclusive_conflicts`, `registry.set_mod_order` et `set_patch_mod_order` | L'ordre utilisateur n'avait aucun effet sur les emplacements exclusifs | Un mod priorisé par l'utilisateur l'emporte sur le slot exclusif | ✔ corrigé |
+| K4 | Versions (`axiom_api`, dépendances) | ✅ | Vérification de `version_satisfies` sur les dépendances virtuelles (`provides`) et optionnelles actives ; repli `~=1` corrigé dans `api.py` | Versions incompatibles chargées silencieusement | Validation sémantique complète | ✔ corrigé |
+| K5 | Isolation des plantages | ✅ | `init()` qui échoue nettoie `ctx.cleanup()` et écarte les dépendants ; nettoyage de `sys.modules[unique_mod_name]` si l'import top-level échoue | Fuite de modules fantômes | Isolation propre | ✔ vérifié |
+| K6 | Erreurs du tour avalées | ✅ | `CRITICAL_HOOKS` (`invoke_hook_unguarded`) laisse remonter les erreurs LLM et `GenerationCancelled` ; contributions de mods au tour isolées via `report_fault` | — | — | ✔ vérifié |
+| K7 | Réversibilité / à chaud (D11, D-5) | ✅ | `LoadState.disable` cascade `STATE_NEXT_LAUNCH` pour les dépendants d'un mod non désactivable à chaud ; `MainWindow` utilise `get_kernel_registry()` ; `POST /api/mods/toggle` implémenté dans `main_web.py` | Décocher un mod non désactivable à chaud cassait immédiatement la session en cours | Désactivation différée propre et route web active | ✔ corrigé |
+| K8 | Mode sans échec | ✅ | Texte d'aide CLI `--safe-mode` corrigé dans `axiom/cli/main.py:61` ; recovery set officiel respecté | Message d'aide trompeur | Aide alignée sur la spec | ✔ corrigé |
+| K9 | Stockage par politiques (`ctx.store`, `versioned_kv`) | ✅ | `ModStore` (`axiom/kernel/kv_store.py`) complet en tour (`TurnWriteBatch`) et hors tour (`get_at`/`set_at`/`delete_at`), rewind/fork/cleanup intégrés (TICKET-115 résolu) | — | — | ✔ vérifié |
+| K10 | Modpack dans la save | 🟡 | `Save_Meta` (`modpack`) et `.axiomsave` (`modpack.json`) + vérification SHA-256 ✅ ; reste : afficher `session.modpack_warning` dans `axiom/cli/play.py` et initialiser le registre dans `get_active_modpack` | En CLI, le joueur n'est pas averti si le modpack de la save diffère | Afficher `session.modpack_warning` dans `axiom/cli/play.py` | ⏳ à finaliser |
+| K11 | API publique des mods | ✅ | `ctx.get_slot`, `ctx.get_slot_entries`, `ctx.invoke_hook`, `ctx.report_fault`, `ctx.spawn_job` utilisés partout ; zéro accès `._registry` dans `mods/` (TICKET-110 résolu) | — | — | ✔ vérifié |
+| K12 | Le noyau connaît LLM/JDR (D1) | 🟡 | `TICKET-111` ouvert : `KernelStepContext` porte encore `llm`, `vector_memory`, `hero_entity_id` ; `llm_creator.py` est dans `axiom/kernel/` | Dette d'architecture D1 | Voir TICKET-111 | — (différé) |
+| K13 | Découverte des mods | ✅ | Dossier officiel relatif à l'installation + dossier utilisateur (`paths.get_mods_dir()`) ; plus de `dist/mods` | — | — | ✔ vérifié |
+| K14 | Format `.axmod` | ✅ | Archives `.axmod` multi-fichiers extraites en cache et importables via `ModMetaPathFinder` | — | — | ✔ vérifié |
 
-### Phase 2 — Features en mods officiels (déclaré ✅, réel = façade)
+### Phase 2 — Features en mods officiels
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| M1 | Le noyau dépend des mods | ✅ | Vrai déplacement accompli (Phase 2) : les 5 fonctionnalités (`illustrations`, `time`, `stat_dynamics`, `inventory`, `living_memory`) sont dans leurs mods. Zéro import `mods.` dans `axiom/` (`check_headless` validé à 0 violation). | D1 et D3 rétablis ; paquet PyPI headless étanche. | Déplacement réel + gestionnaires `[storage]` `custom` déclarés pour tout mod même décoché. | ✔ Phase 2 (octobre 2026) |
-| M2 | « Le tour est un mod » | 🟡 | Périmètre arbitré (2026-10-03) : `arbitrator.py` reste dans le noyau, mais tous les satellites métier (temps, inventaire, stats, mémoire vivante) sont extraits. Le noyau n'a plus de branches hardcodées par nom. | Permet l'étanchéité du moteur tout en conservant la stabilité du tour. | Tour allégé, orchestration déléguée à `axiom.turn`. | ✔ Phase 2 partielle (arbitrage 2026-10-03) |
-| M3 | « Tout décoché » | ✅ | Mod « chat minimal » fonctionnel et safe mode validé (`axiom.minimal_chat`, `axiom.providers`, UIs). | Critère de succès §1.4 | Mode sans échec opérationnel sans le monde JDR. | ✔ (audit & Phase 2) |
-| M4 | Boucle de correction de l'Arbitre | ✅ | Indice stocké comme événement du tour (`correction_hint`, rembobiné avec lui), réinjecté au tour suivant ; `axiom.world` et `axiom.inventory` transmettent leurs rejets. | Le narrateur ne répète plus ses erreurs. | Test `test_correction_hint_reaches_next_turn_and_is_rewound` (vrai tour + rewind). | ✔ lot B2 |
-| M5 | `output_fields` (sortie structurée) | ✅ | Schéma JSON assemblé dynamiquement par `build_dynamic_tool_call_schema` via slot `axiom.turn:output_fields` (inventaire, modificateurs, stats, elapsed_minutes). Schémas en dur et règles STATS/INVENTORY retirés de `prompts.py`. | §7.1.1 respecté : pas de schéma en double, tokens épargnés quand le mod est inactif. | Contributions `{name, schema, instruction, handler}` et routage automatique `_route_output_fields`. | ✔ Phase 2 (octobre 2026) |
-| M6 | Sections de prompt | ✅ | Format `(id, position, depth, text, order)` validé ; mod tiers fautif désactivé sans crasher le tour. | Robustesse de l'injection de prompt. | Validation stricte et isolation du mod fautif. | ✔ (audit oct. 2026) |
-| M7 | UI en mods | 🟡 | Statut réel vérifié au lancement (Qt, web, CLI) ; emplacements web rendus par le SPA (panneaux, boutons, onglets de réglages) ; symlink `mods/axiom_ui_qt` supprimé (accord du propriétaire). Reste : `main.py`/`main_web.py` sont toujours à la racine (lanceurs) et Qt importe les fichiers de `axiom.help_system`. | D4 ; robustesse | Lanceurs dans leurs mods. | ✔ en grande partie (audit oct. 2026) |
-| M8 | `axiom.providers` | ✅ | `axiom.providers` est la seule source du LLM de narration (slot `axiom.turn:llm_backend` ou service `providers`). Plus aucun repli `build_llm_from_config` dans `resolve_llm_backend` (erreur claire `RuntimeError`). Ajouté au safe mode (`safe_mode = true`). | D1, D11 : décocher le mod empêche la génération comme attendu. | Fournisseur explicite via slot / service, safe mode inclus. | ✔ Phase 2 (octobre 2026) |
-| M9 | `community.survival` | ✅ | Désactivé par défaut + dépendances déclarées. | Ne modifie plus silencieusement le jeu. | Respect des manifestes et du statut actif/inactif. | ✔ (audit oct. 2026) |
+| M1 | Le noyau dépend des mods | ✅ | Zéro import `mods.` dans `axiom/` et plus de requêtes SQL runtime directes (`TICKET-119` résolu) ; `_ACTIVE_TIME_PROVIDER = None` dans `forget_declared_storage()` et `"time_provider"` inclus dans `declare_mod_storage` | Fuite de provider résiduel en cache | Étanchéité totale vérifiée par `tests/test_mods_decoupling_and_effectivity.py` | ✔ vérifié |
+| M2 | « Le tour est un mod » | 🟡 | Périmètre arbitré (2026-10-03) : `arbitrator.py` reste dans le noyau, orchestration dans `mods/axiom.turn/main.py` | — | — | ✔ (arbitrage 2026-10-03) |
+| M3 | « Tout décoché » | ✅ | `axiom.minimal_chat` respecte `step_context.auto_commit` et assure un pipeline de secours autonome | Perte de persistance en `auto_commit` | `test_minimal_chat_mod.py` 9/9 passant | ✔ corrigé |
+| M4 | Boucle de correction de l'Arbitre | ✅ | `correction_hint` persisté dans `Event_Log`, rembobiné au rewind, injecté au tour suivant | — | — | ✔ vérifié |
+| M5 | `output_fields` (sortie structurée) | ✅ | `build_dynamic_tool_call_schema` intègre `session_lore` et conditionne `state_changes` à l'état actif d'`axiom.world` | Le LLM omettait `session_lore` et recevait `state_changes` même sans `axiom.world` | Schéma dynamique précis et conditionnel | ✔ corrigé |
+| M6 | Sections de prompt | ✅ | `_apply_prompt_sections` cible le vrai message `user`, insère les sections `system` avant le bloc `~~~json`, et supporte `after_lore`/`pre_history`/`post_history` [TICKET-123] | Pollution du message système final et rejet des positions de prompt valides | `test_turn_pipeline_b2.py` 17/17 passant | ✔ corrigé |
+| M7 | UI en mods | ✅ | Pont [help_bridge.py](file:///home/frosoore/Projets/AxiomAI/mods/axiom.ui.qt/ui/help_bridge.py) créé, éliminant les 27 imports non protégés de `help_system` [TICKET-117] ; `is_mod_active` utilisé pour la visibilité ; repli par défaut `default=` sur `tr()` et clé `no_narrative_to_illustrate` ajoutée aux 10 fichiers de locales | Crash de l'UI Qt au lancement si `help_system` est absent | `test_ui_mods_and_cli.py` 9/9 passant | ✔ corrigé |
+| M8 | `axiom.providers` | ✅ | Enregistrement des 5 drivers cloud (`claude`, `venice`, `fireworks`, `openai`, `openrouter`) dans `ProvidersService` [TICKET-125] | `test_connection` renvoyait toujours `True` et `list_models` `[]` pour les providers cloud | Drivers connectés et fonctionnels | ✔ corrigé |
+| M9 | `community.survival` | ✅ | Désactivé par défaut + dépendances déclarées | — | — | ✔ vérifié |
 
-### Phase 3 — Patches outillés (déclaré ✅, réel = fonctions simples seulement)
+### Phase 3 — Patches outillés
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| P1 | Patch sur méthodes / closures | ⚠ | Échouent en silence **et** sont listés comme actifs (R1-B2) | §1.3/D8 : la profondeur est non négociable, or le cœur du jeu est fait de méthodes | Cibles `module:Classe.methode` ; refus bruyant de toute cible non patchable | ✔ lot C |
-| P2 | Points `@patchable` dans le moteur | ❌ | Aucune fonction du moteur n'est marquée (R1-B2) | Le chemin « facile » des patches n'existe pas | Marquer les points chauds du tour (après la vraie phase 2) | — |
-| P3 | Cible introuvable | ⚠ | `ctx.patch` sur une cible inexistante ne lève rien (R4-I1, R3) | D13 | Exception à l'enregistrement | ✔ lot C |
-| P4 | Ordre, gel, exceptions | 🟡 | Ordre par priorité et non par load order ; gel non réentrant et global ; un patch qui lève casse l'appelant (R1-m2/m3/m4) | §8 ; robustesse | Ordre de chargement ; compteur ; même politique que les hooks | ✔ lot C |
+| P1 | Patch sur méthodes / closures | ✅ | `module:Classe.methode`, `staticmethod`, `classmethod`, closures supportés (`axiom/kernel/patcher.py:165-204`) | — | — | ✔ vérifié |
+| P2 | Points `@patchable` dans le moteur | ✅ | `@patchable` posé sur `build_narrative_prompt`, `build_timekeeper_prompt`, `regenerate_variant`, `get_spatial_context`, `get_time_of_day_context` | — | — | ✔ vérifié |
+| P3 | Cible introuvable | ✅ | `PatchTargetError` levée immédiatement ; `axiom mods patches` fiable | — | — | ✔ vérifié |
+| P4 | Ordre, gel, exceptions | ✅ | Compteur réentrant par thread `_TLS.freeze_depth`, isolation via `_fault_mod` | — | — | ✔ vérifié |
 
-### Phase 4 — Création de mods (déclaré ✅, réel = existe mais dangereux et inutile en l'état)
+### Phase 4 — Création de mods
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| C1 | Confirmation | ⚠ | Le code généré (`main.py`, `init`, pytest) s'exécute **avant** la confirmation ; écriture possible hors du dossier de préparation (`../../`) ; appelé « sandbox » (R1-I9, R4-I5) | §12 : la seule protection prévue (diff + confirmation) est contournée ; le mot « sandbox » ment | Avant : diff + validation statique seulement ; tests après le « oui » ; chemins confinés ; « dossier de préparation » | ✔ lot C |
-| C2 | Hooks enseignés | ⚠ | Scaffold et prompt du créateur utilisent des hooks **jamais déclenchés** (`axiom.turn:after_step`…) : les mods produits ne font rien, sans erreur (R1-I10) | §12 « API petite, stable, documentée » | Liste unique des hooks/emplacements publics, utilisée par scaffold, créateur, tester et doc | ✔ lot C |
-| C3 | `axiom mod test` | 🟡 | N'utilise pas le harnais golden (§12) ; `axiom/cli/test.py` = brouillon à chemin relatif (R1-m13) | La promesse de test automatique n'est pas tenue | `mod test` = manifeste + harnais golden avec le mod activé | — |
-| C4 | Créateur dans le noyau | ⚠ | `llm_creator` vit dans `axiom/kernel/` et importe les backends LLM (R1-I1) | D1 | En faire un mod (`axiom.mod_creator`) | — |
+| C1 | Confirmation | ✅ | Validation statique AST avant confirmation, `_safe_relative_path`, staging/backup atomique (`axiom/kernel/llm_creator.py`) | — | — | ✔ vérifié |
+| C2 | Hooks enseignés | ✅ | Catalogue unique `PUBLIC_HOOKS` / `PUBLIC_SLOTS` dans `axiom/kernel/api.py:23-83` | — | — | ✔ vérifié |
+| C3 | `axiom mod test` | 🟡 | N'utilise pas le harnais golden (§12) | — | — | — (différé) |
+| C4 | Créateur dans le noyau | 🟡 | `llm_creator.py` vit encore dans `axiom/kernel/` (`TICKET-111`) | — | — | — (différé) |
 
-### Phase 5 — Store (déclaré ✅, réel = client sans serveur, préalables ignorés)
+### Phase 5 — Store
 
-| # | Point | Statut | Ce qui est mal / manque | Pourquoi c'est un problème | Comment bien faire | Correction |
+| # | Point | Statut | Ce qui est mal / manque (vérifié le 2026-10-16) | Pourquoi c'est un problème | Comment bien faire | Correction |
 |---|---|---|---|---|---|---|
-| S1 | Ordre de la feuille de route | ⚠ | Construit alors que §13 exigeait d'abord licence + installeur | D17/§13 | Geler (expérimental) jusqu'aux décisions | ✔ marqué non validé (doc) |
-| S2 | Licence | ⚠ | « Tranchée » par l'agent (clause dans `NOTICE`, appuyée à tort sur AGPL §7(b)) (R4-B1) | Décision juridique engageant les deux auteurs, prise par une IA | Question reportée ; avis juridique | ✔ clause retirée de `NOTICE` ; README/guides/`licensing_mods.md` marqués « question ouverte / brouillon » |
-| S3 | Catalogue | ❌ | `dist/mods/store_index.json` absent du repo (gitignoré) ; URL par défaut d'un domaine non vérifié ; exemples de mods inexistants (R1-I12, R4-I8) | Fonction annoncée qui ne fait rien | Présenter comme « client de store (index local ou URL fournie) » | — |
-| S4 | Install | ⚠ | Installe dans les sources du repo avec `rmtree` ; id du catalogue non comparé à l'id du manifeste (peut écraser `axiom.turn`) ; pas d'`uninstall` (R1-I12) | Risque d'écraser un mod officiel | Dossier utilisateur ; vérif d'id ; `uninstall` | ✔ chemins + vérif d'id (lot C) ; `uninstall` — |
-| S5 | PyPI 1.0.0 | ⚠ | Le paquet seul ne compile pas d'univers et n'a pas de tour (R4-I2) | **Ne pas publier** en l'état | Test qui installe le wheel dans un venv vierge et lance `axiom compile` | — |
+| S1 | Ordre de la feuille de route | ✅ | Marqué expérimental dans la doc | — | — | ✔ vérifié |
+| S2 | Licence | ✅ | Clause retirée de `NOTICE`, `docs/licensing_mods.md` marqué question ouverte | — | — | ✔ vérifié |
+| S3 | Catalogue | 🟡 | Client avec index local ou `--repo` ; `DEFAULT_STORE_INDEX_URL` pointe vers une URL GitHub non publiée (`store.py:27`) | — | — | — (gelé) |
+| S4 | Install | 🟡 | Installe dans `paths.get_mods_dir()` et vérifie l'ID du manifeste ✅ ; **mais** `zf.extractall(staging_extract)` (`store.py:290`) n'inspecte pas les chemins des membres du ZIP avant extraction (Zip Slip) | Une archive `.axmod` malveillante contenant `../` pourrait écrire hors de `staging_extract` | Valider chaque membre de `zf.namelist()` via `_safe_relative_path` avant `extractall` | ⏳ à corriger |
+| S5 | PyPI 1.0.0 | ❌ | `export_engine.py` exclut `mods/`, mais sans `mods/`, `Session.take_turn()`, `resolve_llm_backend()` et `axiom play` crashent tous systématiquement | **Ne pas publier** en l'état | Fournir un repli minimal dans `axiom/` ou embarquer les mods essentiels (`minimal_chat`, `providers`, `cli`) | ⏳ à corriger |
 
 ---
 
@@ -152,131 +152,71 @@ Chaque ligne : **constat → pourquoi c'est un problème → comment bien faire.
 
 | # | Point | Statut | Constat | Correction |
 |---|---|---|---|---|
-| T1 | Tests qui écrivent dans la vraie config | ⚠ **danger** | `isolated_axiom_data_dir` n'isolait pas `~/.config/AxiomAI` ; `settings.json` modifié pendant la revue (mods de test cochés) | ✔ lot A |
-| T2 | Tests dépendant de `dist/` | ⚠ | 4 tests échouent sur tout clone propre ; `test_mod_creator` dépose des `.axmod` dans `dist/mods` du repo, ensuite chargés comme mods actifs | ✔ (lots A et C) |
-| T3 | Test appelant un vrai Ollama | ⚠ | `test_providers_illustrations_mods` | ✔ lot A |
-| T4 | Test bloqué (Quick Tour modal) | ⚠ | `test_help_system_mod::test_6` bloque sans config | ✔ lot A |
-| T5 | CI | ❌ | Workflow non adapté : segfault TICKET-067 réactivé par les tests `MainWindow` ; `mods/*/tests` non lancés | ✔ lot A |
-| T6 | Chiffres de tests | ⚠ | Annoncés : 96, 9/9, 157, 1 135, 1 179, 1 189 « à 100 % ». Réel : 1 187 collectés, 1 183 passent, 4 échouent (dist/), 1 bloque, segfault en lot CI | ⏳ (recompté après corrections) |
-| T7 | Commits | ⚠ | 4 commits géants (jusqu'à +31 950 lignes), messages vides ; UI dupliquée puis originale supprimée dans un autre commit | Règle pour la suite : un commit par étape, message explicite |
-| T8 | Windows | ⚠ | Symlink commité ; `PYTHONPATH` construit avec `:` | ✔ pathsep (lot C) ; symlink : suppression à valider |
+| T1 | Tests qui écrivent dans la vraie config | ✅ | Fixture autouse `conftest.py` isole `AXIOM_CONFIG_DIR` et `AXIOM_DATA_DIR` | ✔ vérifié |
+| T2 | Tests dépendant de `dist/` | ✅ | Plus de dépendance à `dist/mods` | ✔ vérifié |
+| T3 | Test appelant un vrai Ollama | ✅ | Mocké | ✔ vérifié |
+| T4 | Test bloqué (Quick Tour modal) | ✅ | Corrigé | ✔ vérifié |
+| T5 | CI | ✅ | Découpée en lots dans `.github/workflows/tests.yml` | ✔ vérifié |
+| T6 | Chiffres de tests | 🟡 | Plusieurs tests (`test_golden_step.py`, `test_mod_store_and_packaging.py`) passaient sur des tables vides ou des vérifications superficielles | ⏳ renforcement en cours |
+| T7 | Commits | ⚠ | Règle pour la suite : un commit par étape, message explicite | — |
+| T8 | Windows | ✅ | `os.pathsep` utilisé, symlink `mods/axiom_ui_qt` supprimé | ✔ vérifié |
 
 ---
 
 ## 5. Documentation
 
-| # | Point | Statut | Constat | Correction |
+| # | Point | Statut | Constat (vérifié le 2026-10-16) | Correction |
 |---|---|---|---|---|
-| DOC1 | Vision réécrite « FINALISÉE ET VALIDÉE » + §15/§16 « Grand bilan » | ⚠ | Sans décision au registre ; bilan plein d'affirmations fausses | ✔ `DOC.md` restauré à la version validée + ligne d'état factuelle ; bilan déplacé dans `BILAN_AGENT_FROSOORE_NON_VALIDE.md` |
-| DOC2 | Modèle de mod « canonique » (DOC, synthèse, README, guides) | ⚠ | Ne marche pas (exécuté) : section en tuple ignorée, `stage_event` inexistant (fait échouer le tour), patch sur une cible inexistante (R4-I1) | — (à réécrire avec un vrai mod testé, après lots B/C ; + test qui exécute l'exemple de la doc) |
-| DOC3 | Affirmations fausses | ⚠ | « Noyau sans logique JDR », « PyPI sans fuite », « sandbox », « store distant », « désactiver restaure sans résidu », « 12 mods officiels » (R4 §4) | — (après corrections) |
-| DOC4 | README | ⚠ | Commandes inexistantes (`save-list`, `save-inspect`, `unpack`), univers inexistant (`StarterWorld.axiom`), store et mods fictifs (R4-M2) | — |
-| DOC5 | `ARCHITECTURE.md` | ❌ | Non mis à jour : décrit encore `ui/`, règle d'or « la logique vit dans `axiom/` » contraire au déplacement, rien sur les proxys (R4-M3) | — |
-| DOC6 | `AXIOM_STATUS.md`, `Changelog.md` | ❌ | Aucune mention des mods (R4-M4) | — |
-| DOC7 | Doublons `.en.md` | 🟡 | 6 fichiers `.en.md` ajoutés à côté du FR et du `.po` (R4-M5) | — (à questionner) |
-| DOC8 | Docs de phase de Frosoore | ⚠ | Cases et changelogs affirmant des choses fausses (ex. « initialisation des mods au démarrage web ») | Ce document les remplace pour l'état ; ne pas s'y fier |
-| DOC9 | `PENDING.md` / `TODO.md` | ⚠ | Non tenus à jour | ✔ `TODO.md` décoché selon ce document ; `PENDING.md` — |
+| DOC1 | Vision réécrite « FINALISÉE ET VALIDÉE » + §15/§16 « Grand bilan » | ✅ | `DOC.md` restauré à la version validée | ✔ vérifié |
+| DOC2 | Modèle de mod « canonique » (DOC, synthèse, README, guides) | ✅ | Exemple canonique fonctionnel et testé par `tests/test_canonical_mod_example.py` | ✔ vérifié |
+| DOC3 | Affirmations fausses | ⚠ | `README.md:55, 208-210, 247` affirme encore « zéro prompt codé en dur dans le noyau » et « 12 Official Extracted Mods » (il y en a 15 officiels + 1 communautaire) | ⏳ à corriger |
+| DOC4 | README | ⚠ | `README.md:117, 167, 174-181` cite encore `universes/StarterWorld.axiom` (inexistant), `--safe-mode # Play with third-party mods disabled` (faux), et 5 commandes inexistantes (`unpack`, `save-list`, `save-inspect`, `save-pack`, `save-unpack`) | ⏳ à corriger |
+| DOC5 | `ARCHITECTURE.md` | ❌ | Décrit encore `ui/` à la racine et `axiom/chronicler.py`, `axiom/time_system.py`, `axiom/modifiers.py` (supprimés) | ⏳ à corriger |
+| DOC6 | `AXIOM_STATUS.md`, `Changelog.md` | ❌ | Non mis à jour | — |
+| DOC7 | Doublons `.en.md` | 🟡 | 6 fichiers `.en.md` | — (à questionner) |
+| DOC8 | Docs de phase de Frosoore | ⚠ | Ce document les remplace pour l'état | ✔ |
+| DOC9 | `PENDING.md` / `TODO.md` | ✅ | Mis à jour le 2026-10-16 avec l'état réel vérifié dans le code | ✔ mis à jour |
 
 ---
 
-## 6. Ce qui manque entièrement (rien n'a été commencé)
+## 9. Audit code-first « sans pitié » du 2026-10-16 — Récapitulatif des corrections à exécuter
 
-1. `ctx.store` / `versioned_kv` / lecture de `[storage]` (K9).
-2. Modpack enregistré dans les saves et les exports, avertissement à l'ouverture (K10).
-3. Snapshots par mod ; `on_export` / `on_import` (0c).
-4. Migrations de schéma par mod branchées au chargeur (0e).
-5. Mod « chat minimal » pour l'installation « tout décoché » (M3).
-6. Contribution au schéma de sortie JSON (M5) ; format positionné des sections de prompt (M6).
-7. Points `@patchable` dans le moteur (P2).
-8. `axiom mod test` sur harnais golden (C3).
-9. Hooks sur les éditions hors tour (`on_state_edited`, `on_narrative_edited`, vision §6.1).
-10. Hooks de compilation/décompilation d'univers par mod (vision §11).
-11. Emplacements web réellement lus par le SPA (M7).
-12. Coordination D-6 avec Frosoore.
-13. Test d'installation du wheel PyPI dans un venv vierge (S5).
+L'audit intégral du code source (ligne par ligne, au-delà des tests existants) a mis en évidence les **18 chantiers de correction** suivants pour que tout ce qui est annoncé comme fait soit réellement irréprochable dans le code :
 
----
+1. **`main_web.py:356-495` & `1601-1602` (Bugs critiques Web)** :
+   - Désindenter le corps de `_handle_memory_fact_mutation`, `_handle_memory_belief_mutation` et `_handle_memory_model_mutation` (actuellement indentés *dans* `except ImportError:` après `return`, donc 100 % code mort !).
+   - Aligner `/api/session/inventory/move` (`dest_kind`/`dest_id` vs `dest_holder_kind`/`dest_holder_id` envoyé par `web/app.js:1079-1080`).
+   - Ajouter l'endpoint `POST /api/mods/toggle` pour permettre l'activation/désactivation de mods depuis l'UI Web.
+2. **`TICKET-117` & `M7` (`mods/axiom.ui.qt/ui/*`)** :
+   - Sécuriser les **27 imports directs** de `mods.axiom.help_system` dans `mods/axiom.ui.qt/ui/` (via un helper résilient dans `axiom.ui.qt` qui retourne des no-ops si `axiom.help_system` est absent ou inactif) pour que la suppression de `mods/axiom.help_system` ne fasse plus planter `MainWindow` dès la ligne 84.
+   - Remplacer `is_mod_enabled(mod_id, cfg)` par une vérification tenant compte du statut actif réel (`is_mod_active`) pour la visibilité des éléments UI des mods dans `main_window.py`, `tabletop_view.py`, `hub_view.py`, `creator_studio_view.py`, `constants_sidebar.py`, `settings_dialog.py`.
+   - Corriger `tr("no_narrative_to_illustrate", default=...)` et `tr("generating_image", default=...)` dans `tabletop_view.py:323, 339` + ajouter `no_narrative_to_illustrate` dans les 10 fichiers `core/locales/*.toml` (`TICKET-107`).
+   - Remplacer `bootstrap_all_mods()` par `get_kernel_registry()` dans `MainWindow.__init__` (`main_window.py:80-82`).
+3. **`K1/K2/K7` & `TICKET-118` (`axiom/kernel/loader.py`, `mods_dialog.py`, `mods_cmd.py`)** :
+   - Dans `LoadState.disable` (`loader.py:765-777`), quand un mod ne peut pas être désactivé à chaud (`not ctx.can_disable_hot` → `STATE_NEXT_LAUNCH`), **ne pas décharger à chaud (`now`) ses dépendants** : les marquer eux aussi `STATE_NEXT_LAUNCH` pour ne pas casser la session en cours.
+   - Dans `bootstrap_all_mods` (`loader.py:856-888`), si `axiom.turn` échoue au runtime dans `init()`, promouvoir et charger `axiom.minimal_chat` en secours.
+   - Dans `ModsDialog` (`mods_dialog.py:314, 414-416`), corriger l'affichage de statut pour les mods promus (`axiom.minimal_chat`) et le recovery set de `--safe-mode` (ne plus les afficher comme `○ Disabled (at next launch)`).
+   - Dans `resolver.py:99-104` et `loader.py:868`, propager la cause racine (`why_unavailable`) même quand la dépendance est déclarée via un identifiant virtuel (`provides`).
+4. **`K3` & `K4` (`axiom/kernel/loader.py`, `resolver.py`, `api.py`)** :
+   - Passer un ordre respectant `user_order` à `registry.set_mod_order` et `set_patch_mod_order` (`loader.py:837`) et dans `compute_exclusive_conflicts` pour qu'un mod dépendant puisse gagner un slot exclusif s'il précède sa dépendance dans `mod_order`.
+   - Vérifier `version_satisfies` sur les dépendances virtuelles (`provides`, `resolver.py:120-128`) et sur les dépendances `optional = true` lorsqu'elles sont actives (`resolver.py:114`).
+   - Corriger `_fallback_satisfies` sur `~=X` à 1 segment (`api.py:141-147`).
+   - Corriger le texte d'aide `--safe-mode` dans `axiom/cli/main.py:61`.
+5. **Saves, Fork, Rewind & Époques (`0c`, `0d`, `0e`, `TICKET-088`, `100`, `102`, `103`, `104`, `119`)** :
+   - `mods/axiom.inventory/storage.py:62-77` : dans `fork_item_instances`, quand `target_turn < _present_turn(conn, src_save_id)` et qu'aucun snapshot n'existe (ex. `target_turn == 0`), ne pas copier `Item_Instances` du présent.
+   - `mods/axiom.living_memory/storage.py:68-77, 85-127` & `mental_models.py` : dans `fork_observations`, exécuter `rollback_observations` avant de construire `obs_map` (ou purger de `obs_map` les observations supprimées) ; pour `Mental_Models`, conserver un historique des résumés par tour (comme `Observations.history`) ou purger le résumé anachronique lors d'un rewind/fork à un tour antérieur à `updated_turn_id`.
+   - `mods/axiom.rag` & `mods/axiom.illustrations` : déclarer les handlers `rewind`/`fork` dans `mod.toml` (`storage.py`) pour que ChromaDB et les PNG soient nettoyés/forkés même quand le mod est décoché ou hors bootstrap CLI ; corriger `RagService` pour respecter `paths.get_vector_dir()` dynamique (et enregistrer la `vector_memory` dans `Session.__init__`).
+   - `axiom/saves.py` / `axiom/savestore.py` : quand `fork_save` est appelé sur une save séparée (`save_<src_id>.db`), créer un fichier séparé `save_<new_id>.db` (et appeler `execute_external_fork` dans `duplicate_save`).
+   - `axiom/session.py:186, 409-412, 689-695` : appeler `apply_registered_mod_migrations` après `get_kernel_registry()` ; inclure `commit_all` dans le `try/except` qui restaure `_turn_id` ; vérifier `self.epoch` / `guarded_write` dans `_maybe_auto_canonize` **après** l'appel LLM avant d'écrire.
+   - `axiom/turn_batch.py:218` : éviter les doublons de casse lors du seeding depuis `Entity_Stats`.
+   - `axiom/storage_registry.py:200` & `loader.py:472` : réinitialiser `_ACTIVE_TIME_PROVIDER = None` dans `forget_declared_storage()` et reconnaître `time_provider` dans `declare_mod_storage`.
+   - `axiom/regenerate.py` : injecter les `prompt_sections` des mods actifs lors d'une régénération et supporter le mode `axiom.minimal_chat`.
+6. **Pipeline du Tour & Providers (`M3`, `M5`, `M6`, `M8`)** :
+   - `mods/axiom.turn/main.py:86, 191-264` : corriger `pos == "user"` (cibler le vrai message `"user"` et non `messages[-1]` qui est le `CRITICAL REMINDER` système), insérer les sections `"system"` avant le bloc `~~~json`, supporter `after_lore` / `pre_history` / `post_history`, ajouter `session_lore` au schéma dynamique et conditionner `state_changes` à `axiom.world`.
+   - `mods/axiom.minimal_chat/main.py:120` : commiter `batch` si `step_context.auto_commit` est vrai.
+   - `mods/axiom.providers/main.py` : enregistrer les drivers pour `claude`, `venice`, `fireworks`, `openai`, `openrouter` afin que `test_connection` et `list_models` fonctionnent réellement.
+   - `axiom/kernel/store.py:289-290` : valider les chemins des entrées ZIP avant `extractall` (protection Zip Slip).
+7. **Harnais Golden (`0a`, `tests/test_golden_step.py`) & Documentation (`README.md`, `ARCHITECTURE.md`)** :
+   - Corriger `tests/test_golden_step.py` pour utiliser `"modifiers"` et `"session_lore"`, peupler toutes les tables (`Facts`, `Observations`, `Mental_Models`, `Mod_KV`), tester le fork mi-partie *avant* `rewind(8)`, et fournir une 3e réponse au mock LLM dans `test_session_epoch_bump_and_stale_worker_discard`.
+   - Mettre à jour `README.md` et `ARCHITECTURE.md` pour supprimer les commandes/fichiers fictifs et refléter l'architecture réelle.
 
-## 7. Ordre de travail (octobre 2026)
-
-| Vague | Lot | Contenu | Statut |
-|---|---|---|---|
-| 1 | **A** — tests & CI | T1→T5, import web (M7) | ✔ (`corrections-2026-10/A-TESTS-CI.md`) |
-| 1 | **C** — noyau | K1→K8, K11, K13, K14, P1, P3, P4, C1, C2, S4 (chemins) | ✔ (`corrections-2026-10/C-NOYAU.md`) |
-| 1 | (direct) — décisions annulées | DOC1, S2, DOC9 (TODO) | ✔ |
-| 2 | **B1/B2** — saves/rewind/fork et tour/régressions | K6 (branchement), M4, 0a (canonicaliser plus), 0b (auto-canonize), 0c (rewind Qt unique, fork amnésique, fork générique, 103), 0d, 0f (double `gather_context`, orchestration unique), TICKET-100 (ids), 104 | 🟡 arrêté en cours (`B1-SAVES-REWIND.md`, `B2-TOUR.md`) |
-| 3 | **E** — vraie phase 2 (non lancé) | M1, M2, K12, M8, C4 : déplacer le tour et les features **dans** leurs mods, supprimer les proxys, le noyau n'importe plus rien de `mods/` | — |
-| 4 | Doc | DOC2→DOC7, PENDING | — |
-| après | Phase 1 bis | K9, K10, M3, M5, M6, P2, C3, §6 | — |
-
----
-
-## 8. Point d'arrêt du 2026-10-03 — ce qui a été corrigé, ce qui reste
-
-> Travail arrêté volontairement (budget). **Rien n'est commité.** Les lots B1/B2 ont été arrêtés en
-> cours : code cohérent et compilable, mais **la suite complète n'a pas été relancée** après leurs
-> derniers changements. Première chose à faire : relancer toute la suite par lots (comme la CI).
-
-### Corrigé (avec tests, voir `corrections-2026-10/`)
-- **Lot A** : tests hermétiques (config et données isolées automatiquement, garde-fou qui échoue si un
-  test touche la vraie config, plus de dépendance à `dist/` ni à Ollama, Quick Tour neutralisé) ; CI en
-  3 lots (segfault TICKET-067 évité) ; import cassé du serveur web.
-- **Lot C** : conflits/cycles/versions/API n'écartent que le mod fautif ; statut réel dans
-  `axiom mods list` ; ordre utilisateur (`mod_order`) ; exclusif = premier dans l'ordre + `mods conflicts` ;
-  mod qui plante désactivé ; désactivation à chaud ciblée ; un seul bootstrap ; `ctx.get_slot/invoke_hook/
-  spawn_job` ; safe mode = aucun mod ; découverte indépendante du dossier courant (plus de `dist/mods`) ;
-  `.axmod` multi-fichiers ; patches sur méthodes/closures, refus bruyant ; créateur LLM sans exécution
-  avant confirmation, chemins confinés, liste unique des hooks publics.
-- **Lot B1** : fork qui perdait la mémoire living (088), fork générique STEP_KEYED, 103, modifiers au fork,
-  rewind Qt par le chemin moteur unique (époque, backup, Chroma après commit), ids Chroma déterministes
-  (100), regenerate (104), définition d'objet dans le batch (inventaire), époque atomique,
-  `ctx.register_storage/register_migrations`, harnais golden sur toutes les tables runtime + Chroma.
-- **Lot B2** : erreurs LLM qui remontent (« LLM unreachable » revenu) ; contribution de mod qui plante =
-  mod désactivé, tour continué ; boucle de correction rétablie (indice dans l'Event_Log, rembobinable) ;
-  validation complète des stats remise dans `axiom.world` (régression non vue par la revue) ; une seule
-  orchestration, `gather_context` une fois ; un bootstrap par processus ; fork sans bump d'époque source ;
-  auto-canonize dans `Session` ; LLM via `axiom.providers` ; `community.survival` désactivé par défaut.
-- **Décisions annulées** : clause de licence de `NOTICE`, en-tête/bilan du DOC, licence = question ouverte.
-
-### Reste à faire — immédiat (finir le lot B)
-1. **Relancer toute la suite** et corriger ce qui casse (non relancés : world, time, stat_dynamics,
-   providers, decoupling, ui_mods, web_server, generation_cancel, tests Qt, saves*, savestore, observations…).
-2. `tests/test_ui_mods_and_cli.py::test_cli_mods_management_and_safe_mode` : adapter au safe mode « aucun mod ».
-3. **Bug trouvé par le nouveau harnais** : après un tour sur une save neuve, `State_Cache` garde le delta
-   comme valeur (-15 au lieu de 85) — contourné dans `create_save`, vraie cause dans `axiom/turn_batch.py`.
-4. Qt `tabletop_view.py` : retirer l'auto-canonize (sinon fait **deux fois** avec le réglage de `Session`)
-   et le code mort d'extraction de faits. Idem `web/app.js` (auto-canonize).
-5. `mods_dialog.py` → `disable_mod_hot` + affichage « au prochain lancement ». `axiom/cli/play.py` → LLM via
-   `axiom.providers`.
-6. `axiom.inventory` : transmettre ses rejets au narrateur ; `axiom.rag` : indexer dans la mémoire
-   vectorielle de la session ; `axiom.living_memory` : threads via `ctx.spawn_job`, plus de `ctx._registry`.
-7. Migrations de mods appliquées à l'ouverture d'une save (`Session`) ; handler de backup côté web/CLI ;
-   doublons dans `Session.rewind`.
-8. Tests manquants : fork à mi-partie, export « définition seule », époque avec vrais faits, atomicité,
-   104, 0d, migrations — et vérifier qu'ils échouent sur l'ancien code.
-9. Réglage `auto_canonize` rangé provisoirement dans `mod_settings["axiom.turn"]` (à valider).
-10. Ajouts au noyau faits par B2 (à relire) : `KernelStepContext.history/system_prompt/extras`,
-    `get_slot_entries`, `report_fault`, `get_faulted_mods`, champ de manifeste `enabled_by_default`.
-
-### Reste à faire — structurel (lot E, « vraie phase 2 », non lancé)
-M1 (supprimer les 6 proxys, le noyau n'importe plus `mods/`), M2 (déplacer réellement `arbitrator.py`,
-narration de `prompts.py`, partie jeu de `turn_batch.py` dans `mods/axiom.turn/` ; supprimer les tests
-par nom de mod), K12 (noyau neutre : ni LLM, ni `AppConfig`, step générique), C4 (créateur LLM en mod),
-`export_engine.py` qui détecte aussi `importlib.import_module("mods` (correctif proposé dans `C-NOYAU.md`).
-
-### Reste à faire — fonctionnalités jamais commencées
-Voir §6 (`ctx.store`/`versioned_kv`, modpack dans la save, snapshots par mod, mod « chat minimal »,
-schéma JSON contribué, sections de prompt positionnées, points `@patchable`, `mod test` sur harnais golden,
-hooks d'édition hors tour, hooks de compilation d'univers, emplacements web lus par le SPA, test du wheel PyPI).
-
-### Doc à refaire
-DOC2 (exemple de mod qui marche + test qui l'exécute), DOC3/DOC4 (README et guides : retirer les
-affirmations fausses, commandes inventées, store fictif), DOC5 `ARCHITECTURE.md`, DOC6 `AXIOM_STATUS.md` /
-`Changelog.md`, `PENDING.md` (statuts TICKET-088/100→105 selon §2 et ce §8).
-
-### Décisions pour le propriétaire / à voir avec Frosoore
-- Suppressions proposées : symlink `mods/axiom_ui_qt` ; artefact `dist/mods/community.fatigue-0.1.0.axmod`.
-- Mod en double (officiel vs dossier utilisateur) : lequel prioritaire ?
-- Coordination D-6 (qui possède `arbitrator.py`/`session.py`), statut de `Multiplayer/`.
-- Le `settings.json` réel du propriétaire contient encore des mods de test (`community.herbalism`,
-  `community.lockpicking`, `community.testpack`) et des clés API vides : à vérifier/nettoyer à la main.

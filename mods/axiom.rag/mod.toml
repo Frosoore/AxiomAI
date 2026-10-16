@@ -21,4 +21,4 @@ slots = [
 ]
 
 [storage]
-vector_store = { policy = "custom" }
+vector_store = { policy = "custom", rewind = "storage:rewind_rag", fork = "storage:fork_rag" }

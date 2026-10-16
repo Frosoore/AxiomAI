@@ -1678,3 +1678,107 @@ def test_mod_web_extensions_endpoints(web_server):
         assert status == 404
     finally:
         reg.remove_slot_contribution("axiom.ui.web:settings_tab", "probe.web")
+
+
+def test_mods_toggle_endpoint(web_server):
+    """POST /api/mods/toggle toggles or sets enabled state of an installed mod."""
+    status, data = _post_json(f"{web_server}/api/mods/toggle", {"mod_id": "community.survival", "enabled": True})
+    assert status == 200, data
+    assert data["status"] == "success"
+    assert data["enabled"] is True
+
+    status, data = _post_json(f"{web_server}/api/mods/toggle", {"mod_id": "community.survival", "enabled": False})
+    assert status == 200, data
+    assert data["enabled"] is False
+
+    # Without 'enabled' parameter, toggles the state
+    status, data = _post_json(f"{web_server}/api/mods/toggle", {"mod_id": "community.survival"})
+    assert status == 200, data
+    assert data["enabled"] is True
+
+    # Restore to false
+    status, data = _post_json(f"{web_server}/api/mods/toggle", {"mod_id": "community.survival", "enabled": False})
+    assert status == 200, data
+
+
+def test_web_memory_mutations_and_inventory_move(web_server):
+    """Verify TICKET-121 (memory mutations actually execute) and TICKET-122 (inventory move parameter compatibility)."""
+    from unittest.mock import patch
+    from axiom.db_helpers import provision_blank_universe
+    from axiom.schema import create_universe_db, get_connection
+
+    tmp_dir = PROJECT_ROOT / "scratch"
+    tmp_dir.mkdir(exist_ok=True)
+    db_file = tmp_dir / "test_web_mutations.db"
+    if db_file.exists():
+        db_file.unlink()
+
+    try:
+        with patch("axiom.config.build_llm_from_config", return_value=_NarrativeStub()), \
+             patch("axiom.session.resolve_llm_backend", return_value=_NarrativeStub()), \
+             patch("axiom.session.Session._resolve_time_llm", return_value=_TimeStub()):
+            create_universe_db(str(db_file))
+            provision_blank_universe(str(db_file), "Mutations Universe")
+
+            status, data = _post_json(f"{web_server}/api/saves/create", {
+                "universe_path": str(db_file), "player_name": "Hero",
+                "player_persona": "", "difficulty": "Normal", "setup_answers": {},
+            })
+            save_id = data["save_id"]
+            save_db = data["db_path"]
+            status, data = _post_json(f"{web_server}/api/session/start", {
+                "universe_path": str(db_file), "save_id": save_id, "difficulty": "Normal",
+            })
+            assert status == 200, data
+
+            # 1. Fact mutation: create, update, delete (TICKET-121)
+            status, data = _post_json(f"{web_server}/api/session/memory/fact", {
+                "action": "create", "statement": "The forest is guarded by wolves.", "fact_type": "world",
+            })
+            assert status == 200, data
+            assert data["status"] == "success"
+            fact_id = data["fact_id"]
+            assert fact_id is not None
+
+            status, data = _post_json(f"{web_server}/api/session/memory/fact", {
+                "action": "update", "fact_id": fact_id, "statement": "The forest is guarded by dire wolves.",
+            })
+            assert status == 200, data
+            assert data["status"] == "success"
+
+            status, data = _post_json(f"{web_server}/api/session/memory/fact", {
+                "action": "delete", "fact_id": fact_id,
+            })
+            assert status == 200, data
+            assert data["status"] == "success"
+
+            # 2. Inventory move with dest_holder_kind / dest_holder_id from web/app.js (TICKET-122)
+            from mods.axiom.inventory.inventory import add_item
+            with get_connection(str(save_db)) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO Entities (entity_id, entity_type, entity_role, name) VALUES (?, ?, ?, ?);",
+                    ("hero", "player", "player", "Hero"),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO Entities (entity_id, entity_type, entity_role, name) VALUES (?, ?, ?, ?);",
+                    ("chest", "npc", "npc", "Chest"),
+                )
+                conn.commit()
+                add_item(conn, save_id, "iron_sword", quantity=1, holder_kind="entity", holder_id="hero")
+                rows = conn.execute("SELECT instance_id FROM Item_Instances WHERE save_id = ?;", (save_id,)).fetchall()
+                instance_id = rows[0][0]
+
+            status, data = _post_json(f"{web_server}/api/session/inventory/move", {
+                "instance_id": instance_id,
+                "dest_holder_kind": "entity",
+                "dest_holder_id": "chest",
+                "quantity": 1,
+            })
+            assert status == 200, data
+            assert data.get("status") in ("success", "ok")
+    finally:
+        if db_file.exists():
+            db_file.unlink()
+        if "save_db" in locals() and Path(save_db).exists():
+            Path(save_db).unlink()
+

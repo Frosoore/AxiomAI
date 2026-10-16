@@ -638,6 +638,7 @@ diagnostic_view_warnings = "Показать предупреждения"
 diagnostic_view_failures = "Показать неудавшиеся тесты"
 diagnostic_copy_all = "Копировать всё"
 generating_image = "Создание иллюстрации…"
+no_narrative_to_illustrate = "Нет сцены для иллюстрации."
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
 vcredist_title = "Отсутствует компонент Windows"

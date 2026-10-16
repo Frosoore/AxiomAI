@@ -24,14 +24,7 @@ class RagService:
     """Public service exposed by axiom.rag."""
 
     def __init__(self, base_dir: Path | str | None = None) -> None:
-        if base_dir is None:
-            try:
-                from axiom import paths
-                self.base_dir = paths.get_vector_dir()
-            except Exception:
-                self.base_dir = Path.home() / ".local" / "share" / "axiom_ai" / "vectors"
-        else:
-            self.base_dir = Path(base_dir)
+        self._base_dir = Path(base_dir) if base_dir is not None else None
         self._instances: dict[str, VectorMemory] = {}
         # Memory of the running session for a save: the turn indexes into it and a
         # rewind/fork rolls back that same instance. Weak: a closed session's
@@ -39,6 +32,20 @@ class RagService:
         self._session_memories: "weakref.WeakValueDictionary[str, VectorMemory]" = (
             weakref.WeakValueDictionary()
         )
+
+    @property
+    def base_dir(self) -> Path:
+        if self._base_dir is not None:
+            return self._base_dir
+        try:
+            from axiom import paths
+            return paths.get_vector_dir()
+        except Exception:
+            return Path.home() / ".local" / "share" / "axiom_ai" / "vectors"
+
+    @base_dir.setter
+    def base_dir(self, val: Path | str | None) -> None:
+        self._base_dir = Path(val) if val is not None else None
 
     def set_vector_memory(self, save_id: str, vm: VectorMemory) -> None:
         """Use the session's vector memory for this save (instead of the service's own)."""

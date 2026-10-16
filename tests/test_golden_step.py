@@ -211,7 +211,7 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
         ScriptedTurnResponse(
             narrative_chunks=["An arcane reservoir boosts your focus."],
             tool_call={
-                "modifier_changes": [
+                "modifiers": [
                     {"entity_id": "player", "stat_key": "Arcane Focus", "delta": 15, "minutes": 120},
                 ],
                 "elapsed_minutes": 30,
@@ -220,7 +220,7 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
         ScriptedTurnResponse(
             narrative_chunks=["Exhaustion dampens your vitality."],
             tool_call={
-                "modifier_changes": [
+                "modifiers": [
                     {"entity_id": "player", "stat_key": "Health", "delta": -10, "minutes": 60},
                 ],
                 "elapsed_minutes": 45,
@@ -230,7 +230,7 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
         ScriptedTurnResponse(
             narrative_chunks=["You learn secretive lore about the underworld."],
             tool_call={
-                "session_lore_changes": [
+                "session_lore": [
                     {
                         "category": "Rumors",
                         "name": "Shadow Syndicate",
@@ -247,7 +247,7 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
         ScriptedTurnResponse(
             narrative_chunks=["You uncover divine rebel history."],
             tool_call={
-                "session_lore_changes": [
+                "session_lore": [
                     {
                         "category": "Ancient History",
                         "name": "Fall of Ignarok",
@@ -279,8 +279,31 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
 
     assert session.turn_id == 8
 
-    # 2. Checkpoint étalon : capturer l'état canonique à la fin du Tour 8 (S8)
-    s8 = SessionStateCanonicalizer.canonicalize(save_db, save_id, at_turn=8)
+    # Peuplement de Living Memory et Mod_KV pour garantir que toutes les tables sont couvertes
+    from mods.axiom.living_memory.facts import Fact, insert_facts
+    from mods.axiom.living_memory.observations import Observation, insert_observation
+    from mods.axiom.living_memory.mental_models import upsert_mental_model
+
+    f_ids = insert_facts(
+        save_db, save_id, 2,
+        [Fact(statement="Player found an ancient map in the docks.", who="player", what="found map", where="docks")]
+    )
+    obs_id = insert_observation(
+        save_db, save_id,
+        Observation(statement="Player is an explorer searching for ruins.", subject="player", sources=[{"fact_id": f_ids[0], "turn_id": 2}], created_turn_id=2)
+    )
+    upsert_mental_model(save_db, save_id, "player", "A bold cartographer exploring ruins.", 2, sources=[obs_id])
+    with get_connection(save_db) as conn:
+        from axiom.kernel.kv_store import _kv_write
+        _kv_write(conn, save_id, "test.guild", "rank", '"seeker"', 2)
+
+    # 2. Checkpoint étalon : capturer l'état canonique réel à la fin du Tour 8 (S8)
+    s8 = SessionStateCanonicalizer.canonicalize(save_db, save_id)
+    assert len(s8["tables"].get("Active_Modifiers", [])) > 0
+    assert len(s8["tables"].get("Facts", [])) > 0
+    assert len(s8["tables"].get("Observations", [])) > 0
+    assert len(s8["tables"].get("Mental_Models", [])) > 0
+    assert len(s8["tables"].get("Mod_KV", [])) > 0
 
     # 3. Stress & Dérive : Exécuter les Tours 9 et 10
     session.take_turn("Turn 9 action")
@@ -291,7 +314,13 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
     s10 = SessionStateCanonicalizer.canonicalize(save_db, save_id)
     assert len(SessionStateCanonicalizer.diff(s8, s10)) > 0
 
-    # 4. Rewind : session.rewind(8)
+    # 4. Fork mi-partie au tour 8 (depuis l'état actuel au tour 10)
+    forked_id = fork_save(save_db, save_id, at_turn=8)
+    s_forked = SessionStateCanonicalizer.canonicalize(save_db, forked_id)
+    diff_fork = SessionStateCanonicalizer.diff(s8, s_forked)
+    assert diff_fork == [], f"Fork drift detected:\n{''.join(diff_fork)}"
+
+    # 5. Rewind : session.rewind(8)
     rewind_summary = session.rewind(8)
     assert rewind_summary["rebuilt_to_turn"] == 8
     assert session.turn_id == 8
@@ -300,12 +329,6 @@ def test_golden_step_full_lifecycle(isolated_harness_env):
     s_rewound = SessionStateCanonicalizer.canonicalize(save_db, save_id)
     diff_rewind = SessionStateCanonicalizer.diff(s8, s_rewound)
     assert diff_rewind == [], f"Rewind drift detected:\n{''.join(diff_rewind)}"
-
-    # 5. Fork : axiom.saves.fork_save au tour 8
-    forked_id = fork_save(save_db, save_id, at_turn=8)
-    s_forked = SessionStateCanonicalizer.canonicalize(save_db, forked_id)
-    diff_fork = SessionStateCanonicalizer.diff(s8, s_forked)
-    assert diff_fork == [], f"Fork drift detected:\n{''.join(diff_fork)}"
 
     # 6. Export / Unpack : pack_save puis unpack_save dans une base isolée
     archive_path = tmp_path / "golden_export.axiomsave"
@@ -395,6 +418,14 @@ def test_session_epoch_bump_and_stale_worker_discard(isolated_harness_env):
     llm = ScriptedLLMBackend([
         ScriptedTurnResponse(narrative_chunks=["T1"], tool_call={}),
         ScriptedTurnResponse(narrative_chunks=["T2"], tool_call={}),
+        ScriptedTurnResponse(
+            narrative_chunks=[],
+            tool_call={
+                "facts": [
+                    {"subject": "player", "statement": "Player discovered a secret map in the old tavern."}
+                ]
+            },
+        ),
     ])
     session = Session(save_db, save_id, llm=llm, time_llm=llm)
     session.take_turn("Turn 1")

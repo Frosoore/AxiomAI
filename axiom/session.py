@@ -400,16 +400,16 @@ class Session:
                     "The turn pipeline ran but produced no result for this turn "
                     "(a mod it depends on may have been disabled: see `axiom mods list`)."
                 )
+
+            # Atomic commit of all turn mutations in a single SQLite transaction
+            if getattr(result, "batch", None) is not None:
+                from axiom.schema import get_connection
+                with get_connection(self._db_path) as conn:
+                    result.batch.commit_all(conn, self._save_id, self._turn_id)
         except Exception:
             self._turn_id = old_turn_id
             self._intent_pool.update(intents)
             raise
-
-        # Atomic commit of all turn mutations in a single SQLite transaction
-        if getattr(result, "batch", None) is not None:
-            from axiom.schema import get_connection
-            with get_connection(self._db_path) as conn:
-                result.batch.commit_all(conn, self._save_id, self._turn_id)
 
 
         # Periodic snapshot
@@ -691,7 +691,12 @@ class Session:
                 if self.epoch != epoch:  # rewound / reloaded meanwhile
                     return
                 from axiom.canonize import canonize_story
-                info = canonize_story(db_path, narrative, preview=False)
+                info = canonize_story(
+                    db_path, narrative, preview=False, epoch_guard=lambda: self.epoch == epoch
+                )
+                if self.epoch != epoch or info.get("aborted"):
+                    logger.info("Auto-canonize discarded: epoch changed (%s -> %s)", epoch, self.epoch)
+                    return
                 self.last_auto_canonize = info
             except Exception as err:
                 # A save not linked to a universe folder cannot be canonized: just log.

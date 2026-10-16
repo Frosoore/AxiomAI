@@ -72,9 +72,17 @@ def fork_observations(
             (dst_save_id, r[1], r[2], r[3], _remap_fact_sources(r[4], fact_map), r[5], r[6], r[7], r[8]),
         )
         obs_map[int(r[0])] = cur.lastrowid
+    rollback_observations(conn, dst_save_id, target_turn)
+    surviving_obs = {
+        r[0]
+        for r in conn.execute(
+            "SELECT observation_id FROM Observations WHERE save_id = ?;",
+            (dst_save_id,),
+        ).fetchall()
+    }
+    obs_map = {old_id: new_id for old_id, new_id in obs_map.items() if new_id in surviving_obs}
     if id_maps is not None:
         id_maps["Observations"] = obs_map
-    rollback_observations(conn, dst_save_id, target_turn)
 
 
 def rewind_mental_models(conn: sqlite3.Connection, save_id: str, target_turn: int) -> None:

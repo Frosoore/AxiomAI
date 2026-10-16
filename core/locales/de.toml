@@ -637,6 +637,7 @@ diagnostic_view_warnings = "Warnungen anzeigen"
 diagnostic_view_failures = "Fehlgeschlagene Tests anzeigen"
 diagnostic_copy_all = "Alles kopieren"
 generating_image = "Illustration wird erzeugt…"
+no_narrative_to_illustrate = "Keine Szene zum Illustrieren."
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
 vcredist_title = "Windows-Komponente fehlt"

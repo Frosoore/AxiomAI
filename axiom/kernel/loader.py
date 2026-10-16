@@ -341,7 +341,7 @@ def plan_modpack(
         plan.statuses[mod_id].order = i
     plan.load_order = list(report.load_order)
     plan.report = report
-    plan.exclusive_conflicts = compute_exclusive_conflicts(candidates, report.load_order)
+    plan.exclusive_conflicts = compute_exclusive_conflicts(candidates, report.load_order, user_order=user_order)
     return plan
 
 
@@ -547,12 +547,13 @@ def ensure_installed_storage_declared() -> None:
 
 def forget_declared_storage() -> None:
     """Unregister every manifest-declared storage (a new modpack is being loaded)."""
-    from axiom.storage_registry import unregister_storage
+    from axiom.storage_registry import register_time_provider, unregister_storage
 
     for specs in _DECLARED_STORAGE.values():
         for spec in specs:
             unregister_storage(spec)
     _DECLARED_STORAGE.clear()
+    register_time_provider(None)
 
 
 def _check_custom_storage_registered(manifest: ModManifest) -> None:
@@ -760,7 +761,7 @@ class ModLoadState:
         """Disable one loaded mod. Returns "now", "next_launch" or "not_loaded" (D-5)."""
         ctx = self.contexts.get(mod_id)
         st = self.statuses.get(mod_id)
-        if ctx is None or st is None or st.state != STATE_ACTIVE:
+        if ctx is None or st is None or st.state not in (STATE_ACTIVE, STATE_NEXT_LAUNCH):
             return "not_loaded"
         if not ctx.can_disable_hot:
             st.state = STATE_NEXT_LAUNCH
@@ -773,11 +774,51 @@ class ModLoadState:
             outcome = "now"
         if cascade:
             for dep in self.dependents_of(mod_id):
-                self.disable(dep, f"Required dependency '{mod_id}' was disabled.", cascade=True)
+                if outcome == "next_launch":
+                    dep_st = self.statuses.get(dep)
+                    if dep_st and dep_st.state == STATE_ACTIVE:
+                        dep_st.state = STATE_NEXT_LAUNCH
+                        dep_st.reason = f"Required dependency '{mod_id}' will be disabled at next launch."
+                else:
+                    self.disable(dep, f"Required dependency '{mod_id}' was disabled.", cascade=True)
+
+        if outcome == "now" and not _dependency_loaded(self, "turn_pipeline") and not is_safe_mode():
+            if "axiom.minimal_chat" in self.statuses:
+                chat_st = self.statuses["axiom.minimal_chat"]
+                if chat_st.state != STATE_ACTIVE:
+                    try:
+                        _m, chat_ctx, chat_module = load_mod(chat_st.path, self.registry, force_enabled=True)
+                        if chat_ctx is not None:
+                            chat_st.state, chat_st.reason = STATE_ACTIVE, "Promoted as turn pipeline fallback."
+                            self.contexts["axiom.minimal_chat"] = chat_ctx
+                            self.modules["axiom.minimal_chat"] = chat_module
+                            if "axiom.minimal_chat" not in self.load_order:
+                                self.load_order.append("axiom.minimal_chat")
+                    except Exception as err:
+                        logger.error("Failed to promote fallback axiom.minimal_chat: %s", err)
+
         return outcome
 
 
 _PATCH_FAULT_LISTENER: Any = None
+
+
+def _compute_effective_order(load_order: list[str], user_order: list[str] | None) -> list[str]:
+    """Order used for exclusive slot candidates and equal-priority patches.
+    User preferences take precedence over dependency load order."""
+    if not user_order:
+        return list(load_order)
+    user_set = set()
+    effective: list[str] = []
+    for mid in user_order:
+        if mid in load_order and mid not in user_set:
+            effective.append(mid)
+            user_set.add(mid)
+    for mid in load_order:
+        if mid not in user_set:
+            effective.append(mid)
+            user_set.add(mid)
+    return effective
 
 
 def bootstrap_all_mods(
@@ -832,10 +873,12 @@ def bootstrap_all_mods(
                 if manifest.id in plan.load_order:
                     plan.load_order.remove(manifest.id)
 
+    user_order = user_order or get_user_mod_order(config)
+    effective_order = _compute_effective_order(plan.load_order, user_order)
     state = ModLoadState(registry, plan)
     registry.load_state = state
-    registry.set_mod_order(plan.load_order)
-    set_patch_mod_order(plan.load_order)
+    registry.set_mod_order(effective_order)
+    set_patch_mod_order(effective_order)
     registry.add_fault_listener(state._on_fault)
 
     def _patch_fault(mod_id: str, reason: str) -> None:
@@ -885,6 +928,26 @@ def bootstrap_all_mods(
         state.contexts[mod_id] = ctx
         state.modules[mod_id] = module
         state.load_order.append(mod_id)
+
+    # Post-bootstrap fallback check: if no mod provides turn_pipeline, promote axiom.minimal_chat
+    if not _dependency_loaded(state, "turn_pipeline") and not is_safe_mode():
+        for manifest, path in installed:
+            if manifest.id == "axiom.minimal_chat":
+                try:
+                    _m, ctx, module = load_mod(path, registry, config, force_enabled=True)
+                    if ctx is not None:
+                        st = plan.statuses.setdefault(
+                            "axiom.minimal_chat",
+                            ModStatus("axiom.minimal_chat", STATE_ACTIVE, path=path, manifest=manifest),
+                        )
+                        st.state, st.reason = STATE_ACTIVE, "Promoted as turn pipeline fallback after failure."
+                        state.contexts["axiom.minimal_chat"] = ctx
+                        state.modules["axiom.minimal_chat"] = module
+                        if "axiom.minimal_chat" not in state.load_order:
+                            state.load_order.append("axiom.minimal_chat")
+                except Exception as err:
+                    logger.error("Failed to load fallback axiom.minimal_chat: %s", err)
+                break
 
     return registry
 

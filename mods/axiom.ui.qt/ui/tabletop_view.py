@@ -147,8 +147,7 @@ class TabletopView(HardcoreMixin, QWidget):
         top_bar = QHBoxLayout(top_bar_container)
         top_bar.setContentsMargins(10, 5, 10, 5)
 
-        from mods.axiom.help_system.ui.help_system import doc
-        from mods.axiom.help_system.ui.help_dialogs import make_help_button
+        from .help_bridge import doc, make_help_button
 
         # 1. Left Section
         left_layout = QHBoxLayout()

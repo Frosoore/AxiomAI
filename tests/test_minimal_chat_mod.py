@@ -226,3 +226,112 @@ def test_disabling_world_and_minimal_chat_tells_why_interface_cannot_start():
     msg = interface_unavailable_message("axiom.ui.qt", reg)
     assert msg is not None
     assert "turn_pipeline" in msg and "--safe-mode" in msg
+
+
+def test_init_failure_promotes_minimal_chat(monkeypatch):
+    """K1 / K2 & TICKET-118: If axiom.turn raises in init(), axiom.minimal_chat is promoted as fallback."""
+    from axiom.config import AppConfig
+    import axiom.kernel.loader as loader_mod
+    orig_load_mod = loader_mod.load_mod
+
+    def fake_load_mod(path, reg, config=None, force_enabled=False):
+        p = Path(path)
+        if p.name == "axiom.turn" or p.stem == "axiom.turn":
+            raise RuntimeError("Simulated crash in axiom.turn init()")
+        return orig_load_mod(path, reg, config=config, force_enabled=force_enabled)
+
+    monkeypatch.setattr(loader_mod, "load_mod", fake_load_mod)
+
+    reg = loader_mod.bootstrap_all_mods(KernelRegistry(), AppConfig())
+    assert "axiom.turn" not in reg.load_state.load_order
+    assert "axiom.minimal_chat" in reg.load_state.load_order
+    assert reg.load_state.statuses["axiom.minimal_chat"].state == loader_mod.STATE_ACTIVE
+    assert "fallback" in reg.load_state.statuses["axiom.minimal_chat"].reason.lower()
+
+
+def test_hot_disable_cascade_and_runtime_minimal_chat_promotion():
+    """K7 & TICKET-118: If can_disable_hot is False, dependents stay next_launch (not purged).
+    When turn_pipeline is purged at runtime, axiom.minimal_chat is promoted."""
+    from axiom.config import AppConfig
+    from axiom.kernel.loader import (
+        STATE_ACTIVE,
+        STATE_DISABLED,
+        STATE_NEXT_LAUNCH,
+        bootstrap_all_mods,
+    )
+
+    reg = bootstrap_all_mods(KernelRegistry(), AppConfig())
+    load_state = reg.load_state
+
+    # 1. Disable axiom.world with patches/raw code (can_disable_hot is False)
+    load_state.contexts["axiom.world"]._registered_patches.append(("mock_func", "patch"))
+    outcome = load_state.disable("axiom.world", "Test hot disable world", cascade=True)
+    assert outcome == "next_launch"
+    assert load_state.statuses["axiom.world"].state == STATE_NEXT_LAUNCH
+    # Dependents should be marked NEXT_LAUNCH too, NOT violently purged immediately
+    if "axiom.turn" in load_state.statuses:
+        assert load_state.statuses["axiom.turn"].state == STATE_NEXT_LAUNCH
+
+    # 2. Hot-disable axiom.turn directly (simulate outcome == 'now')
+    outcome_turn = load_state.disable("axiom.turn", "Test hot disable turn", cascade=True)
+    assert outcome_turn == "now"
+    assert load_state.statuses["axiom.turn"].state == STATE_DISABLED
+    # Minimal chat promoted dynamically at runtime
+    assert "axiom.minimal_chat" in load_state.load_order
+    assert load_state.statuses["axiom.minimal_chat"].state == STATE_ACTIVE
+
+
+def test_resolver_virtual_provides_version_and_user_order():
+    """K3 & K4: Version checks on virtual providers and user order prioritization."""
+    from axiom.kernel.api import validate_version_spec, version_satisfies
+    from axiom.kernel.manifest import ModContributes, ModDependency, ModManifest, ModOrdering
+    from axiom.kernel.resolver import compute_exclusive_conflicts, resolve_load_order
+
+    # 1. validate_version_spec rejects single-segment ~=
+    with pytest.raises(ValueError, match=".*~=1.*"):
+        validate_version_spec("~=1")
+    assert not version_satisfies("1.2.0", "~=1")
+
+    # 2. Virtual provides version check
+    provider_manifest = ModManifest(
+        id="provider.mod",
+        version="1.0.0",
+        axiom_api=1,
+        ordering=ModOrdering(provides=["custom_pipeline"]),
+    )
+    consumer_manifest = ModManifest(
+        id="consumer.mod",
+        version="1.0.0",
+        axiom_api=1,
+        dependencies={"custom_pipeline": ModDependency("custom_pipeline", version_spec=">=2.0.0")},
+    )
+    candidates = {"provider.mod": provider_manifest, "consumer.mod": consumer_manifest}
+    report = resolve_load_order(candidates)
+    assert "consumer.mod" in report.disabled_mods
+    assert "does not satisfy '>=2.0.0'" in report.disabled_mods["consumer.mod"]
+
+    # 3. User order prioritization for exclusive slot conflicts
+    dep_a = ModManifest(
+        id="mod.base",
+        version="1.0.0",
+        axiom_api=1,
+        provides_slots={"slot.exclusive": "exclusive"},
+        contributes=ModContributes(slots=["slot.exclusive"]),
+    )
+    dep_b = ModManifest(
+        id="mod.override",
+        version="1.0.0",
+        axiom_api=1,
+        dependencies={"mod.base": ModDependency("mod.base")},
+        contributes=ModContributes(slots=["slot.exclusive"]),
+    )
+    manifests = {"mod.base": dep_a, "mod.override": dep_b}
+    # Topological order: base must load before override
+    topo_order = ["mod.base", "mod.override"]
+    # User specifies override should take precedence
+    conflicts = compute_exclusive_conflicts(manifests, topo_order, user_order=["mod.override", "mod.base"])
+    assert len(conflicts) == 1
+    slot_name, candidates_list = conflicts[0]
+    assert slot_name == "slot.exclusive"
+    assert candidates_list[0] == "mod.override"  # override wins!
+

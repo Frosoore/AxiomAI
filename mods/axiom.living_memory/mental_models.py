@@ -289,6 +289,38 @@ def rollback_mental_models(conn, save_id: str, target_turn_id: int) -> dict[str,
         "WHERE save_id = ? AND updated_turn_id > ?;",
         (target_turn_id, save_id, target_turn_id),
     ).rowcount or 0
+
+    # Clean up dead observation IDs in surviving Mental_Models.sources
+    try:
+        surviving_obs = {
+            r[0]
+            for r in conn.execute(
+                "SELECT observation_id FROM Observations WHERE save_id = ?;",
+                (save_id,),
+            ).fetchall()
+        }
+        models = conn.execute(
+            "SELECT model_id, sources FROM Mental_Models WHERE save_id = ?;",
+            (save_id,),
+        ).fetchall()
+        for mid, src_raw in models:
+            try:
+                sources = json.loads(src_raw) if src_raw else []
+            except Exception:
+                sources = []
+            if isinstance(sources, list):
+                cleaned = [
+                    s for s in sources
+                    if s in surviving_obs or (isinstance(s, str) and s.isdigit() and int(s) in surviving_obs)
+                ]
+                if cleaned != sources:
+                    conn.execute(
+                        "UPDATE Mental_Models SET sources = ?, stale = 1 WHERE model_id = ?;",
+                        (json.dumps(cleaned), mid),
+                    )
+    except sqlite3.OperationalError:
+        pass
+
     return {"deleted": int(deleted), "updated": int(updated)}
 
 

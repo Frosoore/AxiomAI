@@ -17,7 +17,6 @@ from axiom import config as axiom_config
 from axiom.config import AppConfig
 from axiom.kernel.context import ModContext
 from axiom.logger import logger
-from axiom.savestore import truncate_assets_in
 
 
 class IllustrationsService:
@@ -75,6 +74,7 @@ class IllustrationsService:
 
     def truncate_assets(self, save_id: str, last_kept_turn_id: int, data_root: Path | None = None) -> int:
         """Delete PNG assets with turn_id > last_kept_turn_id."""
+        from axiom.savestore import truncate_assets_in
         assets_dir = self._root_for(save_id, data_root) / "assets" / save_id
         return truncate_assets_in(assets_dir, last_kept_turn_id)
 

@@ -149,7 +149,7 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from .help_bridge import doc, doc_tab
 
         layout = QVBoxLayout(self)
 
@@ -345,7 +345,7 @@ class SettingsDialog(QDialog):
 
     def _setup_providers_tabs(self) -> None:
         """Setup Universal API tab and Cloud tab contributed by axiom.providers."""
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from .help_bridge import doc, doc_tab
 
         # Universal API tab
         self._univ_widget = QWidget()
@@ -449,7 +449,7 @@ class SettingsDialog(QDialog):
 
     def _setup_image_tab(self) -> None:
         """Setup Image Generation tab contributed by axiom.illustrations."""
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from .help_bridge import doc, doc_tab
         self._image_widget = QWidget()
         image_form = QFormLayout(self._image_widget)
 
@@ -515,7 +515,7 @@ class SettingsDialog(QDialog):
 
     def _setup_memory_tab(self) -> None:
         """Setup Memory tab contributed by axiom.living_memory."""
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
+        from .help_bridge import doc, doc_tab
         self._memory_widget = QWidget()
         memory_form = QFormLayout(self._memory_widget)
 
@@ -1247,7 +1247,7 @@ class SettingsDialog(QDialog):
         Tab-aware (like the Creator Studio): the explanation matches the tab you
         are looking at, then appends the always-visible General section.
         """
-        from mods.axiom.help_system.ui.help_dialogs import ExplainPageDialog, settings_tab_help_html
+        from .help_bridge import ExplainPageDialog, settings_tab_help_html
         title, html = settings_tab_help_html(self._tabs.currentIndex())
         ExplainPageDialog("settings", self, html=html, title=title).exec()
 

@@ -80,10 +80,16 @@ def _call_contribution(mod_ctx: ModContext, mod_id: str, where: str, func: Any, 
 
 #: Positions of a prompt section (DOC §7.1.3, SillyTavern model):
 #: - "system" / "after_system": appended to the system message; "before_system": prepended;
-#: - "user": appended to the last message (the player's turn);
+#: - "after_lore": inserted after lore / before tool instructions;
+#: - "pre_history": inserted as system message before conversation history;
+#: - "post_history": inserted as system message after history and before user turn;
+#: - "user": appended to the true player turn message;
 #: - "in_chat": a system message inserted ``depth`` messages before the end of the prompt;
 #: - "rag" / "context": added to the retrieved-memories block.
-SECTION_POSITIONS = ("system", "after_system", "before_system", "user", "in_chat", "rag", "context")
+SECTION_POSITIONS = (
+    "system", "after_system", "before_system", "after_lore",
+    "pre_history", "post_history", "user", "in_chat", "rag", "context"
+)
 
 
 class PromptSectionError(ValueError):
@@ -193,12 +199,41 @@ def _apply_prompt_sections(ctx: TurnContext, sections: list[dict[str, Any]]) -> 
     for sec in sections:
         pos, text = sec["position"], sec["text"]
         messages = ctx.prompt_messages
-        if pos in ("system", "after_system") and messages:
-            messages[0]["content"] += f"\n\n{text}"
+        if pos in ("system", "after_system", "after_lore") and messages:
+            content = messages[0]["content"]
+            # If the system prompt ends with the tool-call schema instruction (~~~json ... ~~~),
+            # insert the section BEFORE the schema instruction block so the prompt keeps its intended structure.
+            idx = content.find("~~~json")
+            if idx != -1:
+                prefix_idx = content.rfind("At the end of your response", 0, idx)
+                if prefix_idx == -1:
+                    prefix_idx = content.rfind("You MUST end your response", 0, idx)
+                split_at = prefix_idx if prefix_idx != -1 else idx
+                messages[0]["content"] = f"{content[:split_at].rstrip()}\n\n{text}\n\n{content[split_at:].lstrip()}"
+            else:
+                messages[0]["content"] += f"\n\n{text}"
         elif pos == "before_system" and messages:
             messages[0]["content"] = f"{text}\n\n" + messages[0]["content"]
+        elif pos == "pre_history" and messages:
+            messages.insert(1, {"role": "system", "content": text})
+        elif pos == "post_history" and messages:
+            user_idx = None
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    user_idx = i
+                    break
+            target_idx = user_idx if user_idx is not None else len(messages)
+            messages.insert(target_idx, {"role": "system", "content": text})
         elif pos == "user" and len(messages) > 1:
-            messages[-1]["content"] += f"\n\n{text}"
+            target_msg = None
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    target_msg = m
+                    break
+            if target_msg is not None:
+                target_msg["content"] += f"\n\n{text}"
+            else:
+                messages[-1]["content"] += f"\n\n{text}"
         elif pos == "in_chat" and messages:
             # depth 0 = at the very end; never before the system message.
             index = max(1, len(messages) - max(0, sec["depth"]))
@@ -241,9 +276,15 @@ def build_dynamic_tool_call_schema(mod_ctx: ModContext) -> str:
         rule_idx += 1
     rules.append(f"{rule_idx}. CONTINUITY: Advance the scene based on the actors' intents. Do not repeat their exact words.")
 
-    json_obj: dict[str, Any] = {
-        "state_changes": [{"entity_id": "...", "stat_key": "...", "delta": 0, "value": "..."}],
-    }
+    json_obj: dict[str, Any] = {}
+    world_active = True
+    if hasattr(mod_ctx, "is_mod_active"):
+        world_active = mod_ctx.is_mod_active("axiom.world")
+
+    if world_active:
+        json_obj["state_changes"] = [{"entity_id": "...", "stat_key": "...", "delta": 0, "value": "..."}]
+        json_obj["session_lore"] = [{"name": "...", "content": "...", "category": "General"}]
+
     for k, v in contributed_fields.items():
         if k not in json_obj:
             json_obj[k] = v

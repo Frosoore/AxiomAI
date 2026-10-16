@@ -917,6 +917,16 @@ def duplicate_save(
     finally:
         conn.close()
     final_db = finalize_save_container(tmp, new_id)
+    cur_turn = 0
+    try:
+        with sqlite3.connect(str(final_db)) as c:
+            row = c.execute("SELECT COALESCE(MAX(turn_id), 0) FROM Event_Log WHERE save_id = ?;", (new_id,)).fetchone()
+            if row and row[0] is not None:
+                cur_turn = int(row[0])
+    except Exception:
+        pass
+    from axiom.storage_registry import execute_external_fork
+    execute_external_fork(save_id, new_id, cur_turn)
     copy_save_assets(save_id, new_id)
     return {"save_id": new_id, "db_path": str(final_db)}
 

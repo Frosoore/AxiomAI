@@ -214,8 +214,14 @@ def _apply_events_to_state_cache(
             f"WHERE entity_id IN ({placeholders});",
             (*entity_ids,),
         ).fetchall()
+        from axiom.events import resolve_stat_key
         for r in base_rows:
-            cache.setdefault(r["entity_id"], {}).setdefault(r["stat_key"], str(r["stat_value"]))
+            eid = r["entity_id"]
+            sk = r["stat_key"]
+            ent_stats = cache.setdefault(eid, {})
+            canon_key = resolve_stat_key(sk, ent_stats.keys())
+            if canon_key not in ent_stats:
+                ent_stats[canon_key] = str(r["stat_value"])
     except sqlite3.OperationalError:
         # Table Entity_Stats might not exist in some minimal test databases
         pass

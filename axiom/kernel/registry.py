@@ -122,6 +122,11 @@ class KernelRegistry:
         """Mods disabled at runtime after raising, with the reason."""
         return dict(self._faulted)
 
+    def is_mod_active(self, mod_id: str) -> bool:
+        """True if the mod has an attached context and is not faulted."""
+        from axiom.kernel.loader import is_mod_active
+        return is_mod_active(mod_id, self)
+
     def declare_critical_hook(self, hook_name: str) -> None:
         """Declare a hook whose exceptions propagate to the caller (no isolation, no disabling)."""
         self._critical_hooks.add(hook_name)

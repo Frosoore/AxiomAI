@@ -76,10 +76,8 @@ class MainWindow(QMainWindow):
         self._current_ambiance_tag: str | None = None
 
         # Ensure active registry is initialized and enabled mods are bootstrapped
-        from axiom.kernel.registry import get_active_registry
-        from axiom.kernel.loader import bootstrap_all_mods
-        if get_active_registry() is None:
-            bootstrap_all_mods()
+        from axiom.kernel.loader import get_kernel_registry
+        get_kernel_registry()
 
         self._setup_stack()
         self._setup_menu()
@@ -91,11 +89,8 @@ class MainWindow(QMainWindow):
 
         # TICKET-057 : honour the "doc tooltips on hover" settings toggle.
         from PySide6.QtWidgets import QApplication
-        try:
-            from mods.axiom.help_system.ui.help_system import install_tooltip_gate
-            install_tooltip_gate(QApplication.instance())
-        except (ImportError, ModuleNotFoundError):
-            pass
+        from .help_bridge import install_tooltip_gate
+        install_tooltip_gate(QApplication.instance())
         self.update_mod_visibility()
 
     def _setup_volume_slider(self) -> None:
@@ -125,7 +120,7 @@ class MainWindow(QMainWindow):
         self._volume_slider.setValue(50)
         self._volume_slider.setFixedWidth(80) # Keep slider compact
         self._volume_slider.valueChanged.connect(self._on_volume_changed)
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
         doc(self._volume_slider, "app.volume")
         layout.addWidget(self._volume_slider)
         
@@ -146,7 +141,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_setup_view"): self._setup_view.retranslate_ui()
 
         # TICKET-057 : every registered doc tooltip follows the language.
-        from mods.axiom.help_system.ui.help_system import retranslate_tooltips
+        from .help_bridge import retranslate_tooltips
         retranslate_tooltips()
 
     def _on_volume_changed(self, value: int) -> None:
@@ -277,7 +272,7 @@ class MainWindow(QMainWindow):
         self._cancel_gen_btn = QPushButton(tr("cancel_generation"))
         self._cancel_gen_btn.setStyleSheet("color: #FF4B4B;")
         self._cancel_gen_btn.clicked.connect(self._on_cancel_generation)
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
         doc(self._cancel_gen_btn, "app.cancel_generation")
         self._cancel_gen_btn.hide()
         self._status_bar.addPermanentWidget(self._cancel_gen_btn)
@@ -469,15 +464,15 @@ class MainWindow(QMainWindow):
         return self._PAGE_BY_INDEX.get(self._stack.currentIndex(), "hub")
 
     def _explain_current_page(self) -> None:
-        from mods.axiom.help_system.ui.help_dialogs import ExplainPageDialog
+        from .help_bridge import ExplainPageDialog
         ExplainPageDialog(self._current_doc_page(), self).exec()
 
     def _show_doc_directory(self) -> None:
-        from mods.axiom.help_system.ui.help_dialogs import DocDirectoryDialog
+        from .help_bridge import DocDirectoryDialog
         DocDirectoryDialog(self, current_page=self._current_doc_page()).exec()
 
     def _show_quick_tour(self) -> None:
-        from mods.axiom.help_system.ui.help_dialogs import QuickTourDialog
+        from .help_bridge import QuickTourDialog
         QuickTourDialog(self).exec()
 
     def _show_diagnostic(self) -> None:

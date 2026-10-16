@@ -638,6 +638,7 @@ diagnostic_view_warnings = "查看警告"
 diagnostic_view_failures = "查看失败的测试"
 diagnostic_copy_all = "全部复制"
 generating_image = "正在生成插图…"
+no_narrative_to_illustrate = "没有可供绘制插图的场景。"
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
 vcredist_title = "缺少 Windows 组件"

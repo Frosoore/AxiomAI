@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--safe-mode",
         action="store_true",
         default=False,
-        help="Start with all third-party mods disabled (recovery mode).",
+        help="Start in recovery mode (only essential official UI, providers, and minimal chat loaded).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

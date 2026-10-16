@@ -121,9 +121,14 @@ def resolve_load_order(
                         else:
                             reason = f"Missing required dependency: '{dep_name}'"
                         break
-                    if dep_name in active and not version_satisfies(active[dep_name].version, dep.version_spec):
+                    compatible = any(
+                        version_satisfies(active[p].version, dep.version_spec)
+                        for p in providers if p in active
+                    )
+                    if not compatible:
+                        prov_desc = [f"'{p}' v{active[p].version}" for p in providers if p in active]
                         reason = (
-                            f"Dependency '{dep_name}' version {active[dep_name].version} "
+                            f"Dependency '{dep_name}' (provided by {', '.join(prov_desc) or 'none'}) "
                             f"does not satisfy '{dep.version_spec}'"
                         )
                         break
@@ -249,10 +254,11 @@ def _toposort(active, providers_of, rank) -> tuple[list[str], list[str] | None]:
 def compute_exclusive_conflicts(
     manifests: Mapping[str, ModManifest],
     load_order: list[str],
+    user_order: list[str] | None = None,
 ) -> list[tuple[str, list[str]]]:
     """Statically compute exclusive slots claimed by several loaded mods (§8, D13).
 
-    Returns a list of (slot_name, [candidates in load order]); the first candidate wins.
+    Returns a list of (slot_name, [candidates in preference order]); the first candidate wins.
     Computed from the manifests ([provides_slots] rules and [contributes].slots), without
     running any mod code.
     """
@@ -262,8 +268,21 @@ def compute_exclusive_conflicts(
     for mod_id in load_order:
         for slot, rule in manifests[mod_id].provides_slots.items():
             rules[slot] = rule
+
+    user_set = set()
+    order_eval: list[str] = []
+    if user_order:
+        for mid in user_order:
+            if mid in load_order and mid not in user_set:
+                order_eval.append(mid)
+                user_set.add(mid)
+    for mid in load_order:
+        if mid not in user_set:
+            order_eval.append(mid)
+            user_set.add(mid)
+
     claims: dict[str, list[str]] = {}
-    for mod_id in load_order:
+    for mod_id in order_eval:
         for slot in manifests[mod_id].contributes.slots:
             if rules.get(slot) == "exclusive":
                 claims.setdefault(slot, []).append(mod_id)

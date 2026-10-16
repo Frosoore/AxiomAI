@@ -639,6 +639,7 @@ diagnostic_view_warnings = "경고 보기"
 diagnostic_view_failures = "실패한 테스트 보기"
 diagnostic_copy_all = "모두 복사"
 generating_image = "일러스트 생성 중…"
+no_narrative_to_illustrate = "삽화로 그릴 장면이 없습니다."
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
 vcredist_title = "Windows 구성 요소 없음"

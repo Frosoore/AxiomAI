@@ -56,7 +56,7 @@ class MiniDicoPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
 
         layout = QVBoxLayout(self)
         layout.setSpacing(6)

@@ -144,9 +144,10 @@ def _current_language() -> str:
     return _CURRENT_LANG
 
 
-def tr(key: str, **kwargs) -> str:
+def tr(key: str, default: str | None = None, **kwargs) -> str:
     """Translate a key into the current language with optional formatting.
 
+    If key is missing and default is given, default is used.
     If any values in kwargs are numbers, they are formatted via fmt_num().
     """
     lang = _current_language()
@@ -157,8 +158,11 @@ def tr(key: str, **kwargs) -> str:
     if text is None:
         text = translations.get("en", {}).get(key)
         if text is None:
-            logger.warning(f"Localization key missing: '{key}' (lang: {lang})")
-            return key
+            if default is not None:
+                text = default
+            else:
+                logger.warning(f"Localization key missing: '{key}' (lang: {lang})")
+                return key
 
     if kwargs:
         formatted_kwargs = {k: (fmt_num(v) if isinstance(v, (int, float)) else v) for k, v in kwargs.items()}

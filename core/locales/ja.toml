@@ -638,6 +638,7 @@ diagnostic_view_warnings = "警告を表示"
 diagnostic_view_failures = "失敗したテストを表示"
 diagnostic_copy_all = "すべてコピー"
 generating_image = "イラストを生成中…"
+no_narrative_to_illustrate = "イラスト化するシーンがありません。"
 
 # Embedding runtime / VC++ Redistributable warning (Windows GUI)
 vcredist_title = "Windows コンポーネントがありません"

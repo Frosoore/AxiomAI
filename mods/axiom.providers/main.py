@@ -139,6 +139,18 @@ def resolve_llm_backend(step_ctx: Any = None) -> LLMBackend:
     return svc.get_backend()
 
 
+def make_cloud_driver(provider_name: str) -> Callable[[AppConfig, str | None], LLMBackend]:
+    def _driver(cfg: AppConfig, model_override: str | None = None) -> LLMBackend:
+        from axiom.config import build_llm_from_config
+        old_backend = getattr(cfg, "llm_backend", "")
+        try:
+            object.__setattr__(cfg, "llm_backend", provider_name)
+            return build_llm_from_config(cfg, model_override=model_override)
+        finally:
+            object.__setattr__(cfg, "llm_backend", old_backend)
+    return _driver
+
+
 def init(ctx: ModContext) -> None:
     """Entry point for axiom.providers mod."""
     svc = get_providers_service(ctx)
@@ -154,6 +166,13 @@ def init(ctx: ModContext) -> None:
     ctx.contribute_slot("axiom.providers:drivers", ("gemini", gemini_driver))
     ctx.contribute_slot("axiom.providers:drivers", ("ollama", universal_driver))
     ctx.contribute_slot("axiom.providers:drivers", ("universal", universal_driver))
+
+    # Register cloud providers
+    from axiom.config import OPENAI_COMPAT_PROVIDERS
+    for p_name in OPENAI_COMPAT_PROVIDERS:
+        drv = make_cloud_driver(p_name)
+        svc.register_driver(p_name, drv)
+        ctx.contribute_slot("axiom.providers:drivers", (p_name, drv))
 
     # 3. Register service
     ctx.register_service("providers", svc)

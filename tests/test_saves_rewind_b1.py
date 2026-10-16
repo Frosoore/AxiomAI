@@ -307,3 +307,125 @@ def test_external_store_untouched_when_the_sql_rewind_fails(tmp_path: Path, monk
         assert calls == [0]                     # after a committed SQL rewind: yes
     finally:
         sr.unregister_storage(spec)
+
+
+def test_inventory_fork_at_past_turn_does_not_leak_future_items(tmp_path: Path):
+    from mods.axiom.inventory.storage import fork_item_instances
+    db = str(tmp_path / "inv_leak.db")
+    create_universe_db(db)
+    with get_connection(db) as conn:
+        conn.execute(
+            "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES ('src', 'P', 'Normal', 'now');"
+        )
+        conn.execute(
+            "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES ('dst', 'P', 'Normal', 'now');"
+        )
+        conn.execute(
+            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
+            "VALUES ('src', 5, 'user_input', 'player', '{}');"
+        )
+        conn.execute(
+            "INSERT INTO Item_Definitions (item_id, name, description, category, weight, rarity) "
+            "VALUES ('sword_of_fire', 'Sword of Fire', '', 'weapon', 1, 'common');"
+        )
+        conn.execute(
+            "INSERT INTO Item_Instances (instance_id, save_id, item_id, quantity, holder_kind, holder_id) "
+            "VALUES ('i1', 'src', 'sword_of_fire', 1, 'entity', 'player');"
+        )
+        # Fork at turn 0 when current_turn is 5 and no snapshot at turn 0
+        fork_item_instances(conn, "src", "dst", 0)
+        dst_items = conn.execute("SELECT * FROM Item_Instances WHERE save_id = 'dst';").fetchall()
+        assert len(dst_items) == 0  # No future items leaked!
+
+
+def test_mental_models_rollback_cleans_dead_observation_ids(tmp_path: Path):
+    from mods.axiom.living_memory.mental_models import rollback_mental_models
+    from axiom.schema import ensure_mental_models_table, ensure_observations_table
+
+    db = str(tmp_path / "mm_clean.db")
+    create_universe_db(db)
+    with get_connection(db) as conn:
+        ensure_mental_models_table(conn)
+        ensure_observations_table(conn)
+        conn.execute(
+            "INSERT INTO Saves (save_id, player_name, difficulty, last_updated) VALUES ('s1', 'P', 'Normal', 'now');"
+        )
+        conn.execute(
+            "INSERT INTO Event_Log (save_id, turn_id, event_type, target_entity, payload) "
+            "VALUES ('s1', 2, 'user_input', 'player', '{}');"
+        )
+        # Insert observation 10
+        conn.execute(
+            "INSERT INTO Observations (observation_id, save_id, subject, statement, proof_count, sources, created_turn_id, updated_turn_id, stale) "
+            "VALUES (10, 's1', 'mentor', 'is wise', 1, '[]', 1, 1, 0);"
+        )
+        # Mental model references observation 10 (alive) and 99 (already dead/absent)
+        conn.execute(
+            "INSERT INTO Mental_Models (model_id, save_id, subject, summary, sources, created_turn_id, updated_turn_id, stale) "
+            "VALUES (1, 's1', 'mentor', 'a wise guide', '[10, 99]', 1, 2, 0);"
+        )
+        rollback_mental_models(conn, 's1', 1)
+
+        row = conn.execute("SELECT sources, updated_turn_id, stale FROM Mental_Models WHERE model_id = 1;").fetchone()
+        sources = json.loads(row[0])
+        assert sources == [10]  # 99 was stripped
+        assert row[1] == 1      # updated_turn_id clamped
+        assert row[2] == 1      # flagged stale
+
+
+def test_duplicate_save_separated_calls_execute_external_fork(tmp_path: Path):
+    from axiom.savestore import create_save, duplicate_save
+    import axiom.paths
+
+    axiom.paths.configure(data_dir=tmp_path / "data", config_dir=tmp_path / "config")
+    try:
+        u_dir = tmp_path / "univ"
+        u_dir.mkdir()
+        u_db = str(u_dir / "universe.db")
+        create_universe_db(u_db)
+
+        save_info = create_save(u_db, "Hero", "Normal")
+        src_id = save_info["save_id"]
+
+        external_fork_calls: list[tuple[str, str, int]] = []
+        import axiom.storage_registry as sr
+        orig_fork = sr.execute_external_fork
+        sr.execute_external_fork = lambda src, dst, t: external_fork_calls.append((src, dst, t))
+        try:
+            dup_info = duplicate_save(u_db, src_id, player_name="Clone")
+            assert len(external_fork_calls) == 1
+            assert external_fork_calls[0][0] == src_id
+            assert external_fork_calls[0][1] == dup_info["save_id"]
+        finally:
+            sr.execute_external_fork = orig_fork
+    finally:
+        axiom.paths.reset()
+
+
+def test_resolve_tick_rolls_back_turn_id_on_batch_commit_failure(tmp_path: Path):
+    from unittest.mock import patch
+    from axiom.session import Session
+    from axiom.turn_batch import TurnWriteBatch
+    import axiom.paths
+
+    axiom.paths.configure(data_dir=tmp_path / "data", config_dir=tmp_path / "config")
+    try:
+        u_dir = tmp_path / "univ_fail"
+        u_dir.mkdir()
+        u_db = str(u_dir / "universe.db")
+        create_universe_db(u_db)
+
+        save_info = create_save(u_db, "Hero", "Normal")
+        sess = Session(save_info["db_path"], save_info["save_id"])
+        sess._llm = ScriptedLLMBackend([ScriptedTurnResponse("Ok.", {"action_outcomes": []})])
+        assert sess.turn_id == 0
+
+        with patch.object(TurnWriteBatch, "commit_all", side_effect=sqlite3.OperationalError("Simulated commit failure")):
+            with pytest.raises(sqlite3.OperationalError):
+                sess.take_turn("look around")
+
+        # Turn ID must be rolled back to 0!
+        assert sess.turn_id == 0
+    finally:
+        axiom.paths.reset()
+

@@ -94,8 +94,7 @@ class HubView(QWidget):
         toolbar.addWidget(self._header_label)
         toolbar.addStretch()
 
-        from mods.axiom.help_system.ui.help_system import doc
-        from mods.axiom.help_system.ui.help_dialogs import make_help_button
+        from .help_bridge import doc, make_help_button
         self._import_st_btn = QPushButton(tr("import_st"))
         doc(self._import_st_btn, "hub.import_st")
         self._import_btn = QPushButton(tr("import"))

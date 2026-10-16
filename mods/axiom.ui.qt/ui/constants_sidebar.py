@@ -94,7 +94,7 @@ class ConstantsSidebar(QWidget):
         if is_mod_enabled("axiom.time", cfg):
             self._tabs.addTab(self._time_scroll, tr("timeline"))
 
-        from mods.axiom.help_system.ui.help_system import doc_tab
+        from .help_bridge import doc_tab
         doc_tab(self._tabs, 0, "tabletop.sidebar_stats")
         inv_idx = self._tabs.indexOf(self._inv_scroll)
         if inv_idx != -1:

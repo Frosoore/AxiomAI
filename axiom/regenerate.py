@@ -81,27 +81,64 @@ def regenerate_variant(
     """
     llm_history = history_to_messages(history)
 
-    prompt = build_narrative_prompt(
-        universe_system_prompt=system_prompt,
-        entity_stats_block="",  # pas de stats : on ne réévalue pas les règles
-        rag_chunks=[],
-        history=llm_history,
-        intents={player_id: user_message},
-        verbosity_level=verbosity_level,
-    )
+    from axiom.kernel.loader import get_kernel_registry
+    registry = get_kernel_registry()
+    is_minimal = registry is not None and registry.is_mod_active("axiom.minimal_chat") and not registry.is_mod_active("axiom.turn")
 
-    # Pas de tool-call sur une régénération : on ne veut que du texte. On retire
-    # la vraie consigne JSON du prompt de tour (TICKET-104).
-    for msg in prompt:
-        if msg["role"] == "system":
-            if NARRATIVE_TOOL_CALL_SCHEMA in msg["content"]:
-                msg["content"] = msg["content"].replace(
-                    NARRATIVE_TOOL_CALL_SCHEMA, _VARIANT_INSTRUCTION
-                )
-            if "You MUST end your response with a JSON block" in msg["content"]:
-                msg["content"] = msg["content"].replace(
-                    "You MUST end your response with a JSON block", _VARIANT_INSTRUCTION
-                )
+    if is_minimal:
+        prompt = [
+            {"role": "system", "content": system_prompt or "You are a helpful, creative AI conversation partner."},
+            *llm_history,
+            {"role": "user", "content": user_message},
+        ]
+    else:
+        prompt = build_narrative_prompt(
+            universe_system_prompt=system_prompt,
+            entity_stats_block="",  # pas de stats : on ne réévalue pas les règles
+            rag_chunks=[],
+            history=llm_history,
+            intents={player_id: user_message},
+            verbosity_level=verbosity_level,
+        )
+
+        if registry is not None:
+            try:
+                for _mod_id, section_fn in registry.get_slot_entries("axiom.turn:prompt_sections"):
+                    if callable(section_fn):
+                        class _DummyCtx:
+                            pass
+                        dctx = _DummyCtx()
+                        dctx.save_id = save_id
+                        dctx.turn_id = turn_id
+                        dctx.combined_intents_text = user_message
+                        res = section_fn(dctx)
+                        if isinstance(res, dict) and res.get("text"):
+                            pos = res.get("position", "system")
+                            txt = res["text"]
+                            if pos in ("system", "after_system") and prompt:
+                                prompt[0]["content"] += f"\n\n{txt}"
+                            elif pos == "before_system" and prompt:
+                                prompt[0]["content"] = f"{txt}\n\n" + prompt[0]["content"]
+                            elif pos == "user" and len(prompt) > 1:
+                                prompt[-1]["content"] += f"\n\n{txt}"
+            except Exception:
+                pass
+
+        # Pas de tool-call sur une régénération : on ne veut que du texte. On retire
+        # la vraie consigne JSON du prompt de tour (TICKET-104).
+        import re
+        for msg in prompt:
+            if msg["role"] == "system":
+                if NARRATIVE_TOOL_CALL_SCHEMA in msg["content"]:
+                    msg["content"] = msg["content"].replace(
+                        NARRATIVE_TOOL_CALL_SCHEMA, _VARIANT_INSTRUCTION
+                    )
+                if "You MUST end your response with a JSON block" in msg["content"]:
+                    msg["content"] = msg["content"].replace(
+                        "You MUST end your response with a JSON block", _VARIANT_INSTRUCTION
+                    )
+                if "~~~json" in msg["content"]:
+                    msg["content"] = re.sub(r"~~~json.*?~~~", _VARIANT_INSTRUCTION, msg["content"], flags=re.DOTALL)
 
     stops = ["\nUser:", "\nPlayer:", "\n[User]", "<|eot_id|>",
              f"\n{player_id}:", f"\n[{player_id}]"]

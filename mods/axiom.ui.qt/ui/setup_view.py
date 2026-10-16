@@ -136,8 +136,7 @@ class SetupView(QWidget):
         header.addWidget(self._title_label)
         header.addStretch()
         
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
-        from mods.axiom.help_system.ui.help_dialogs import make_help_button
+        from .help_bridge import doc, doc_tab, make_help_button
 
         self._back_btn = doc(QPushButton(tr("hub")), "setup.back")
         self._back_btn.clicked.connect(self._on_back_clicked)
@@ -190,7 +189,7 @@ class SetupView(QWidget):
             self._help_btn.setVisible(help_enabled)
 
     def _setup_saves_tab(self) -> None:
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
 
         layout = QVBoxLayout(self._saves_tab)
 
@@ -407,7 +406,7 @@ class SetupView(QWidget):
             self._saves_list.setCurrentRow(row - 1)
 
     def _setup_persona_tab(self) -> None:
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
 
         layout = QVBoxLayout(self._persona_tab)
 

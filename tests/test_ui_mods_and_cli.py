@@ -389,3 +389,44 @@ def test_qt_slots_instantiate_widget_classes(qtbot):
     settings_tab_titles = [settings._tabs.tabText(i) for i in range(settings._tabs.count())]
     assert "custom_tab_title" in settings_tab_titles
 
+
+def test_qt_resilience_without_help_system(monkeypatch, qtbot):
+    """TICKET-117 & M7: Qt UI components never crash when axiom.help_system is missing or disabled."""
+    from PySide6.QtWidgets import QWidget
+    import mods.axiom.ui.qt.ui.help_bridge as hb
+    from mods.axiom.ui.qt.ui.main_window import MainWindow
+
+    # Simulate axiom.help_system completely missing from disk
+    monkeypatch.setattr(hb, "_HELP_MOD_PRESENT", False)
+    monkeypatch.setattr(hb, "_hs", None)
+    monkeypatch.setattr(hb, "_hd", None)
+
+    w = QWidget()
+    assert hb.doc(w, "app.volume") is w
+    hb.doc_tab(w, 0, "settings.tab_image")
+    hb.retranslate_tooltips()
+    hb.install_tooltip_gate(None)
+
+    btn = hb.make_help_button("hub")
+    assert btn is not None
+    assert not btn.isVisible()
+
+    assert hb.ExplainPageDialog("hub").exec() == 0
+    assert hb.DocDirectoryDialog().exec() == 0
+    assert hb.QuickTourDialog().exec() == 0
+    assert hb.settings_tab_help_html(0) == ("", "")
+
+    # MainWindow instantiates smoothly without help_system
+    win = MainWindow()
+    qtbot.addWidget(win)
+    assert win is not None
+
+    # Test i18n key no_narrative_to_illustrate and default fallback (TICKET-107)
+    set_language("en")
+    assert tr("no_narrative_to_illustrate") == "No scene to illustrate."
+    set_language("fr")
+    assert tr("no_narrative_to_illustrate") == "Aucune scène à illustrer."
+    assert tr("non_existent_key_12345", default="fallback_val") == "fallback_val"
+    set_language("en")
+
+

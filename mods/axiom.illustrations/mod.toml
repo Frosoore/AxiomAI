@@ -22,4 +22,4 @@ slots = [
 ]
 
 [storage]
-assets = { policy = "custom" }
+assets = { policy = "custom", rewind = "storage:rewind_assets", fork = "storage:fork_assets" }

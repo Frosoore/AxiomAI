@@ -196,6 +196,7 @@ def canonize_story(
     preview: bool = True,
     llm: LLMBackend | None = None,
     on_status: Callable[[str], None] | None = None,
+    epoch_guard: Callable[[], bool] | None = None,
 ) -> dict:
     """Extract canon from recent narrative into the universe definition.
 
@@ -238,6 +239,13 @@ def canonize_story(
     info["applied"] = False
     info["entities"] = entities or []
     info["lore_entries"] = lore or []
+
+    if epoch_guard is not None and not epoch_guard():
+        discard_staged_source(info.get("staged_dir"))
+        info["staged_dir"] = ""
+        info["applied"] = False
+        info["aborted"] = True
+        return info
 
     if not preview:
         # Auto-canonize stays save-scoped so a new game is not polluted.

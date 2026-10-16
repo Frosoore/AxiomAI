@@ -59,22 +59,43 @@ def fork_item_instances(
             out["holder_id"] = _new(str(row["holder_id"]))
         return out
 
+    cur_turn = 0
+    try:
+        cur_row = conn.execute(
+            "SELECT COALESCE(MAX(turn_id), 0) FROM Event_Log WHERE save_id = ?;", (src_save_id,)
+        ).fetchone()
+        if cur_row and cur_row[0] is not None:
+            cur_turn = int(cur_row[0])
+    except sqlite3.OperationalError:
+        pass
+
+    has_snapshots = False
+    try:
+        has_snapshots = conn.execute(
+            "SELECT 1 FROM Inventory_Snapshots WHERE save_id = ? LIMIT 1;", (src_save_id,)
+        ).fetchone() is not None
+    except sqlite3.OperationalError:
+        pass
+
     rows = inventory_at(conn, src_save_id, target_turn)
     if rows is None:
-        rows = [
-            {
-                "instance_id": r[0],
-                "item_id": r[1],
-                "quantity": r[2],
-                "holder_kind": r[3],
-                "holder_id": r[4],
-            }
-            for r in conn.execute(
-                "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
-                "FROM Item_Instances WHERE save_id = ?;",
-                (src_save_id,),
-            ).fetchall()
-        ]
+        if target_turn < cur_turn or (target_turn == 0 and has_snapshots):
+            rows = []
+        else:
+            rows = [
+                {
+                    "instance_id": r[0],
+                    "item_id": r[1],
+                    "quantity": r[2],
+                    "holder_kind": r[3],
+                    "holder_id": r[4],
+                }
+                for r in conn.execute(
+                    "SELECT instance_id, item_id, quantity, holder_kind, holder_id "
+                    "FROM Item_Instances WHERE save_id = ?;",
+                    (src_save_id,),
+                ).fetchall()
+            ]
 
     conn.executemany(
         "INSERT INTO Item_Instances "

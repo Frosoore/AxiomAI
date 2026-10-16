@@ -409,11 +409,11 @@ class ModsDialog(QDialog):
         )
 
         current = get_mod_status(mod_id)
-        if enabled and active:
-            return "active", ""
+        if current is not None and current.state == STATE_NEXT_LAUNCH:
+            return "next_launch_off", current.reason
+        if active or (current is not None and current.state == STATE_ACTIVE):
+            return "active", current.reason if current else ""
         if not enabled:
-            if active or (current is not None and current.state == STATE_NEXT_LAUNCH):
-                return "next_launch_off", ""
             return "disabled", ""
         # Enabled but not running: will it load at next launch, and if not, why?
         if current is not None and current.state not in (STATE_DISABLED, STATE_ENABLED, STATE_ACTIVE):

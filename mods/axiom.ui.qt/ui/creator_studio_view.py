@@ -91,8 +91,7 @@ class CreatorStudioView(QWidget):
         header.addWidget(self._universe_label)
         header.addStretch()
 
-        from mods.axiom.help_system.ui.help_system import doc, doc_tab
-        from mods.axiom.help_system.ui.help_dialogs import make_help_button
+        from .help_bridge import doc, doc_tab, make_help_button
 
         self._save_btn = doc(QPushButton(f"{tr('save_changes')} (Ctrl+S)"), "creator.save")
         self._back_btn = doc(QPushButton(tr("hub")), "creator.back")
@@ -176,7 +175,7 @@ class CreatorStudioView(QWidget):
             shortcut.activated.connect(lambda idx=i: self._tabs.setCurrentIndex(idx))
 
     def _build_lore_tab(self) -> QWidget:
-        from mods.axiom.help_system.ui.help_system import doc
+        from .help_bridge import doc
 
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -310,7 +309,7 @@ class CreatorStudioView(QWidget):
 
     def current_doc_page(self) -> str:
         """Doc page id for the active tab (drives the tab-aware Information/F1)."""
-        from mods.axiom.help_system.ui.help_system import CREATOR_TAB_PAGES
+        from .help_bridge import CREATOR_TAB_PAGES
         idx = self._tabs.currentIndex()
         if 0 <= idx < len(CREATOR_TAB_PAGES):
             return CREATOR_TAB_PAGES[idx]

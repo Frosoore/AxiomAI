@@ -359,6 +359,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             self.send_error_json(404, "Living memory mod not loaded")
             return
 
+        try:
             if action == "create":
                 statement = (payload.get("statement") or "").strip()
                 if not statement:
@@ -422,6 +423,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             self.send_error_json(404, "Living memory mod not loaded")
             return
 
+        try:
             if action == "update":
                 oid = payload.get("observation_id")
                 if oid is None:
@@ -465,6 +467,7 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
             self.send_error_json(404, "Living memory mod not loaded")
             return
 
+        try:
             if action == "update":
                 mid = payload.get("model_id")
                 if mid is None:
@@ -1598,8 +1601,8 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "No active session loaded")
                 return
             instance_id = payload.get("instance_id")
-            dest_kind = payload.get("dest_kind")
-            dest_id = payload.get("dest_id")
+            dest_kind = payload.get("dest_kind") or payload.get("dest_holder_kind")
+            dest_id = payload.get("dest_id") or payload.get("dest_holder_id")
             if not instance_id or not dest_kind or not dest_id:
                 self.send_error_json(400, "Missing required parameters")
                 return
@@ -2442,6 +2445,31 @@ class AxiomWebHandler(BaseHTTPRequestHandler):
                 })
             except Exception as exc:
                 self.send_error_json(500, f"Failed to apply generated mod: {exc}")
+
+        elif path == "/api/mods/toggle":
+            mod_id = payload.get("mod_id", "").strip()
+            if not mod_id:
+                self.send_error_json(400, "Missing 'mod_id' in request payload")
+                return
+            try:
+                from axiom.kernel.loader import disable_mod_hot, is_mod_enabled
+                cfg = load_config()
+                current_enabled = is_mod_enabled(mod_id, cfg)
+                desired = payload.get("enabled")
+                new_state = (not current_enabled) if desired is None else bool(desired)
+                cfg.mod_settings.setdefault(mod_id, {})["enabled"] = new_state
+                save_config(cfg)
+                hot_result = "persisted"
+                if not new_state:
+                    hot_result = disable_mod_hot(mod_id)
+                self.send_json({
+                    "status": "success",
+                    "mod_id": mod_id,
+                    "enabled": new_state,
+                    "hot_result": hot_result,
+                })
+            except Exception as exc:
+                self.send_error_json(500, f"Failed to toggle mod: {exc}")
 
         elif path == "/api/store/install":
             mod_id = payload.get("mod_id", "").strip()

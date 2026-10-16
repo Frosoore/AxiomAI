@@ -176,10 +176,13 @@ def on_after_step(ctx: Any) -> None:
 
     def tick(conn: Any, save_id: str, _turn: int) -> None:
         conn.execute(
-            "UPDATE Active_Modifiers SET minutes_remaining = minutes_remaining - ? WHERE save_id = ?;",
+            "DELETE FROM Active_Modifiers WHERE minutes_remaining <= ? AND save_id = ?;",
             (elapsed, save_id),
         )
-        conn.execute("DELETE FROM Active_Modifiers WHERE minutes_remaining <= 0 AND save_id = ?;", (save_id,))
+        conn.execute(
+            "UPDATE Active_Modifiers SET minutes_remaining = MAX(0, minutes_remaining - ?) WHERE save_id = ?;",
+            (elapsed, save_id),
+        )
 
     ctx.write_batch.stage_op(tick)
 
