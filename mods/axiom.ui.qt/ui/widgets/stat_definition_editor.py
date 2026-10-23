@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
 )
 from core.localization import tr
-from .table_context import selected_rows
+from .table_context import selected_rows, set_cell_widget
 
 try:
     from axiom.presets import STAT_PRESETS
@@ -77,7 +77,8 @@ class StatDefinitionEditorWidget(QWidget):
         self._name_input.returnPressed.connect(self._on_add_clicked)
 
         self._type_combo = QComboBox()
-        self._type_combo.addItems([tr("numeric"), tr("categorical")])
+        self._type_combo.addItem(tr("numeric"), "numeric")
+        self._type_combo.addItem(tr("categorical"), "categorical")
         self._type_combo.setToolTip("Numeric (0-100) or Categorical (List of options)")
         
         self._add_btn = QPushButton(f"{tr('add')} +")
@@ -128,13 +129,23 @@ class StatDefinitionEditorWidget(QWidget):
         """Return the current table state as a list of stat definitions."""
         stats = []
         for row in range(self._table.rowCount()):
-            sid = self._table.item(row, 0).text().strip()
-            name = self._table.item(row, 1).text().strip()
-            vtype_display = self._table.item(row, 2).text().strip()
-            desc = self._table.item(row, 3).text().strip()
-            params_raw = self._table.item(row, 4).text().strip()
+            item_id = self._table.item(row, 0)
+            item_name = self._table.item(row, 1)
+            item_desc = self._table.item(row, 3)
+            item_params = self._table.item(row, 4)
 
-            vtype = "numeric" if vtype_display == tr("numeric") else "categorical"
+            sid = item_id.text().strip() if item_id else ""
+            name = item_name.text().strip() if item_name else ""
+            desc = item_desc.text().strip() if item_desc else ""
+            params_raw = item_params.text().strip() if item_params else ""
+
+            type_widget = self._table.cellWidget(row, 2)
+            if isinstance(type_widget, QComboBox):
+                vtype = type_widget.currentData() or "numeric"
+            else:
+                item_type = self._table.item(row, 2)
+                vtype_display = item_type.text().strip() if item_type else ""
+                vtype = "numeric" if vtype_display == tr("numeric") else "categorical"
             
             params = {}
             if vtype == "numeric":
@@ -169,13 +180,30 @@ class StatDefinitionEditorWidget(QWidget):
         self._id_input.setPlaceholderText(f"{tr('stat')} ID")
         self._name_input.setPlaceholderText(tr("name"))
         
-        # Update type combo
+        # Update input type combo
+        current_in = self._type_combo.currentData() or ("numeric" if self._type_combo.currentIndex() == 0 else "categorical")
         self._type_combo.blockSignals(True)
-        curr = self._type_combo.currentIndex()
         self._type_combo.clear()
-        self._type_combo.addItems([tr("numeric"), tr("categorical")])
-        self._type_combo.setCurrentIndex(curr)
+        self._type_combo.addItem(tr("numeric"), "numeric")
+        self._type_combo.addItem(tr("categorical"), "categorical")
+        idx = self._type_combo.findData(current_in)
+        if idx >= 0:
+            self._type_combo.setCurrentIndex(idx)
         self._type_combo.blockSignals(False)
+
+        # Update all row type combos
+        for r in range(self._table.rowCount()):
+            w = self._table.cellWidget(r, 2)
+            if isinstance(w, QComboBox):
+                cur_data = w.currentData()
+                w.blockSignals(True)
+                w.clear()
+                w.addItem(tr("numeric"), "numeric")
+                w.addItem(tr("categorical"), "categorical")
+                c_idx = w.findData(cur_data)
+                if c_idx >= 0:
+                    w.setCurrentIndex(c_idx)
+                w.blockSignals(False)
 
         self._table.setHorizontalHeaderLabels([
             tr("id"), tr("name"), tr("type"), tr("description"), tr("options")
@@ -199,8 +227,13 @@ class StatDefinitionEditorWidget(QWidget):
         it_name = QTableWidgetItem(stat.get("name", ""))
         
         vtype = stat.get("value_type", "numeric")
-        it_type = QTableWidgetItem(tr(vtype))
-        it_type.setFlags(it_type.flags() & ~Qt.ItemIsEditable) # Type fixed on add for simplicity, or we can make it a combo
+        type_combo = QComboBox()
+        type_combo.addItem(tr("numeric"), "numeric")
+        type_combo.addItem(tr("categorical"), "categorical")
+        idx = type_combo.findData(vtype)
+        if idx >= 0:
+            type_combo.setCurrentIndex(idx)
+        type_combo.currentIndexChanged.connect(self._on_type_combo_changed)
         
         it_desc = QTableWidgetItem(stat.get("description", ""))
         
@@ -216,16 +249,43 @@ class StatDefinitionEditorWidget(QWidget):
 
         self._table.setItem(row, 0, it_id)
         self._table.setItem(row, 1, it_name)
-        self._table.setItem(row, 2, it_type)
+        set_cell_widget(self._table, row, 2, type_combo)
         self._table.setItem(row, 3, it_desc)
         self._table.setItem(row, 4, it_params)
+
+    @Slot(int)
+    def _on_type_combo_changed(self, index: int) -> None:
+        combo = self.sender()
+        if not isinstance(combo, QComboBox):
+            return
+        row = -1
+        for r in range(self._table.rowCount()):
+            if self._table.cellWidget(r, 2) is combo:
+                row = r
+                break
+        if row < 0:
+            return
+
+        new_type = combo.currentData()
+        item_params = self._table.item(row, 4)
+        if item_params:
+            txt = item_params.text().strip()
+            if new_type == "numeric" and not ("min:" in txt or "max:" in txt):
+                self._table.blockSignals(True)
+                item_params.setText("min:0, max:100")
+                self._table.blockSignals(False)
+            elif new_type == "categorical" and ("min:" in txt or "max:" in txt):
+                self._table.blockSignals(True)
+                item_params.setText("")
+                self._table.blockSignals(False)
+        self.changed.emit()
 
     @Slot()
     def _on_add_clicked(self) -> None:
         """Add new stat using data from the input row."""
         sid = self._id_input.text().strip()
         name = self._name_input.text().strip()
-        vtype = "numeric" if self._type_combo.currentIndex() == 0 else "categorical"
+        vtype = self._type_combo.currentData() or ("numeric" if self._type_combo.currentIndex() == 0 else "categorical")
 
         if not sid:
             sid = f"stat_{uuid.uuid4().hex[:6]}"

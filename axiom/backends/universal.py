@@ -78,12 +78,28 @@ class UniversalClient(LLMBackend):
         extra_headers: dict[str, str] | None = None,
         max_stop_sequences: int | None = None,
         fallback_api_keys: list[str] | None = None,
+        min_p: float | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        dry_multiplier: float | None = None,
+        dry_base: float | None = None,
+        dry_allowed_length: int | None = None,
+        dry_sequence_breakers: list[str] | None = None,
+        trim_stop: bool | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model_name = model_name
         self.extra_headers = dict(extra_headers) if extra_headers else {}
         self.max_stop_sequences = max_stop_sequences
+        self.min_p = min_p
+        self.temperature = temperature
+        self.top_p = top_p
+        self.dry_multiplier = dry_multiplier
+        self.dry_base = dry_base if dry_base is not None else 1.75
+        self.dry_allowed_length = dry_allowed_length if dry_allowed_length is not None else 2
+        self.dry_sequence_breakers = list(dry_sequence_breakers) if dry_sequence_breakers is not None else ["\n", ":", '"', "*"]
+        self.trim_stop = trim_stop
         # Ordered, deduplicated key pool; index 0 is the active key.
         pool = [api_key] + [k for k in (fallback_api_keys or []) if k]
         self._api_keys = list(dict.fromkeys(k for k in pool if k)) or [api_key]
@@ -151,7 +167,22 @@ class UniversalClient(LLMBackend):
             )
         return message
 
-    def _get_payload(self, messages: list[LLMMessage], stream: bool, temperature: float = 0.7, top_p: float = 1.0, response_format: str | None = None, stop_sequences: list[str] | None = None, max_tokens: int | None = None) -> dict:
+    def _get_payload(
+        self,
+        messages: list[LLMMessage],
+        stream: bool = False,
+        temperature: float = 0.7,
+        top_p: float = 1.0,
+        response_format: str | None = None,
+        stop_sequences: list[str] | None = None,
+        max_tokens: int | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
+        dry_base: float | None = None,
+        dry_allowed_length: int | None = None,
+        dry_sequence_breakers: list[str] | None = None,
+        trim_stop: bool | None = None,
+    ) -> dict:
         budget = max_tokens if max_tokens else 1024
         if _is_reasoning_model(self.model_name):
             # JSON / structured calls need room for CoT *and* the answer; the
@@ -161,14 +192,44 @@ class UniversalClient(LLMBackend):
             if response_format == "json":
                 floor = max(floor, 4096)
             budget = max(budget, floor)
+        eff_temp = temperature
+        if getattr(self, "temperature", None) is not None and (temperature == 0.7 or temperature is None):
+            eff_temp = self.temperature
+        elif eff_temp is None:
+            eff_temp = getattr(self, "temperature", 1.12)
+
+        eff_top_p = top_p
+        if getattr(self, "top_p", None) is not None and top_p is None:
+            eff_top_p = self.top_p
+        elif eff_top_p is None:
+            eff_top_p = 1.0
+
         payload = {
             "model": self.model_name,
             "messages": messages,
             "stream": stream,
-            "temperature": temperature,
-            "top_p": top_p,
+            "temperature": eff_temp,
+            "top_p": eff_top_p,
             "max_tokens": budget,
         }
+        effective_min_p = min_p if min_p is not None else getattr(self, "min_p", None)
+        if effective_min_p is not None and effective_min_p > 0:
+            payload["min_p"] = effective_min_p
+
+        effective_dry = dry_multiplier if dry_multiplier is not None else getattr(self, "dry_multiplier", None)
+        if effective_dry is not None and effective_dry > 0:
+            payload["dry_multiplier"] = effective_dry
+            eff_dry_base = dry_base if dry_base is not None else getattr(self, "dry_base", None)
+            payload["dry_base"] = eff_dry_base if eff_dry_base is not None else 1.75
+            eff_dry_len = dry_allowed_length if dry_allowed_length is not None else getattr(self, "dry_allowed_length", None)
+            payload["dry_allowed_length"] = eff_dry_len if eff_dry_len is not None else 2
+            eff_dry_seq = dry_sequence_breakers if dry_sequence_breakers is not None else getattr(self, "dry_sequence_breakers", None)
+            payload["dry_sequence_breakers"] = eff_dry_seq if eff_dry_seq is not None else ["\n", ":", '"', "*"]
+
+        effective_trim_stop = trim_stop if trim_stop is not None else getattr(self, "trim_stop", None)
+        if effective_trim_stop is not None:
+            payload["trim_stop"] = effective_trim_stop
+
         if "gpt-oss" in self.model_name.lower():
             # Shorter chain-of-thought = lower latency for the same answers.
             # Fireworks accepts the parameter (probed live 2026-06-12).
@@ -177,7 +238,7 @@ class UniversalClient(LLMBackend):
         # Stop sequences are for narrative play. They break structured JSON
         # extraction (empty or truncated `content` on several cloud models).
         if response_format != "json":
-            stops = ["</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
+            stops = ["<|eot_id|>", "</s>", "<|im_end|>", "\n===", "\n###", "\nUser:", "\nPlayer:", "\n[User]"]
             if stop_sequences:
                 stops.extend(stop_sequences)
             stops = list(dict.fromkeys(stops))
@@ -200,14 +261,30 @@ class UniversalClient(LLMBackend):
         self,
         messages: list[LLMMessage],
         stream: bool = False,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Send a list of messages and return a fully assembled LLMResponse."""
-        payload = self._get_payload(messages, stream=False, temperature=temperature, top_p=top_p, response_format=response_format, stop_sequences=stop_sequences, max_tokens=max_tokens)
+        payload = self._get_payload(
+            messages,
+            stream=False,
+            temperature=temperature,
+            top_p=top_p,
+            response_format=response_format,
+            stop_sequences=stop_sequences,
+            max_tokens=max_tokens,
+            min_p=min_p,
+            dry_multiplier=kwargs.get("dry_multiplier"),
+            dry_base=kwargs.get("dry_base"),
+            dry_allowed_length=kwargs.get("dry_allowed_length"),
+            dry_sequence_breakers=kwargs.get("dry_sequence_breakers"),
+            trim_stop=kwargs.get("trim_stop"),
+        )
 
         try:
             response = self._send_with_rotation(
@@ -257,14 +334,30 @@ class UniversalClient(LLMBackend):
     def stream_tokens(
         self,
         messages: list[LLMMessage],
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        **kwargs: Any,
     ) -> Iterator[str]:
         """Yield individual tokens as they arrive via SSE."""
-        payload = self._get_payload(messages, stream=True, temperature=temperature, top_p=top_p, response_format=response_format, stop_sequences=stop_sequences, max_tokens=max_tokens)
+        payload = self._get_payload(
+            messages,
+            stream=True,
+            temperature=temperature,
+            top_p=top_p,
+            response_format=response_format,
+            stop_sequences=stop_sequences,
+            max_tokens=max_tokens,
+            min_p=min_p,
+            dry_multiplier=kwargs.get("dry_multiplier"),
+            dry_base=kwargs.get("dry_base"),
+            dry_allowed_length=kwargs.get("dry_allowed_length"),
+            dry_sequence_breakers=kwargs.get("dry_sequence_breakers"),
+            trim_stop=kwargs.get("trim_stop"),
+        )
 
         try:
             while True:

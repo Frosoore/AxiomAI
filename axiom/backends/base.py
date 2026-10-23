@@ -195,6 +195,9 @@ class LLMBackend(ABC):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Send a list of messages and return a fully assembled LLMResponse.
 
@@ -208,6 +211,8 @@ class LLMBackend(ABC):
             response_format: Optional format constraint (e.g. "json").
             stop_sequences:  Optional list of strings that trigger generation stop.
             max_tokens:      Optional limit on the number of tokens to generate.
+            min_p:           Optional Min-P sampling threshold.
+            dry_multiplier:  Optional DRY anti-repetition penalty multiplier.
 
         Returns:
             Parsed LLMResponse with narrative_text, optional tool_call, and
@@ -227,6 +232,9 @@ class LLMBackend(ABC):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
+        **kwargs: Any,
     ) -> Iterator[str]:
         """Yield individual tokens as they arrive from the LLM backend.
 

@@ -27,8 +27,10 @@ class KernelStepContext:
     time_llm: Any = None
     vector_memory: Any = None
     stream_token_callback: Callable[[str], None] | None = None
-    temperature: float = 0.7
+    temperature: float = 1.12
     top_p: float = 1.0
+    min_p: float = 0.1
+    dry_multiplier: float = 0.8
     verbosity_level: str = "balanced"
     mode: str = "Normal"
     hero_entity_id: str | None = None

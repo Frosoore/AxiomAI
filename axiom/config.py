@@ -111,6 +111,17 @@ class AppConfig:
     universal_base_url: str = "http://localhost:11434/v1"
     universal_api_key: str = ""
     universal_model: str = "llama3.2"
+    llm_temperature: float = 1.12
+    llm_top_p: float = 1.0
+    llm_min_p: float = 0.1
+    llm_dry_multiplier: float = 0.8
+    universal_min_p: float = 0.1
+    universal_temperature: float = 1.12
+    universal_dry_multiplier: float = 0.8
+    universal_dry_base: float = 1.75
+    universal_dry_allowed_length: int = 2
+    universal_dry_sequence_breakers: list[str] = field(default_factory=lambda: ["\n", ":", '"', "*"])
+    universal_trim_stop: bool = True
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
     anthropic_api_key: str = ""
@@ -195,6 +206,23 @@ class AppConfig:
 
     # Mod configuration settings: open mapping of mod_id -> settings dict
     mod_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Keep global sampling parameters and universal_* in sync
+        if self.universal_temperature != 1.12 and self.llm_temperature == 1.12:
+            self.llm_temperature = self.universal_temperature
+        elif self.llm_temperature != 1.12 and self.universal_temperature == 1.12:
+            self.universal_temperature = self.llm_temperature
+
+        if self.universal_min_p != 0.1 and self.llm_min_p == 0.1:
+            self.llm_min_p = self.universal_min_p
+        elif self.llm_min_p != 0.1 and self.universal_min_p == 0.1:
+            self.universal_min_p = self.llm_min_p
+
+        if self.universal_dry_multiplier != 0.8 and self.llm_dry_multiplier == 0.8:
+            self.llm_dry_multiplier = self.universal_dry_multiplier
+        elif self.llm_dry_multiplier != 0.8 and self.universal_dry_multiplier == 0.8:
+            self.universal_dry_multiplier = self.llm_dry_multiplier
 
 
 # OpenAI-compatible cloud text providers selectable in the Cloud settings tab.
@@ -318,6 +346,20 @@ def load_config() -> AppConfig:
             raw["universal_model"] = raw.pop("ollama_model")
         if raw.get("llm_backend") == "ollama":
             raw["llm_backend"] = "universal"
+
+        # Migrate sampling params if one is present and the other is not
+        if "universal_temperature" in raw and "llm_temperature" not in raw:
+            raw["llm_temperature"] = raw["universal_temperature"]
+        elif "llm_temperature" in raw and "universal_temperature" not in raw:
+            raw["universal_temperature"] = raw["llm_temperature"]
+        if "universal_min_p" in raw and "llm_min_p" not in raw:
+            raw["llm_min_p"] = raw["universal_min_p"]
+        elif "llm_min_p" in raw and "universal_min_p" not in raw:
+            raw["universal_min_p"] = raw["llm_min_p"]
+        if "universal_dry_multiplier" in raw and "llm_dry_multiplier" not in raw:
+            raw["llm_dry_multiplier"] = raw["universal_dry_multiplier"]
+        elif "llm_dry_multiplier" in raw and "universal_dry_multiplier" not in raw:
+            raw["universal_dry_multiplier"] = raw["llm_dry_multiplier"]
 
         # Preserve mod_settings (or legacy/alias 'mods' section)
         if "mods" in raw and "mod_settings" not in raw:
@@ -486,6 +528,14 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
             base_url=config.universal_base_url,
             api_key=config.universal_api_key,
             model_name=model_override if model_override else config.universal_model,
+            min_p=getattr(config, "llm_min_p", getattr(config, "universal_min_p", 0.1)),
+            temperature=getattr(config, "llm_temperature", getattr(config, "universal_temperature", 1.12)),
+            top_p=getattr(config, "llm_top_p", 1.0),
+            dry_multiplier=getattr(config, "llm_dry_multiplier", getattr(config, "universal_dry_multiplier", 0.8)),
+            dry_base=getattr(config, "universal_dry_base", 1.75),
+            dry_allowed_length=getattr(config, "universal_dry_allowed_length", 2),
+            dry_sequence_breakers=getattr(config, "universal_dry_sequence_breakers", ["\n", ":", '"', "*"]),
+            trim_stop=getattr(config, "universal_trim_stop", True),
         )
 
     if backend in OPENAI_COMPAT_PROVIDERS:
@@ -521,6 +571,14 @@ def build_llm_from_config(config: AppConfig, model_override: str | None = None) 
             extra_headers=extra_headers,
             max_stop_sequences=max_stops,
             fallback_api_keys=fallback_keys,
+            min_p=getattr(config, "llm_min_p", getattr(config, "universal_min_p", 0.1)),
+            temperature=getattr(config, "llm_temperature", getattr(config, "universal_temperature", 1.12)),
+            top_p=getattr(config, "llm_top_p", 1.0),
+            dry_multiplier=getattr(config, "llm_dry_multiplier", getattr(config, "universal_dry_multiplier", 0.8)),
+            dry_base=getattr(config, "universal_dry_base", 1.75),
+            dry_allowed_length=getattr(config, "universal_dry_allowed_length", 2),
+            dry_sequence_breakers=getattr(config, "universal_dry_sequence_breakers", ["\n", ":", '"', "*"]),
+            trim_stop=getattr(config, "universal_trim_stop", True),
         )
 
     if backend == "gemini":

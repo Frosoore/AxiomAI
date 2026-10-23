@@ -232,6 +232,7 @@ class Session:
                 from axiom.kernel.loader import get_kernel_registry
                 kernel_registry = get_kernel_registry(_active_cfg)
         self._kernel_registry = kernel_registry
+        self.config = _active_cfg
 
         # The save records its modpack; opening it with another one warns (DOC §10.3, D15).
         self.modpack_compatibility: dict[str, Any] = {"compatible": True}
@@ -346,8 +347,10 @@ class Session:
         *,
         on_token: Callable[[str], None] | None = None,
         on_status: Callable[[str], None] | None = None,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
         verbosity_level: str = "balanced",
         hero_entity_id: str | None = None,
     ) -> ArbitratorResult:
@@ -359,6 +362,20 @@ class Session:
         intents = dict(self._intent_pool)
         self._intent_pool.clear()
         self._turn_id += 1
+
+        cfg = getattr(self, "config", None)
+        if cfg is None:
+            from axiom.config import load_config
+            cfg = load_config()
+
+        if temperature is None or temperature == 0.7:
+            temperature = getattr(cfg, "llm_temperature", getattr(cfg, "universal_temperature", 1.12))
+        if top_p is None:
+            top_p = getattr(cfg, "llm_top_p", 1.0)
+        if min_p is None:
+            min_p = getattr(cfg, "llm_min_p", getattr(cfg, "universal_min_p", 0.1))
+        if dry_multiplier is None:
+            dry_multiplier = getattr(cfg, "llm_dry_multiplier", getattr(cfg, "universal_dry_multiplier", 0.8))
 
         try:
             if not self.kernel_registry or not self.kernel_registry.has_hook("axiom.kernel:execute_step"):
@@ -381,6 +398,8 @@ class Session:
                 stream_token_callback=on_token,
                 temperature=temperature,
                 top_p=top_p,
+                min_p=min_p,
+                dry_multiplier=dry_multiplier,
                 verbosity_level=verbosity_level,
                 mode=self._mode,
                 hero_entity_id=hero_entity_id,
@@ -434,8 +453,10 @@ class Session:
         on_token: Callable[[str], None] | None = None,
         on_status: Callable[[str], None] | None = None,
         on_hero_decision: Callable[[str], None] | None = None,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
         verbosity_level: str = "balanced",
         hero_action: str | None = None,
         hero_entity_id: str | None = None,
@@ -466,6 +487,8 @@ class Session:
             on_status=on_status,
             temperature=temperature,
             top_p=top_p,
+            min_p=min_p,
+            dry_multiplier=dry_multiplier,
             verbosity_level=verbosity_level,
             hero_entity_id=hero_entity_id,
         )
@@ -476,8 +499,10 @@ class Session:
         *,
         on_token: Callable[[str], None] | None = None,
         on_status: Callable[[str], None] | None = None,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
         verbosity_level: str = "balanced",
     ) -> ArbitratorResult:
         """Resolve a multiplayer turn: every player intent in a single tick.
@@ -496,6 +521,8 @@ class Session:
             on_status=on_status,
             temperature=temperature,
             top_p=top_p,
+            min_p=min_p,
+            dry_multiplier=dry_multiplier,
             verbosity_level=verbosity_level,
         )
 
@@ -548,8 +575,10 @@ class Session:
         turn_id: int,
         history: list[dict],
         user_message: str,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
         verbosity_level: str = "balanced",
         player_id: str = "player_1",
         on_token: Callable[[str], None] | None = None,
@@ -565,6 +594,20 @@ class Session:
             history: event-sourced history (`user_input`/`narrative_text`)
                      up to the previous turn.
         """
+        cfg = getattr(self, "config", None)
+        if cfg is None:
+            from axiom.config import load_config
+            cfg = load_config()
+
+        if temperature is None:
+            temperature = getattr(cfg, "llm_temperature", getattr(cfg, "universal_temperature", 1.12))
+        if top_p is None:
+            top_p = getattr(cfg, "llm_top_p", 1.0)
+        if min_p is None:
+            min_p = getattr(cfg, "llm_min_p", getattr(cfg, "universal_min_p", 0.1))
+        if dry_multiplier is None:
+            dry_multiplier = getattr(cfg, "llm_dry_multiplier", getattr(cfg, "universal_dry_multiplier", 0.8))
+
         from axiom.regenerate import regenerate_variant
 
         return regenerate_variant(
@@ -577,6 +620,8 @@ class Session:
             user_message=user_message,
             temperature=temperature,
             top_p=top_p,
+            min_p=min_p,
+            dry_multiplier=dry_multiplier,
             verbosity_level=verbosity_level,
             player_id=player_id,
             on_token=on_token,

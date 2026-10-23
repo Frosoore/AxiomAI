@@ -274,7 +274,7 @@ def build_dynamic_tool_call_schema(mod_ctx: ModContext) -> str:
         clean_r = re.sub(r"^\d+\.\s*", "", r)
         rules.append(f"{rule_idx}. {clean_r}")
         rule_idx += 1
-    rules.append(f"{rule_idx}. CONTINUITY: Advance the scene based on the actors' intents. Do not repeat their exact words.")
+    rules.append(f"{rule_idx}. CONTINUITY: Advance the scene based on the actors' intents and dialogue. NEVER invent new dialogue, decisions, or actions for the player.")
 
     json_obj: dict[str, Any] = {}
     world_active = True
@@ -369,6 +369,8 @@ def _execute_step_locked(step_context: KernelStepContext, mod_ctx: ModContext) -
         hero_entity_id=hero_entity_id,
         temperature=step_context.temperature,
         top_p=step_context.top_p,
+        min_p=getattr(step_context, "min_p", 0.1),
+        dry_multiplier=getattr(step_context, "dry_multiplier", 0.8),
         auto_commit=step_context.auto_commit,
         db_path=db_path,
         data_root=getattr(session, "_data_root", None),

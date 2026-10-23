@@ -297,12 +297,13 @@ def test_external_store_untouched_when_the_sql_rewind_fails(tmp_path: Path, monk
     try:
         def broken(conn, save_id, target, *, external=True):
             raise sqlite3.OperationalError("disk I/O error (test)")
+        orig_rewind = sr.execute_rewind
         monkeypatch.setattr(sr, "execute_rewind", broken)
         with pytest.raises(sqlite3.OperationalError):
             CheckpointManager(db).rewind("S", 0, backup=False)
         assert calls == []                      # nothing rolled back outside the db
 
-        monkeypatch.undo()
+        monkeypatch.setattr(sr, "execute_rewind", orig_rewind)
         CheckpointManager(db).rewind("S", 0, backup=False)
         assert calls == [0]                     # after a committed SQL rewind: yes
     finally:

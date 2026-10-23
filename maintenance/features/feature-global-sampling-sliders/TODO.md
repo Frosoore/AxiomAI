@@ -1,0 +1,26 @@
+# TODO — feature-global-sampling-sliders
+
+- [x] 1. Étendre `AppConfig` dans `axiom/config.py` :
+  - Ajouter / harmoniser les paramètres d'échantillonnage narratif globaux :
+    - `llm_temperature: float = 1.12`
+    - `llm_top_p: float = 1.0`
+    - `llm_min_p: float = 0.1`
+    - `llm_dry_multiplier: float = 0.8`
+  - Synchroniser avec `universal_temperature`, `universal_min_p`, `universal_dry_multiplier`.
+  - Mettre à jour `build_llm_from_config` pour transmettre ces paramètres globaux aux backends.
+- [x] 2. Refonte du menu UI "Universe Parameters" dans `mods/axiom.ui.qt/ui/settings_dialog.py` :
+  - Ajouter un contrôle couplé Slider + DoubleSpinBox pour chaque paramètre :
+    - Temperature : 0.00 à 2.00, pas de 0.05, défaut 1.12.
+    - Top-P : 0.00 à 1.00, pas de 0.01, défaut 1.00.
+    - Min-P : 0.00 à 1.00, pas de 0.01, défaut 0.10.
+    - DRY Multiplier : 0.00 à 2.00, pas de 0.05, défaut 0.80.
+  - Portée globale : suppression du bridage quand aucun univers n'est chargé (`not self._db_path`).
+  - Charger depuis `AppConfig` et sauvegarder dans `AppConfig` (`save_config`).
+  - Mettre à jour les labels / traductions dans `core/locales/` (`llm_min_p`, `llm_dry`) et dans `help_system.py`.
+- [x] 3. Unification de la source de vérité à travers toute la codebase :
+  - `axiom/session.py` : `take_turn` et `resolve_tick` lisent par défaut les valeurs globales d'`AppConfig` au lieu d'un 0.7 en dur.
+  - `axiom/kernel/step_context.py` : `KernelStepContext` transmet `temperature`, `top_p`, `min_p`, `dry_multiplier`.
+  - `axiom/arbitrator.py` : `TurnContext` et `step_3_call_llm` transmettent `min_p` et `dry_multiplier` au LLM.
+  - `tabletop_view.py` et workers (`narrative_worker.py`, `regenerate_worker.py`) : utilisent les valeurs globales d'`AppConfig` au lieu de `Universe_Meta`.
+  - Conserver les températures basses des appels déterministes d'arrière-plan (Timekeeper à 0.1, fact extraction à 0.2, etc.).
+- [x] 4. Tests unitaires et non-régression de la suite.

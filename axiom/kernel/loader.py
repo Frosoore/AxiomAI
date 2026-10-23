@@ -547,12 +547,19 @@ def ensure_installed_storage_declared() -> None:
 
 def forget_declared_storage() -> None:
     """Unregister every manifest-declared storage (a new modpack is being loaded)."""
-    from axiom.storage_registry import register_time_provider, unregister_storage
+    from axiom.storage_registry import (
+        _REGISTRY_LOCK,
+        _SHADOWED,
+        CORE_STORAGE_REGISTRY,
+        register_time_provider,
+        reset_mod_storage,
+    )
 
-    for specs in _DECLARED_STORAGE.values():
-        for spec in specs:
-            unregister_storage(spec)
+    with _REGISTRY_LOCK:
+        CORE_STORAGE_REGISTRY[:] = [s for s in CORE_STORAGE_REGISTRY if s.owner is None]
+        _SHADOWED.clear()
     _DECLARED_STORAGE.clear()
+    reset_mod_storage()
     register_time_provider(None)
 
 

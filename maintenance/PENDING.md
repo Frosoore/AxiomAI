@@ -34,8 +34,8 @@
 | TICKET-105| **`_pending_correction` non remise à zéro au rewind** (indice d'un tour annulé réinjecté une fois) | ✅ résolu (`correction_hint` dans `Event_Log`, rembobinable) |
 | TICKET-106| **Audit et alignement de l'encapsulation / détachement total du noyau sur l'ensemble des autres mods officiels** | ✅ résolu (Phase 2 vrai déplacement) |
 | TICKET-107| **11 clés de traduction manquantes dans les réglages et éditeurs Qt** (`settings_dialog`, `stat_editor`, `entity_editor`) | ouvert — i18n, repéré audit oct. 2026 |
-| TICKET-108| **Robustesse petits LLM (Gemma 4B / KoboldCPP)** : dernier message ignoré (message system trailing) + règle universelle concise d'asymétrie d'information (secrets, lore, mystères) | ouvert — prompt engineering & ergonomie modèles légers |
-| TICKET-109| **Export d'univers `.axiom` sans modpack recommandé/requis** (`axiom/package.py`) | ouvert — intégrité des univers moddés |
+| TICKET-108| **Robustesse petits LLM (Stheno 8B / KoboldCPP)** : usurpation joueur, fuite macros {{char}}, anti-duplication RAG, sampler min_p | ✅ résolu (agency reminders, règle Epistemic Boundary, macro substitution lore/ST, RAG filtering, tests validés) |
+| TICKET-109| **Samplers DRY, initiative physique PNJ & formatage roman** (Stheno v3.4 / KoboldCPP) : samplers DRY, initiative PNJ, novel format | ✅ résolu (DRY sampler params, temp 1.12, format roman sans astérisques, trim_stop, non-blocage des actions physiques PNJ) |
 | TICKET-110| **`axiom.minimal_chat` : violation d'encapsulation via accès à `mod_ctx._registry`** | ✅ résolu (interface publique ModContext utilisée) |
 | TICKET-111| **Noyau neutre (K12) : résidus JDR et imports LLM dans `axiom/kernel/`** (`KernelStepContext`, `registry.py`, `context.py`, `llm_creator.py`) | ouvert — découplage architectural |
 | TICKET-112| **Harnais Golden : `_canonical_tables` omet les tables déclarées par les mods si appelé isolément** (`golden_harness.py:422`) | ✅ résolu (`_ensure_mod_storage()` appelé au préalable) |
@@ -53,6 +53,7 @@
 | TICKET-124| **UI Qt : widgets des mods ignorés par `continue` dans `settings_dialog.py:312` et `constants_sidebar.py:131`** | ouvert — intégration slots UI |
 | TICKET-125| **Providers : `ProvidersService` incomplet pour 5 providers cloud (`claude`, `venice`, `fireworks`, `openai`, `openrouter`)** | ✅ résolu (drivers cloud enregistrés dans ProvidersService) |
 | TICKET-126| **Paquet PyPI `export_engine.py` inutilisable sans `mods/` et vulnérabilité Zip Slip dans `store.py:290`** | ouvert — intégrité export/store |
+| TICKET-127| **Export d'univers `.axiom` sans modpack recommandé/requis** (`axiom/package.py`) | ouvert — intégrité des univers moddés |
 
 Tickets 100→106 : issus du cadrage du système de mods (`Mods/`). Tickets résolus/clos : voir `DONE.md` (**086, 087, 091, 092→098 clos le 2026-09-22** ; 001→056 sauf 017, 058→060, **071**, **072→082** (lot Hindsight, commités), **+ lot validations GUI du 2026-06-13 : 050, 062 items 1/2/4, 066, 068**).
 Réserves portées dans `DONE.md` : TICKET-058 (activer GitHub Pages — droits admin — puis
@@ -583,7 +584,7 @@ Ajouter ces 11 clés avec leurs textes de référence dans `core/locales/en.toml
 
 ---
 
-## TICKET-108 — Robustesse des petits modèles (Gemma 4B / KoboldCPP) : message utilisateur ignoré & règle universelle d'asymétrie d'information
+## TICKET-108 — Robustesse des petits modèles (Stheno 8B / Gemma 4B / KoboldCPP) : usurpation joueur, fuite lore, RAG & samplers (✅ Résolu 2026-10-17)
 
 **Constat et contexte (remontée utilisateur 2026-10-04) :**
 Sur des modèles compacts (ex: `Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q5_K_P.gguf` exécuté sous KoboldCPP) avec des univers riches en lore et complexité narrative :
@@ -607,7 +608,27 @@ Sur des modèles compacts (ex: `Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q5_K_
 
 ---
 
-## TICKET-109 — Export d'univers `.axiom` sans modpack recommandé/requis (`axiom/package.py`)
+## TICKET-109 — Samplers DRY, initiative physique PNJ & formatage roman (Stheno v3.4 / KoboldCPP) (✅ Résolu 2026-10-17)
+
+**Constat (session test 11 tours Stheno v3.4 / KoboldCPP) :**
+Après la résolution de l'usurpation d'agence par le TICKET-108, quatre nouveaux symptômes sont apparus à partir du Tour 6 :
+1. *Effondrement stylistique (boucles de phrases)* : répétition mot pour mot d'expressions ("eyes widen", "flicker of something darker", "edges of her cloak") due à une température trop basse (0.7) et à l'absence de sampler DRY (*Don't Repeat Yourself*).
+2. *Paralysie d'initiative PNJ & baiser bloqué* : la formulation précédente de la consigne d'agence ("NEVER describe what 'You' do, say, or think") empêchait les PNJ d'interagir physiquement avec le joueur (ex. baiser ou contact physique) ou de prononcer un vœu ordonné par le joueur.
+3. *Perte des guillemets doubles sur les dialogues* : la règle "Formatting: Use *actions* and \"dialogue\"" provoquait la disparition des guillemets doubles par confusion avec les astérisques de narration.
+4. *Coupure de phrases* : headroom de tokens insuffisant sur réponses longues.
+
+**Résolution :**
+- **Samplers DRY & température 1.12** : intégration dans `AppConfig` et `UniversalClient` des paramètres KoboldCPP (`dry_multiplier=0.8`, `dry_base=1.75`, `dry_allowed_length=2`, `dry_sequence_breakers=["\n", ":", "\"", "*"]`, `trim_stop=True`) et température par défaut à 1.12 pour `universal`/`ollama`.
+- **Initiative physique PNJ** : déblocage explicite dans `axiom/prompts.py` (les PNJ accomplissent les actions physiques demandées par le joueur), en bornant l'interdiction à la non-invention de dialogues ou décisions internes pour le joueur.
+- **Format roman standard** : narration en texte brut (sans astérisques), dialogues strictement entre guillemets doubles `"..."`.
+- **Macro `{{user}}` / `<user>` préservée à l'import ST** : résolution au runtime dans `prompts.py` plutôt qu'en dur à l'import.
+- **Headroom tokens** : `verbosity_to_tokens` relevé (short=300, balanced=600, talkative=1200).
+- Suivi : `maintenance/tickets/TICKET-109-samplers-dry-initiative-pnj/`.
+**Statut :** ✅ résolu.
+
+---
+
+## TICKET-127 — Export d'univers `.axiom` sans modpack recommandé/requis (`axiom/package.py`)
 
 **Constat (audit d'octobre 2026) :**
 Alors que les sauvegardes (`.axiomsave`) incluent désormais un manifeste d'intégrité `modpack.json` avec les hash SHA-256 et avertissent à l'ouverture en cas de divergence, l'export/import d'univers `.axiom` (`axiom/package.py`) ne sérialise aucun modpack recommandé ou requis dans l'archive.

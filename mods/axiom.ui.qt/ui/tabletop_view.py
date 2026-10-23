@@ -103,9 +103,12 @@ class TabletopView(HardcoreMixin, QWidget):
         self._mode: str = "Normal"
         self._entities: list[dict] = []
         self._lore_book: list[dict] = []
-        self._llm_temperature: float = 0.7
-        self._llm_top_p: float = 1.0
-        from axiom.config import get_default_verbosity
+        from axiom.config import load_config, get_default_verbosity
+        _init_cfg = load_config()
+        self._llm_temperature: float = getattr(_init_cfg, "llm_temperature", getattr(_init_cfg, "universal_temperature", 1.12))
+        self._llm_top_p: float = getattr(_init_cfg, "llm_top_p", 1.0)
+        self._llm_min_p: float = getattr(_init_cfg, "llm_min_p", getattr(_init_cfg, "universal_min_p", 0.1))
+        self._llm_dry_multiplier: float = getattr(_init_cfg, "llm_dry_multiplier", getattr(_init_cfg, "universal_dry_multiplier", 0.8))
         self._llm_verbosity: str = get_default_verbosity()
         self._active_session_name: str = ""
         self._arbitrator = None
@@ -475,6 +478,25 @@ class TabletopView(HardcoreMixin, QWidget):
         self._last_chronicle_time = 0
         self._player_persona = player_persona
         self._setup_answers = setup_answers or {}
+        if not self._setup_answers and self._db_path and self._save_id:
+            try:
+                from axiom.schema import get_connection
+                with get_connection(self._db_path) as conn:
+                    ans_rows = conn.execute(
+                        "SELECT target_entity, payload FROM Event_Log WHERE save_id = ? AND event_type = 'setup_answer' ORDER BY event_id ASC",
+                        (self._save_id,),
+                    ).fetchall()
+                    for ar in ans_rows:
+                        qid = ar["target_entity"]
+                        try:
+                            payload = json.loads(ar["payload"]) if isinstance(ar["payload"], str) and ar["payload"] else dict(ar["payload"] or {})
+                        except Exception:
+                            payload = {}
+                        ans = payload.get("answer", "")
+                        if ans:
+                            self._setup_answers[qid] = ans
+            except Exception:
+                pass
         self._global_lore = ""
         self._lore_book = []
         self._first_message_shown = False
@@ -532,6 +554,11 @@ class TabletopView(HardcoreMixin, QWidget):
             return
 
         cfg = load_config()
+        self._llm_temperature = getattr(cfg, "llm_temperature", getattr(cfg, "universal_temperature", 1.12))
+        self._llm_top_p = getattr(cfg, "llm_top_p", 1.0)
+        self._llm_min_p = getattr(cfg, "llm_min_p", getattr(cfg, "universal_min_p", 0.1))
+        self._llm_dry_multiplier = getattr(cfg, "llm_dry_multiplier", getattr(cfg, "universal_dry_multiplier", 0.8))
+
         from axiom.session import resolve_llm_backend
         self._llm = resolve_llm_backend(cfg)
         
@@ -595,15 +622,11 @@ class TabletopView(HardcoreMixin, QWidget):
         # Refresh UI time label with potentially new calendar config
         self._time_label.setText(self._format_time(self._current_time))
         
-        try:
-            self._llm_temperature = float(meta.get("llm_temperature", "0.7"))
-        except ValueError:
-            self._llm_temperature = 0.7
-            
-        try:
-            self._llm_top_p = float(meta.get("llm_top_p", "1.0"))
-        except ValueError:
-            self._llm_top_p = 1.0
+        cfg = load_config()
+        self._llm_temperature = getattr(cfg, "llm_temperature", getattr(cfg, "universal_temperature", 1.12))
+        self._llm_top_p = getattr(cfg, "llm_top_p", 1.0)
+        self._llm_min_p = getattr(cfg, "llm_min_p", getattr(cfg, "universal_min_p", 0.1))
+        self._llm_dry_multiplier = getattr(cfg, "llm_dry_multiplier", getattr(cfg, "universal_dry_multiplier", 0.8))
 
         # TICKET-032 : normalise les valeurs historiques stockées localisées
         # (« équilibré »…) — sinon tr() râle et le niveau retombe en défaut.
@@ -790,7 +813,9 @@ class TabletopView(HardcoreMixin, QWidget):
             history=self._history,
             temperature=self._llm_temperature,
             top_p=self._llm_top_p,
-            verbosity_level=self._llm_verbosity
+            verbosity_level=self._llm_verbosity,
+            min_p=self._llm_min_p,
+            dry_multiplier=self._llm_dry_multiplier,
         )
 
         from workers.narrative_worker import NarrativeWorker
@@ -800,6 +825,8 @@ class TabletopView(HardcoreMixin, QWidget):
             temperature=self._llm_temperature,
             top_p=self._llm_top_p,
             verbosity=self._llm_verbosity,
+            min_p=self._llm_min_p,
+            dry_multiplier=self._llm_dry_multiplier,
         )
         self._narrative_worker.hero_decision_received.connect(self._chat.append_hero_intent)
         self._narrative_worker.token_received.connect(self._chat.append_token)
@@ -869,6 +896,8 @@ class TabletopView(HardcoreMixin, QWidget):
             temperature=self._llm_temperature,
             top_p=self._llm_top_p,
             verbosity=self._llm_verbosity,
+            min_p=self._llm_min_p,
+            dry_multiplier=self._llm_dry_multiplier,
         )
         self._narrative_worker.token_received.connect(self._chat.append_token)
         self._narrative_worker.turn_complete.connect(self._on_turn_complete)
@@ -1020,7 +1049,9 @@ class TabletopView(HardcoreMixin, QWidget):
             history=sub_history,
             temperature=self._llm_temperature,
             top_p=self._llm_top_p,
-            verbosity_level=self._llm_verbosity
+            verbosity_level=self._llm_verbosity,
+            min_p=self._llm_min_p,
+            dry_multiplier=self._llm_dry_multiplier,
         )
 
         self._regen_worker = RegenerateWorker(
@@ -1033,7 +1064,9 @@ class TabletopView(HardcoreMixin, QWidget):
             user_message=action.text,
             temperature=self._llm_temperature + 0.1,
             top_p=self._llm_top_p,
-            verbosity_level=self._llm_verbosity
+            verbosity_level=self._llm_verbosity,
+            min_p=self._llm_min_p,
+            dry_multiplier=self._llm_dry_multiplier,
         )
         self._regen_worker.token_received.connect(self._chat.append_token)
         self._regen_worker.regenerate_complete.connect(self._refresh_after_variant_switch)

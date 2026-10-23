@@ -116,18 +116,33 @@ def _ask_timekeeper(ctx: Any) -> int | None:
         return None
     prompt = build_timekeeper_prompt(ctx.combined_intents_text, ctx.narrative_text)
     try:
-        resp = llm.complete(prompt, max_tokens=150, temperature=0.1)
+        stop_seqs = ["<|eot_id|>", "<|im_end|>", "</s>"]
+        resp = llm.complete(prompt, max_tokens=150, temperature=0.1, stop_sequences=stop_seqs)
     except Exception as err:
         logger.error("[axiom.time] Timekeeper failed: %s", err)
         return None
     data = getattr(resp, "tool_call", None) or {}
     if not data:
-        match = re.search(r"\{.*\}", getattr(resp, "narrative_text", str(resp)) or "", re.DOTALL)
+        raw_text = getattr(resp, "narrative_text", str(resp)) or ""
+        match = re.search(r"\{.*?\}", raw_text, re.DOTALL)
         if match:
             try:
                 data = json.loads(match.group(0))
             except json.JSONDecodeError:
                 data = {}
+        if not data and "{" in raw_text:
+            brace_idx = raw_text.find("{")
+            candidate = raw_text[brace_idx:].strip()
+            if not candidate.endswith("}"):
+                candidate = candidate + "}"
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+        if not data:
+            m = re.search(r'"elapsed_minutes"\s*:\s*(\d+)', raw_text)
+            if m:
+                data = {"elapsed_minutes": int(m.group(1))}
     try:
         return int(data["elapsed_minutes"]) if isinstance(data, dict) and "elapsed_minutes" in data else None
     except (TypeError, ValueError):

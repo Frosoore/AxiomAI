@@ -1,0 +1,38 @@
+# CHANGELOG — feature-global-sampling-sliders
+
+## 2026-10-18
+- Initialisation et implémentation de la feature des paramètres d'échantillonnage globaux avec sliders couplés.
+- `axiom/config.py` :
+  - Ajout des champs `llm_temperature: float = 1.12`, `llm_top_p: float = 1.0`, `llm_min_p: float = 0.1`, `llm_dry_multiplier: float = 0.8` dans `AppConfig`.
+  - Synchronisation bidirectionnelle dans `__post_init__` avec les alias `universal_*`.
+  - Prise en compte dans `build_llm_from_config` pour les backends universal, ollama et cloud (OpenAI, Venice, etc.).
+- `axiom/backends/universal.py` :
+  - Support de `top_p` à l'initialisation et fallback propre sur la configuration globale.
+  - Changement des défauts de signature de `complete()` et `stream_tokens()` à `None` pour respecter la hiérarchie de configuration.
+- `axiom/kernel/step_context.py` :
+  - Ajout de `min_p: float = 0.1` et `dry_multiplier: float = 0.8`, température par défaut passée à `1.12`.
+- `axiom/arbitrator.py` & `axiom/session.py` :
+  - Propagation de `min_p` et `dry_multiplier` dans `TurnContext`, `process_turn()`, `resolve_tick()`, `take_turn()` et `regenerate_variant()`.
+  - Préservation des températures basses fixes des appels déterministes (Timekeeper 0.1, fact extraction 0.2, etc.).
+- `axiom/multiplayer.py` :
+  - Ajout de `min_p` et `dry_multiplier` dans `PlayerAction` et adaptation dynamique dans `ActionQueue.run_loop` pour rétro-compatibilité.
+- `mods/axiom.turn/main.py` :
+  - Transmission de `min_p` et `dry_multiplier` dans `TurnContext`.
+- `mods/axiom.ui.qt/ui/tabletop_view.py` :
+  - Lecture des paramètres de génération narrative depuis `load_config()` au lieu de la métadonnée d'univers SQLite.
+  - Transmission dans `NarrativeWorker` et `RegenerateWorker`.
+- `mods/axiom.ui.qt/ui/settings_dialog.py` :
+  - Remplacement des spinboxes simples par 4 contrôles couplés Slider + DoubleSpinBox (Temperature [0.00-2.00, step 0.05], Top-P [0.00-1.00, step 0.01], Min-P [0.00-1.00, step 0.01], DRY Multiplier [0.00-2.00, step 0.05]).
+  - L'onglet "Universe Parameters" est désormais global et toujours actif (suppression du bridage quand aucun univers n'est chargé).
+  - Suppression de la persistance SQLite par univers au profit de la persistance globale dans `AppConfig` (`config.json`).
+- `core/locales/*.toml` (10 langues) :
+  - Ajout des clés `llm_min_p` et `llm_dry` dans toutes les langues (871 clés au total).
+  - Mise à jour de `univ_params_info` pour indiquer la portée globale des paramètres.
+  - Ajout des clés de documentation dans `en.toml` et enregistrement dans `mods/axiom.help_system/ui/help_system.py`.
+- `tests/test_settings_dialog.py` :
+  - Ajout du test `test_settings_dialog_universe_params_global_controls` vérifiant le couplage bidirectionnel slider/spinbox, la persistance dans `collect_config()` et l'activation continue de l'onglet.
+- Stabilisation de la suite de tests et isolation hermétique :
+  - `axiom/kernel/loader.py` : `forget_declared_storage()` réinitialise `CORE_STORAGE_REGISTRY` aux tables core, vide le dictionnaire de masquage `_SHADOWED` et appelle `reset_mod_storage()` pour éviter les fuites de déclaration de stockage entre tests.
+  - `tests/test_canonical_mod_example.py` : Nettoyage complet de tous les contextes de mods bootstrappés dans le bloc `finally` pour éviter la pollution globale du registre.
+  - `tests/test_saves_rewind_b1.py` : Restauration de la définition de la fonction `broken()` pour le mock d'échec de rewind SQL.
+  - `tests/test_tabletop_image_button.py` : Synchronisation `qtbot.waitUntil` sur la réception effective du signal Qt asynchrone évitant un aléa de concurrence.

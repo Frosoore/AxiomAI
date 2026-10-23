@@ -121,6 +121,11 @@ def build_rag_prompt_section(ctx: Any) -> dict[str, Any] | None:
     if not save_id or not query_text:
         return None
 
+    history_list = getattr(ctx, "history", None) or []
+    history_turn_count = len(history_list) // 2
+    turn_id = getattr(ctx, "turn_id", 0)
+    max_turn_id = max(0, turn_id - history_turn_count - 1)
+
     rag_chunks = list(getattr(ctx, "rag_chunks", []) or [])
     if not rag_chunks:
         try:
@@ -128,9 +133,9 @@ def build_rag_prompt_section(ctx: Any) -> dict[str, Any] | None:
             vm = getattr(ctx, "vector_memory", None)
             if vm is not None:
                 svc.set_vector_memory(save_id, vm)
-                results = vm.query(save_id, query_text, k=3, exclude_chunk_type="lore")
+                results = vm.query(save_id, query_text, k=3, max_turn_id=max_turn_id, exclude_chunk_type="lore")
             else:
-                results = svc.query(save_id, query_text, k=3)
+                results = svc.query(save_id, query_text, k=3, max_turn_id=max_turn_id)
             rag_chunks = [
                 r["text"] if isinstance(r, dict) and "text" in r else str(r)
                 for r in results
@@ -142,10 +147,25 @@ def build_rag_prompt_section(ctx: Any) -> dict[str, Any] | None:
             logger.debug("[axiom.rag] Query failed: %s", exc)
             return None
 
-    if not rag_chunks:
+    # Filter out chunks already present in conversation history
+    history_contents = {
+        m.get("content", "").strip()
+        for m in history_list
+        if isinstance(m, dict) and m.get("content")
+    }
+    filtered_chunks = []
+    for c in rag_chunks:
+        c_str = str(c).strip()
+        if not c_str:
+            continue
+        if any(c_str in h or h in c_str or (len(c_str) > 30 and c_str[:50] in h) for h in history_contents if h):
+            continue
+        filtered_chunks.append(c_str)
+
+    if not filtered_chunks:
         return None
 
-    formatted_memories = "\n".join(f"- {c.strip()}" for c in rag_chunks if str(c).strip())
+    formatted_memories = "\n".join(f"- {c}" for c in filtered_chunks)
     if not formatted_memories.strip():
         return None
 

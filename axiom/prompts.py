@@ -582,7 +582,24 @@ def build_populate_map_prompt(
         {"role": "user", "content": user_content},
     ]
 
-def _format_lore_book_block(lore_book: list[dict]) -> str:
+def substitute_macros(text: str, char_name: str | None = None, user_name: str | None = None) -> str:
+    """Replace {{char}} and {{user}} (and angle-bracket variants) in prompts/lore."""
+    if not text:
+        return text
+    if char_name:
+        text = re.sub(r"\{\{char\}\}", char_name, text, flags=re.IGNORECASE)
+        text = re.sub(r"<char>", char_name, text, flags=re.IGNORECASE)
+    if user_name is not None:
+        text = re.sub(r"\{\{user\}\}", user_name, text, flags=re.IGNORECASE)
+        text = re.sub(r"<user>", user_name, text, flags=re.IGNORECASE)
+    return text
+
+
+def _format_lore_book_block(
+    lore_book: list[dict],
+    char_name: str | None = None,
+    user_name: str = "You",
+) -> str:
     """Format a Lore_Book entry list into a category-grouped text block.
 
     Groups entries by category and formats each as::
@@ -593,6 +610,8 @@ def _format_lore_book_block(lore_book: list[dict]) -> str:
 
     Args:
         lore_book: List of entry dicts with keys: category, name, content.
+        char_name: Optional character name to substitute for {{char}}.
+        user_name: Player name to substitute for {{user}} (defaults to 'You').
 
     Returns:
         A formatted multi-line string, or empty string if list is empty.
@@ -612,10 +631,14 @@ def _format_lore_book_block(lore_book: list[dict]) -> str:
         for entry in entries:
             name = entry.get("name", "").strip() or "(unnamed)"
             content = entry.get("content", "").strip()
+            # Do NOT fall back to entry title as char_name
+            content = substitute_macros(content, char_name=char_name, user_name=user_name)
+            name = substitute_macros(name, char_name=char_name, user_name=user_name)
             lines.append(f"#### {name}")
             if content:
                 lines.append(content)
     return "\n".join(lines)
+
 
 
 @patchable("axiom.prompts:build_narrative_prompt")
@@ -639,12 +662,17 @@ def build_narrative_prompt(
     basic_prompt: str | None = None,
     negative_prompt: str | None = None,
     tool_call_schema: str | None = None,
+    char_name: str | None = None,
+    user_name: str | None = None,
+    setup_answers: list[dict] | dict[str, str] | None = None,
+    stat_definitions: dict[str, dict] | list[dict] | None = None,
 ) -> list[LLMMessage]:
     """Assemble the full message list for a narrative gameplay turn.
 
     Structure (in order):
       1. system  — universe prompt + optional global_lore + optional lore_book
-                   block + optional player_persona + entity stats + tool-call
+                   block + optional player_persona + optional setup_answers +
+                   optional stat_definitions + entity stats + tool-call
                    instructions + verbosity rules
       2. user/assistant pairs — capped prior history (newest HISTORY_TURN_CAP turns)
       3. system  — pending correction (only if not None)
@@ -669,6 +697,8 @@ def build_narrative_prompt(
         hero_entity_id:         The entity ID of the Hero (if applicable).
         local_character_names:  List of names of all characters present in the scene.
         basic_prompt:           Custom user instructions to append to the system prompt.
+        setup_answers:          Optional list or dict of Story Setup questions & answers.
+        stat_definitions:       Optional mapping or list of universe Stat_Definitions.
 
     Returns:
         list[LLMMessage] ready to pass to any LLMBackend.complete().
@@ -700,33 +730,66 @@ def build_narrative_prompt(
         universe_system_prompt = f"{universe_system_prompt}\n\nNegative instructions (DO NOT do the following):\n{negative_prompt}"
 
     # 1. Primary system prompt
+    if not char_name:
+        if hero_entity_id:
+            char_name = hero_entity_id
+        elif local_character_names:
+            non_players = [n for n in local_character_names if n.lower() not in ("you", "player")]
+            if non_players:
+                char_name = non_players[0]
+        elif entity_stats_block:
+            for line in entity_stats_block.splitlines():
+                line = line.strip()
+                if ":" in line and not line.startswith("["):
+                    candidate = line.split(":", 1)[0].strip()
+                    if candidate.lower() not in ("you", "player", "status", "inventory"):
+                        char_name = candidate
+                        break
+        if not char_name and lore_book:
+            for entry in lore_book:
+                cat = (entry.get("category") or "").strip().lower()
+                if cat in ("example messages", "character", "characters", "persona"):
+                    entry_name = (entry.get("name") or "").strip()
+                    if entry_name and entry_name.lower() not in ("you", "player", "schedule"):
+                        char_name = entry_name
+                        break
+
+    actual_user_name = user_name or "You"
+    if char_name:
+        universe_system_prompt = substitute_macros(universe_system_prompt, char_name=char_name, user_name=actual_user_name)
+
     parts = [universe_system_prompt]
 
-    
+    if global_lore and global_lore.strip():
+        clean_lore = substitute_macros(global_lore.strip(), char_name=char_name, user_name=actual_user_name)
+        lore_header = f"MAIN CHARACTER IDENTITY & LORE ({char_name}):" if char_name else "MAIN CHARACTER & WORLD LORE:"
+        parts.append(f"{lore_header}\n{clean_lore}")
+
     # Consolidate core narrative rules
     actor_ids = list(intents.keys()) if intents else ["player"]
     actors_str = ", ".join(actor_ids)
     player_id = next((aid for aid in intents.keys() if aid != hero_entity_id), "player") if intents else "player"
-    
+
+    identity_rule = f"- Identity: You are the world's narrator. You control the NPCs, primarily portraying {char_name}." if char_name else "- Identity: You are the world's narrator and you control the NPCs."
     rules = [
         "NARRATOR RULES:",
-        "- Formatting: Use *actions* and \"dialogue\".",
-        f"- Identity: You are the world's narrator and you control the NPCs.",
+        "- Formatting: Format all narrative actions and descriptions inside *asterisks* and all spoken dialogue inside \"double quotes\".",
+        identity_rule,
+        "- Epistemic Boundary: NPCs only know what they have directly perceived or learned in the scene. Hidden identities, secrets, and background lore remain completely unknown to them unless explicitly revealed in the dialogue or events.",
     ]
 
     if mode == "Multiplayer":
-        rules.append(f"- Protagonists: The human players are {actors_str}. Narrate their actions in the THIRD person using their names. Because each player may use the first person ('I') in their intents, translate every player's 'I' to their OWN third-person name. NEVER use 'You' to address a single player, and NEVER merge two players into one person.")
+        rules.append(f"- Protagonists: The human players are {actors_str}. Narrate their actions in the THIRD person using their names. NEVER use 'You' to address a single player, and NEVER merge two players into one person.")
+        rules.append("- Storytelling: Describe the outcome of the players' actions and how the world and NPCs react. NPCs MUST actively perform actions requested by the players to drive the scene forward.")
+        rules.append(f"- Agency Limits: NEVER invent NEW actions, decisions, or dialogue for {actors_str}. Stop when it is their turn to act.")
+    elif mode == "Companion" and hero_entity_id:
+        rules.append(f"- Protagonist: '{player_id}' is the Human Player. Always address them as 'You'.")
+        rules.append(f"- Companion: '{hero_entity_id}' is the Player's AI Companion. They are a DISTINCT character. Narrate {hero_entity_id}'s actions and dialogue in the third person. DO NOT merge them with the Player.")
+        rules.append(f"- Storytelling & Agency: Assume '{player_id}' has already performed their stated action. Describe {hero_entity_id}'s actions, the outcome, and how the NPCs react. CRITICAL PACING: Step-by-step realism. NPCs must react only to the EXACT current action. NEVER resolve multi-step conditions or future promises in advance. If a condition requires two separate physical actions, perform ONLY the first action and STOP. Wait for the player's next input before proceeding to the outcome. NEVER invent new actions, decisions, or dialogue for '{player_id}'. Stop when it is '{player_id}'s turn to act.")
     else:
         rules.append(f"- Protagonist: '{player_id}' is the Human Player. Always address them as 'You' and center the narrative around their actions.")
+        rules.append(f"- Storytelling & Agency: Assume '{player_id}' has ALREADY performed their stated action. Start IMMEDIATELY with the NPC's reaction and the environment's description. CRITICAL PACING: Step-by-step realism. NPCs must react only to the EXACT current action. NEVER resolve multi-step conditions or future promises in advance. If a condition requires two separate physical actions, perform ONLY the first action and STOP. Wait for the player's next input before proceeding to the outcome. NEVER write new dialogue or internal decisions for 'You' ({player_id}). Stop as soon as it is '{player_id}'s turn to reply.")
 
-    rules += [
-        "- Storytelling: Weave ALL the actors' intents into a cohesive, engaging narrative scene. Describe them performing their intended actions together, then describe the outcome and how the NPCs react.",
-        f"- Agency Limits: You must describe {actors_str} executing their intents, but DO NOT invent NEW actions, decisions, or dialogue for them beyond what they specified.",
-    ]
-
-    if mode == "Companion" and hero_entity_id:
-        rules.append(f"- Companion: '{hero_entity_id}' is the Player's AI Companion. They are a DISTINCT character. Because both actors may use the first person ('I') in their intents, you MUST translate the Player's intent to 'You' and the Companion's intent to their third-person name ('{hero_entity_id}'). DO NOT merge them into one person.")
-    
     if local_character_names and len(local_character_names) >= 2:
         formatted_names = [("You" if n.lower() == "player" else n) for n in local_character_names]
         if len(formatted_names) >= 3:
@@ -736,7 +799,6 @@ def build_narrative_prompt(
             names_str = " and ".join(formatted_names)
             rules.append(f"- Group Awareness: {names_str} are present together. Address them as a pair, not as a single person.")
 
-    
     len_map = {
         "short": "CONCISE (2 sentences).",
         "balanced": "MODERATE (1-2 paragraphs).",
@@ -745,15 +807,23 @@ def build_narrative_prompt(
     rules.append(f"- Length: {len_map.get(verbosity_level.lower(), 'MODERATE')}")
     parts.append("\n".join(rules))
 
-    if global_lore and global_lore.strip():
-        parts.append(f"WORLD LORE:\n{global_lore.strip()}")
     if lore_book:
-        lb_block = _format_lore_book_block(lore_book)
+        lb_block = _format_lore_book_block(lore_book, char_name=char_name, user_name=actual_user_name)
         if lb_block:
             parts.append(lb_block)
     if player_persona and player_persona.strip():
         parts.append(f"CHARACTER BACKGROUND:\n{player_persona.strip()}")
-    
+
+    if setup_answers:
+        setup_block = format_story_setup_block(setup_answers)
+        if setup_block:
+            parts.append(setup_block)
+
+    if stat_definitions:
+        stat_defs_block = format_stat_definitions_block(stat_definitions)
+        if stat_defs_block:
+            parts.append(stat_defs_block)
+
     time_header = f"TIME: {current_time_str}\n" if current_time_str else ""
     parts.append(f"CURRENT STATE:\n{time_header}{entity_stats_block}")
 
@@ -808,9 +878,6 @@ def build_narrative_prompt(
 
     # Phase 11: Final behavior instruction (Recency Bias)
     # This system message is appended AFTER the user message to force compliance.
-    num_actors = len(intents) if intents else 1
-    weave_word = "BOTH" if num_actors == 2 else "ALL" if num_actors > 2 else "the"
-    
     group_reminder = ""
     if local_character_names and len(local_character_names) >= 3:
         formatted_names = [("You" if n.lower() == "player" else n) for n in local_character_names]
@@ -818,19 +885,20 @@ def build_narrative_prompt(
         group_reminder = f" Note that {names_str} are ALL present in the scene together; NPCs must address the entire group of {len(formatted_names)} characters (DO NOT ignore any members or refer to them as 'you two')."
 
     if mode == "Multiplayer":
-        translate_clause = "translate each player's 'I' to their OWN third-person name, never to 'You'"
+        remind_actors = f"Assume the players' actions have ALREADY happened. Respond immediately with the NPCs' actions, dialogue, and the outcome. NPCs MUST actively perform actions requested by the players to drive the scene forward. NEVER invent new dialogue or decisions for {actors_str}. Stop when it is their turn to act."
+    elif mode == "Companion" and hero_entity_id:
+        remind_actors = f"Assume the player's action has ALREADY happened. Start your response IMMEDIATELY with {hero_entity_id}'s actions, the NPC's reaction, and the outcome. CRITICAL PACING: Step-by-step realism. NPCs must react only to the EXACT current action. NEVER resolve multi-step conditions or future promises in advance. If a condition requires two separate physical actions, perform ONLY the first action and STOP. Wait for the player's next input before proceeding to the outcome. NEVER write new dialogue or internal decisions for 'You' ({player_id}). Stop as soon as it is {player_id}'s turn to reply."
     else:
-        translate_clause = "translate 'I' to 'You' for the Player, and use the Companion's name"
+        remind_actors = f"Assume the player's action has ALREADY happened. Respond immediately with the NPCs' actions, dialogue, and the outcome. CRITICAL PACING: Step-by-step realism. NPCs must react only to the EXACT current action. NEVER resolve multi-step conditions or future promises in advance. If a condition requires two separate physical actions, perform ONLY the first action and STOP. Wait for the player's next input before proceeding to the outcome. NEVER write new dialogue or internal decisions for 'You' ({player_id}), and stop as soon as it is {player_id}'s turn to reply."
 
-    verbosity_map = {
-        "short": f"CRITICAL REMINDER: Response must be VERY SHORT (2 sentences). Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
-        "balanced": f"CRITICAL REMINDER: Response must be BALANCED (1-2 paragraphs). Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}",
-        "talkative": f"CRITICAL REMINDER: Response must be DETAILED and descriptive. Weave {weave_word} {actors_str}'s distinct intents into the scene ({translate_clause}). Do NOT merge them. Then describe NPC reactions.{group_reminder}"
+    len_desc = {
+        "short": "VERY SHORT (2 sentences)",
+        "balanced": "BALANCED (1-2 paragraphs)",
+        "talkative": "DETAILED and descriptive"
     }
-    final_instr = verbosity_map.get(
-        verbosity_level.lower(),
-        verbosity_map[DEFAULT_VERBOSITY_LEVEL],
-    )
+    cur_len = len_desc.get(verbosity_level.lower(), len_desc[DEFAULT_VERBOSITY_LEVEL])
+
+    final_instr = f"CRITICAL REMINDER: Response must be {cur_len}. {remind_actors} Format all narrative actions and descriptions inside *asterisks* and all spoken dialogue inside \"double quotes\".{group_reminder}"
     messages.append({"role": "system", "content": final_instr})
 
     return messages
@@ -882,16 +950,85 @@ def build_mini_dico_prompt(
     ]
 
 
-def format_entity_stats_block(entity_snapshots: list[dict]) -> str:
+def format_stat_definitions_block(stat_definitions: dict[str, dict] | list[dict]) -> str:
+    """Format universe stat definitions into a concise reference block."""
+    if not stat_definitions:
+        return ""
+    items = list(stat_definitions.values()) if isinstance(stat_definitions, dict) else list(stat_definitions)
+    lines = ["DEFINED STATS & SCALES:"]
+    for s in items:
+        if not isinstance(s, dict):
+            continue
+        name = s.get("name") or s.get("stat_id")
+        if not name:
+            continue
+        desc = (s.get("description") or "").strip()
+        params = s.get("parameters") or {}
+        if isinstance(params, str):
+            try:
+                params = json.loads(params)
+            except Exception:
+                params = {}
+        s_min = params.get("min")
+        s_max = params.get("max")
+        scale_str = ""
+        if s_min is not None and s_max is not None:
+            scale_str = f" [{s_min}..{s_max}]"
+        elif s_min is not None:
+            scale_str = f" [min {s_min}]"
+        elif s_max is not None:
+            scale_str = f" [max {s_max}]"
+
+        desc_part = f": {desc}" if desc else ""
+        lines.append(f"- {name}{scale_str}{desc_part}")
+
+    if len(lines) <= 1:
+        return ""
+    lines.append("(When updating stats in your state update, respect these defined stat names, scales, and boundaries. Do not invent non-existent stats.)")
+    return "\n".join(lines)
+
+
+def format_story_setup_block(setup_answers: list[dict] | dict[str, str]) -> str:
+    """Format Story Setup questions and answers into a system prompt section."""
+    if not setup_answers:
+        return ""
+    lines = [
+        "STORY SETUP & PREMISES:",
+        "The following background and choices were established at the start of the adventure:"
+    ]
+    if isinstance(setup_answers, list):
+        for item in setup_answers:
+            if not isinstance(item, dict):
+                continue
+            q = item.get("question") or item.get("id") or "Setup"
+            a = item.get("answer") or ""
+            if a:
+                lines.append(f"- {q}: {a}")
+    elif isinstance(setup_answers, dict):
+        for q, a in setup_answers.items():
+            if a:
+                lines.append(f"- {q}: {a}")
+    if len(lines) <= 2:
+        return ""
+    lines.append("Honor and weave these established background elements and motivations into the narrative.")
+    return "\n".join(lines)
+
+
+def format_entity_stats_block(
+    entity_snapshots: list[dict],
+    stat_definitions: dict[str, dict] | list[dict] | None = None,
+) -> str:
     """Format a list of entity stat snapshots into a human-readable block.
 
-    Each snapshot should have keys: entity_id, name, entity_type, stats (dict).
+    Each snapshot should have keys: entity_id, name, entity_type, stats (dict),
+    and optionally description (str).
     The resulting block is injected directly into the LLM's system prompt so
     it can reference current game state without hallucinating outdated values.
 
     Args:
         entity_snapshots: List of dicts, each with entity_id, name,
-                          entity_type, and stats keys.
+                          entity_type, stats, and optional description.
+        stat_definitions: Optional mapping or list of universe Stat_Definitions.
 
     Returns:
         A formatted multi-line string.  Returns "(no entities)" if the list
@@ -900,14 +1037,33 @@ def format_entity_stats_block(entity_snapshots: list[dict]) -> str:
     if not entity_snapshots:
         return "(no entities)"
 
+    stat_defs_map: dict[str, dict] = {}
+    if stat_definitions:
+        if isinstance(stat_definitions, dict):
+            for k, v in stat_definitions.items():
+                if isinstance(v, dict):
+                    stat_defs_map[str(k).lower()] = v
+                    name_key = v.get("name")
+                    if name_key:
+                        stat_defs_map[str(name_key).lower()] = v
+        elif isinstance(stat_definitions, list):
+            for s in stat_definitions:
+                if isinstance(s, dict):
+                    for key_candidate in (s.get("stat_id"), s.get("name")):
+                        if key_candidate:
+                            stat_defs_map[str(key_candidate).lower()] = s
+
     lines: list[str] = []
     for snap in entity_snapshots:
         entity_id: str = snap.get("entity_id", "unknown")
         name: str = snap.get("name", entity_id)
         entity_type: str = snap.get("entity_type", "unknown")
+        desc: str = (snap.get("description") or "").strip()
         stats: dict = snap.get("stats", {})
 
         lines.append(f"[{entity_type.upper()}] {name} (id: {entity_id})")
+        if desc:
+            lines.append(f"    Description: {desc}")
         mods = snap.get("modifiers") or []
         mods_by_stat: dict[str, list] = {}
         for mod in mods:
@@ -923,7 +1079,33 @@ def format_entity_stats_block(entity_snapshots: list[dict]) -> str:
                 note = (snap.get("dyn_notes") or {}).get(key) or (snap.get("dyn_notes") or {}).get(str(key).lower())
                 if note:
                     extra = f"  [{note}]"
-                lines.append(f"    {key}: {value}{extra}")
+
+                val_str = str(value)
+                s_def = stat_defs_map.get(str(key).lower())
+                if s_def and isinstance(s_def, dict):
+                    params = s_def.get("parameters") or {}
+                    if isinstance(params, str):
+                        try:
+                            params = json.loads(params)
+                        except Exception:
+                            params = {}
+                    s_min = params.get("min")
+                    s_max = params.get("max")
+                    try:
+                        val_num = float(value)
+                        val_disp = str(int(val_num)) if val_num.is_integer() else f"{val_num:g}"
+                        if s_max is not None and (s_min is None or s_min == 0):
+                            val_str = f"{val_disp}/{s_max}"
+                        elif s_min is not None and s_max is not None:
+                            val_str = f"{val_disp} [{s_min}..{s_max}]"
+                        elif s_min is not None:
+                            val_str = f"{val_disp} [min {s_min}]"
+                        elif s_max is not None:
+                            val_str = f"{val_disp} [max {s_max}]"
+                    except (ValueError, TypeError):
+                        pass
+
+                lines.append(f"    {key}: {val_str}{extra}")
                 for mod in mods_by_stat.get(str(key).lower(), []):
                     try:
                         delta = float(mod.get("delta", 0))

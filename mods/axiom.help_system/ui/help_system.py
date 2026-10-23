@@ -148,6 +148,8 @@ PAGES: dict[str, tuple[str, ...]] = {
         "tab_params",
         "llm_temp",
         "llm_top_p",
+        "llm_min_p",
+        "llm_dry",
         "tab_personas",
         "tab_image",
         "image_enable",
@@ -240,7 +242,7 @@ SETTINGS_TAB_PAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "tab_cloud", "cloud_provider", "cloud_key", "cloud_model",
         "browse_models", "gemini_fallback", "llm_rpm",
     )),
-    ("settings_params", ("tab_params", "llm_temp", "llm_top_p")),
+    ("settings_params", ("tab_params", "llm_temp", "llm_top_p", "llm_min_p", "llm_dry")),
     ("settings_personas", ("tab_personas",)),
     ("settings_image", (
         "tab_image", "image_enable", "image_backend", "image_url",

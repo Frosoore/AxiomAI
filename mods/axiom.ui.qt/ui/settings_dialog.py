@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -100,6 +101,59 @@ _CLOUD_MODEL_PLACEHOLDERS: dict[str, str] = {
 }
 
 
+def _create_slider_spin(
+    min_val: float,
+    max_val: float,
+    step: float,
+    default_val: float,
+    decimals: int = 2,
+    doc_key: str | None = None,
+) -> tuple[QHBoxLayout, QSlider, QDoubleSpinBox]:
+    """Create a coupled QSlider and QDoubleSpinBox inside a QHBoxLayout."""
+    from .help_bridge import doc
+
+    layout = QHBoxLayout()
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(8)
+
+    slider = QSlider(Qt.Horizontal)
+    spin = QDoubleSpinBox()
+
+    scale = 100
+    slider.setRange(int(round(min_val * scale)), int(round(max_val * scale)))
+    slider.setSingleStep(int(round(step * scale)))
+    slider.setPageStep(int(round(step * scale * 2)))
+
+    spin.setRange(min_val, max_val)
+    spin.setSingleStep(step)
+    spin.setDecimals(decimals)
+    spin.setMinimumWidth(65)
+
+    def on_slider_changed(val: int) -> None:
+        spin.blockSignals(True)
+        spin.setValue(val / float(scale))
+        spin.blockSignals(False)
+
+    def on_spin_changed(val: float) -> None:
+        slider.blockSignals(True)
+        slider.setValue(int(round(val * scale)))
+        slider.blockSignals(False)
+
+    slider.valueChanged.connect(on_slider_changed)
+    spin.valueChanged.connect(on_spin_changed)
+
+    slider.setValue(int(round(default_val * scale)))
+    spin.setValue(default_val)
+
+    if doc_key:
+        doc(spin, doc_key)
+        doc(slider, doc_key)
+
+    layout.addWidget(slider, 1)
+    layout.addWidget(spin, 0)
+    return layout, slider, spin
+
+
 class SettingsDialog(QDialog):
     """LLM backend and application settings dialog.
 
@@ -139,10 +193,6 @@ class SettingsDialog(QDialog):
 
         # Asynchronously load global personas from SQLite
         self._load_personas_async()
-        
-        # Asynchronously load universe meta if available
-        if self._db_path:
-            self._load_universe_meta_async()
 
     # ------------------------------------------------------------------
     # Setup
@@ -165,30 +215,52 @@ class SettingsDialog(QDialog):
         # ---- 3. Universe Parameters tab (Core) ----
         self._univ_params_widget = QWidget()
         univ_params_form = QFormLayout(self._univ_params_widget)
-        self._temp_spin = doc(QDoubleSpinBox(), "settings.llm_temp")
-        self._temp_spin.setRange(0.0, 1.0)
-        self._temp_spin.setSingleStep(0.05)
-        self._temp_spin.setValue(0.7)
-        self._top_p_spin = doc(QDoubleSpinBox(), "settings.llm_top_p")
-        self._top_p_spin.setRange(0.0, 1.0)
-        self._top_p_spin.setSingleStep(0.05)
-        self._top_p_spin.setValue(1.0)
-        
+
+        temp_layout, self._temp_slider, self._temp_spin = _create_slider_spin(
+            min_val=0.0,
+            max_val=2.0,
+            step=0.05,
+            default_val=getattr(self._config, "llm_temperature", 1.12),
+            doc_key="settings.llm_temp",
+        )
+        top_p_layout, self._top_p_slider, self._top_p_spin = _create_slider_spin(
+            min_val=0.0,
+            max_val=1.0,
+            step=0.01,
+            default_val=getattr(self._config, "llm_top_p", 1.0),
+            doc_key="settings.llm_top_p",
+        )
+        min_p_layout, self._min_p_slider, self._min_p_spin = _create_slider_spin(
+            min_val=0.0,
+            max_val=1.0,
+            step=0.01,
+            default_val=getattr(self._config, "llm_min_p", 0.1),
+            doc_key="settings.llm_min_p",
+        )
+        dry_layout, self._dry_slider, self._dry_spin = _create_slider_spin(
+            min_val=0.0,
+            max_val=2.0,
+            step=0.05,
+            default_val=getattr(self._config, "llm_dry_multiplier", 0.8),
+            doc_key="settings.llm_dry",
+        )
+
         self._llm_temp_label = QLabel(tr("llm_temp"))
         self._llm_top_p_label = QLabel(tr("llm_top_p"))
+        self._llm_min_p_label = QLabel(tr("llm_min_p"))
+        self._llm_dry_label = QLabel(tr("llm_dry"))
 
-        univ_params_form.addRow(self._llm_temp_label, self._temp_spin)
-        univ_params_form.addRow(self._llm_top_p_label, self._top_p_spin)
-        
+        univ_params_form.addRow(self._llm_temp_label, temp_layout)
+        univ_params_form.addRow(self._llm_top_p_label, top_p_layout)
+        univ_params_form.addRow(self._llm_min_p_label, min_p_layout)
+        univ_params_form.addRow(self._llm_dry_label, dry_layout)
+
         self._univ_params_info = QLabel(tr("univ_params_info"))
         self._univ_params_info.setWordWrap(True)
         univ_params_form.addRow(self._univ_params_info)
-        
+
         self._tabs.addTab(self._univ_params_widget, tr("univ_params"))
         doc_tab(self._tabs, self._tabs.indexOf(self._univ_params_widget), "settings.tab_params")
-        if not self._db_path:
-            self._tabs.setTabEnabled(self._tabs.indexOf(self._univ_params_widget), False)
-            self._univ_params_info.setText(f"<span style='color:#c0392b;'>{tr('no_universe_loaded')}</span>")
 
         # ---- 4. Personas tab (Core) ----
         self._persona_editor = PersonaEditorWidget()
@@ -869,7 +941,9 @@ class SettingsDialog(QDialog):
             self._tabs.setTabText(idx, tr("univ_params"))
         self._llm_temp_label.setText(tr("llm_temp"))
         self._llm_top_p_label.setText(tr("llm_top_p"))
-        self._univ_params_info.setText(tr("univ_params_info") if self._db_path else tr("no_universe_loaded"))
+        self._llm_min_p_label.setText(tr("llm_min_p"))
+        self._llm_dry_label.setText(tr("llm_dry"))
+        self._univ_params_info.setText(tr("univ_params_info"))
 
         # Core: Personas
         idx = self._tabs.indexOf(self._persona_editor)
@@ -989,6 +1063,15 @@ class SettingsDialog(QDialog):
                     self._tabs.setCurrentIndex(univ_idx)
 
         # Core fields
+        if hasattr(self, "_temp_spin"):
+            self._temp_spin.setValue(getattr(config, "llm_temperature", 1.12))
+        if hasattr(self, "_top_p_spin"):
+            self._top_p_spin.setValue(getattr(config, "llm_top_p", 1.0))
+        if hasattr(self, "_min_p_spin"):
+            self._min_p_spin.setValue(getattr(config, "llm_min_p", 0.1))
+        if hasattr(self, "_dry_spin"):
+            self._dry_spin.setValue(getattr(config, "llm_dry_multiplier", 0.8))
+
         self._chronicler_spin.setValue(config.chronicler_minutes_interval)
         self._font_size_spin.setValue(config.ui_font_size)
         self._rag_chunk_spin.setValue(config.rag_chunk_count)
@@ -1051,6 +1134,13 @@ class SettingsDialog(QDialog):
             "custom_wallpaper": self._wallpaper_edit.text().strip() if hasattr(self, "_wallpaper_edit") else self._config.custom_wallpaper,
             "basic_prompt": self._basic_prompt.toPlainText().strip() if hasattr(self, "_basic_prompt") else self._config.basic_prompt,
             "negative_prompt": self._negative_prompt.toPlainText().strip() if hasattr(self, "_negative_prompt") else getattr(self._config, "negative_prompt", ""),
+            "llm_temperature": self._temp_spin.value() if hasattr(self, "_temp_spin") else getattr(self._config, "llm_temperature", 1.12),
+            "llm_top_p": self._top_p_spin.value() if hasattr(self, "_top_p_spin") else getattr(self._config, "llm_top_p", 1.0),
+            "llm_min_p": self._min_p_spin.value() if hasattr(self, "_min_p_spin") else getattr(self._config, "llm_min_p", 0.1),
+            "llm_dry_multiplier": self._dry_spin.value() if hasattr(self, "_dry_spin") else getattr(self._config, "llm_dry_multiplier", 0.8),
+            "universal_temperature": self._temp_spin.value() if hasattr(self, "_temp_spin") else getattr(self._config, "universal_temperature", 1.12),
+            "universal_min_p": self._min_p_spin.value() if hasattr(self, "_min_p_spin") else getattr(self._config, "universal_min_p", 0.1),
+            "universal_dry_multiplier": self._dry_spin.value() if hasattr(self, "_dry_spin") else getattr(self._config, "universal_dry_multiplier", 0.8),
         }
 
         # Providers settings (axiom.providers)
@@ -1185,26 +1275,6 @@ class SettingsDialog(QDialog):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _load_universe_meta_async(self) -> None:
-        self._univ_db_worker = DbWorker(self._db_path)
-        self._univ_db_worker.universe_meta_loaded.connect(self._on_meta_loaded)
-        self._univ_db_worker.load_universe_meta()
-
-    @Slot(dict)
-    def _on_meta_loaded(self, meta: dict) -> None:
-        self._universe_meta = meta
-        try:
-            temp = float(meta.get("llm_temperature", "0.7"))
-        except ValueError:
-            temp = 0.7
-        self._temp_spin.setValue(max(0.0, min(1.0, temp)))
-        
-        try:
-            top_p = float(meta.get("llm_top_p", "1.0"))
-        except ValueError:
-            top_p = 1.0
-        self._top_p_spin.setValue(max(0.0, min(1.0, top_p)))
-
     def _load_personas_async(self) -> None:
         self._db_worker = DbWorker(str(GLOBAL_DB_FILE))
         self._db_worker.personas_loaded.connect(self._persona_editor.populate)
@@ -1214,25 +1284,8 @@ class SettingsDialog(QDialog):
         personas = self._persona_editor.collect_data()
         self._save_worker = DbWorker(str(GLOBAL_DB_FILE))
         self._save_worker.save_global_personas(personas)
-        
-        if self._db_path:
-            self._save_worker.save_complete.connect(self._save_universe_meta_async)
-        else:
-            self._save_worker.save_complete.connect(self.accept)
-            
+        self._save_worker.save_complete.connect(self.accept)
         self._save_worker.error_occurred.connect(
-            lambda msg: QMessageBox.critical(self, tr("error"), msg)
-        )
-
-    def _save_universe_meta_async(self) -> None:
-        meta = {
-            "llm_temperature": str(self._temp_spin.value()),
-            "llm_top_p": str(self._top_p_spin.value()),
-        }
-        self._univ_save_worker = DbWorker(self._db_path)
-        self._univ_save_worker.save_universe_meta(meta)
-        self._univ_save_worker.save_complete.connect(self.accept)
-        self._univ_save_worker.error_occurred.connect(
             lambda msg: QMessageBox.critical(self, tr("error"), msg)
         )
 

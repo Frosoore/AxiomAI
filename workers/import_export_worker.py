@@ -19,13 +19,24 @@ format .axiom et reste implémenté ici.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from axiom.prompts import substitute_macros
 from axiom.schema import create_universe_db
+
+
+def _substitute_st_macros(text: str, char_name: str) -> str:
+    """Helper to substitute ST character macros ({{char}}) at import time.
+
+    {{user}} and <user> are deliberately preserved so they can be resolved
+    dynamically at runtime based on the player's active persona and name.
+    """
+    return substitute_macros(text, char_name=char_name, user_name=None)
 
 
 class ImportExportWorker(QThread):
@@ -105,7 +116,7 @@ class ImportExportWorker(QThread):
         self.progress_update.emit(1, 4)
         
         # 1. DB Setup
-        name = data.get("name", "Unknown Character")
+        name = data.get("name") or (data.get("data", {}).get("name") if isinstance(data.get("data"), dict) else None) or "Unknown Character"
         safe_name = "".join(c if c.isalnum() or c in "_ " else "_" for c in name)
         dest_dir = Path(self._dest_path)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -128,6 +139,7 @@ class ImportExportWorker(QThread):
         self.progress_update.emit(2, 4)
         
         # 2. Extract Data
+
         default_prompt = (
             "You are the Game Master and the characters of this world. "
             "You MUST NOT act, speak, or think for the User/Player. "
@@ -136,12 +148,16 @@ class ImportExportWorker(QThread):
         system_prompt = data.get("system_prompt", default_prompt)
         if not system_prompt.strip():
             system_prompt = default_prompt
+        system_prompt = _substitute_st_macros(system_prompt, name)
             
         # Composite Lore (Phase 10 refinement)
         lore_parts = []
-        if data.get("description"): lore_parts.append(f"### Description\n{data['description']}")
-        if data.get("personality"): lore_parts.append(f"### Personality\n{data['personality']}")
-        if data.get("scenario"):    lore_parts.append(f"### Scenario\n{data['scenario']}")
+        if data.get("description"):
+            lore_parts.append(f"### Description\n{_substitute_st_macros(data['description'], name)}")
+        if data.get("personality"):
+            lore_parts.append(f"### Personality\n{_substitute_st_macros(data['personality'], name)}")
+        if data.get("scenario"):
+            lore_parts.append(f"### Scenario\n{_substitute_st_macros(data['scenario'], name)}")
         composite_lore = "\n\n".join(lore_parts)
 
         # Phase 11: Collect variants for first message
@@ -150,14 +166,17 @@ class ImportExportWorker(QThread):
         if not alt_greetings and "data" in data:
             alt_greetings = data.get("data", {}).get("alternate_greetings", [])
         
-        all_variants = [first_mes] if first_mes else []
+        all_variants = [_substitute_st_macros(first_mes, name)] if first_mes else []
         if isinstance(alt_greetings, list):
             for alt in alt_greetings:
                 if isinstance(alt, str) and alt.strip():
-                    all_variants.append(alt.strip())
+                    all_variants.append(_substitute_st_macros(alt.strip(), name))
                 elif isinstance(alt, dict) and alt.get("message"):
-                    all_variants.append(alt["message"].strip())
+                    all_variants.append(_substitute_st_macros(alt["message"].strip(), name))
         
+        # Strip asterisks from greeting messages to align with "plain text (no asterisks)" rule
+        all_variants = [v.replace("*", "") for v in all_variants]
+
         # Use Axiom AI separator for multiverse first message
         first_msg_meta = "\n\n---VARIANT---\n\n".join(all_variants) if all_variants else ""
 
@@ -182,9 +201,9 @@ class ImportExportWorker(QThread):
                 lore_book.append({
                     "entry_id": str(uuid.uuid4()),
                     "category": cat,
-                    "name": name_entry,
-                    "keywords": keywords,
-                    "content": content.strip()
+                    "name": _substitute_st_macros(name_entry, name),
+                    "keywords": _substitute_st_macros(keywords, name),
+                    "content": _substitute_st_macros(content.strip(), name)
                 })
         
         # Add basic character info to Lore Book
@@ -215,7 +234,9 @@ class ImportExportWorker(QThread):
                 else:
                     keywords_str = str(keys)
                 
-                add_lore("SillyTavern", entry_name, entry_content, keywords_str)
+                is_constant = bool(entry.get("constant", False))
+                category = "Constant" if is_constant else "SillyTavern"
+                add_lore(category, entry_name, entry_content, keywords_str)
 
         self.progress_update.emit(3, 4)
         

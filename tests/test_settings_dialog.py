@@ -441,4 +441,61 @@ def test_main_window_wallpaper_styling(qtbot, tmp_path) -> None:
     assert app.styleSheet() == _DARK_QSS
 
 
+def test_settings_dialog_universe_params_global_controls(qtbot) -> None:
+    """Universe parameters are global, present in settings tab with coupled sliders and spinboxes."""
+    from axiom.config import AppConfig
+    from mods.axiom.ui.qt.ui.settings_dialog import SettingsDialog
+
+    cfg = AppConfig(
+        llm_temperature=1.25,
+        llm_top_p=0.92,
+        llm_min_p=0.15,
+        llm_dry_multiplier=0.65,
+    )
+    dialog = SettingsDialog(cfg, db_path=None)
+    qtbot.addWidget(dialog)
+
+    # 1. Universe Parameters tab is always enabled even without a loaded universe db
+    tab_idx = dialog._tabs.indexOf(dialog._univ_params_widget)
+    assert tab_idx >= 0
+    assert dialog._tabs.isTabEnabled(tab_idx)
+
+    # 2. Controls are initialized from config
+    assert round(dialog._temp_spin.value(), 2) == 1.25
+    assert dialog._temp_slider.value() == 125
+    assert round(dialog._top_p_spin.value(), 2) == 0.92
+    assert dialog._top_p_slider.value() == 92
+    assert round(dialog._min_p_spin.value(), 2) == 0.15
+    assert dialog._min_p_slider.value() == 15
+    assert round(dialog._dry_spin.value(), 2) == 0.65
+    assert dialog._dry_slider.value() == 65
+
+    # 3. Two-way synchronization between slider and spinbox
+    dialog._min_p_slider.setValue(25)
+    assert round(dialog._min_p_spin.value(), 2) == 0.25
+
+    dialog._dry_spin.setValue(1.10)
+    assert dialog._dry_slider.value() == 110
+
+    dialog._temp_slider.setValue(150)
+    assert round(dialog._temp_spin.value(), 2) == 1.50
+
+    dialog._top_p_spin.setValue(0.85)
+    assert dialog._top_p_slider.value() == 85
+
+    # 4. collect_config() preserves and exposes all four global values
+    collected = dialog.collect_config()
+    assert round(collected.llm_temperature, 2) == 1.50
+    assert round(collected.llm_top_p, 2) == 0.85
+    assert round(collected.llm_min_p, 2) == 0.25
+    assert round(collected.llm_dry_multiplier, 2) == 1.10
+    assert round(collected.universal_temperature, 2) == 1.50
+    assert round(collected.universal_min_p, 2) == 0.25
+    assert round(collected.universal_dry_multiplier, 2) == 1.10
+
+    # 5. retranslate_ui() updates labels without resetting or disabling
+    dialog.retranslate_ui()
+    assert dialog._tabs.isTabEnabled(tab_idx)
+
+
 

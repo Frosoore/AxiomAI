@@ -161,6 +161,8 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `TICKET-066-reasoning-models` | ✅ (validé GUI) | Modèles de raisonnement (gpt-oss) |
 | `TICKET-068-embedding-offline-stall` | ✅ (validé GUI) | 1ᵉʳ tour figé ~90 s → `local_files_only=True` dans `axiom/memory.py` |
 | `TICKET-092-fix-xcb-cursor-crash` | ✅ (clos sans test X11, décision utilisateur) | Empêcher le crash au lancement si libxcb-cursor0 est absente — rendu Wayland-aware le 2026-09-22 |
+| `TICKET-108-prompt-robustesse-petits-llm` | ✅ | Robustesse petits LLM (Stheno/Gemma/KoboldCPP) : usurpation agence, macros {{char}}, doublons RAG, samplers min_p |
+| `TICKET-109-samplers-dry-initiative-pnj` | ✅ | Samplers DRY (multiplier, base, breakers), température 1.12, déblocage initiative physique PNJ & formatage roman |
 
 ### features/
 | Sous-dossier | Statut | Description |
@@ -180,6 +182,9 @@ sans code). Tickets ouverts/différés : voir `PENDING.md` ; tickets clos : `DON
 | `web-ui-continuation` | 🔄 (indexé a posteriori le 2026-09-22) | Interface web alpha (`main_web.py` + `web/`) — commits `d491365`/`4967506` ; dette sécurité TICKET-093/094 soldée le 2026-09-22 |
 | `qol-creator-studio` | 🔄 en cours | Ergonomie Creator Studio : suppression ligne sur sélection colonne/cellule, clic droit contextuel, sélection automatique au clic |
 | `fix-tabletop-image-button-crash` | ✅ | Fix crash clic bouton Illustration dans le chat (`_active_save_id` / worker asynchrone) |
+| `feature-global-sampling-sliders` | 🔄 en cours | Contrôles UI (sliders/spinbox) Temperature, Top-P, Min-P, DRY et portée globale |
+| `feature-ai-understanding-stats-setup` | ✅ | Compréhension, réception et interprétation par l'IA des informations des onglets Stats, Story Setup et Entités |
+| `fix-stat-type-editing` | ✅ | Fix : modification du type de statistique (numeric / categorical) dans le Creator Studio |
 
 ### site/
 | Sous-dossier | Statut | Description |

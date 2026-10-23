@@ -42,6 +42,14 @@ def universal_driver(cfg: AppConfig, model_override: str | None = None) -> LLMBa
         base_url=cfg.universal_base_url,
         api_key=cfg.universal_api_key,
         model_name=model_override or cfg.universal_model,
+        min_p=getattr(cfg, "llm_min_p", getattr(cfg, "universal_min_p", 0.1)),
+        temperature=getattr(cfg, "llm_temperature", getattr(cfg, "universal_temperature", 1.12)),
+        top_p=getattr(cfg, "llm_top_p", 1.0),
+        dry_multiplier=getattr(cfg, "llm_dry_multiplier", getattr(cfg, "universal_dry_multiplier", 0.8)),
+        dry_base=getattr(cfg, "universal_dry_base", 1.75),
+        dry_allowed_length=getattr(cfg, "universal_dry_allowed_length", 2),
+        dry_sequence_breakers=getattr(cfg, "universal_dry_sequence_breakers", ["\n", ":", '"', "*"]),
+        trim_stop=getattr(cfg, "universal_trim_stop", True),
     )
 
 

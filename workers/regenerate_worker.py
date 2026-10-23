@@ -24,7 +24,8 @@ class RegenerateWorker(QThread):
 
     def __init__(self, llm: LLMBackend, db_path: str, save_id: str, turn_id: int,
                  history: list, system_prompt: str, user_message: str,
-                 temperature: float = 0.7, top_p: float = 1.0,
+                 temperature: float | None = None, top_p: float | None = None,
+                 min_p: float | None = None, dry_multiplier: float | None = None,
                  verbosity_level: str = "balanced"):
         super().__init__()
         self._llm = llm
@@ -36,6 +37,8 @@ class RegenerateWorker(QThread):
         self._user_message = user_message
         self._temperature = temperature
         self._top_p = top_p
+        self._min_p = min_p
+        self._dry_multiplier = dry_multiplier
         self._verbosity_level = verbosity_level
 
     def run(self):
@@ -51,6 +54,8 @@ class RegenerateWorker(QThread):
                 user_message=self._user_message,
                 temperature=self._temperature,
                 top_p=self._top_p,
+                min_p=self._min_p,
+                dry_multiplier=self._dry_multiplier,
                 verbosity_level=self._verbosity_level,
                 on_token=self.token_received.emit,
             )

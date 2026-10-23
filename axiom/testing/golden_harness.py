@@ -81,6 +81,9 @@ class ScriptedLLMBackend(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
+        **kwargs: Any,
     ) -> LLMResponse:
         self._check_cancelled()
 
@@ -122,6 +125,9 @@ class ScriptedLLMBackend(LLMBackend):
         response_format: str | None = None,
         stop_sequences: list[str] | None = None,
         max_tokens: int | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
+        **kwargs: Any,
     ) -> Iterator[str]:
         self._check_cancelled()
 

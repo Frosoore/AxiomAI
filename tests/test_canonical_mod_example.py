@@ -190,7 +190,10 @@ def test_published_example_works_in_a_real_turn(doc, tmp_path):
     finally:
         # A mod with patches only stops at next launch: undo its context by hand so
         # the patch does not leak into the next tests.
-        ctx = registry.load_state.contexts.get("community.example")
-        if ctx is not None:
-            ctx.cleanup()
+        if registry and getattr(registry, "load_state", None):
+            for c in list(registry.load_state.contexts.values()):
+                c.cleanup()
+        from axiom.kernel.loader import forget_declared_storage, reset_kernel_registry
+        forget_declared_storage()
+        reset_kernel_registry()
         assert "(Scorching Desert)" not in build_narrative_prompt("SYS", "", [], [], {"player": "Hi"})[0]["content"]

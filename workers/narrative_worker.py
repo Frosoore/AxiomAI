@@ -49,8 +49,10 @@ class NarrativeWorker(QThread):
         action: object,  # PlayerAction (.text, .player_id) — solo/Companion
         *,
         intents: dict[str, str] | None = None,  # Multiplayer: {player_id: text}
-        temperature: float = 0.7,
-        top_p: float = 1.0,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        min_p: float | None = None,
+        dry_multiplier: float | None = None,
         verbosity: str = "balanced",
     ) -> None:
         super().__init__()
@@ -59,6 +61,8 @@ class NarrativeWorker(QThread):
         self._intents = intents
         self._temperature = temperature
         self._top_p = top_p
+        self._min_p = min_p
+        self._dry_multiplier = dry_multiplier
         self._verbosity = verbosity
 
     def run(self) -> None:
@@ -78,6 +82,8 @@ class NarrativeWorker(QThread):
                     on_status=self.status_update.emit,
                     temperature=self._temperature,
                     top_p=self._top_p,
+                    min_p=self._min_p,
+                    dry_multiplier=self._dry_multiplier,
                     verbosity_level=self._verbosity,
                 )
             else:
@@ -89,6 +95,8 @@ class NarrativeWorker(QThread):
                     on_hero_decision=self.hero_decision_received.emit,
                     temperature=self._temperature,
                     top_p=self._top_p,
+                    min_p=self._min_p,
+                    dry_multiplier=self._dry_multiplier,
                     verbosity_level=self._verbosity,
                 )
             self.turn_complete.emit(result)

@@ -110,8 +110,8 @@ def test_on_generate_image_clicked_full_flow(qtbot, tmp_path, monkeypatch) -> No
 
     worker = tabletop._image_worker
     assert worker is not None
-    # Wait for the thread to complete
-    qtbot.waitUntil(lambda: not worker.isRunning(), timeout=3000)
+    # Wait for the thread to complete and signal to be processed
+    qtbot.waitUntil(lambda: not worker.isRunning() and spy_append.called, timeout=3000)
 
     mock_illus_svc.generate_turn_image.assert_called_once()
     _, kwargs = mock_illus_svc.generate_turn_image.call_args
@@ -157,7 +157,7 @@ def test_on_generate_image_error_flow(qtbot, monkeypatch) -> None:
 
     worker = tabletop._image_worker
     assert worker is not None
-    qtbot.waitUntil(lambda: not worker.isRunning(), timeout=3000)
+    qtbot.waitUntil(lambda: not worker.isRunning() and spy_clear.called, timeout=3000)
 
     spy_clear.assert_called()
     assert tabletop._image_btn.isEnabled()

@@ -40,6 +40,17 @@ _TRAILING_OBJECT = re.compile(r'\s*\{\s*"[^"\n]+"\s*:.*\Z', re.DOTALL)
 _VERBOSITY_TO_TOKENS = {"short": 150, "balanced": 400, "talkative": 1024}
 
 
+def _filter_kwargs(func: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    try:
+        import inspect
+        sig = inspect.signature(func)
+        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            return kwargs
+        return {k: v for k, v in kwargs.items() if k in sig.parameters}
+    except Exception:
+        return kwargs
+
+
 def history_to_messages(history: list[dict]) -> list[dict]:
     """Convert the event-sourced history (user_input / narrative_text) into LLM
     messages (the active variant is authoritative for the narrative).
@@ -68,8 +79,10 @@ def regenerate_variant(
     history: list[dict],
     system_prompt: str,
     user_message: str,
-    temperature: float = 0.7,
-    top_p: float = 1.0,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    min_p: float | None = None,
+    dry_multiplier: float | None = None,
     verbosity_level: str = DEFAULT_VERBOSITY_LEVEL,
     player_id: str = "player_1",
     on_token: Callable[[str], None] | None = None,
@@ -148,12 +161,21 @@ def regenerate_variant(
     )
 
     narrative_text = ""
+    extra_kwargs: dict[str, Any] = {}
+    if min_p is not None:
+        extra_kwargs["min_p"] = min_p
+    if dry_multiplier is not None:
+        extra_kwargs["dry_multiplier"] = dry_multiplier
+
+    call_kwargs = _filter_kwargs(llm.stream_tokens, extra_kwargs)
+
     for token in llm.stream_tokens(
         prompt,
         temperature=temperature,
         top_p=top_p,
         stop_sequences=stops,
         max_tokens=max_tokens,
+        **call_kwargs,
     ):
         narrative_text += token
         if on_token is not None:
